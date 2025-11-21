@@ -1,0 +1,36 @@
+{% if history %}
+  <table class="table table-bordered align-middle text-center">
+    <thead class="table-light">
+      <tr>
+        <th>Month</th>
+        <th>Opening</th>
+        <th>Leave Taken</th>
+        <th>Days Present</th>
+        <th>Late</th>
+        <th>Comp-Off</th>
+        <th>LWP</th>
+        <th>Closing</th>
+        <th>Leave Balance</th>
+        <th>Final Leave Balance</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for rec in history %}
+      <tr>
+        <td>{{ rec.month }}</td>
+        <td>{{ rec.opening_balance|floatformat:2 }}</td>
+        <td>{{ rec.leave_taken|floatformat:2 }}</td>
+        <td>{{ rec.days_present|floatformat:0 }}</td>
+        <td>{{ rec.late }}</td>
+        <td>{{ rec.compoff|floatformat:2 }}</td>
+        <td>{{ rec.leave_without_pay|floatformat:2 }}</td>
+        <td>{{ rec.closing_balance|floatformat:2 }}</td>
+        <td>{{ rec.closing_balance|floatformat:2 }}</td>
+        <td><strong>{{ rec.final_leave_balance|floatformat:2 }}</strong></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="text-center text-muted p-3">No leave history found.</div>
+{% endif %}

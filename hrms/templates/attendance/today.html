@@ -1,0 +1,424 @@
+{% extends 'base2.html' %} {% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="card shadow p-3 rounded-4">
+    <h4 class="mb-3 fw-bold">Attendance Records</h4>
+
+    <!-- 🔹 Date Filter Section -->
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-outline-secondary" id="prevDay">
+          <i class="ri-arrow-left-line"></i> Previous
+        </button>
+
+        <form method="get" class="d-flex align-items-center gap-2 mb-0">
+          <input
+            type="date"
+            name="date"
+            id="datePicker"
+            class="form-control"
+            value="{{ selected_date }}"
+          />
+          <button type="submit" class="btn btn-primary">
+            <i class="ri-search-line"></i> View
+          </button>
+        </form>
+
+        <button type="button" class="btn btn-outline-secondary" id="nextDay">
+          Next <i class="ri-arrow-right-line"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- 🔹 Attendance Table -->
+    {% if attendance_records %}
+    <div class="table-responsive">
+      <table class="table table-hover align-middle text-center">
+        <thead class="table-light">
+          <tr>
+            <th>Employee Code</th>
+            <th>Employee Name</th>
+            <th>Date</th>
+            <th>In Time</th>
+            <th>Out Time</th>
+            <th>Status</th>
+            <th>View History</th>
+            <th>Raise Approval</th>
+            <th>Raise Comp-Off</th>
+
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in attendance_records %}
+          <tr>
+            <td>{{ record.employee.employee_code }}</td>
+            <td>
+              {{ record.employee.first_name }} {{ record.employee.last_name }}
+            </td>
+            <td>{{ record.date }}</td>
+            <td>{{ record.in_time|default:"-" }}</td>
+            <td>{{ record.out_time|default:"-" }}</td>
+            <td>
+              {% if record.status == 'Present' %}
+              <span class="badge bg-success">Present</span>
+              {% elif record.status == 'Absent' %}
+              <span class="badge bg-danger">Absent</span>
+              {% else %}
+              <span class="badge bg-secondary">{{ record.status }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <a
+                href="{% url 'employee_attendance_detail' record.employee.id %}"
+                class="btn btn-sm btn-primary"
+              >
+                View History
+              </a>
+            </td>
+            <td>
+              <button
+                class="btn btn-warning btn-sm"
+                onclick="openCorrectionModal('{{ record.id }}', '{{ record.in_time }}', '{{ record.out_time }}', '{{ record.date }}')"
+              >
+                Raise an Approval
+              </button>
+            </td>
+
+            <td>
+              <button
+                class="btn btn-info btn-sm"
+                onclick="openCompOffModal('{{ record.employee.id }}', '{{ record.date }}')"
+              >
+                Raise Comp-Off
+              </button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="alert alert-warning text-center mt-4">
+      No attendance found for <b>{{ selected_date }}</b>.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Correction Request Modal -->
+<div id="correctionModal" class="custom-modal">
+  <div class="custom-modal-content animate">
+    <span class="close-btn" onclick="closeCorrectionModal()">&times;</span>
+    <h3 class="modal-title">🕒 Attendance Correction Request</h3>
+
+    <form id="correctionForm" class="modal-form">
+      {% csrf_token %}
+      <input type="hidden" id="attendance_id" name="attendance_id" />
+
+      <div class="form-group">
+        <label>Date</label>
+        <input type="text" id="date" name="date" readonly />
+      </div>
+
+      <div class="form-group">
+        <label>Current In Time</label>
+        <input type="text" id="old_in_time" name="old_in_time" readonly />
+      </div>
+
+      <div class="form-group">
+        <label>Current Out Time</label>
+        <input type="text" id="old_out_time" name="old_out_time" readonly />
+      </div>
+
+      <div class="form-group">
+        <label>New In Time</label>
+        <input type="time" id="new_in_time" name="new_in_time" required />
+      </div>
+
+      <div class="form-group">
+        <label>New Out Time</label>
+        <input type="time" id="new_out_time" name="new_out_time" required />
+      </div>
+
+      <div class="form-group">
+        <label>Reason</label>
+        <textarea
+          id="reason"
+          name="reason"
+          placeholder="Enter reason..."
+          required
+        ></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="closeCorrectionModal()"
+        >
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary">Submit Request</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Comp-Off Request Modal -->
+<div id="compOffModal" class="custom-modal">
+  <div class="custom-modal-content animate">
+    <span class="close-btn" onclick="closeCompOffModal()">&times;</span>
+    <h3 class="modal-title">🌤️ Comp-Off Request</h3>
+
+    <form id="compOffForm" class="modal-form">
+      {% csrf_token %}
+      <input type="hidden" id="comp_off_employee_id" name="employee_id" />
+
+      <div class="form-group">
+        <label>From Date</label>
+        <input type="date" id="comp_off_from_date" name="from_date" required />
+      </div>
+
+      <div class="form-group">
+        <label>To Date</label>
+        <input type="date" id="comp_off_to_date" name="to_date" required />
+      </div>
+
+      <div class="form-group">
+        <label>Reason</label>
+        <textarea
+          id="comp_off_reason"
+          name="reason"
+          placeholder="Enter reason..."
+          required
+        ></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="closeCompOffModal()"
+        >
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary">Submit Request</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  /* Modern modal styling */
+  .custom-modal {
+    display: none;
+    position: fixed;
+    z-index: 1050;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    background-color: rgba(0, 0, 0, 0.5);
+    animation: fadeIn 0.3s ease-in-out;
+  }
+
+  .custom-modal-content {
+    background: #fff;
+    margin: 5% auto;
+    padding: 25px 30px;
+    border-radius: 12px;
+    width: 450px;
+    max-width: 90%;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    position: relative;
+  }
+
+  .modal-title {
+    text-align: center;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #0d6efd;
+  }
+
+  .close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 22px;
+    cursor: pointer;
+    color: #555;
+    transition: color 0.2s;
+  }
+  .close-btn:hover {
+    color: #000;
+  }
+
+  .modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .form-group label {
+    font-weight: 500;
+    margin-bottom: 5px;
+  }
+
+  .form-group input,
+  .form-group textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+  }
+
+  textarea {
+    resize: none;
+    height: 80px;
+  }
+
+  .form-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+  }
+
+  .btn {
+    padding: 8px 15px;
+    border-radius: 6px;
+    font-size: 14px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+
+  .btn-primary {
+    background: #0d6efd;
+    color: white;
+  }
+  .btn-primary:hover {
+    background: #0b5ed7;
+  }
+
+  .btn-secondary {
+    background: #6c757d;
+    color: white;
+  }
+  .btn-secondary:hover {
+    background: #5a6268;
+  }
+
+  /* Animation */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideIn {
+    from {
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .animate {
+    animation: slideIn 0.4s ease;
+  }
+</style>
+
+<!-- 🔹 JavaScript for Date Navigation -->
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    const dateInput = document.getElementById("datePicker");
+    const prevBtn = document.getElementById("prevDay");
+    const nextBtn = document.getElementById("nextDay");
+
+    prevBtn.addEventListener("click", function () {
+      let currentDate = new Date(dateInput.value);
+      currentDate.setDate(currentDate.getDate() - 1);
+      dateInput.value = currentDate.toISOString().split("T")[0];
+      dateInput.form.submit();
+    });
+
+    nextBtn.addEventListener("click", function () {
+      let currentDate = new Date(dateInput.value);
+      currentDate.setDate(currentDate.getDate() + 1);
+      dateInput.value = currentDate.toISOString().split("T")[0];
+      dateInput.form.submit();
+    });
+  });
+</script>
+
+<script>
+  function openCorrectionModal(attendanceId, inTime, outTime, date) {
+    document.getElementById("attendance_id").value = attendanceId;
+    document.getElementById("date").value = date;
+    document.getElementById("old_in_time").value = inTime;
+    document.getElementById("old_out_time").value = outTime;
+    document.getElementById("correctionModal").style.display = "block";
+  }
+
+  function closeCorrectionModal() {
+    document.getElementById("correctionModal").style.display = "none";
+  }
+
+  function openCompOffModal(employeeId, date) {
+    document.getElementById("comp_off_employee_id").value = employeeId;
+    document.getElementById("comp_off_from_date").value = date;
+    document.getElementById("comp_off_to_date").value = date;
+    document.getElementById("compOffModal").style.display = "block";
+  }
+
+  function closeCompOffModal() {
+    document.getElementById("compOffModal").style.display = "none";
+  }
+
+  // Handle correction request form submission
+  document
+    .getElementById("correctionForm")
+    .addEventListener("submit", function (event) {
+      event.preventDefault();
+      let formData = new FormData(this);
+
+      fetch("{% url 'submit_correction_request' %}", {
+        method: "POST",
+        body: formData,
+        headers: { "X-CSRFToken": "{{ csrf_token }}" },
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          alert(data.message);
+          closeCorrectionModal();
+        });
+    });
+
+  // Handle Comp-Off request form submission
+  document
+    .getElementById("compOffForm")
+    .addEventListener("submit", function (event) {
+      event.preventDefault();
+      let formData = new FormData(this);
+
+      fetch("{% url 'submit_comp_off_request' %}", {
+        method: "POST",
+        body: formData,
+        headers: { "X-CSRFToken": "{{ csrf_token }}" },
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          alert(data.message);
+          closeCompOffModal();
+        });
+    });
+</script>
+
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends 'base2.html' %}
+{% block body %}
+{% load static %}
+
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">Employee Advances</h5>
+      <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createAdvanceModal">+ New Advance</button>
+    </div>
+
+    <div class="table-responsive text-nowrap p-3">
+      <table class="table table-bordered align-middle text-center">
+        <thead class="table-light">
+          <tr>
+            <th>Employee</th>
+            <th>Total Amount</th>
+            <th>Paid</th>
+            <th>Remaining</th>
+            <th>Status</th>
+            <th>Started</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for adv in advances %}
+          <tr>
+            <td>{{ adv.employee.first_name }}</td>
+            <td>₹{{ adv.total_amount }}</td>
+            <td>₹{{ adv.paid_amount_db|floatformat:2 }}</td>
+            <td>₹{{ adv.remaining_amount_db|floatformat:2 }}</td>
+            <td>
+              {% if adv.is_closed %}
+              <span class="badge bg-success">Closed</span>
+              {% else %}
+              <span class="badge bg-warning text-dark">Active</span>
+              {% endif %}
+            </td>
+            <td>{{ adv.created_on|date:"M Y" }}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-primary" onclick="viewInstallments({{ adv.id }})">View</button>
+              {% if not adv.is_closed %}
+              <button class="btn btn-sm btn-outline-success" onclick="openAddPayment({{ adv.id }})">Add Payment</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted">No advances found</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% include "partials/modals.html" %}
+{% endblock %}

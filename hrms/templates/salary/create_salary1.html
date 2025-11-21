@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Salary Calculator</title>
+  <style>
+    fieldset { border: 1px solid #ccc; padding: 10px; width: 350px; }
+    label { display: inline-block; width: 200px; }
+    .calc-field { margin-bottom: 5px; }
+  </style>
+</head>
+<body>
+
+<h1>Employee Salary Breakup Calculator</h1>
+
+<form id="salaryForm" method="POST" >
+  {% csrf_token %}
+  
+  <!-- Employee Selection -->
+  <label>Employee:</label>
+  <select id="employeeSelect" name="employee">
+    {% for employee in employees %}
+      <option value="{{ employee.id }}">{{ employee.first_name }}</option>
+    {% endfor %}
+  </select>
+  <br><br>
+
+  <!-- Options -->
+  <label>PF Deducted?</label>
+  <input type="checkbox" id="pfDeducted" name="pf_deducted">
+  <br><br>
+
+  <label>Gratuity Applicable?</label>
+  <input type="checkbox" id="gratuityApplicable" name="gratuity_applicable">
+  <br><br>
+
+  <label>ESIC Applicable?</label>
+  <input type="checkbox" id="esicApplicable" name="esic_applicable">
+  <br><br>
+
+  <!-- Basic Inputs -->
+  <label>Gross CTC (P.M):</label>
+  <input type="number" id="grossCtcPm" name="gross_ctc_pm" step="0.01" value="50000">
+  <br><br>
+
+  <label>Basic (P.M):</label>
+  <input type="number" id="basicPm" name="basic_pm" step="0.01" value="21000">
+  <br><br>
+
+  <label>HRA (P.M):</label>
+  <input type="number" id="hraPm" name="hra_pm" step="0.01" value="12600">
+  <br><br>
+
+  <label>Guaranteed Cash (P.M):</label>
+  <input type="number" id="guaranteedCashPm" name="guaranteed_cash_pm" step="0.01" value="48200">
+  <br><br>
+  <label>Cost To Company:</label>
+  <input type="number" id="costToCompany" name="ctc_pm" step="0.01" value="0">
+  <br><br>
+
+  <!-- Computed Fields -->
+  <fieldset>
+    <legend>Calculated Salary Components</legend>
+    
+    <div class="calc-field">PF (Employer) (P.M): <span id="pfErPm">0</span></div>
+    <div class="calc-field">Gratuity (P.M): <span id="gratuityPm">0</span></div>
+    <div class="calc-field">ESIC (Employer) (P.M): <span id="esicErPm">0</span></div>
+    <div class="calc-field">Special Allowance (P.M): <span id="spAllowancePm">0</span></div>
+    <div class="calc-field">Profession Tax (P.M): <span id="professionTaxPm">0</span></div>
+    <div class="calc-field">PF (Employee) (P.M): <span id="pfEePm">0</span></div>
+    <div class="calc-field">ESIC (Employee) (P.M): <span id="esicEePm">0</span></div>
+    <div class="calc-field">Net Salary (P.M): <span id="netSalaryPm">0</span></div>
+  </fieldset>
+  <br>
+
+  <button type="submit">Submit</button>
+</form>
+
+<script>
+  // List of IDs for inputs that trigger recalculation
+  const inputIds = [
+    'pfDeducted', 'gratuityApplicable', 'esicApplicable',
+    'grossCtcPm', 'basicPm', 'hraPm', 'guaranteedCashPm'
+  ];
+
+  // Attach event listeners for real-time calculation
+  inputIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el.type === 'checkbox') {
+      el.addEventListener('change', recalc);
+    } else {
+      el.addEventListener('input', recalc);
+    }
+  });
+
+  function recalc() {
+    // 1. Retrieve input values
+    const pfDeducted = document.getElementById('pfDeducted').checked;
+    const gratuityApplicable = document.getElementById('gratuityApplicable').checked;
+    const esicApplicable = document.getElementById('esicApplicable').checked;
+
+    const grossCtcPm = parseFloat(document.getElementById('grossCtcPm').value) || 0;
+    const basicPm = parseFloat(document.getElementById('basicPm').value) || 0;
+    const hraPm = parseFloat(document.getElementById('hraPm').value) || 0;
+    const guaranteedCashPm = parseFloat(document.getElementById('guaranteedCashPm').value) || 0;
+    const pfErPm1 = parseFloat(document.getElementById('pfErPm').value) || 0;
+    {% comment %} const costToCompany = parseFloat(document.getElementById('costToCompany').value) || 0; {% endcomment %}
+
+    // 2. Calculate PF (Employer)
+    let pfErPm = 0;
+    if (pfDeducted) {
+      pfErPm = Math.min(1800, basicPm * 0.12);
+    }
+
+    // 3. Calculate Gratuity
+    let gratuityPm = 0;
+    if (gratuityApplicable) {
+      gratuityPm = basicPm * 0.0481;
+    }
+
+    // 4. Calculate ESIC (Employer) and (Employee)
+    let esicErPm = 0, esicEePm = 0;
+    if (esicApplicable) {
+      if (guaranteedCashPm <= 21000) {
+        esicErPm = guaranteedCashPm * 0.0375;
+        esicEePm = guaranteedCashPm * 0.0025;
+      } else {
+        // Fixed amounts if Guaranteed Cash exceeds 21000 (as per your table)
+        esicErPm = 750;
+        esicEePm = 50;
+      }
+    }
+
+    // 5. Calculate Special Allowance (Balancing Figure)
+    // (Assuming Stat Bonus, Allowance1, Allowance2 are zero)
+    let sumComponents = basicPm + hraPm + pfErPm + esicErPm + gratuityPm;
+    let spAllowancePm = (grossCtcPm > sumComponents) ? (grossCtcPm - sumComponents) : 0;
+
+    // 6. Calculate Profession Tax
+    let professionTaxPm = (guaranteedCashPm > 10000) ? 200 : 0;
+
+    // 7. PF (Employee) - assumed same as Employer for this example
+    let pfEePm = pfErPm;
+
+    // 8. Calculate Net Salary
+    // For this example: Net Salary = Guaranteed Cash - (PF (Employee) + ESIC (Employee) + Profession Tax)
+    let netSalaryPm = guaranteedCashPm - (pfEePm + esicEePm + professionTaxPm);
+    if (netSalaryPm < 0) netSalaryPm = 0;
+    
+    let costToCompanyPm = guaranteedCashPm + pfEePm + esicEePm + gratuityPm;
+
+    {% comment %} let ctc =  guaranteed_cash_pm + pfEePm + esicEePm {% endcomment %}
+    // 9. Update the UI with calculated values
+    document.getElementById('pfErPm').textContent = pfErPm.toFixed(2);
+    document.getElementById('gratuityPm').textContent = gratuityPm.toFixed(2);
+    document.getElementById('esicErPm').textContent = esicErPm.toFixed(2);
+    document.getElementById('spAllowancePm').textContent = spAllowancePm.toFixed(2);
+    document.getElementById('professionTaxPm').textContent = professionTaxPm.toFixed(2);
+    document.getElementById('pfEePm').textContent = pfEePm.toFixed(2);
+    document.getElementById('esicEePm').textContent = esicEePm.toFixed(2);
+    document.getElementById('netSalaryPm').textContent = netSalaryPm.toFixed(2);
+    document.getElementById('costToCompany').value  = costToCompanyPm.toFixed(2);
+  }
+
+  // Initial calculation on page load
+  recalc();
+</script>
+
+</body>
+</html>

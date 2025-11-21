@@ -1,0 +1,593 @@
+{% extends 'base2.html' %} {% block body %}
+
+<div class="container-xxl flex-grow-1 container-p-y">
+  <!-- DataTable with Buttons -->
+  <div class="card">
+    <!-- Card Header with Title -->
+    <div class="card-body">
+      <!-- Upper Control Row: Two Buttons on the Right -->
+      <div class="row mb-3">
+        <div class="col">
+          <!-- Empty left side or you can add text here if needed -->
+          <h5 class="card-header">Salary Master</h5>
+        </div>
+        <div class="col-auto d-flex align-items-center">
+          <button type="button" class="btn btn-secondary buttons-collection dropdown-toggle btn-label-primary me-4 waves-effect waves-light" onclick="downloadEmployees()">Export</button>
+          {% comment %} <button type="button" class="btn btn-secondary create-new btn-primary waves-effect waves-light" data-bs-toggle="modal" data-bs-target="#employeeModal">Add Employee</button> {% endcomment %}
+          <button class="btn btn-secondary create-new btn-primary waves-effect waves-light" data-bs-toggle="modal" data-bs-target="#salaryModal">
+    💰 Salary Calculator
+</button>
+
+        </div>
+      </div>
+      <hr>
+      <!-- Lower Control Row: Entries Info on Left and Search Bar on Right -->
+      <div class="row mb-3">
+        <div class="col-md-6 d-flex align-items-center">
+          <!-- Example entries info; you can update this as needed -->
+          <div>Showing 1 to 10 of 50 entries</div>
+        </div>
+        <div class="col-md-6 d-flex justify-content-end align-items-center gap-2">
+          <!-- Search Input -->
+          <input
+            type="text"
+            id="searchInput"
+            class="form-control form-control-sm"
+            placeholder="Search..."
+            style="max-width: 200px"
+          />
+        
+          <!-- Status Filter -->
+          <select id="statusFilter" class="form-select form-select-sm" style="max-width: 150px">
+            <option value="all">All</option>
+            <option value="Active">Active</option>
+            <option value="Pending">Pending</option>
+          </select>
+        </div>
+        
+      </div>
+      <!-- Table -->
+<div class="table-responsive text-nowrap">
+  <table class="table table-bordered align-middle text-center">
+    <thead class="table-light">
+      <tr>
+        <th>Emp Code</th>
+        <th>Basic (Monthly)</th>
+        <th>Basic (Yearly)</th>
+        <th>HRA (Monthly)</th>
+        <th>HRA (Yearly)</th>
+        <th>Stat. Bonus (Monthly)</th>
+        <th>Stat. Bonus (Yearly)</th>
+        <th>Allowance 1 (Monthly)</th>
+        <th>Allowance 1 (Yearly)</th>
+        <th>Allowance 2 (Monthly)</th>
+        <th>Allowance 2 (Yearly)</th>
+        <th>Special Allowance (Monthly)</th>
+        <th>Special Allowance (Yearly)</th>
+        <th>Guaranteed Cash (Monthly)</th>
+        <th>Guaranteed Cash (Yearly)</th>
+        <th>PF Employer (Monthly)</th>
+        <th>PF Employer (Yearly)</th>
+        <th>PF Employee (Monthly)</th>
+        <th>PF Employee (Yearly)</th>
+        <th>ESIC Employer (Monthly)</th>
+        <th>ESIC Employer (Yearly)</th>
+        <th>ESIC Employee (Monthly)</th>
+        <th>ESIC Employee (Yearly)</th>
+        <th>Gratuity (Monthly)</th>
+        <th>Gratuity (Yearly)</th>
+        <th>Cost to Company (Monthly)</th>
+        <th>Cost to Company (Yearly)</th>
+        <th>Net Salary (Monthly)</th>
+        <th>Net Salary (Yearly)</th>
+        <th>Status</th>
+        <th class="sticky-actions">Actions</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for employee in salary %}
+      <tr>
+        <td><a href="{% url 'employee_detail' employee.pk %}">{{ employee.employee.employee_code }}</a></td>
+
+        <td>{{ employee.basic_pm|floatformat:2 }}</td>
+        <td>{{ employee.basic_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.hra_pm|floatformat:2 }}</td>
+        <td>{{ employee.hra_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.stat_bonus_pm|floatformat:2 }}</td>
+        <td>{{ employee.stat_bonus_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.allowance1_pm|floatformat:2 }}</td>
+        <td>{{ employee.allowance1_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.allowance2_pm|floatformat:2 }}</td>
+        <td>{{ employee.allowance2_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.special_allowance_pm|floatformat:2 }}</td>
+        <td>{{ employee.special_allowance_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.guaranteed_cash_pm|floatformat:2 }}</td>
+        <td>{{ employee.guaranteed_cash_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.pf_er_cont_pm|floatformat:2 }}</td>
+        <td>{{ employee.pf_er_cont_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.pf_ee_cont_pm|floatformat:2 }}</td>
+        <td>{{ employee.pf_ee_cont_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.esic_er_cont_pm|floatformat:2 }}</td>
+        <td>{{ employee.esic_er_cont_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.esic_ee_cont_pm|floatformat:2 }}</td>
+        <td>{{ employee.esic_ee_cont_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.gratuity_pm|floatformat:2 }}</td>
+        <td>{{ employee.gratuity_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.ctc_pm|floatformat:2 }}</td>
+        <td>{{ employee.ctc_pa|floatformat:2 }}</td>
+
+        <td>{{ employee.net_salary_pm|floatformat:2 }}</td>
+        <td>{{ employee.net_salary_pa|floatformat:2 }}</td>
+
+        <td>
+          {% if employee.employee.status == "Active" %}
+          <span class="badge bg-success">{{ employee.employee.status }}</span>
+          {% elif employee.status == "Pending" %}
+          <span class="badge bg-warning text-dark">{{ employee.employee.status }}</span>
+          {% else %}
+          <span class="badge bg-secondary">{{ employee.employee.status }}</span>
+          {% endif %}
+        </td>
+
+        <td>
+          <div class="dropdown">
+            <button class="btn p-0 dropdown-toggle" data-bs-toggle="dropdown">
+              <i class="ri-more-2-line"></i>
+            </button>
+            <div class="dropdown-menu">
+              <a class="dropdown-item" href="#"><i class="ri-pencil-line me-2"></i>Edit</a>
+              <a class="dropdown-item" href="#"><i class="ri-delete-bin-7-line me-2"></i>Delete</a>
+              <a class="dropdown-item"
+                onclick="viewSalaryDetails({{ employee.id }})">
+                <i class="ri-eye-line"></i> View
+             </a>
+
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+    </div>
+  </div>
+
+
+
+
+
+
+
+
+
+<div class="modal fade" id="salaryDetailsModal" tabindex="-1" aria-labelledby="salaryDetailsLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white p-b-3">
+        <h5 class="modal-title text-white" id="salaryDetailsLabel">Salary Details</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="salaryDetailsBody">
+        <div class="text-center text-muted">Loading details...</div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+
+
+
+
+<!-- Button to trigger modal -->
+<!-- <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#employeeModal">
+  Add Employee
+</button> -->
+
+<div class="modal fade" id="salaryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content salary-modal">
+      <div class="modal-header salary-header">
+        <h5 class="modal-title">Salary Structure Calculator</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <form id="salaryForm" method="POST">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="row g-4">
+
+            <!-- LEFT COLUMN — Enter Values -->
+            <div class="col-md-6">
+              <div class="card h-100 border shadow-none">
+                <div class="card-body">
+                  <h6 class="fw-bold text-primary mb-3">Enter Values</h6>
+
+                  <div class="mb-3">
+                    <label class="form-label">Select Employee</label>
+                    <select class="form-select" id="employeeSelect" name="employee">
+                      <option value="">-- Select Employee --</option>
+                      {% for employee in employees %}
+                        <option value="{{ employee.id }}">{{ employee.first_name }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+
+                  <div class="mb-3">
+                    <label class="form-label">Gross CTC (Monthly)</label>
+                    <input type="number" class="form-control" id="grossCTC" name="gross_ctc_pm" step="0.01">
+                  </div>
+
+                  <div class="row g-2">
+                    <div class="col-md-6">
+                      <label class="form-label">Allowance 1</label>
+                      <input type="number" class="form-control" id="allowance1" name="allowance1_pm">
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label">Allowance 2</label>
+                      <input type="number" class="form-control" id="allowance2" name="allowance2_pm">
+                    </div>
+                  </div>
+
+                  <div class="mt-3">
+                    <label class="form-label">Professional Tax (override if needed)</label>
+                    <input type="number" class="form-control" id="profTax" name="profession_tax_pm" placeholder="Auto from settings (can override)">
+                  </div>
+
+                  <hr>
+
+                  <div class="row g-2">
+                    <div class="col-md-4">
+                      <label class="form-label">Include PF?</label>
+                      <select class="form-select" name="pf_deducted" id="pfSelect">
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label">Include ESIC?</label>
+                      <select class="form-select" id="esicSelect" name="esic_applicable">
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <label class="form-label">Include Gratuity?</label>
+                      <select class="form-select" name="gratuity_applicable" id="gratuitySelect">
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- RIGHT COLUMN — Monthly Breakdown -->
+            <div class="col-md-6">
+              <div class="card h-100 border shadow-none">
+                <div class="card-body">
+                  <h6 class="fw-bold text-primary mb-3">Monthly Breakdown</h6>
+
+                  <div class="row g-2">
+                    <div class="col-6">
+                      <label class="form-label">Basic</label>
+                      <input type="number" id="basic" class="form-control editable-calc" name="basic_pm" step="0.01">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">HRA</label>
+                      <input type="number" id="hra" class="form-control editable-calc" name="hra_pm" step="0.01">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">Stat Bonus</label>
+                      <input type="number" id="statBonus" class="form-control editable-calc" name="stat_bonus_pm" step="0.01">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">Special Allowance</label>
+                      <input type="number" id="specialAllowance" class="form-control editable-calc" name="sp_allowance_pm" step="0.01">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">Guaranteed Cash</label>
+                      <input type="number" id="guaranteedCash" class="form-control" name="guaranteed_cash_pm" readonly>
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">PF (Employer)</label>
+                      <input type="number" id="pfEr" class="form-control editable-calc" name="pf_er_cont_pm" step="0.01">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">PF (Employee)</label>
+                      <input type="number" id="pfEe" class="form-control" name="pf_ee_cont_pm" readonly>
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">ESIC (Employer)</label>
+                      <input type="number" id="esicEr" class="form-control editable-calc" name="esic_er_cont_pm" step="0.01">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">ESIC (Employee)</label>
+                      <input type="number" id="esicEe" class="form-control editable-calc" name="esic_ee_cont_pm" step="0.01">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">Gratuity</label>
+                      <input type="number" id="gratuity" class="form-control editable-calc" name="gratuity_pm" step="0.01">
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">CTC</label>
+                      <input type="number" id="costToCompany" class="form-control" name="ctc_pm" readonly>
+                    </div>
+                    <div class="col-6">
+                      <label class="form-label">Net Salary</label>
+                      <input type="number" id="netSalary" class="form-control text-success fw-bold editable-calc" name="net_salary_pm" step="0.01">
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- COLLAPSIBLE ANNUAL FIGURES -->
+            <div class="col-12 mt-3">
+              <div class="card border shadow-none">
+                <div class="card-header d-flex justify-content-between align-items-center bg-light">
+                  <h6 class="fw-bold text-primary mb-0">Annual Figures</h6>
+                  <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#annualCollapse" aria-expanded="false">
+                    <i class="ri-arrow-down-s-line me-1"></i>Toggle
+                  </button>
+                </div>
+
+                <div id="annualCollapse" class="collapse">
+                  <div class="card-body">
+                    <div class="row g-3 mt-5">
+                      <div class="col-md-3"><label>Gross CTC</label><input type="number" id="grossCTCAnn" name="gross_ctc_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>Basic</label><input type="number" id="basicAnn" name="basic_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>HRA</label><input type="number" id="hraAnn" name="hra_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>Stat Bonus</label><input type="number" id="statBonusAnn" name="stat_bonus_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>Prof. Tax</label><input type="number" id="profTaxAnn" name="profession_tax_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>Special Allowance</label><input type="number" id="specialAllowanceAnn" name="sp_allowance_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>Allowance 1</label><input type="number" id="allowance1Ann" name="allowance1_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>Allowance 2</label><input type="number" id="allowance2Ann" name="allowance2_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>Guaranteed Cash</label><input type="number" id="guaranteedCashAnn" name="guaranteed_cash_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>PF Employer</label><input type="number" id="pfErAnn" name="pf_er_cont_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>ESIC Employer</label><input type="number" id="esicErAnn" name="esic_er_cont_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>PF Employee</label><input type="number" id="pfEeAnn" name="pf_ee_cont_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>ESIC Employee</label><input type="number" id="esicEeAnn" name="esic_ee_cont_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>CTC</label><input type="number" id="costToCompanyAnn" name="ctc_pa" class="form-control" readonly></div>
+                      <div class="col-md-3"><label>Net Salary</label><input type="number" id="netSalaryAnn" name="net_salary_pa" class="form-control text-success fw-bold" readonly></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <small id="settingsStatus" class="text-muted me-auto"></small>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary" id="saveSalary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+</div>
+
+
+
+
+
+<!-- ===== JS SCRIPT ===== -->
+<script>
+  let payrollSettings = {
+    pf_percentage: 0.00,
+    esic_percentage: 0.00,
+    gratuity_percentage: 0.00,
+    professional_tax: 0.00,
+    bonus_percentage: 0.00,
+    basic_percentage: 0.00,
+    hra_percentage: 0.00,
+    basic_cap: 0.00
+  };
+
+  // 🔹 Load default settings from backend
+  async function loadPayrollSettings() {
+    try {
+      const response = await fetch("/payroll-settings/");
+      const data = await response.json();
+      payrollSettings = data;
+      document.getElementById('settingsStatus').innerText = "✅ Settings loaded from system";
+      calculateSalary();
+    } catch (error) {
+      console.error("Error loading payroll settings:", error);
+      document.getElementById('settingsStatus').innerText = "⚠️ Could not load system settings";
+    }
+  }
+
+  function getOverrideValue(id, defaultValue) {
+    const el = document.getElementById(id);
+    if (!el) return defaultValue;
+    const val = parseFloat(el.value);
+    if (!isNaN(val)) {
+      el.classList.add("border-warning", "bg-light");
+      return val;
+    }
+    el.classList.remove("border-warning", "bg-light");
+    return defaultValue;
+  }
+
+  function calculateSalary() {
+    const pfSelect = document.getElementById('pfSelect').value.toLowerCase();
+    const gratuitySelect = document.getElementById('gratuitySelect').value.toLowerCase();
+    const esicSelect = document.getElementById('esicSelect').value.toLowerCase();
+    const grossCTC = parseFloat(document.getElementById('grossCTC').value) || 0;
+    const allowance1 = parseFloat(document.getElementById('allowance1').value) || 0;
+    const allowance2 = parseFloat(document.getElementById('allowance2').value) || 0;
+    const profTax = payrollSettings.professional_tax || 0;
+
+    // Override percentages
+    const basicPerc = getOverrideValue('overrideBasic', payrollSettings.basic_percentage);
+    const hraPerc = getOverrideValue('overrideHra', payrollSettings.hra_percentage);
+    const basicCap = getOverrideValue('overrideCap', payrollSettings.basic_cap);
+    const pfPerc = getOverrideValue('overridePf', payrollSettings.pf_percentage);
+    const esicPerc = getOverrideValue('overrideEsic', payrollSettings.esic_percentage);
+    const gratuityPerc = getOverrideValue('overrideGratuity', payrollSettings.gratuity_percentage);
+
+    // Calculate base values
+    let basic = Math.min(grossCTC * (basicPerc / 100), basicCap);
+    let hra = basic * (hraPerc / 100);
+    let statBonus = (basic < basicCap) ? Math.round(7000 * (payrollSettings.bonus_percentage / 100)) : 0;
+    let pfEr = (pfSelect === "yes") ? Math.min(basic * (pfPerc / 100), 1800) : 0;
+    let gratuity = (gratuitySelect === "yes") ? Math.round(basic * (gratuityPerc / 100)) : 0;
+
+    let esicEr = 0;
+    let esicEe = 0;
+
+    let specialAllowance = grossCTC - (basic + hra + statBonus + allowance1 + allowance2 + pfEr + gratuity);
+    let guaranteedCash = basic + hra + statBonus + allowance1 + allowance2 + specialAllowance;
+
+    // ✅ ESIC Calculation — both employer & employee same
+    if (esicSelect === "yes" && guaranteedCash < 21000) {
+      esicEr = guaranteedCash * (esicPerc / 100);
+      esicEe = esicEr; // 👈 Make both same
+    }
+
+    specialAllowance = grossCTC - (basic + hra + statBonus + allowance1 + allowance2 + pfEr + esicEr + gratuity);
+    guaranteedCash = basic + hra + statBonus + allowance1 + allowance2 + specialAllowance;
+
+    const costToCompany = guaranteedCash + pfEr + esicEr + gratuity;
+    const pfEe = pfEr;
+    const netSalary = guaranteedCash - pfEe - esicEe - profTax;
+
+    // 🔹 Allow manual overrides
+    const fields = ['basic', 'hra', 'statBonus', 'specialAllowance', 'pfEr', 'esicEr', 'gratuity', 'netSalary'];
+    fields.forEach(id => {
+      const el = document.getElementById(id);
+      const manualVal = parseFloat(el?.value);
+      if (!isNaN(manualVal) && el.dataset.manual === "true") {
+        return; // Keep manual
+      } else {
+        if (el) el.value = eval(id).toFixed(2);
+      }
+    });
+
+    // ✅ Assign matching ESIC Employee value
+    document.getElementById('esicEe').value = esicEe.toFixed(2);
+
+    // Update read-only fields
+    document.getElementById('costToCompany').value = costToCompany.toFixed(2);
+    document.getElementById('guaranteedCash').value = guaranteedCash.toFixed(2);
+
+    // Annual
+    ['grossCTC', 'basic', 'hra', 'statBonus', 'profTax', 'specialAllowance', 'allowance1', 'allowance2',
+    'guaranteedCash', 'pfEr', 'pfEe', 'esicEr', 'esicEe', 'costToCompany', 'netSalary'].forEach(f => {
+      const m = parseFloat(document.getElementById(f)?.value) || 0;
+      const annEl = document.getElementById(f + 'Ann');
+      if (annEl) annEl.value = (m * 12).toFixed(2);
+    });
+  }
+
+  // 🔹 Detect manual overrides (HR typed manually)
+  function markManualOverride(e) {
+    e.target.dataset.manual = "true";
+    e.target.classList.add("border-warning");
+  }
+
+  document.addEventListener("DOMContentLoaded", function() {
+    loadPayrollSettings();
+
+    // Recalculate on input/change
+    document.querySelectorAll("input, select").forEach(el => {
+      el.addEventListener("input", calculateSalary);
+      el.addEventListener("change", calculateSalary);
+    });
+
+    // Mark manual override fields
+    document.querySelectorAll("#salaryModal input[id]").forEach(el => {
+      el.addEventListener("input", markManualOverride);
+    });
+
+    // Reset overrides
+    document.getElementById("resetOverrides").addEventListener("click", () => {
+      document.querySelectorAll("#salaryModal input[id^='override']").forEach(i => i.value = "");
+      document.querySelectorAll("#salaryModal input[data-manual='true']").forEach(i => {
+        i.value = "";
+        i.dataset.manual = "false";
+        i.classList.remove("border-warning");
+      });
+      calculateSalary();
+    });
+  });
+</script>
+
+
+{% comment %} detail view js {% endcomment %}
+
+<script>
+async function viewSalaryDetails(salaryId) {
+  const modalBody = document.getElementById("salaryDetailsBody");
+  modalBody.innerHTML = `<div class="text-center py-3"><i class="ri-loader-4-line ri-spin"></i> Loading...</div>`;
+
+  // Open modal immediately
+  const salaryModal = new bootstrap.Modal(document.getElementById("salaryDetailsModal"));
+  salaryModal.show();
+
+  try {
+    const response = await fetch(`/salary/details/${salaryId}/`);
+    if (!response.ok) throw new Error("Failed to fetch");
+    const data = await response.json();
+
+    modalBody.innerHTML = `
+      <div class="table-responsive">
+        <table class="table table-bordered table-sm mb-0">
+          <tbody>
+            <tr><th>Employee</th><td>${data.employee_name}</td></tr>
+            <tr><th>Gross CTC (Monthly)</th><td>${data.gross_ctc_pm}</td></tr>
+            <tr><th>Basic</th><td>${data.basic_pm}</td></tr>
+            <tr><th>HRA</th><td>${data.hra_pm}</td></tr>
+            <tr><th>Stat Bonus</th><td>${data.stat_bonus_pm}</td></tr>
+            <tr><th>Special Allowance</th><td>${data.sp_allowance_pm}</td></tr>
+            <tr><th>Guaranteed Cash</th><td>${data.guaranteed_cash_pm}</td></tr>
+            <tr><th>PF (Employer)</th><td>${data.pf_er_cont_pm}</td></tr>
+            <tr><th>PF (Employee)</th><td>${data.pf_ee_cont_pm}</td></tr>
+            <tr><th>ESIC (Employer)</th><td>${data.esic_er_cont_pm}</td></tr>
+            <tr><th>ESIC (Employee)</th><td>${data.esic_ee_cont_pm}</td></tr>
+            <tr><th>Gratuity</th><td>${data.gratuity_pm}</td></tr>
+            <tr><th>Professional Tax</th><td>${data.profession_tax_pm}</td></tr>
+            <tr><th>Net Salary</th><td class="text-success fw-bold">${data.net_salary_pm}</td></tr>
+            <tr><th>CTC</th><td class="fw-bold">${data.ctc_pm}</td></tr>
+            <tr><th>PF Deducted</th><td>${data.pf_deducted ? "Yes" : "No"}</td></tr>
+            <tr><th>ESIC Applicable</th><td>${data.esic_applicable ? "Yes" : "No"}</td></tr>
+            <tr><th>Gratuity Applicable</th><td>${data.gratuity_applicable ? "Yes" : "No"}</td></tr>
+            <tr class="table-light"><th colspan="2" class="text-center fw-bold">Annual Figures</th></tr>
+            <tr><th>Gross CTC (Ann)</th><td>${data.gross_ctc_pa}</td></tr>
+            <tr><th>Net Salary (Ann)</th><td>${data.net_salary_pa}</td></tr>
+            <tr><th>CTC (Ann)</th><td>${data.ctc_pa}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    modalBody.innerHTML = `<div class="alert alert-danger">⚠️ Failed to load salary details.</div>`;
+  }
+}
+</script>
+
+{% endblock %}

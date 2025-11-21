@@ -1,0 +1,90 @@
+<div class="mb-3">
+  <h6 class="fw-bold">Advance Summary</h6>
+  <div class="d-flex justify-content-between align-items-center border rounded p-3 bg-light">
+    <div>
+      <strong>Employee:</strong> {{ advance.employee.first_name }}<br>
+      <strong>Total Advance:</strong> ₹{{ advance.total_amount }}<br>
+      <strong>Status:</strong>
+      {% if advance.status == "Closed" %}
+        <span class="badge bg-success">Closed</span>
+      {% else %}
+        <span class="badge bg-primary">Active</span>
+      {% endif %}
+    </div>
+
+    <div class="text-end">
+      <strong>Paid:</strong> ₹{{ advance.paid_amount_value }}<br>
+      <strong>Remaining:</strong> ₹{{ advance.remaining_amount }}
+    </div>
+  </div>
+</div>
+
+<!-- ✅ Progress Bar -->
+<div class="progress my-3" style="height: 20px;">
+  {% with progress=advance.paid_amount_value|divisibleby:advance.total_amount %}
+  {% endwith %}
+  <div class="progress-bar bg-success" role="progressbar"
+       style="width: {{ advance.paid_amount_value|floatformat:2|divisibleby:advance.total_amount|floatformat:2 }}%">
+    ₹{{ advance.paid_amount_value }} / ₹{{ advance.total_amount }}
+  </div>
+</div>
+
+<!-- ✅ Add Payment Button -->
+<div class="text-end mb-3">
+  <button class="btn btn-sm btn-primary" data-bs-toggle="modal"
+          data-bs-target="#addPaymentModal"
+          onclick="document.getElementById('paymentForm').dataset.advanceId = '{{ advance.id }}'">
+    + Add Payment
+  </button>
+</div>
+
+<!-- ✅ Installments Table -->
+<table class="table table-bordered align-middle text-center">
+  <thead class="table-light">
+    <tr>
+      <th>#</th>
+      <th>Month</th>
+      <th>Amount (₹)</th>
+      <th>Status</th>
+      <th>Paid On</th>
+      <th>Include in Payroll</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for inst in installments %}
+    <tr class="{% if inst.is_paid %}table-success{% endif %}">
+      <td>{{ forloop.counter }}</td>
+      <td>{{ inst.month|date:"M Y" }}</td>
+      <td>{{ inst.amount }}</td>
+      <td>
+        {% if inst.is_paid %}
+          <span class="badge bg-success">Paid</span>
+        {% else %}
+          <span class="badge bg-warning text-dark">Pending</span>
+        {% endif %}
+      </td>
+      <td>{{ inst.paid_on|date:"d M Y" }}</td>
+      <td>
+        <input type="checkbox" {% if inst.include_in_payroll %}checked{% endif %}
+               onchange="toggleDeduction({{ inst.id }}, this)">
+      </td>
+      <td>
+        {% if not inst.is_paid %}
+          <button class="btn btn-sm btn-outline-success" onclick="markPaid({{ inst.id }}, this)">
+            Mark as Paid
+          </button>
+        {% else %}
+          <button class="btn btn-sm btn-outline-danger" onclick="undoPaid({{ inst.id }}, this)">
+            Undo
+          </button>
+        {% endif %}
+      </td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="7" class="text-muted">No payments yet. Click “Add Payment” to begin.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

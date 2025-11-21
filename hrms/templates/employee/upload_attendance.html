@@ -1,0 +1,21 @@
+{% extends 'base.html' %} {% block content %}
+<div class="page-wrapper">
+  <div class="content">
+    <h2>Upload Attendance Excel</h2>
+
+    {% if messages %} {% for message in messages %}
+    <p
+      style="color: {% if message.tags == 'error' %}red{% else %}green{% endif %};"
+    >
+      {{ message }}
+    </p>
+    {% endfor %} {% endif %}
+
+    <form method="post" enctype="multipart/form-data">
+      {% csrf_token %}
+      <input type="file" name="attendance_file" accept=".xlsx, .xls" required />
+      <button type="submit">Upload</button>
+    </form>
+    {% endblock %}
+  </div>
+</div>

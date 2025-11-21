@@ -1,0 +1,176 @@
+{% extends 'base2.html' %} 
+{% block body %}
+
+<div class="page-wrapper">
+  <div class="content">
+    <h2>Today's Attendance</h2>
+    <table border="1">
+      <tr>
+        <th>Employee Name</th>
+        <th>In Time</th>
+        <th>Out Time</th>
+        <th>Status</th>
+        <th>Actions</th>
+        <th>Raise Approval</th>
+        <th>Raise Comp-Off</th>
+      </tr>
+      {% for record in attendance_records %}
+      <tr>
+        <td>{{ record.employee.first_name }}</td>
+        <td>{{ record.in_time|default:"Not Available" }}</td>
+        <td>{{ record.out_time|default:"Not Available" }}</td>
+<td>{{ record.status }}</td>
+        <td>
+          <a href="{% url 'employee_attendance_detail' record.employee.id %}"
+            >View Details</a
+          >
+        </td>
+        <td>
+          <button
+            class="btn btn-warning"
+            onclick="openCorrectionModal('{{ record.id }}', '{{ record.in_time }}', '{{ record.out_time }}', '{{ record.date }}')"
+          >
+            Raise an Approval
+          </button>
+        </td>
+        <td>
+          <button
+            class="btn btn-info"
+            onclick="openCompOffModal('{{ record.employee.id }}', '{{ record.date }}')"
+          >
+            Raise Comp-Off
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <!-- Correction Request Modal -->
+    <div id="correctionModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <span class="close" onclick="closeCorrectionModal()">&times;</span>
+        <h3>Request Attendance Correction</h3>
+        <form id="correctionForm">
+          <input type="hidden" id="attendance_id" name="attendance_id" />
+          <label>Date:</label>
+          <input type="text" id="date" name="date" readonly />
+
+          <label>Current In Time:</label>
+          <input type="text" id="old_in_time" name="old_in_time" readonly />
+
+          <label>Current Out Time:</label>
+          <input type="text" id="old_out_time" name="old_out_time" readonly />
+
+          <label>New In Time:</label>
+          <input type="time" id="new_in_time" name="new_in_time" required />
+
+          <label>New Out Time:</label>
+          <input type="time" id="new_out_time" name="new_out_time" required />
+
+          <label>Reason:</label>
+          <textarea id="reason" name="reason" required></textarea>
+
+          <button type="submit">Send Request</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Comp-Off Request Modal -->
+    <div id="compOffModal" class="modal" style="display: none">
+      <div class="modal-content">
+        <span class="close" onclick="closeCompOffModal()">&times;</span>
+        <h3>Request Comp-Off</h3>
+        <form id="compOffForm">
+          <input type="hidden" id="comp_off_employee_id" name="employee_id" />
+          <label>From Date:</label>
+          <input
+            type="date"
+            id="comp_off_from_date"
+            name="from_date"
+            required
+          />
+
+          <label>To Date:</label>
+          <input type="date" id="comp_off_to_date" name="to_date" required />
+
+          <label>Reason:</label>
+          <textarea id="comp_off_reason" name="reason" required></textarea>
+
+          <button type="submit">Send Request</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  function openCorrectionModal(attendanceId, inTime, outTime, date) {
+    document.getElementById("attendance_id").value = attendanceId;
+    document.getElementById("date").value = date;
+    document.getElementById("old_in_time").value = inTime;
+    document.getElementById("old_out_time").value = outTime;
+
+    document.getElementById("correctionModal").style.display = "block";
+  }
+
+  function closeCorrectionModal() {
+    document.getElementById("correctionModal").style.display = "none";
+  }
+
+  function openCompOffModal(employeeId, date) {
+    document.getElementById("comp_off_employee_id").value = employeeId;
+    document.getElementById("comp_off_from_date").value = date;
+    document.getElementById("comp_off_to_date").value = date;
+
+    document.getElementById("compOffModal").style.display = "block";
+  }
+
+  function closeCompOffModal() {
+    document.getElementById("compOffModal").style.display = "none";
+  }
+
+  // Handle correction request form submission
+  document
+    .getElementById("correctionForm")
+    .addEventListener("submit", function (event) {
+      event.preventDefault();
+
+      let formData = new FormData(this);
+
+      fetch("/submit-correction-request/", {
+        method: "POST",
+        body: formData,
+        headers: {
+          "X-CSRFToken": "{{ csrf_token }}",
+        },
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          alert(data.message);
+          closeCorrectionModal();
+        });
+    });
+
+  // Handle Comp-Off request form submission
+  document
+    .getElementById("compOffForm")
+    .addEventListener("submit", function (event) {
+      event.preventDefault();
+
+      let formData = new FormData(this);
+
+      fetch("/submit-comp-off-request/", {
+        method: "POST",
+        body: formData,
+        headers: {
+          "X-CSRFToken": "{{ csrf_token }}",
+        },
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          alert(data.message);
+          closeCompOffModal();
+        });
+    });
+</script>
+
+{% endblock %}

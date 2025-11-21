@@ -1,0 +1,26 @@
+{% if compoffs %}
+  <table class="table table-bordered align-middle text-center">
+    <thead class="table-light">
+      <tr>
+        <th>From Date</th>
+        <th>To Date</th>
+        <th>Days</th>
+        <th>Reason</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in compoffs %}
+      <tr>
+        <td>{{ c.from_date }}</td>
+        <td>{{ c.to_date }}</td>
+        <td>{{ c.days }}</td>  {# ✅ Directly uses the Python-calculated days #}
+        <td>{{ c.reason|default:"—" }}</td>
+        <td><span class="badge bg-success">{{ c.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <div class="text-center text-muted p-3">No comp-off records found.</div>
+{% endif %}

@@ -1,0 +1,141 @@
+
+{% extends 'base.html' %}
+{% block content %}
+
+<button onclick="downloadEmployees()">Download All Employees</button>
+
+
+<h2>Pending Attendance Approvals</h2>
+<table border="1">
+    <tr>
+        <th>Employee</th>
+        <th>Date</th>
+        <th>Old In Time</th>
+        <th>Old Out Time</th>
+        <th>New In Time</th>
+        <th>New Out Time</th>
+        <th>Reason</th>
+        <th>Action</th>
+    </tr>
+    {% for request in requests %}
+    <tr>
+        <td>{{ request.attendance.employee.first_name }}</td>
+        <td>{{ request.attendance.date }}</td>
+        <td>{{ request.attendance.in_time }}</td>
+        <td>{{ request.attendance.out_time }}</td>
+        <td>{{ request.new_in_time }}</td>
+        <td>{{ request.new_out_time }}</td>
+        <td>{{ request.reason }}</td>
+        <td>
+            <button onclick="approveRequest({{ request.id }})">Approve</button>
+            <button onclick="rejectRequest({{ request.id }})">Reject</button>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+
+
+<h2>Pending CompOff Approvals</h2>
+<table border="1">
+    <tr>
+        <th>Employee</th>
+        <th>Date</th>
+        <th>Requested Leave Date</th>                                                             
+        <th>Reason</th>
+        <th>Action</th>
+    </tr>
+    {% for compoff in compoff_requests %}
+    <tr>
+        <td>{{ compoff.employee.first_name }}</td>
+        <td>{{ compoff.from_date }}</td>
+        <td>{{ compoff.to_date }}</td>
+        <td>{{ compoff.reason }}</td>
+        <td>
+            <button onclick="approveCompOff({{ compoff.id }})">Approve</button>
+            <button onclick="rejectCompOff({{ compoff.id }})">Reject</button>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<script>
+    function approveCompOff(compoffId) {
+        fetch(`/approve-compoff/${compoffId}/`, {
+            method: "POST",
+            headers: { "X-CSRFToken": "{{ csrf_token }}" }
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            location.reload();
+        });
+    }
+
+    function rejectCompOff(compoffId) {
+        let reason = prompt("Enter rejection reason:");
+        if (!reason) {
+            alert("Rejection reason is required.");
+            return;
+        }
+
+        fetch(`/reject-compoff/${compoffId}/`, {
+            method: "POST",
+            body: JSON.stringify({ reason: reason, status: 'Rejected' }),
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token }}"
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            location.reload();
+        });
+    }
+</script>
+
+
+<script>
+    function approveRequest(requestId) {
+        fetch(`/approve-correction/${requestId}/`, {
+            method: "POST",
+            headers: { "X-CSRFToken": "{{ csrf_token }}" }
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            location.reload();
+        });
+    }
+
+
+    function rejectRequest(requestId) {
+        let reason = prompt("Enter rejection reason:");
+        if (!reason) {
+            alert("Rejection reason is required.");
+            return;
+        }
+    
+        fetch(`/reject-correction/${requestId}/`, { // ✅ Correct URL
+            method: "POST",
+            body: JSON.stringify({ reason: reason, status: 'Rejected' }),
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token }}"
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            location.reload();
+        });
+    }
+    
+
+
+    function downloadEmployees() {
+        window.location.href = "{% url 'download_employees' %}";
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,117 @@
+{% extends 'base2.html' %}
+{% load static %}
+{% block body %}
+
+<div class="container-fluid py-3">
+    <div class="card shadow-sm rounded-3 p-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h4 class="mb-0 text-primary">
+                <i class="ri-calendar-check-line me-2"></i>Attendance History – {{ employee.first_name }}
+            </h4>
+            <a href="" class="btn btn-sm btn-outline-secondary">
+                <i class="ri-arrow-left-line me-1"></i> Back
+            </a>
+        </div>
+
+        <!-- Filter Section -->
+        <form method="GET" class="row g-2 align-items-end mb-3">
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Year</label>
+                <select name="year" class="form-select form-select-sm">
+                    <option value="" {% if not selected_year %}selected{% endif %}>All Years</option>
+                    {% for year in years %}
+                    <option value="{{ year.year }}" {% if selected_year == year.year|stringformat:"s" %}selected{% endif %}>
+                        {{ year.year }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label fw-semibold">Month</label>
+                <select name="month" class="form-select form-select-sm">
+                    <option value="" {% if not selected_month %}selected{% endif %}>All Months</option>
+                    {% for month in months %}
+                    <option value="{{ month.month }}" {% if selected_month == month.month|stringformat:"s" %}selected{% endif %}>
+                        {{ month|date:"F" }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-sm btn-primary mt-auto">
+                    <i class="ri-filter-2-line me-1"></i> Filter
+                </button>
+                <a href="{% url 'employee_attendance_detail' employee.id %}" class="btn btn-sm btn-outline-secondary mt-auto">
+                    <i class="ri-refresh-line me-1"></i> Reset
+                </a>
+            </div>
+        </form>
+
+        <!-- Attendance Table -->
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th>In Time</th>
+                        <th>Out Time</th>
+                        <th>Working Hours</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in attendance_records %}
+                    <tr>
+                        <td>{{ record.date|date:"d M Y" }}</td>
+                        <td>{{ record.in_time|default:"—" }}</td>
+                        <td>{{ record.out_time|default:"—" }}</td>
+                        <td>
+                            {% if record.in_time and record.out_time %}
+                                {{ record.working_hours|floatformat:2 }} hrs
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record.status == "Present" %}
+                                <span class="badge bg-success">Present</span>
+                            {% elif record.status == "Absent" %}
+                                <span class="badge bg-danger">Absent</span>
+                            {% elif record.status == "Half-day" %}
+                                <span class="badge bg-warning text-dark">Half-day</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{{ record.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">No attendance records found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if attendance_records.has_other_pages %}
+        <div class="d-flex justify-content-between align-items-center mt-3">
+            <span class="text-muted small">
+                Page {{ attendance_records.number }} of {{ attendance_records.paginator.num_pages }}
+            </span>
+            <div>
+                {% if attendance_records.has_previous %}
+                    <a href="?page={{ attendance_records.previous_page_number }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+                {% endif %}
+                {% if attendance_records.has_next %}
+                    <a href="?page={{ attendance_records.next_page_number }}" class="btn btn-sm btn-outline-primary">Next</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

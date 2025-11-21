@@ -1,0 +1,264 @@
+<!-- ✅ CREATE ADVANCE MODAL -->
+<div class="modal fade" id="createAdvanceModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">Create Employee Advance</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="advanceForm">
+          {% csrf_token %}
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label>Employee</label>
+              <select class="form-select" name="employee" required>
+                {% for emp in employees %}
+                <option value="{{ emp.id }}">{{ emp.first_name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label>Total Advance Amount (₹)</label>
+              <input type="number" name="total_amount" class="form-control" required>
+            </div>
+
+            <div class="col-md-6">
+              <label>Start Month</label>
+              <input type="month" name="start_month" class="form-control" required>
+            </div>
+
+            <div class="col-12">
+              <label>Remarks (optional)</label>
+              <textarea name="remarks" class="form-control" placeholder="E.g. Medical expense, loan advance..."></textarea>
+            </div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" onclick="submitAdvance()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ ADD PAYMENT MODAL -->
+<div class="modal fade" id="addPaymentModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form id="paymentForm">
+        {% csrf_token %}
+        <div class="modal-header bg-primary text-white">
+          <h5 class="modal-title">Record Advance Payment</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="advanceId" name="advance_id">
+          <div class="mb-3">
+            <label>Payment Month</label>
+            <input type="month" class="form-control" name="month" required>
+          </div>
+          <div class="mb-3">
+            <label>Amount (₹)</label>
+            <input type="number" class="form-control" name="amount" step="0.01" required>
+          </div>
+          <div class="mb-3">
+            <label>Remarks (optional)</label>
+            <textarea class="form-control" name="remarks" placeholder="E.g. Partial payment due to expenses"></textarea>
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" name="is_paid" id="isPaidCheckbox" checked>
+            <label class="form-check-label" for="isPaidCheckbox">Mark as paid immediately</label>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ VIEW INSTALLMENTS MODAL -->
+<div class="modal fade" id="installmentModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">Advance Payment History</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="installmentBody">
+        <div class="text-center text-muted p-4">Loading...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ✅ JS SECTION -->
+<script>
+let currentAdvanceId = null;
+
+// Load installments modal
+function viewInstallments(advanceId) {
+  currentAdvanceId = advanceId;
+  const modalEl = document.getElementById('installmentModal');
+  const body = document.getElementById('installmentBody');
+  const modal = new bootstrap.Modal(modalEl);
+  body.innerHTML = `<div class='text-center text-muted p-4'>Loading...</div>`;
+  modal.show();
+
+  fetch(`/advances/${advanceId}/installments/`)
+    .then(res => res.json())
+    .then(data => {
+      body.innerHTML = data.html;
+    })
+    .catch(() => {
+      body.innerHTML = `<div class='alert alert-danger'>Failed to load data.</div>`;
+    });
+}
+
+// Open Add Payment Modal
+function openAddPayment(advanceId) {
+  document.getElementById("advanceId").value = advanceId;
+  const modal = new bootstrap.Modal(document.getElementById('addPaymentModal'));
+  modal.show();
+}
+
+// Handle Create Advance
+function submitAdvance() {
+  const form = document.getElementById("advanceForm");
+  const formData = new FormData(form);
+
+  fetch("{% url 'create-advance' %}", {
+    method: "POST",
+    body: formData,
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.status === "success") {
+      Swal.fire("✅ Success", data.message, "success").then(() => location.reload());
+    } else {
+      Swal.fire("⚠️ Error", data.message, "error");
+    }
+  })
+  .catch(() => Swal.fire("Error", "Something went wrong", "error"));
+}
+
+// Handle Add Payment
+document.getElementById("paymentForm").addEventListener("submit", function(e) {
+  e.preventDefault();
+  const form = e.target;
+  const formData = new FormData(form);
+  const advanceId = formData.get("advance_id");
+
+  fetch(`/advances/${advanceId}/add-installment/`, {
+    method: "POST",
+    body: formData,
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.status === "success") {
+      Swal.fire("✅ Success", data.message, "success").then(() => {
+        viewInstallments(advanceId);
+      });
+    } else {
+      Swal.fire("⚠️ Error", data.message, "error");
+    }
+  })
+  .catch(() => Swal.fire("Error", "Something went wrong", "error"));
+});
+
+// Mark Paid
+function markPaid(installmentId) {
+  const mainModal = bootstrap.Modal.getInstance(document.getElementById('installmentModal'));
+  mainModal.hide();
+
+  Swal.fire({
+    title: "Mark as Paid?",
+    text: "Confirm this payment as completed?",
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonText: "Yes, mark as paid",
+  }).then((result) => {
+    if (result.isConfirmed) {
+      fetch(`/advances/mark-paid/${installmentId}/`, { method: "POST" })
+        .then(res => res.json())
+        .then(data => {
+          Swal.fire("✅ Done", data.message, "success").then(() => {
+            viewInstallments(currentAdvanceId);
+          });
+        });
+    } else {
+      mainModal.show();
+    }
+  });
+}
+
+// Undo Paid
+function undoPaid(installmentId) {
+  const mainModal = bootstrap.Modal.getInstance(document.getElementById('installmentModal'));
+  mainModal.hide();
+
+  Swal.fire({
+    title: "Undo Payment?",
+    text: "This payment will be reverted to pending.",
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonText: "Yes, Undo"
+  }).then((result) => {
+    if (result.isConfirmed) {
+      fetch(`/advances/undo-paid/${installmentId}/`, { method: "POST" })
+        .then(res => res.json())
+        .then(data => {
+          Swal.fire("Reverted", data.message, "info").then(() => {
+            viewInstallments(currentAdvanceId);
+          });
+        });
+    } else {
+      mainModal.show();
+    }
+  });
+}
+
+
+
+// ✅ Skip installment
+function skipInstallment(installmentId) {
+  const mainModal = bootstrap.Modal.getInstance(document.getElementById('installmentModal'));
+  mainModal.hide();
+
+  Swal.fire({
+    title: "Skip this month's payment?",
+    text: "This month will be marked as skipped (not unpaid).",
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonText: "Yes, Skip"
+  }).then((result) => {
+    if (result.isConfirmed) {
+      fetch(`/advances/skip/${installmentId}/`, { method: "POST" })
+        .then(res => res.json())
+        .then(data => {
+          Swal.fire("✅ Skipped", data.message, "info").then(() => {
+            viewInstallments(currentAdvanceId);
+          });
+        });
+    } else {
+      mainModal.show();
+    }
+  });
+}
+
+// ✅ Undo Skip
+function undoSkip(installmentId) {
+  fetch(`/advances/undo-paid/${installmentId}/`, { method: "POST" })
+    .then(res => res.json())
+    .then(data => {
+      Swal.fire("Reverted", "Installment reverted from skipped to pending", "success")
+        .then(() => viewInstallments(currentAdvanceId));
+    });
+}
+
+</script>

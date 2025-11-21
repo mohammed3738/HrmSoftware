@@ -1,0 +1,219 @@
+{% extends "base2.html" %}
+{% load static %}
+
+{% block body %}
+<div class="container-xxl py-4">
+  <div class="card">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="mb-0">⚙️ System Settings</h4>
+        <small class="text-muted">Manage payroll & leave policy</small>
+      </div>
+
+      <!-- Tabs -->
+      <ul class="nav nav-tabs" id="settingsTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="payroll-tab" data-bs-toggle="tab" data-bs-target="#payroll"
+                  type="button" role="tab" aria-controls="payroll" aria-selected="true">
+            Payroll Settings
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="leave-tab" data-bs-toggle="tab" data-bs-target="#leave"
+                  type="button" role="tab" aria-controls="leave" aria-selected="false">
+            Leave Settings
+          </button>
+        </li>
+      </ul>
+
+      <div class="tab-content p-3" id="settingsTabsContent">
+        <!-- PAYROLL TAB -->
+        <div class="tab-pane fade show active" id="payroll" role="tabpanel" aria-labelledby="payroll-tab">
+          <form id="payrollForm" class="row g-3">
+            {% csrf_token %}
+            <!-- If you prefer Django form rendering, you can use: {{ payroll_form.as_p }} -->
+            <!-- Manual fields (keeps full control and consistent layout with theme) -->
+            <div class="col-md-6">
+              <label class="form-label">Automatic Payroll Cycle</label>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="is_auto" name="is_auto"
+                {% if payroll_settings.is_auto %}checked{% endif %}>
+                <label class="form-check-label" for="is_auto">Auto</label>
+              </div>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">From Date</label>
+              <input class="form-control" type="number" name="from_date" id="from_date"
+                     value="{{ payroll_settings.from_date }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">To Date</label>
+              <input class="form-control" type="number" name="to_date" id="to_date"
+                     value="{{ payroll_settings.to_date }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Grace Period (mins)</label>
+              <input class="form-control" type="number" name="grace_period_minutes" id="grace_period_minutes"
+                     value="{{ payroll_settings.grace_period_minutes }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Basic % of CTC</label>
+              <input class="form-control" type="number" step="0.01" name="basic_percentage" id="basic_percentage"
+                     value="{{ payroll_settings.basic_percentage }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">HRA % of Basic</label>
+              <input class="form-control" type="number" step="0.01" name="hra_percentage" id="hra_percentage"
+                     value="{{ payroll_settings.hra_percentage }}">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label">Basic Cap (₹)</label>
+              <input class="form-control" type="number" name="basic_cap" id="basic_cap"
+                     value="{{ payroll_settings.basic_cap }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">PF %</label>
+              <input class="form-control" type="number" step="0.01" name="pf_percentage" id="pf_percentage"
+                     value="{{ payroll_settings.pf_percentage }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">ESIC %</label>
+              <input class="form-control" type="number" step="0.01" name="esic_percentage" id="esic_percentage"
+                     value="{{ payroll_settings.esic_percentage }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Gratuity %</label>
+              <input class="form-control" type="number" step="0.01" name="gratuity_percentage" id="gratuity_percentage"
+                     value="{{ payroll_settings.gratuity_percentage }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Bonus % (annual)</label>
+              <input class="form-control" type="number" step="0.01" name="bonus_percentage" id="bonus_percentage"
+                     value="{{ payroll_settings.bonus_percentage }}">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Professional Tax (₹)</label>
+              <input class="form-control" type="number" step="0.01" name="professional_tax" id="professional_tax"
+                     value="{{ payroll_settings.professional_tax }}">
+            </div>
+
+            <div class="col-12 text-end">
+              <small class="text-muted">
+              Last updated: 
+              {% if payroll_settings.updated_at %}
+                {{ payroll_settings.updated_at|date:"F j, Y, g:i a" }}
+              {% else %}
+                Never
+              {% endif %}
+            </small>
+
+              <button type="button" id="savePayrollBtn" class="btn btn-primary">Save Payroll Settings</button>
+              
+            </div>
+          </form>
+        </div>
+
+        <!-- LEAVE TAB -->
+        <div class="tab-pane fade" id="leave" role="tabpanel" aria-labelledby="leave-tab">
+          <form id="leaveForm" class="row g-3">
+            {% csrf_token %}
+            <div class="col-md-4">
+              <label class="form-label">Carry Forward</label>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="carry_forward" name="carry_forward"
+                {% if leave_settings.carry_forward %}checked{% endif %}>
+                <label class="form-check-label" for="carry_forward">Allow carry forward</label>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Reset Month</label>
+              <input class="form-control" type="number" min="1" max="12" id="reset_month" name="reset_month"
+                     value="{{ leave_settings.reset_month }}">
+            </div>
+
+            <div class="col-12 align-items-center justify-content-end space-between d-flex">
+              <small class="text-muted">
+                Last updated: 
+                {% if leave_settings.updated_at %}
+                  {{ leave_settings.updated_at|date:"F j, Y, g:i a" }}
+                {% else %}
+                  Never
+                {% endif %}
+              </small>
+
+              <button type="button" id="saveLeaveBtn" class="btn btn-success">Save Leave Settings</button>
+            </div>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container (SweetAlert 2 used in JS) -->
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  function showSuccess(message){
+    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: message, showConfirmButton: false, timer: 2500 });
+  }
+  function showError(message){
+    Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: message, showConfirmButton: false, timer: 3000 });
+  }
+
+  // Save Payroll via AJAX
+  document.getElementById('savePayrollBtn').addEventListener('click', async function(){
+    const url = "{% url 'save-payroll-settings' %}";
+    const formData = new FormData();
+    // collect fields
+    formData.append('is_auto', document.getElementById('is_auto')?.checked ? 'on' : '');
+    ['from_date','to_date','grace_period_minutes','basic_percentage','hra_percentage','basic_cap','pf_percentage','esic_percentage','gratuity_percentage','bonus_percentage','professional_tax'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el) formData.append(id, el.value);
+    });
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    try {
+      const res = await fetch(url, { method: 'POST', body: formData, headers: {'X-CSRFToken':'{{ csrf_token }}'} });
+      const data = await res.json();
+      if(data.success) showSuccess(data.message || 'Payroll settings saved');
+      else showError('Failed to save payroll settings');
+    } catch(err){
+      console.error(err); showError('Server error');
+    }
+  });
+
+  // Save Leave via AJAX
+  document.getElementById('saveLeaveBtn').addEventListener('click', async function(){
+    const url = "{% url 'save-leave-settings' %}";
+    const formData = new FormData();
+    formData.append('carry_forward', document.getElementById('carry_forward')?.checked ? 'on' : '');
+    formData.append('reset_month', document.getElementById('reset_month')?.value || '');
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    try {
+      const res = await fetch(url, { method: 'POST', body: formData, headers: {'X-CSRFToken':'{{ csrf_token }}'} });
+      const data = await res.json();
+      if(data.success) showSuccess(data.message || 'Leave settings saved');
+      else showError('Failed to save leave settings');
+    } catch(err){
+      console.error(err); showError('Server error');
+    }
+  });
+
+});
+</script>
+
+{% endblock %}

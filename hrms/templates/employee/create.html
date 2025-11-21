@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+    <h1>Create Employee</h1>
+    <form method="POST" action="">
+        {% csrf_token %}
+        
+        <!-- Employee Form -->
+        <h2>Employee Details</h2>
+        {{ form.as_p }}
+
+        <!-- Previous Employment Formset -->
+        <h2>Previous Employment</h2>
+        <div id="formset-container">
+            {{ formset.management_form }}
+            {% for form in formset %}
+                <div class="formset-form">
+                    {{ form.as_p }}
+                    <button type="button" class="remove-form">Remove</button>
+                </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Add More Button -->
+        <button type="button" id="add-form">Add Previous Employment</button>
+        
+        <!-- Submit Button -->
+        <button type="submit">Save Employee</button>
+    </form>
+
+    <script>
+      $(document).ready(function () {
+        let formIndex = {{ formset.total_form_count }}; // Start from the current total number of forms
+
+        // Add More Forms
+        $('#add-form').click(function () {
+            // Get the formset empty form template
+            const formTemplate = `{{ formset.empty_form.as_p|escapejs }}`;
+
+            // Replace '__prefix__' with the current index
+            const newFormHtml = formTemplate.replace(/__prefix__/g, formIndex);
+
+            // Append the new form to the formset container
+            $('#formset-container').append(`
+                <div class="formset-form">
+                    ${newFormHtml}
+                    <button type="button" class="remove-form">Remove</button>
+                </div>
+            `);
+
+            // Increment the form index and update TOTAL_FORMS
+            formIndex++;
+            $('#id_previous_employments-TOTAL_FORMS').val(formIndex);
+        });
+
+        // Remove Form
+        $('#formset-container').on('click', '.remove-form', function () {
+            const formDiv = $(this).closest('.formset-form');
+            const deleteInput = formDiv.find('input[name$="-DELETE"]'); // Find the DELETE field
+            
+            if (deleteInput.length) {
+                // Mark the form for deletion (set the DELETE checkbox value to 'on')
+                deleteInput.prop('checked', true); // Use prop to check the checkbox
+                formDiv.hide(); // Hide the form instead of completely removing it
+            } else {
+                // If it's a newly added form, remove it completely
+                formDiv.remove();
+
+                // Decrement the form index and update TOTAL_FORMS
+                formIndex--;
+                $('#id_previous_employments-TOTAL_FORMS').val(formIndex);
+            }
+        });
+      });
+    </script>
+    {% endblock %}
+

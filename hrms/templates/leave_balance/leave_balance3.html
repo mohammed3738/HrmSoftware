@@ -1,0 +1,186 @@
+{% extends 'base2.html' %}
+{% block body %}
+
+<div class="container-xxl flex-grow-1 container-p-y">
+
+  <!-- Header -->
+  <div class="card mb-4">
+    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">Employee Leave Balances</h5>
+
+      <!-- 🔄 Recalculate Button (AJAX) -->
+      <button id="recalcBtn" class="btn btn-warning">
+        🔄 Recalculate Leave Balances
+      </button>
+
+      <!-- Month Filter -->
+      <form method="get" action="" class="d-flex align-items-center">
+        <label for="monthFilter" class="me-2 mb-0 text-white">View Month:</label>
+        <select name="month" id="monthFilter" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+          <option value="">Current Month</option>
+          {% for m in month %}
+          <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </form>
+    </div>
+
+    <!-- Table -->
+    <div class="table-responsive text-nowrap p-3">
+      <table class="table table-bordered align-middle text-center">
+        <thead class="table-light">
+          <tr>
+            <th>Employee</th>
+            <th>Opening</th>
+            <th>Leave Taken</th>
+            <th>Days Present</th>
+            <th>Late</th>
+            <th>Comp-Off</th>
+            <th>LWP</th>
+            <th>Closing</th>
+            <th>Leave Balance</th>
+            <th>Final Leave Balance</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in leave_balances %}
+          <tr>
+            <td>{{ record.employee.first_name }} {{ record.employee.last_name }}</td>
+
+            <td>{{ record.opening_balance|floatformat:2 }}</td>
+            <td>{{ record.leave_taken|floatformat:2 }}</td>
+            <td>{{ record.number_of_days_present|floatformat:0 }}</td>
+            <td>{{ record.late }}</td>
+
+            <td>
+              {% if record.compoff %}
+                <a href="#" class="badge bg-success" onclick="viewCompOffDetails({{ record.employee.id }})">
+                  {{ record.compoff|floatformat:0 }}
+                </a>
+              {% else %}
+                <span class="badge bg-secondary">0</span>
+              {% endif %}
+            </td>
+
+            <td>{{ record.leave_without_pay|floatformat:2 }}</td>
+
+            <td>
+              {% if record.closing_balance < 0 %}
+                <span class="text-danger">{{ record.closing_balance|floatformat:2 }}</span>
+              {% else %}
+                {{ record.closing_balance|floatformat:2 }}
+              {% endif %}
+            </td>
+
+            <td>{{ record.leave_balance|floatformat:2 }}</td>
+            <td><strong>{{ record.final_leave_balance|floatformat:2 }}</strong></td>
+
+            <td>
+              <button class="btn btn-outline-primary btn-sm"
+                      onclick="viewLeaveHistory({{ record.employee.id }})">
+                View History
+              </button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="11" class="text-center text-muted">No leave balance records found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- Modal for CompOff -->
+<div class="modal fade" id="compoffModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">Comp-Off Details</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="compoffModalBody">
+        <div class="text-center text-muted p-4">Loading...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal for Leave History -->
+<div class="modal fade" id="historyModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">Employee Leave History</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="historyModalBody">
+        <div class="text-center text-muted p-4">Loading...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+
+// ----------------------------
+// 🔄 AJAX Manual Recalculate
+// ----------------------------
+document.getElementById("recalcBtn").addEventListener("click", function () {
+    if (!confirm("Are you sure you want to recalculate leave balances?")) return;
+
+    const btn = document.getElementById("recalcBtn");
+    btn.disabled = true;
+    btn.innerHTML = "⏳ Recalculating...";
+
+    fetch("{% url 'recalculate_leave_balances' %}", {
+        method: "POST",
+        headers: {
+            "X-CSRFToken": "{{ csrf_token }}",
+        }
+    })
+    .then(res => res.json())
+    .then(data => {
+        alert(data.message || "Recalculation Completed!");
+        window.location.reload();
+    })
+    .catch(() => alert("❌ Failed to recalculate."))
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = "🔄 Recalculate Leave Balances";
+    });
+});
+
+
+// Modal Fetch – same as before
+function viewCompOffDetails(employeeId) {
+  const modal = new bootstrap.Modal(document.getElementById("compoffModal"));
+  const body = document.getElementById("compoffModalBody");
+  body.innerHTML = `<div class='text-center p-4 text-muted'>Loading...</div>`;
+  modal.show();
+
+  fetch(`/employees/${employeeId}/compoffs/`)
+    .then(r => r.json())
+    .then(d => body.innerHTML = d.html);
+}
+
+function viewLeaveHistory(employeeId) {
+  const modal = new bootstrap.Modal(document.getElementById("historyModal"));
+  const body = document.getElementById("historyModalBody");
+  body.innerHTML = `<div class='text-center p-4 text-muted'>Loading...</div>`;
+  modal.show();
+
+  fetch(`/employees/${employeeId}/leave-history/`)
+    .then(r => r.json())
+    .then(d => body.innerHTML = d.html);
+}
+
+</script>
+
+{% endblock %}

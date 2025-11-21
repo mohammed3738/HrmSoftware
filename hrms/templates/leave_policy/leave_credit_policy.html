@@ -1,0 +1,54 @@
+{% extends "base2.html" %}
+{% block body %}
+
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="card shadow">
+    <div class="card-header bg-primary text-white">
+      <h5 class="mb-0">Leave Credit Policy – {{ company.name }}</h5>
+    </div>
+
+    <div class="card-body">
+      <form method="POST">
+        {% csrf_token %}
+
+        <div class="row g-3">
+
+          <div class="col-md-6">
+            <label class="form-label"><strong>1st Threshold (Days Present)</strong></label>
+            {{ form.credit_1_limit }}
+            <small class="text-muted">Employees up to this number of present days receive low credit</small>
+          </div>
+
+          <div class="col-md-6">
+            <label class="form-label"><strong>2nd Threshold (Days Present)</strong></label>
+            {{ form.credit_2_limit }}
+            <small class="text-muted">Employees up to this number receive medium credit</small>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label"><strong>Low Credit</strong></label>
+            {{ form.credit_low }}
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label"><strong>Medium Credit</strong></label>
+            {{ form.credit_mid }}
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label"><strong>High Credit</strong></label>
+            {{ form.credit_high }}
+          </div>
+
+        </div>
+
+        <div class="text-end mt-4">
+          <button class="btn btn-primary px-4">Save Policy</button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

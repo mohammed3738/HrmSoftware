@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Salary Breakup Calculator (Real-Time)</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+    }
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .form-row {
+      display: flex;
+      margin-bottom: 8px;
+      align-items: center;
+    }
+    .form-row label {
+      flex: 1;
+    }
+    .form-row input,
+    .form-row select {
+      flex: 2;
+      padding: 4px;
+    }
+    .form-row .read-only {
+      background-color: #f0f0f0;
+      border: 1px solid #ccc;
+    }
+    h2 {
+      margin-top: 30px;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 5px;
+    }
+    .button-row {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Salary Breakup Calculator (Real-Time)</h1>
+
+  <!-- Adjust the action to your Django URL, e.g. calculate_salary -->
+  <form id="salaryForm" method="POST">
+    <!-- Django CSRF token (if needed) -->
+    
+    <!-- 1. Drop-downs for PF, Gratuity, ESIC -->
+    {% csrf_token %}
+    <div class="form-row">
+      <label>Employee:</label>
+      <select id="employeeSelect" name="employee">
+        {% for employee in employees %}
+          <option value="{{ employee.id }}">{{ employee.first_name }}</option>
+        {% endfor %}
+      </select>
+      <br><br>
+        </div>
+    <div class="form-row">
+      <label for="pfSelect">PF Deducted?</label>
+      <select id="pfSelect" name="pfSelect">
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label for="gratuitySelect">Gratuity Applicable?</label>
+      <select id="gratuitySelect" name="gratuitySelect">
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label for="esicSelect">ESIC Applicable?</label>
+      <select id="esicSelect" name="esicSelect">
+        <option value="Yes">Yes</option>
+        <option value="No">No</option>
+      </select>
+    </div>
+
+    <hr>
+
+    <!-- 2. Input Fields (Monthly) -->
+    <h2>Monthly Inputs</h2>
+
+    <div class="form-row">
+      <label for="grossCtc">Gross CTC (Monthly)</label>
+      <input type="number" step="0.01" id="grossCtc" name="grossCtc" value="50000" required>
+    </div>
+
+    <div class="form-row">
+      <label for="basic">Basic</label>
+      <input type="number" step="0.01" id="basic" name="basic" value="200">
+    </div>
+
+    <div class="form-row">
+      <label for="hra">HRA</label>
+      <input type="number" step="0.01" id="hra" name="hra" value="200">
+    </div>
+
+    <div class="form-row">
+      <label for="statBonus">Statutory Bonus</label>
+      <input type="number" step="0.01" id="statBonus" name="statBonus" value="200">
+    </div>
+
+    <div class="form-row">
+      <label for="allowance1">Allowance 1</label>
+      <input type="number" step="0.01" id="allowance1" name="allowance1" value="0">
+    </div>
+
+    <div class="form-row">
+      <label for="allowance2">Allowance 2</label>
+      <input type="number" step="0.01" id="allowance2" name="allowance2" value="0">
+    </div>
+
+    <div class="form-row">
+      <label for="profTax">Professional Tax (Monthly)</label>
+      <input type="number" step="0.01" id="profTax" name="profTax" value="200">
+    </div>
+
+    <hr>
+
+    <!-- 3. Results (Monthly & Annual) -->
+    <h2>Calculated Results (Monthly)</h2>
+
+    <div class="form-row">
+      <label>Special Allowance</label>
+      <input type="number" step="0.01" id="specialAllowance" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>Guaranteed Cash</label>
+      <input type="number" step="0.01" id="guaranteedCash" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>PF (Employer)</label>
+      <input type="number" step="0.01" id="pfEr" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>ESIC (Employer)</label>
+      <input type="number" step="0.01" id="esicEr" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>Gratuity</label>
+      <input type="number" step="0.01" id="gratuity" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>Cost To Company</label>
+      <input type="number" step="0.01" id="ctc" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>PF (Employee)</label>
+      <input type="number" step="0.01" id="pfEe" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>ESIC (Employee)</label>
+      <input type="number" step="0.01" id="esicEe" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>Net Salary</label>
+      <input type="number" step="0.01" id="netSalary" class="read-only" readonly>
+    </div>
+
+    <hr>
+
+    <h2>Calculated Results (Annual)</h2>
+
+    <div class="form-row">
+      <label>Gross CTC (Annual)</label>
+      <input type="number" step="0.01" id="grossCtcAnn" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>Guaranteed Cash (Annual)</label>
+      <input type="number" step="0.01" id="guaranteedCashAnn" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>PF (Employer) (Annual)</label>
+      <input type="number" step="0.01" id="pfErAnn" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>ESIC (Employer) (Annual)</label>
+      <input type="number" step="0.01" id="esicErAnn" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>Gratuity (Annual)</label>
+      <input type="number" step="0.01" id="gratuityAnn" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>PF (Employee) (Annual)</label>
+      <input type="number" step="0.01" id="pfEeAnn" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>ESIC (Employee) (Annual)</label>
+      <input type="number" step="0.01" id="esicEeAnn" class="read-only" readonly>
+    </div>
+
+    <div class="form-row">
+      <label>Net Salary (Annual)</label>
+      <input type="number" step="0.01" id="netSalaryAnn" class="read-only" readonly>
+    </div>
+
+    <!-- Button row -->
+    <div class="button-row">
+      <!-- We removed the "Calculate" button because we do real-time calculation -->
+      <button type="submit">Submit to Django</button>
+    </div>
+  </form>
+</div>
+
+<script>
+function calculateSalary() {
+  // 1. Get drop-down values
+  const pfDeducted = document.getElementById('pfSelect').value;        // "Yes" or "No"
+  const gratuityApp = document.getElementById('gratuitySelect').value; // "Yes" or "No"
+  const esicApp = document.getElementById('esicSelect').value;         // "Yes" or "No"
+
+  // 2. Get numeric inputs (Monthly)
+  const grossCtc = parseFloat(document.getElementById('grossCtc').value) || 0;
+  const basic = parseFloat(document.getElementById('basic').value) || 0;
+  const hra = parseFloat(document.getElementById('hra').value) || 0;
+  const statBonus = parseFloat(document.getElementById('statBonus').value) || 0;
+  const allowance1 = parseFloat(document.getElementById('allowance1').value) || 0;
+  const allowance2 = parseFloat(document.getElementById('allowance2').value) || 0;
+  const profTax = parseFloat(document.getElementById('profTax').value) || 0;
+
+  // 3. Partial sum of known components
+  const partialSum = basic + hra + statBonus + allowance1 + allowance2;
+
+  // 4. PF (Employer) monthly
+  let pfEr = 0;
+  if (pfDeducted === "Yes") {
+    const pfVal = 0.12 * basic;
+    pfEr = (pfVal < 1800) ? pfVal : 1800; // min(12% of Basic, 1800)
+  }
+
+  // 5. Gratuity monthly
+  let gratuity = 0;
+  if (gratuityApp === "Yes") {
+    gratuity = 0.0481 * basic; // 4.81% of Basic
+  }
+
+  // 6. First, assume ESIC=0 to find a preliminary Special Allowance
+  let esicEr = 0;
+  let specialAllowance = grossCtc - (partialSum + pfEr + gratuity);
+  // Guaranteed Cash
+  let guaranteedCash = partialSum + specialAllowance;
+
+  // 7. Now check ESIC (Employer)
+  if (esicApp === "Yes" && guaranteedCash <= 21000) {
+    esicEr = 0.0375 * guaranteedCash; // 3.75% employer
+    // Recalculate Special Allowance and Guaranteed Cash
+    specialAllowance = grossCtc - (partialSum + pfEr + gratuity + esicEr);
+    guaranteedCash = partialSum + specialAllowance;
+  }
+
+  // 8. PF (Employee) monthly
+  let pfEe = 0;
+  if (pfDeducted === "Yes") {
+    const pfValEe = 0.12 * basic;
+    pfEe = (pfValEe < 1800) ? pfValEe : 1800;
+  }
+
+  // 9. ESIC (Employee)
+  let esicEe = 0;
+  if (esicApp === "Yes" && guaranteedCash <= 21000) {
+    esicEe = 0.0025 * guaranteedCash; // 0.25% employee
+  }
+
+  // 10. Cost to Company (Monthly)
+  const ctc = guaranteedCash + pfEr + esicEr + gratuity;
+
+  // 11. Net Salary (Monthly)
+  const netSalary = guaranteedCash - pfEe - esicEe - profTax;
+
+  // 12. Fill out monthly results
+  document.getElementById('specialAllowance').value = specialAllowance.toFixed(2);
+  document.getElementById('guaranteedCash').value = guaranteedCash.toFixed(2);
+  document.getElementById('pfEr').value = pfEr.toFixed(2);
+  document.getElementById('esicEr').value = esicEr.toFixed(2);
+  document.getElementById('gratuity').value = gratuity.toFixed(2);
+  document.getElementById('ctc').value = ctc.toFixed(2);
+  document.getElementById('pfEe').value = pfEe.toFixed(2);
+  document.getElementById('esicEe').value = esicEe.toFixed(2);
+  document.getElementById('netSalary').value = netSalary.toFixed(2);
+
+  // 13. Annual values
+  document.getElementById('grossCtcAnn').value       = (grossCtc * 12).toFixed(2);
+  document.getElementById('guaranteedCashAnn').value = (guaranteedCash * 12).toFixed(2);
+  document.getElementById('pfErAnn').value           = (pfEr * 12).toFixed(2);
+  document.getElementById('esicErAnn').value         = (esicEr * 12).toFixed(2);
+  document.getElementById('gratuityAnn').value       = (gratuity * 12).toFixed(2);
+  document.getElementById('pfEeAnn').value           = (pfEe * 12).toFixed(2);
+  document.getElementById('esicEeAnn').value         = (esicEe * 12).toFixed(2);
+  document.getElementById('netSalaryAnn').value      = (netSalary * 12).toFixed(2);
+}
+
+// Attach event listeners for real-time calculation
+document.addEventListener('DOMContentLoaded', function() {
+  const inputs = [
+    'pfSelect', 'gratuitySelect', 'esicSelect',
+    'grossCtc', 'basic', 'hra', 'statBonus',
+    'allowance1', 'allowance2', 'profTax'
+  ];
+  
+  inputs.forEach(function(id) {
+    const element = document.getElementById(id);
+    if (!element) return;
+    // 'input' event for text/number fields, 'change' for dropdowns
+    element.addEventListener('input', calculateSalary);
+    element.addEventListener('change', calculateSalary);
+  });
+
+  // Calculate once on page load
+  calculateSalary();
+});
+</script>
+
+</body>
+</html>

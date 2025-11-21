@@ -1,0 +1,292 @@
+
+{% extends 'base.html' %}
+
+{% block content %}
+
+
+  <div class="container">
+    <h1>Salary Breakup Calculator</h1>
+    <!-- Form action set to your Django URL endpoint -->
+    <form id="salaryForm"  method="POST">
+      <!-- {% csrf_token %} if using Django CSRF protection -->
+      {% csrf_token %}
+      <!-- Drop-Downs -->
+      <div class="section">
+        <div class="form-row">
+          <label>Employee:</label>
+          <select id="employeeSelect" name="employee">
+            {% for employee in employees %}
+              <option value="{{ employee.id }}">{{ employee.first_name }}</option>
+            {% endfor %}
+          </select>
+      </div>
+      <div class="section">
+        <div class="form-row">
+          <label for="pfSelect">PF Deducted? (D4)</label>
+          <select id="pfSelect" name="pfSelect">
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="gratuitySelect">Gratuity Applicable? (D5)</label>
+          <select id="gratuitySelect" name="gratuitySelect">
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label for="esicSelect">ESIC Applicable? (D6)</label>
+          <select id="esicSelect" name="esicSelect">
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Monthly Inputs -->
+      <h2>Monthly Inputs</h2>
+      <div class="section">
+        <div class="form-row">
+          <label for="grossCTC">Gross CTC (C10)</label>
+          <input type="number" id="grossCTC" name="grossCTC" step="0.01" value="50000" required>
+        </div>
+        <!-- The following fields will be calculated automatically -->
+        <div class="form-row">
+          <label for="basic">Basic (C11 = MIN(GrossCTC*0.5, 21000))</label>
+          <input type="number" id="basic" name="basic" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="hra">H.R.A (C12 = Basic*0.6)</label>
+          <input type="number" id="hra" name="hra" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="statBonus">Stat Bonus (C14 = IF(Basic&lt;21000, ROUND(7000*8.33%), 0))</label>
+          <input type="number" id="statBonus" name="statBonus" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="allowance1">Allowance 1 (C15)</label>
+          <input type="number" id="allowance1" name="allowance1" step="0.01" value="0">
+        </div>
+        <div class="form-row">
+          <label for="allowance2">Allowance 2 (C16)</label>
+          <input type="number" id="allowance2" name="allowance2" step="0.01" value="0">
+        </div>
+        <div class="form-row">
+          <label for="specialAllowance">Special Allowance (Calculated)</label>
+          <input type="number" id="specialAllowance" name="specialAllowance" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="guaranteedCash">Guaranteed Cash (C17 = SUM(Basic, HRA, Stat Bonus, Allowance1, Allowance2, Special Allowance))</label>
+          <input type="number" id="guaranteedCash" name="guaranteedCash" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="pfEr">PF (Employer) (C18 = IF(PF=='yes', MIN(Basic*0.12, 1800), 0))</label>
+          <input type="number" id="pfEr" name="pfEr" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="esicEr">ESIC (Employer) (C19 = IF(ESIC=='yes' AND GuaranteedCash&lt;21000, GuaranteedCash*3.75%, 0))</label>
+          <input type="number" id="esicEr" name="esicEr" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="gratuity">Gratuity (C20 = IF(Gratuity=='yes', ROUND(Basic*4.81%), 0))</label>
+          <input type="number" id="gratuity" name="gratuity" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="costToCompany">Cost To Company (CTC = GuaranteedCash+PF(Er)+ESIC(Er)+Gratuity)</label>
+          <input type="number" id="costToCompany" name="costToCompany" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="pfEe">PF (Employee) (Same as PF Employer)</label>
+          <input type="number" id="pfEe" name="pfEe" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="esicEe">ESIC (Employee) (IF(ESIC=='yes' AND GuaranteedCash&lt;21000, GuaranteedCash*0.25%, 0))</label>
+          <input type="number" id="esicEe" name="esicEe" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="profTax">Professional Tax (C24)</label>
+          <input type="number" id="profTax" name="profTax" step="0.01" value="0">
+        </div>
+        <div class="form-row">
+          <label for="netSalary">Net Salary (= GuaranteedCash - PF(Employee) - ESIC(Employee) - Prof Tax)</label>
+          <input type="number" id="netSalary" name="netSalary" class="read-only" readonly>
+        </div>
+      </div>
+
+      <!-- Annual Calculated Outputs -->
+      <h2>Annual Outputs</h2>
+      <div class="section">
+        <div class="form-row">
+          <label for="grossCTCAnn">Gross CTC (Annual)</label>
+          <input type="number" id="grossCTCAnn" name="grossCTCAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="basicAnn">Basic (Annual)</label>
+          <input type="number" id="basicAnn" name="basicAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="hraAnn">H.R.A (Annual)</label>
+          <input type="number" id="hraAnn" name="hraAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="statBonusAnn">Stat Bonus (Annual)</label>
+          <input type="number" id="statBonusAnn" name="statBonusAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="allowance1Ann">Allowance 1 (Annual)</label>
+          <input type="number" id="allowance1Ann" name="allowance1Ann" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="allowance2Ann">Allowance 2 (Annual)</label>
+          <input type="number" id="allowance2Ann" name="allowance2Ann" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="specialAllowanceAnn">Special Allowance (Annual)</label>
+          <input type="number" id="specialAllowanceAnn" name="specialAllowanceAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="guaranteedCashAnn">Guaranteed Cash (Annual)</label>
+          <input type="number" id="guaranteedCashAnn" name="guaranteedCashAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="pfErAnn">PF (Employer) (Annual)</label>
+          <input type="number" id="pfErAnn" name="pfErAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="esicErAnn">ESIC (Employer) (Annual)</label>
+          <input type="number" id="esicErAnn" name="esicErAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="gratuityAnn">Gratuity (Annual)</label>
+          <input type="number" id="gratuityAnn" name="gratuityAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="costToCompanyAnn">Cost To Company (Annual)</label>
+          <input type="number" id="costToCompanyAnn" name="costToCompanyAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="pfEeAnn">PF (Employee) (Annual)</label>
+          <input type="number" id="pfEeAnn" name="pfEeAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="esicEeAnn">ESIC (Employee) (Annual)</label>
+          <input type="number" id="esicEeAnn" name="esicEeAnn" class="read-only" readonly>
+        </div>
+        <div class="form-row">
+          <label for="netSalaryAnn">Net Salary (Annual)</label>
+          <input type="number" id="netSalaryAnn" name="netSalaryAnn" class="read-only" readonly>
+        </div>
+      </div>
+
+      <!-- Submit Button -->
+      <div class="form-row">
+        <button type="submit">Submit to Django</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    function calculateSalary() {
+      // Retrieve drop-down values (all lowercased for consistency)
+      const pfSelect = document.getElementById('pfSelect').value.toLowerCase();
+      const gratuitySelect = document.getElementById('gratuitySelect').value.toLowerCase();
+      const esicSelect = document.getElementById('esicSelect').value.toLowerCase();
+
+      // Retrieve numeric inputs (Monthly)
+      const grossCTC = parseFloat(document.getElementById('grossCTC').value) || 0;
+      const allowance1 = parseFloat(document.getElementById('allowance1').value) || 0;
+      const allowance2 = parseFloat(document.getElementById('allowance2').value) || 0;
+      const profTax = parseFloat(document.getElementById('profTax').value) || 0;
+
+      // 1. Calculate Basic = MIN(GrossCTC * 0.5, 21000)
+      let basic = Math.min(grossCTC * 0.5, 21000);
+
+      // 2. Calculate HRA = Basic * 0.6
+      let hra = basic * 0.6;
+
+      // 3. Calculate Stat Bonus = IF(Basic < 21000, ROUND(7000 * 8.33%), 0)
+      let statBonus = (basic < 21000) ? Math.round(7000 * 0.0833) : 0;
+
+      // 4. PF (Employer): IF(pfSelect == "yes", MIN(Basic * 0.12, 1800), 0)
+      let pfEr = (pfSelect === "yes") ? Math.min(basic * 0.12, 1800) : 0;
+
+      // 5. Gratuity: IF(gratuitySelect == "yes", ROUND(Basic * 4.81%), 0)
+      let gratuity = (gratuitySelect === "yes") ? Math.round(basic * 0.0481) : 0;
+
+      // 6. Assume ESIC (Employer) initially 0 for preliminary Special Allowance calculation.
+      let esicEr = 0;
+      // Preliminary Special Allowance = GrossCTC - (Basic + HRA + Stat Bonus + Allowance1 + Allowance2 + PF_er + ESIC_er + Gratuity)
+      let specialAllowance = grossCTC - (basic + hra + statBonus + allowance1 + allowance2 + pfEr + esicEr + gratuity);
+
+      // 7. Guaranteed Cash = Basic + HRA + Stat Bonus + Allowance1 + Allowance2 + Special Allowance
+      let guaranteedCash = basic + hra + statBonus + allowance1 + allowance2 + specialAllowance;
+
+      // 8. Now calculate ESIC (Employer): IF(esicSelect=="yes" && GuaranteedCash < 21000, GuaranteedCash * 3.75%, 0)
+      if (esicSelect === "yes" && guaranteedCash < 21000) {
+        esicEr = guaranteedCash * 0.0375;
+      } else {
+        esicEr = 0;
+      }
+
+      // 9. Recompute Special Allowance with actual ESIC (Employer) value:
+      specialAllowance = grossCTC - (basic + hra + statBonus + allowance1 + allowance2 + pfEr + esicEr + gratuity);
+
+      // 10. Recompute Guaranteed Cash:
+      guaranteedCash = basic + hra + statBonus + allowance1 + allowance2 + specialAllowance;
+
+      // 11. Cost To Company = Guaranteed Cash + PF (Employer) + ESIC (Employer) + Gratuity
+      let costToCompany = guaranteedCash + pfEr + esicEr + gratuity;
+
+      // 12. PF (Employee) is same as PF (Employer)
+      let pfEe = pfEr;
+
+      // 13. ESIC (Employee): IF(esicSelect=="yes" && GuaranteedCash < 21000, GuaranteedCash * 0.25%, 0)
+      let esicEe = (esicSelect === "yes" && guaranteedCash < 21000) ? (guaranteedCash * 0.0025) : 0;
+
+      // 14. Net Salary = Guaranteed Cash - PF(Employee) - ESIC(Employee) - Professional Tax
+      let netSalary = guaranteedCash - pfEe - esicEe - profTax;
+
+      // Update Monthly Output Fields
+      document.getElementById('basic').value = basic.toFixed(2);
+      document.getElementById('hra').value = hra.toFixed(2);
+      document.getElementById('statBonus').value = statBonus.toFixed(2);
+      document.getElementById('specialAllowance').value = specialAllowance.toFixed(2);
+      document.getElementById('guaranteedCash').value = guaranteedCash.toFixed(2);
+      document.getElementById('pfEr').value = pfEr.toFixed(2);
+      document.getElementById('esicEr').value = esicEr.toFixed(2);
+      document.getElementById('gratuity').value = gratuity.toFixed(2);
+      document.getElementById('costToCompany').value = costToCompany.toFixed(2);
+      document.getElementById('pfEe').value = pfEe.toFixed(2);
+      document.getElementById('esicEe').value = esicEe.toFixed(2);
+      document.getElementById('netSalary').value = netSalary.toFixed(2);
+
+      // Update Annual Output Fields (multiply monthly values by 12)
+      document.getElementById('grossCTCAnn').value = (grossCTC * 12).toFixed(2);
+      document.getElementById('basicAnn').value = (basic * 12).toFixed(2);
+      document.getElementById('hraAnn').value = (hra * 12).toFixed(2);
+      document.getElementById('statBonusAnn').value = (statBonus * 12).toFixed(2);
+      document.getElementById('allowance1Ann').value = (allowance1 * 12).toFixed(2);
+      document.getElementById('allowance2Ann').value = (allowance2 * 12).toFixed(2);
+      document.getElementById('specialAllowanceAnn').value = (specialAllowance * 12).toFixed(2);
+      document.getElementById('guaranteedCashAnn').value = (guaranteedCash * 12).toFixed(2);
+      document.getElementById('pfErAnn').value = (pfEr * 12).toFixed(2);
+      document.getElementById('esicErAnn').value = (esicEr * 12).toFixed(2);
+      document.getElementById('gratuityAnn').value = (gratuity * 12).toFixed(2);
+      document.getElementById('costToCompanyAnn').value = (costToCompany * 12).toFixed(2);
+      document.getElementById('pfEeAnn').value = (pfEe * 12).toFixed(2);
+      document.getElementById('esicEeAnn').value = (esicEe * 12).toFixed(2);
+      document.getElementById('netSalaryAnn').value = (netSalary * 12).toFixed(2);
+    }
+
+    // Attach event listeners for all input and select elements to trigger real-time calculation
+    document.addEventListener("DOMContentLoaded", function() {
+      const inputs = document.querySelectorAll("input, select");
+      inputs.forEach(function(el) {
+        el.addEventListener("input", calculateSalary);
+        el.addEventListener("change", calculateSalary);
+      });
+      calculateSalary(); // Initial calculation on page load
+    });
+  </script>
+  {% endblock %}

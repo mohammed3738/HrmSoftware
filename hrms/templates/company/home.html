@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <button onclick="downloadEmployees()">Download All Employees</button>
+<script>
+    function downloadEmployees() {
+        window.location.href = "{% url 'download_employees' %}";
+    }
+</script>
+</body>
+</html>

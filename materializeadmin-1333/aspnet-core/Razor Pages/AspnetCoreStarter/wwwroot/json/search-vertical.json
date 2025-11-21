@@ -1,0 +1,875 @@
+{
+  "pages": [
+    {
+      "name": "Dashboard Analytics",
+      "icon": "ri-bar-chart-line",
+      "url": "/Dashboards/Analytics"
+    },
+    {
+      "name": "Dashboard CRM",
+      "icon": "ri-donut-chart-line",
+      "url": "/Dashboards/CRM"
+    },
+    {
+      "name": "Layout Collapsed menu",
+      "icon": "ri-layout-top-line",
+      "url": "/LayoutExamples/CollapsedMenu"
+    },
+    {
+      "name": "Layout Content navbar",
+      "icon": "ri-layout-5-line",
+      "url": "/LayoutExamples/ContentNavbar"
+    },
+    {
+      "name": "Layout Content nav + Sidebar",
+      "icon": "ri-layout-2-line",
+      "url": "/LayoutExamples/ContentNavbarWithSidebar"
+    },
+    {
+      "name": "Layout Without menu",
+      "icon": "ri-layout-4-line",
+      "url": "/LayoutExamples/WithoutMenu"
+    },
+    {
+      "name": "Layout Without navbar",
+      "icon": "ri-layout-left-line",
+      "url": "/LayoutExamples/WithoutNavbar"
+    },
+    {
+      "name": "Layout Fluid",
+      "icon": "ri-layout-top-line",
+      "url": "/LayoutExamples/Fluid"
+    },
+    {
+      "name": "Layout Container",
+      "icon": "ri-layout-top-2-line",
+      "url": "/LayoutExamples/Container"
+    },
+    {
+      "name": "Layout Blank",
+      "icon": "ri-square-line",
+      "url": "/LayoutExamples/Blank"
+    },
+    {
+      "name": "Users (CRUD)",
+      "icon": "ri-database-2-line",
+      "url": "/CRUD/UserCRUD"
+    },
+    {
+      "name": "Email",
+      "icon": "ri-mail-line",
+      "url": "/Apps/Email"
+    },
+    {
+      "name": "Chat",
+      "icon": "ri-message-line",
+      "url": "/Apps/Chat"
+    },
+    {
+      "name": "Calendar",
+      "icon": "ri-calendar-line",
+      "url": "/Apps/Calendar"
+    },
+    {
+      "name": "Kanban",
+      "icon": "ri-drag-drop-line",
+      "url": "/Apps/Ecommerce/Dashboard"
+    },
+    {
+      "name": "eCommerce Dashboard",
+      "icon": "ri-shopping-cart-2-line",
+      "url": "/Apps/Ecommerce/Dashboard"
+    },
+    {
+      "name": "eCommerce - Product List",
+      "icon": "ri-file-list-line",
+      "url": "/Apps/Ecommerce/Products/ProductList"
+    },
+    {
+      "name": "eCommerce - Add Product",
+      "icon": "ri-add-line",
+      "url": "/Apps/Ecommerce/Products/ProductAdd"
+    },
+    {
+      "name": "eCommerce - Category List",
+      "icon": "ri-list-unordered",
+      "url": "/Apps/Ecommerce/Products/CategoryList"
+    },
+    {
+      "name": "eCommerce - Order List",
+      "icon": "ri-list-unordered",
+      "url": "/Apps/Ecommerce/Order/OrderList"
+    },
+    {
+      "name": "eCommerce - Orders Details",
+      "icon": "ri-play-list-line",
+      "url": "/Apps/Ecommerce/Order/OrderDetails"
+    },
+    {
+      "name": "eCommerce - Customers",
+      "icon": "ri-user-line",
+      "url": "/Apps/Ecommerce/Customer/CustomerAll"
+    },
+    {
+      "name": "eCommerce - Customers Overview",
+      "icon": "ri-list-check",
+      "url": "/Apps/Ecommerce/Customer/CustomerDetails/CustomerOverview"
+    },
+    {
+      "name": "eCommerce - Customers Security",
+      "icon": "ri-shield-cross-line",
+      "url": "/Apps/Ecommerce/Customer/CustomerDetails/CustomerSecurity"
+    },
+    {
+      "name": "eCommerce - Customers Address and Billing",
+      "icon": "ri-map-pin-5-line",
+      "url": "/Apps/Ecommerce/Customer/CustomerDetails/CustomerBilling"
+    },
+    {
+      "name": "eCommerce - Customers Notifications",
+      "icon": "ri-notification-badge-line",
+      "url": "/Apps/Ecommerce/Customer/CustomerDetails/CustomerNotifications"
+    },
+    {
+      "name": "eCommerce - Manage Reviews",
+      "icon": "ri-message-line",
+      "url": "/Apps/Ecommerce/Reviews"
+    },
+    {
+      "name": "eCommerce - Referrals",
+      "icon": "ri-group-line",
+      "url": "/Apps/Ecommerce/Referrals"
+    },
+    {
+      "name": "eCommerce - Settings Store Details",
+      "icon": "ri-store-line",
+      "url": "/Apps/Ecommerce/Settings/StoreDetails"
+    },
+    {
+      "name": "eCommerce - Settings Store Payments",
+      "icon": "ri-cash-fill",
+      "url": "/Apps/Ecommerce/Settings/Payments"
+    },
+    {
+      "name": "eCommerce - Settings Store Checkout",
+      "icon": "ri-shopping-cart-2-line",
+      "url": "/Apps/Ecommerce/Settings/Checkout"
+    },
+    {
+      "name": "eCommerce - Settings Shipping & Delivery",
+      "icon": "ri-truck-line",
+      "url": "/Apps/Ecommerce/Settings/Shipping"
+    },
+    {
+      "name": "eCommerce - Settings Locations",
+      "icon": "ri-map-pin-add-line",
+      "url": "/Apps/Ecommerce/Settings/Locations"
+    },
+    {
+      "name": "eCommerce - Settings Notifications",
+      "icon": "ri-notification-4-line",
+      "url": "/Apps/Ecommerce/Settings/Notifications"
+    },
+    {
+      "name": "Academy - Dashboard",
+      "icon": "ri-book-open-line",
+      "url": "/Apps/Academy/Dashboard"
+    },
+    {
+      "name": "Academy - My Course",
+      "icon": "ri-list-unordered",
+      "url": "/Apps/Academy/MyCourse"
+    },
+    {
+      "name": "Academy - Course Details",
+      "icon": "ri-play-circle-line",
+      "url": "/Apps/Academy/CourseDetails"
+    },
+    {
+      "name": "User List",
+      "icon": "ri-group-line",
+      "url": "/Apps/Users/List"
+    },
+    {
+      "name": "User View - Account",
+      "icon": "ri-eye-line",
+      "url": "/Apps/Users/View/Account"
+    },
+    {
+      "name": "User View - Security",
+      "icon": "ri-shield-user-line",
+      "url": "/Apps/Users/View/Security"
+    },
+    {
+      "name": "User View - Billing & Plans",
+      "icon": "ri-bill-line",
+      "url": "/Apps/Users/View/Billing"
+    },
+    {
+      "name": "User View - Notifications",
+      "icon": "ri-notification-badge-line",
+      "url": "/Apps/Users/View/Notifications"
+    },
+    {
+      "name": "User View - Connections",
+      "icon": "ri-links-line",
+      "url": "/Apps/Users/View/Connections"
+    },
+    {
+      "name": "Roles",
+      "icon": "ri-shield-user-line",
+      "url": "/Apps/Access/Roles"
+    },
+    {
+      "name": "Permission",
+      "icon": "ri-shield-user-line",
+      "url": "/Apps/Access/Permission"
+    },
+    {
+      "name": "Logistics Dashboard",
+      "icon": "ri-truck-line",
+      "url": "/Apps/Logistics/Dashboard"
+    },
+    {
+      "name": "Logistics Fleet",
+      "icon": "ri-car-line",
+      "url": "/Apps/Logistics/Fleet"
+    },
+    {
+      "name": "Invoice List",
+      "icon": "ri-list-ordered-2",
+      "url": "/Apps/Invoice/List"
+    },
+    {
+      "name": "Invoice Preview",
+      "icon": "ri-article-line",
+      "url": "/Apps/Invoice/Preview"
+    },
+    {
+      "name": "Invoice Edit",
+      "icon": "ri-file-edit-line",
+      "url": "/Apps/Invoice/Edit"
+    },
+    {
+      "name": "Invoice Add",
+      "icon": "ri-file-add-line",
+      "url": "/Apps/Invoice/Add"
+    },
+    {
+      "name": "User Profile",
+      "icon": "ri-user-settings-line",
+      "url": "/Pages/Profile/User"
+    },
+    {
+      "name": "User Profile - Teams",
+      "icon": "ri-team-line",
+      "url": "/Pages/Profile/Teams"
+    },
+    {
+      "name": "User Profile - Projects",
+      "icon": "ri-account-circle-line",
+      "url": "/Pages/Profile/Projects"
+    },
+    {
+      "name": "User Profile - Connections",
+      "icon": "ri-links-line",
+      "url": "/Pages/Profile/Connections"
+    },
+    {
+      "name": "Account Settings - Account",
+      "icon": "ri-user-settings-line",
+      "url": "/Pages/AccountSettings/Account"
+    },
+    {
+      "name": "Account Settings - Security",
+      "icon": "ri-lock-unlock-line",
+      "url": "/Pages/AccountSettings/Security"
+    },
+    {
+      "name": "Account Settings - Billing & Plans",
+      "icon": "ri-money-dollar-circle-line",
+      "url": "/Pages/AccountSettings/Billing"
+    },
+    {
+      "name": "Account Settings - Notifications",
+      "icon": "ri-notification-3-line",
+      "url": "/Pages/AccountSettings/Notifications"
+    },
+    {
+      "name": "Account Settings - Connections",
+      "icon": "ri-link",
+      "url": "/Pages/AccountSettings/Connections"
+    },
+    {
+      "name": "FAQ",
+      "icon": "ri-question-line",
+      "url": "/Pages/FAQ"
+    },
+    {
+      "name": "Pricing",
+      "icon": "ri-money-dollar-circle-line",
+      "url": "/Pages/Pricing"
+    },
+    {
+      "name": "Error",
+      "icon": "ri-error-warning-line",
+      "url": "/Pages/Misc/Error"
+    },
+    {
+      "name": "Under Maintenance",
+      "icon": "ri-settings-2-line",
+      "url": "/Pages/Misc/UnderMaintenance"
+    },
+    {
+      "name": "Coming Soon",
+      "icon": "ri-time-line",
+      "url": "/Pages/Misc/ComingSoon"
+    },
+    {
+      "name": "Not Authorized",
+      "icon": "ri-group-line",
+      "url": "/Pages/Misc/NotAuthorized"
+    },
+    {
+      "name": "Server Error",
+      "icon": "ri-server-fill",
+      "url": "/Pages/Misc/ServerError"
+    },
+    {
+      "name": "Login Basic",
+      "icon": "ri-login-box-line",
+      "url": "/Auth/Login/Basic"
+    },
+    {
+      "name": "Login Cover",
+      "icon": "ri-login-box-line",
+      "url": "/Auth/Login/Cover"
+    },
+    {
+      "name": "Register Basic",
+      "icon": "ri-user-add-line",
+      "url": "/Auth/Register/Basic"
+    },
+    {
+      "name": "Register Cover",
+      "icon": "ri-user-add-line",
+      "url": "/Auth/Register/Cover"
+    },
+    {
+      "name": "Register Multi-steps",
+      "icon": "ri-user-add-line",
+      "url": "/Auth/Register/Multisteps"
+    },
+    {
+      "name": "Verify Email Basic",
+      "icon": "ri-mail-check-line",
+      "url": "/Auth/VerifyEmail/Basic"
+    },
+    {
+      "name": "Verify Email Cover",
+      "icon": "ri-mail-check-line",
+      "url": "/Auth/VerifyEmail/Cover"
+    },
+    {
+      "name": "Reset Password Basic",
+      "icon": "ri-rotate-lock-line",
+      "url": "/Auth/ResetPassword/Basic"
+    },
+    {
+      "name": "Reset Password Cover",
+      "icon": "ri-rotate-lock-line",
+      "url": "/Auth/ResetPassword/Cover"
+    },
+    {
+      "name": "Forgot Password Basic",
+      "icon": "ri-lock-line",
+      "url": "/Auth/ForgotPassword/Basic"
+    },
+    {
+      "name": "Forgot Password Cover",
+      "icon": "ri-lock-line",
+      "url": "/Auth/ForgotPassword/Cover"
+    },
+    {
+      "name": "Two Steps Verification Basic",
+      "icon": "ri-macbook-line",
+      "url": "/Auth/TwoSteps/Basic"
+    },
+    {
+      "name": "Two Steps Verification Cover",
+      "icon": "ri-macbook-line",
+      "url": "/Auth/TwoSteps/Cover"
+    },
+    {
+      "name": "Help Center Front",
+      "icon": "ri-question-line",
+      "url": "/FrontPages/HelpCenterLanding"
+    },
+    {
+      "name": "Landing Front",
+      "icon": "ri-article-line",
+      "url": "/FrontPages/LandingPage"
+    },
+    {
+      "name": "Pricing Front",
+      "icon": "ri-money-dollar-circle-line",
+      "url": "/FrontPages/PricingPage"
+    },
+    {
+      "name": "Checkout Front",
+      "icon": "ri-shopping-cart-2-line  ",
+      "url": "/FrontPages/CheckoutPage"
+    },
+    {
+      "name": "Payment Front",
+      "icon": "ri-bank-card-line",
+      "url": "/FrontPages/PaymentPage"
+    },
+    {
+      "name": "Modal Examples",
+      "icon": "ri-square-line",
+      "url": "/Modals/Examples"
+    },
+    {
+      "name": "Checkout Wizard",
+      "icon": "ri-shopping-cart-2-line",
+      "url": "/Wizards/Checkout"
+    },
+    {
+      "name": "Property Listing Wizard",
+      "icon": "ri-shopping-cart-2-line",
+      "url": "/Wizards/PropertyListing"
+    },
+    {
+      "name": "Create Deal Wizard",
+      "icon": "ri-shopping-cart-2-line",
+      "url": "/Wizards/CreateDeal"
+    },
+    {
+      "name": "Icons",
+      "icon": "ri-remixicon-line",
+      "url": "/Icons/RiIcons"
+    },
+    {
+      "name": "Basic Cards",
+      "icon": "ri-square-line",
+      "url": "/Cards/Basic"
+    },
+    {
+      "name": "Advance Cards",
+      "icon": "ri-list-check-2",
+      "url": "/Cards/Advance"
+    },
+    {
+      "name": "Statistics Cards",
+      "icon": "ri-bar-chart-box-line",
+      "url": "/Cards/Statistics"
+    },
+    {
+      "name": "Analytics Cards",
+      "icon": "ri-line-chart-fill",
+      "url": "/Cards/Analytics"
+    },
+    {
+      "name": "Gamifications Cards",
+      "icon": "ri-gamepad-line",
+      "url": "/Cards/Gamifications"
+    },
+    {
+      "name": "Actions Cards",
+      "icon": "ri-keyboard-line",
+      "url": "/Cards/Actions"
+    },
+    {
+      "name": "Accordion",
+      "icon": "ri-align-vertically",
+      "url": "/Ui/Accordion"
+    },
+    {
+      "name": "Alerts",
+      "icon": "ri-alert-line",
+      "url": "/Ui/Alerts"
+    },
+    {
+      "name": "Badges",
+      "icon": "ri-notification-4-line",
+      "url": "/Ui/Badges"
+    },
+    {
+      "name": "Buttons",
+      "icon": "ri-square-line",
+      "url": "/Ui/Buttons"
+    },
+    {
+      "name": "Carousel",
+      "icon": "ri-carousel-view",
+      "url": "/Ui/Carousel"
+    },
+    {
+      "name": "Collapse",
+      "icon": "ri-aspect-ratio-line",
+      "url": "/Ui/Collapse"
+    },
+    {
+      "name": "Dropdowns",
+      "icon": "ri-menu-line",
+      "url": "/Ui/Dropdowns"
+    },
+    {
+      "name": "Footer",
+      "icon": "ri-layout-bottom-line",
+      "url": "/Ui/Footer"
+    },
+    {
+      "name": "List Groups",
+      "icon": "ri-list-unordered",
+      "url": "/Ui/ListGroups"
+    },
+    {
+      "name": "Modals",
+      "icon": "ri-square-line",
+      "url": "/Ui/Modals"
+    },
+    {
+      "name": "Navbar",
+      "icon": "ri-layout-top-line",
+      "url": "/Ui/Navbar"
+    },
+    {
+      "name": "Offcanvas",
+      "icon": "ri-layout-top-2-line",
+      "url": "/Ui/Offcanvas"
+    },
+    {
+      "name": "Pagination & Breadcrumbs",
+      "icon": "ri-skip-right-line",
+      "url": "/Ui/PaginationBreadcrumbs"
+    },
+    {
+      "name": "Progress",
+      "icon": "ri-donut-chart-line",
+      "url": "/Ui/Progress"
+    },
+    {
+      "name": "Spinners",
+      "icon": "ri-donut-chart-line",
+      "url": "/Ui/Spinners"
+    },
+    {
+      "name": "Tabs & Pills",
+      "icon": "ri-window-2-line",
+      "url": "/Ui/TabsPills"
+    },
+    {
+      "name": "Toasts",
+      "icon": "ri-message-line",
+      "url": "/Ui/Toasts"
+    },
+    {
+      "name": "Tooltips & Popovers",
+      "icon": "ri-chat-quote-line",
+      "url": "/Ui/TooltipsPopovers"
+    },
+    {
+      "name": "Typography",
+      "icon": "ri-font-size",
+      "url": "/Ui/Typography"
+    },
+    {
+      "name": "Avatar",
+      "icon": "ri-user-smile-line",
+      "url": "/ExtendedUi/Avatar"
+    },
+    {
+      "name": "BlockUI",
+      "icon": "ri-fullscreen-line",
+      "url": "/ExtendedUi/BlockUi"
+    },
+    {
+      "name": "Drag & Drop",
+      "icon": "ri-file-copy-line",
+      "url": "/ExtendedUi/DragDrop"
+    },
+    {
+      "name": "Media Player",
+      "icon": "ri-music-2-fill",
+      "url": "/ExtendedUi/MediaPlayer"
+    },
+    {
+      "name": "Perfect Scrollbar",
+      "icon": "ri-arrow-up-down-line",
+      "url": "/ExtendedUi/PerfectScrollbar"
+    },
+    {
+      "name": "Star Ratings",
+      "icon": "ri-star-line",
+      "url": "/ExtendedUi/StarRatings"
+    },
+    {
+      "name": "SweetAlert2",
+      "icon": "ri-share-circle-line",
+      "url": "/ExtendedUi/SweetAlert2"
+    },
+    {
+      "name": "Text Divider",
+      "icon": "ri-align-vertically",
+      "url": "/ExtendedUi/TextDivider"
+    },
+    {
+      "name": "Timeline Basic",
+      "icon": "ri-git-commit-line",
+      "url": "/ExtendedUi/Timeline/Basic"
+    },
+    {
+      "name": "Timeline Fullscreen",
+      "icon": "ri-git-commit-line",
+      "url": "/ExtendedUi/Timeline/FullScreen"
+    },
+    {
+      "name": "Tour",
+      "icon": "ri-send-plane-2-line",
+      "url": "/ExtendedUi/Tour"
+    },
+    {
+      "name": "Treeview",
+      "icon": "ri-git-fork-line ri-rotate-180",
+      "url": "/ExtendedUi/Treeview"
+    },
+    {
+      "name": "Miscellaneous",
+      "icon": "ri-organization-chart",
+      "url": "/ExtendedUi/Misc"
+    },
+    {
+      "name": "Basic Inputs",
+      "icon": "ri-pencil-line",
+      "url": "/Forms/BasicInputs"
+    },
+    {
+      "name": "Input groups",
+      "icon": "ri-checkbox-line",
+      "url": "/Forms/InputGroups"
+    },
+    {
+      "name": "Custom Options",
+      "icon": "ri-list-check-3",
+      "url": "/Forms/CustomOptions"
+    },
+    {
+      "name": "Editors",
+      "icon": "ri-file-edit-line",
+      "url": "/Forms/Editors"
+    },
+    {
+      "name": "File Upload",
+      "icon": "ri-upload-2-line",
+      "url": "/Forms/FileUpload"
+    },
+    {
+      "name": "Pickers",
+      "icon": "ri-calendar-todo-line",
+      "url": "/Forms/Pickers"
+    },
+    {
+      "name": "Select & Tags",
+      "icon": "ri-list-check",
+      "url": "/Forms/Selects"
+    },
+    {
+      "name": "Sliders",
+      "icon": "ri-equalizer-line",
+      "url": "/Forms/Sliders"
+    },
+    {
+      "name": "Switches",
+      "icon": "ri-toggle-line",
+      "url": "/Forms/Switches"
+    },
+    {
+      "name": "Extras",
+      "icon": "ri-add-box-line",
+      "url": "/Forms/Extras"
+    },
+    {
+      "name": "Vertical Form",
+      "icon": "ri-file-text-line",
+      "url": "/FormLayouts/Vertical"
+    },
+    {
+      "name": "Horizontal Form",
+      "icon": "ri-file-text-line",
+      "url": "/FormLayouts/Horizontal"
+    },
+    {
+      "name": "Sticky Actions",
+      "icon": "ri-file-text-line",
+      "url": "/FormLayouts/Sticky"
+    },
+    {
+      "name": "Numbered Wizard",
+      "icon": "ri-align-center",
+      "url": "/FormWizard/Numbered"
+    },
+    {
+      "name": "Icons Wizard",
+      "icon": "ri-align-center",
+      "url": "/FormWizard/Icons"
+    },
+    {
+      "name": "Form Validation",
+      "icon": "ri-check-line",
+      "url": "/FormValidation/Validation"
+    },
+    {
+      "name": "Tables",
+      "icon": "ri-window-2-line",
+      "url": "/Tables/Basic"
+    },
+    {
+      "name": "Datatable Basic",
+      "icon": "ri-grid-line",
+      "url": "/Tables/DataTables/Basic"
+    },
+    {
+      "name": "Datatable Advanced",
+      "icon": "ri-grid-line",
+      "url": "/Tables/DataTables/Advanced"
+    },
+    {
+      "name": "Datatable Extensions",
+      "icon": "ri-grid-line",
+      "url": "/Tables/DataTables/Extensions"
+    },
+    {
+      "name": "Apex Charts",
+      "icon": "ri-line-chart-line",
+      "url": "/Charts/Apex"
+    },
+    {
+      "name": "ChartJS",
+      "icon": "ri-bar-chart-grouped-fill",
+      "url": "/Charts/Chartjs"
+    },
+    {
+      "name": "Leaflet Maps",
+      "icon": "ri-map-2-line",
+      "url": "/Maps/Leaflet"
+    }
+  ],
+  "files": [
+    {
+      "name": "Class Attendance",
+      "subtitle": "By Tommy Shelby",
+      "src": "img/icons/misc/search-xls.png",
+      "meta": "17kb",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Passport Image",
+      "subtitle": "By William Budd",
+      "src": "img/icons/misc/search-jpg.png",
+      "meta": "35kb",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Class Notes",
+      "subtitle": "By Laurel Lance",
+      "src": "img/icons/misc/search-doc.png",
+      "meta": "153kb",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Receipt",
+      "subtitle": "By Donnie Darko",
+      "src": "img/icons/misc/search-jpg.png",
+      "meta": "25kb",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Social Guide",
+      "subtitle": "By Ryan Middleton",
+      "src": "img/icons/misc/search-doc.png",
+      "meta": "39kb",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Expenses",
+      "subtitle": "By Slade Wilson",
+      "src": "img/icons/misc/search-xls.png",
+      "meta": "15kb",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Documentation",
+      "subtitle": "By Walter White",
+      "src": "img/icons/misc/search-doc.png",
+      "meta": "200kb",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Avatar",
+      "subtitle": "By Ross Geller",
+      "src": "img/icons/misc/search-jpg.png",
+      "meta": "100kb",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Data",
+      "subtitle": "By Erik Foreman",
+      "src": "img/icons/misc/search-xls.png",
+      "meta": "5kb",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Gardening Guide",
+      "subtitle": "By Jerry Seinfeld",
+      "src": "img/icons/misc/search-doc.png",
+      "meta": "25kb",
+      "url": "javascript:void(0);"
+    }
+  ],
+  "members": [
+    {
+      "name": "John Doe",
+      "subtitle": "Admin",
+      "src": "img/avatars/1.png",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Micheal Clarke",
+      "subtitle": "Customer",
+      "src": "img/avatars/2.png",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Melina Gibson",
+      "subtitle": "Staff",
+      "src": "img/avatars/5.png",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Anna Strong",
+      "subtitle": "Staff",
+      "src": "img/avatars/7.png",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Stephanie Gould",
+      "subtitle": "Customer",
+      "src": "img/avatars/3.png",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "David Budd",
+      "subtitle": "Admin",
+      "src": "img/avatars/10.png",
+      "url": "javascript:void(0);"
+    },
+    {
+      "name": "Mark Shepiro",
+      "subtitle": "Admin",
+      "src": "img/avatars/12.png",
+      "url": "javascript:void(0);"
+    }
+  ]
+}

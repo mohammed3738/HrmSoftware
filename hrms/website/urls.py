@@ -4,7 +4,9 @@ from django.urls import path
 from website import views
 
 urlpatterns = [    
-    path('',views.test,name="test"),
+    # path('',views.test,name="test"),
+    path("", views.admin_dashboard, name="admin-dashboard"),
+
     path('home',views.home,name="home"),
     path('create-employee',views.create_employee,name="create-employee"),
     path('employee/<int:pk>/', views.employee_detail, name='employee_detail'),
@@ -31,7 +33,6 @@ urlpatterns = [
     path('advances/undo-paid/<int:installment_id>/', views.undo_paid, name='undo-paid'),
     path('advances/skip/<int:installment_id>/', views.skip_installment, name='skip-installment'),  # ✅ NEW
 
-    path("admin-dashboard/", views.admin_dashboard, name="admin-dashboard"),
     path("leave-balance/", views.leave_balance_view, name="leave_balance"),
     path("employees/<int:employee_id>/compoffs/", views.employee_compoff_details, name="employee-compoff-details"),
     path("employees/<int:employee_id>/leave-history/", views.employee_leave_history, name="employee_leave_history"),

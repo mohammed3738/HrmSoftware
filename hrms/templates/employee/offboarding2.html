@@ -13,9 +13,7 @@
         </div>
         <div class="col-auto d-flex align-items-center">
           <button type="button" class="btn btn-secondary buttons-collection dropdown-toggle btn-label-primary me-4 waves-effect waves-light" onclick="downloadEmployees()">Export</button>
-          <button type="button" class="btn btn-secondary create-new btn-primary waves-effect waves-light" data-bs-toggle="modal" data-bs-target="#employeeModal">
-            Add Employee Offboarding
-          </button>
+<button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#offboardingModal">Add Offboarding</button>
                   </div>
       </div>
       <hr>
@@ -49,7 +47,7 @@
         <table class="table">
           <thead>
             <tr>
-				<th> Employee Code </th>
+				<th>Employee Code </th>
 				<th>Employee</th>
 				<th>Date Of Resignation</th>
 				<th>Date Of Relieving</th>
@@ -62,52 +60,36 @@
           <tbody class="table-border-bottom-0">
             {% for off in offboarding %}
             <tr>
-              {% comment %} <td><a href="{% url 'employee_detail' employee.pk %}">{{employee.employee_code}}</a></td> {% endcomment %}
-
-              <td>
-                <a
-                  href="https://smarthr.dreamstechnologies.com/html/template/employee-details.html"
-                  >{{off.employee.employee_code}}</a
-                >
-              </td>
-              <td>
-                <a
-                  href="https://smarthr.dreamstechnologies.com/html/template/employee-details.html"
-                  >{{off.employee}}</a
-                >
-              </td>
+              <td>{{ off.employee.employee_code }}</td>
+              <td>{{ off.employee }}</td>
               <td>{{ off.date_of_resignation }}</td>
               <td>{{ off.date_of_relieving }}</td>
-              <td> <a href="{{ off.experience_certificate.url }}">{{ off.experience_certificate }}</a> </td>
-              <td> <a href="{{ off.relieving_letter.url }}">{{ off.relieving_letter }}</a> </td>
-              <td> <a href="{{ off.other_documents.url }}">{{ off.other_documents }} </a> </td>
-            <!-- <td>
-                <div class="action-icon d-inline-flex">
-                  <a
-                    href="#"
-                    class="me-2"
-                    data-bs-toggle="modal"
-                    data-bs-target="#edit_employee"
-                    ><i class="ti ti-edit"></i
-                  ></a>
-                  <a
-                    href="#"
-                    data-bs-toggle="modal"
-                    data-bs-target="#delete_modal"
-                    ><i class="ti ti-trash"></i
-                  ></a>
-                </div>
-              </td> -->
 
               <td>
-                <div class="dropdown">
-                  <button
-                    type="button"
-                    class="btn p-0 dropdown-toggle hide-arrow"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i class="ri-more-2-line"></i>
-                  </button>
+                {% if off.experience_certificate %}
+                  <a href="{{ off.experience_certificate.url }}">{{ off.experience_certificate.name }}</a>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+
+              <td>
+                {% if off.relieving_letter %}
+                  <a href="{{ off.relieving_letter.url }}">{{ off.relieving_letter.name }}</a>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+
+              <td>
+                {% if off.other_documents %}
+                  <a href="{{ off.other_documents.url }}">{{ off.other_documents.name }}</a>
+                {% else %}
+                  -
+                {% endif %}
+              </td>
+
+              <td>
                   <div class="dropdown-menu">
                     <a class="dropdown-item" href="javascript:void(0);"
                       ><i class="ri-pencil-line me-2"></i> Edit</a
@@ -116,11 +98,9 @@
                       <i class="ri-delete-bin-7-line me-2"></i> Delete
                     </a>
                   </div>
-                </div>
               </td>
             </tr>
             {% endfor %}
-
           </tbody>
         </table>
       </div>
@@ -549,115 +529,198 @@
   </div>
 </div> {% endcomment %}
 
-<div class="modal fade" id="employeeModal" aria-labelledby="employeeModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-      <div class="modal-content">
+<!-- Modal -->
+<div class="modal fade" id="offboardingModal" tabindex="-1" aria-labelledby="offboardingLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content">
+      <form method="POST" enctype="multipart/form-data">
+        {% csrf_token %}
         <div class="modal-header">
-          <div class="d-flex align-items-center">
-            <h4 class="modal-title me-2">Add New Employee</h4>
-            <span>Employee ID : EMP-0024</span>
-          </div>
-          <button
-            type="button"
-            class="btn-close custom-btn-close"
-            data-bs-dismiss="modal"
-            aria-label="Close"
-          >
-            <i class="ti ti-x"></i>
-          </button>
+          <h5 class="modal-title" id="offboardingLabel">Add Offboarding</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
-        <!-- Use your URL or Django URL tag for form action and include CSRF token -->
-        <form method="POST" enctype='multipart/form-data'>
-          {% csrf_token %}
-          <div class="contact-grids-tab">
-     
-          </div>
-          <div class="tab-content" id="myTabContent">
-            <!-- Basic Information Tab -->
-            <div class="tab-pane fade show active" id="basic-info" role="tabpanel" aria-labelledby="info-tab" tabindex="0">
-              <div class="modal-body pb-0">
-                <div class="row">
-                  <!-- Profile Image Upload -->
-                  {% comment %} <div class="col-md-12">
-                    <div class="d-flex align-items-center flex-wrap row-gap-3 bg-light w-100 rounded p-3 mb-4">
-                      <div class="d-flex align-items-center justify-content-center avatar avatar-xxl rounded-circle border border-dashed me-2 flex-shrink-0 text-dark frames">
-                        <i class="ti ti-photo text-gray-2 fs-16"></i>
-                      </div>
-                      <div class="profile-upload">
-                        <div class="mb-2">
-                          <h6 class="mb-1">Upload Profile Image</h6>
-                          <p class="fs-12">Image should be below 4 mb</p>
-                        </div>
-                        <div class="profile-uploader d-flex align-items-center">
-                          <div class="drag-upload-btn btn btn-sm btn-primary me-2">
-                            Upload
-                            <input type="file" class="form-control image-sign" name="profile_image" multiple="">
-                          </div>
-                          <a href="javascript:void(0);" class="btn btn-light btn-sm">Cancel</a>
-                        </div>
-                      </div>
-                    </div>
-                  </div> {% endcomment %}
-                  <!-- Employee Personal Details -->
-                  <div class="col-md-6">
-                    <div class="mb-3">
-                      <label class="form-label">employee</label>
-            <select class="form-control select" name="employee">
-              <option value="">Select</option>
-              {% for i in employees %}
-              <option value="{{i.id}}">{{i.first_name}} - {{i.employee_code}}</option>
-              {% endfor %}
-            </select>
-          </div>
+
+        <div class="modal-body">
+          <!-- tabs -->
+          <ul class="nav nav-underline mb-3" role="tablist">
+              <li class="nav-item" role="presentation">
+                  <button type="button" class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-details">
+                      Offboarding Details
+                  </button>
+              </li>
+
+              <li class="nav-item" role="presentation">
+                  <button type="button" class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-assets">
+                      Asset Handover
+                  </button>
+              </li>
+          </ul>
+
+          <div class="tab-content">
+            <!-- Offboarding details -->
+            <div class="tab-pane fade show active" id="tab-details">
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <label class="form-label">Employee</label>
+                  {{ form.employee }}
+                  {% for err in form.employee.errors %}
+                    <div class="text-danger small">{{ err }}</div>
+                  {% endfor %}
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label">Date of Resignation</label>
+                  {{ form.date_of_resignation }}
+                  {% for err in form.date_of_resignation.errors %}
+                    <div class="text-danger small">{{ err }}</div>
+                  {% endfor %}
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label">Date of Relieving</label>
+                  {{ form.date_of_relieving }}
+                  {% for err in form.date_of_relieving.errors %}
+                    <div class="text-danger small">{{ err }}</div>
+                  {% endfor %}
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label">Experience Certificate</label>
+                  {{ form.experience_certificate }}
+                  {% for err in form.experience_certificate.errors %}
+                    <div class="text-danger small">{{ err }}</div>
+                  {% endfor %}
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label">Relieving Letter</label>
+                  {{ form.relieving_letter }}
+                  {% for err in form.relieving_letter.errors %}
+                    <div class="text-danger small">{{ err }}</div>
+                  {% endfor %}
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label">Other Documents</label>
+                  {{ form.other_documents }}
+                  {% for err in form.other_documents.errors %}
+                    <div class="text-danger small">{{ err }}</div>
+                  {% endfor %}
+                </div>
+              </div> <!-- row -->
+            </div> <!-- tab details -->
+
+            <!-- Asset handover -->
+            <div class="tab-pane fade" id="tab-assets">
+              <div class="mb-2">
+                {{ formset.management_form }}
+                {# generic non-form errors #}
+                {% if formset.non_form_errors %}
+                  <div class="alert alert-danger">
+                    {% for e in formset.non_form_errors %}{{ e }}<br>{% endfor %}
                   </div>
-                  <div class="col-md-6">
-                    <div class="mb-3">
-                      <label class="form-label">Date Of Resignation <span class="text-danger">*</span></label>
-                      <input type="date" class="form-control" name="date_of_resignation" />
-                    </div>
-                  </div>
-                  <div class="col-md-6">
-                    <div class="mb-3">
-                      <label class="form-label">Date Of Relieving</label>
-                      <input type="date" class="form-control" name="date_of_relieving" />
-                    </div>
-                  </div>
-                  <div class="col-md-6">
-                    <div class="mb-3">
-                      <label class="form-label">Experience Certificate <span class="text-danger">*</span></label>
-                      <input type="file" class="form-control" name="experience_certificate" />
-                    </div>
-                  </div>
-                  <div class="col-md-6">
-                    <div class="mb-3">
-                      <label class="form-label">Relieving Letter</label>
-                      <input type="file" class="form-control" name="relieving_letter" />
-                    </div>
-                  </div>
-                  <div class="col-md-6">
-                    <div class="mb-3">
-                      <label class="form-label">Other Documents</label>
-                      <input type="file" class="form-control" name="other_documents" />
-                    </div>
-                  </div>
-  
-              <div class="modal-footer">
-                <button type="button" class="btn btn-outline-light border me-2" data-bs-dismiss="modal">Cancel</button>
-                <button type="submit" class="btn btn-primary">Save Employee</button>
+                {% endif %}
               </div>
-            </div>
-            <!-- Previous Employment Tab -->
-            {% comment %} <div class="tab-pane fade" id="previous-employment" role="tabpanel" aria-labelledby="previous-tab" tabindex="0"> {% endcomment %}
-  
-            </div>
-          </div>
-        </form>
-      </div>
+
+              <div class="table-responsive">
+                <table class="table table-bordered" id="assetTable">
+                  <thead class="table-light">
+                    <tr>
+                      <th style="min-width:140px">Asset Type</th>
+                      <th style="width:100px">Quantity</th>
+                      <th style="min-width:140px">Condition</th>
+                      <th>Remarks</th>
+                      <th style="min-width:130px">Asset Photo</th>
+                      <th style="min-width:130px">Receipt</th>
+                      <th style="width:80px">Returned</th>
+                      <th style="width:90px">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for f in formset %}
+                      <tr class="asset-row">
+                        <td>
+                          {{ f.asset_type }}
+                          {% for err in f.asset_type.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                        </td>
+                        <td>
+                          {{ f.quantity }}
+                          {% for err in f.quantity.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                        </td>
+                        <td>
+                          {{ f.condition_on_return }}
+                          {% for err in f.condition_on_return.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                        </td>
+                        <td>
+                          {{ f.remarks }}
+                          {% for err in f.remarks.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                        </td>
+                        <td>
+                          {{ f.asset_photo }}
+                          {% if f.instance.pk and f.instance.asset_photo %}
+                            <div class="small mt-1"><a href="{{ f.instance.asset_photo.url }}" target="_blank">{{ f.instance.asset_photo.name }}</a></div>
+                          {% endif %}
+                          {% for err in f.asset_photo.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                        </td>
+                        <td>
+                          {{ f.receipt }}
+                          {% if f.instance.pk and f.instance.receipt %}
+                            <div class="small mt-1"><a href="{{ f.instance.receipt.url }}" target="_blank">{{ f.instance.receipt.name }}</a></div>
+                          {% endif %}
+                          {% for err in f.receipt.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                        </td>
+                        <td class="text-center">
+                          <div class="form-check d-inline-block">
+                            {{ f.returned }}
+                          </div>
+                          {% for err in f.returned.errors %}<div class="text-danger small">{{ err }}</div>{% endfor %}
+                        </td>
+                        <td>
+                          {% if f.instance.pk %}
+                            <div class="form-check">
+                              {{ f.DELETE }} <label class="form-check-label ms-1">Delete</label>
+                            </div>
+                          {% else %}
+                            <button type="button" class="btn btn-danger btn-sm remove-asset-row">Remove</button>
+                          {% endif %}
+                        </td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="mt-2">
+                <button type="button" id="addAssetRow" class="btn btn-secondary btn-sm">Add Asset</button>
+              </div>
+
+              {# hidden empty_form template #}
+              <table style="display:none;">
+                <tbody id="asset-empty">
+                  <tr>
+                    <td>{{ formset.empty_form.asset_type }}</td>
+                    <td>{{ formset.empty_form.quantity }}</td>
+                    <td>{{ formset.empty_form.condition_on_return }}</td>
+                    <td>{{ formset.empty_form.remarks }}</td>
+                    <td>{{ formset.empty_form.asset_photo }}</td>
+                    <td>{{ formset.empty_form.receipt }}</td>
+                    <td class="text-center">{{ formset.empty_form.returned }}</td>
+                    <td><button type="button" class="btn btn-danger btn-sm remove-asset-row">Remove</button></td>
+                  </tr>
+                </tbody>
+              </table>
+
+            </div> <!-- tab assets -->
+          </div> <!-- tab-content -->
+        </div> <!-- modal-body -->
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Offboarding</button>
+        </div>
+      </form>
     </div>
   </div>
-
-
-
 </div>
 
 
@@ -706,6 +769,59 @@ function confirmDelete(offId) {
     }
   });
 }
+</script>
+
+
+
+
+<!-- JS: manage dynamic asset rows using __prefix__ placeholder replacement -->
+<script>
+(function(){
+  const assetTableBody = document.querySelector('#assetTable tbody');
+  const assetEmptyHtml = document.querySelector('#asset-empty').innerHTML.trim();
+  const totalFormsInput = document.querySelector('#id_assethandover_set-TOTAL_FORMS') || document.querySelector('input[name$="-TOTAL_FORMS"]');
+
+  // helper
+  function getTotal() { return parseInt(totalFormsInput.value || '0', 10); }
+
+  document.getElementById('addAssetRow').addEventListener('click', function(){
+    const index = getTotal();
+    // Django empty_form uses __prefix__ in names/ids - replace it
+    const html = assetEmptyHtml.replace(/__prefix__/g, index);
+    const tmp = document.createElement('tbody');
+    tmp.innerHTML = html;
+    const newRow = tmp.querySelector('tr');
+    // clear values
+    newRow.querySelectorAll('input,textarea,select').forEach(el => {
+      if (el.type === 'file') el.value = '';
+      else if (el.type === 'checkbox') el.checked = false;
+      else el.value = '';
+    });
+    assetTableBody.appendChild(newRow);
+    totalFormsInput.value = index + 1;
+  });
+
+  assetTableBody.addEventListener('click', function(ev){
+    if (ev.target && ev.target.classList.contains('remove-asset-row')) {
+      const row = ev.target.closest('tr');
+      // if row contains a DELETE checkbox (existing row), check it and hide row
+      const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
+      if (deleteCheckbox) {
+        deleteCheckbox.checked = true;
+        row.style.display = 'none';
+      } else {
+        row.remove();
+        // decrement TOTAL_FORMS
+        totalFormsInput.value = Math.max(0, getTotal() - 1);
+      }
+    }
+    // toggle hide on check delete
+    if (ev.target && ev.target.matches('input[type="checkbox"][name$="-DELETE"]')) {
+      const row = ev.target.closest('tr');
+      row.style.display = ev.target.checked ? 'none' : '';
+    }
+  });
+})();
 </script>
 
 {% endblock %}

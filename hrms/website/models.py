@@ -7,6 +7,8 @@ from django.conf import settings
 import datetime
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
+from django.db.models import JSONField  # for PostgreSQL
+
 # Create your models here.
 status = {
     'Active':'active',
@@ -151,6 +153,26 @@ class Offboarding(models.Model):
     def __str__(self):
         return f"Offboarding for {self.employee}"
 
+
+# New model for Asset handover
+class AssetHandover(models.Model):
+    CONDITION_CHOICES = [
+        ('Good', 'Good'),
+        ('Damaged', 'Damaged'),
+        ('Missing', 'Missing'),
+    ]
+
+    offboarding = models.ForeignKey(Offboarding, related_name="asset_handovers", on_delete=models.CASCADE)
+    asset_type = models.CharField(max_length=100, verbose_name="Asset Type")
+    quantity = models.PositiveIntegerField(default=1, verbose_name="Quantity")
+    condition_on_return = models.CharField(max_length=20, choices=CONDITION_CHOICES, default='Good', verbose_name="Condition on Return")
+    remarks = models.TextField(blank=True, null=True, verbose_name="Remarks")
+    asset_photo = models.FileField(upload_to="offboarding/asset_photos/", blank=True, null=True, verbose_name="Asset Photo")
+    receipt = models.FileField(upload_to="offboarding/asset_receipts/", blank=True, null=True, verbose_name="Receipt / Proof")
+    returned = models.BooleanField(default=True, verbose_name="Returned?")  # checkbox
+
+    def __str__(self):
+        return f"{self.asset_type} x{self.quantity} ({self.offboarding})"
 
 
     # employee_status = models.CharField(
@@ -615,57 +637,26 @@ class PayrollSettings(models.Model):
 
 
 class SalaryIncrement(models.Model):
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
 
-    employee = models.ForeignKey(Employee,null=True,blank=True,on_delete=models.CASCADE)
-    is_active = models.BooleanField(default=True,null=True, blank=True)  # To flag current active salary
-    effective_date = models.DateField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True, null=True, blank=True)
-    is_processed = models.BooleanField(default=False,null=True, blank=True)
+    effective_date = models.DateField()  
+    created_at = models.DateTimeField(auto_now_add=True)
 
-    pf_deducted = models.BooleanField(default=False,null=True, blank=True, verbose_name="PF Deducted/Not Deducted")
-    gratuity_applicable = models.BooleanField(default=False,null=True, blank=True, verbose_name="Gratuity Applicable")
-    esic_applicable = models.BooleanField(default=False,null=True, blank=True, verbose_name="ESIC Applicable")
+    # Main field: stores all salary values (exact snapshot)
+    change_set = JSONField()
 
-    # Salary Components (Monthly and Annually)
-    gross_ctc_pm = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Gross CTC (P.M)")
-    gross_ctc_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Gross CTC (P.A)")
-    basic_pm = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Basic (P.M)")
-    basic_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Basic (P.A)")
-    hra_pm = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="HRA (P.M)")
-    hra_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="HRA (P.A)")
-    sp_allowance_pm = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Special Allowance (P.M)")
-    sp_allowance_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Special Allowance (P.A)")
-    allowance1_pm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Allowance 1 (P.M)")
-    allowance1_pa = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Allowance 1 (P.A)")
-    allowance2_pm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Allowance 2 (P.M)")
-    allowance2_pa = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Allowance 2 (P.A)")
-
-    # Guaranteed Cash
-    guaranteed_cash_pm = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Guaranteed Cash (P.M)")
-    guaranteed_cash_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Guaranteed Cash (P.A)")
-
-    # Cost to Company
-    ctc_pm = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Cost to Company (P.M)")
-    ctc_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Cost to Company (P.A)")
-    stat_bonus_pm = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Stat Bonus (P.M)")
-    stat_bonus_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Stat Bonus (P.A)")
-
-    # Deductions
-    pf_er_cont_pm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="PF (Employer Contribution P.M)")
-    pf_er_cont_pa = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="PF (Employer Contribution P.A)")
-    esic_er_cont_pm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="ESIC (Employer Contribution P.M)")
-    esic_er_cont_pa = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="ESIC (Employer Contribution P.A)")
-    pf_ee_cont_pm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="PF (Employee Contribution P.M)")
-    pf_ee_cont_pa = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="PF (Employee Contribution P.A)")
-    esic_ee_cont_pm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="ESIC (Employee Contribution P.M)")
-    esic_ee_cont_pa = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="ESIC (Employee Contribution P.A)")
-    # Profession Tax
-    profession_tax_pm = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True,    verbose_name="Profession Tax (P.M)")
-    profession_tax_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True,    verbose_name="Profession Tax (P.A)")
-
-    # Net Salary
-    net_salary_pm = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Net Salary (P.M)")
-    net_salary_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Net Salary (P.A)")
+    is_processed = models.BooleanField(default=False)
 
     def __str__(self):
-        return f"{self.employee} - ₹{self.gross_ctc_pm} from {self.effective_date}"
+        return f"Increment for {self.employee} effective {self.effective_date}"
+
+
+
+class SalaryHistory(models.Model):
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE,null=True, blank=True)
+    data = models.JSONField(null=True, blank=True)   # store all salary fields here
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.employee} - {self.start_date} to {self.end_date}"

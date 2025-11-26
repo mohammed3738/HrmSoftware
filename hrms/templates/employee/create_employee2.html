@@ -70,7 +70,6 @@
               <th>Date of Joining</th>
               <th>Date of Confirmation</th>
               <th>Location</th>
-              <th>On Payroll Of</th>
               <th>Shift</th>
               <th>PAN No</th>
               <th>Aadhar No</th>
@@ -100,7 +99,7 @@
 
               <td>
                 <a
-                  href="https://smarthr.dreamstechnologies.com/html/template/employee-details.html"
+                  href="{% url 'create-company' %}"
                   >{{employee.company}}</a
                 >
               </td>
@@ -115,6 +114,7 @@
                     </p>
               </td>
 
+              <td>{{employee.salutation}}</td>
               <td>{{employee.first_name}}</td>
               <td>{{employee.middle_name}}</td>
               <td>{{employee.last_name}}</td>
@@ -133,7 +133,6 @@
               <td>{{employee.date_of_joining}}</td>
               <td>{{employee.date_of_confirmation}}</td>
               <td>{{employee.location}}</td>
-              <td>{{employee.payroll_of}}</td>
               <td>{{employee.shift}}</td>
               <td>{{employee.pan_no}}</td>
               <td>{{employee.aadhar_no}}</td>

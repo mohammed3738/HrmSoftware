@@ -756,13 +756,13 @@
                       </li>
 
                       <li class="menu-item">
-                        <a href="{% url 'upload_attendance' %}" class="menu-link">
+                        <a href="{% url 'admin-dashboard' %}" class="menu-link">
                           <div>Upload Attendance (Excel)</div>
                         </a>
                       </li>
 
                       <li class="menu-item">
-                        <a href="{% url 'submit_correction_request' %}" class="menu-link">
+                        <a href="{% url 'attendance' %}" class="menu-link">
                           <div>Attendance Correction</div>
                         </a>
                       </li>
@@ -785,7 +785,7 @@
                       </li>
 
                       <li class="menu-item">
-                        <a href="{% url 'submit_comp_off_request' %}" class="menu-link">
+                        <a href="{% url 'attendance' %}" class="menu-link">
                           <div>Apply Comp-Off</div>
                         </a>
                       </li>
@@ -796,11 +796,11 @@
                         </a>
                       </li>
 
-                      <li class="menu-item">
+                      {% comment %} <li class="menu-item">
                         <a href="{% url 'recalculate_leave_balances' %}" class="menu-link">
                           <div>Recalculate Leaves</div>
                         </a>
-                      </li>
+                      </li> {% endcomment %}
                     </ul>
                   </li>
 

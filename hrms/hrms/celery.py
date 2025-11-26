@@ -26,12 +26,19 @@ app.conf.beat_schedule = {
 }
 
 
-app.conf.beat_schedule.update({
-    'process-salary-increments-daily': {
-        'task': 'website.tasks.process_salary_increments',
-        'schedule': crontab(minute='*'),  # Every midnight
-    },
-})
+# app.conf.beat_schedule.update({
+#     'process-salary-increments-daily': {
+#         'task': 'website.tasks.process_salary_increments',
+#         'schedule': crontab(minute='*'),  # Every midnight
+#     },
+# })
+
+CELERY_BEAT_SCHEDULE = {
+    "process-salary-increments-every-midnight": {
+        "task": "salary.tasks.process_salary_increments",
+        "schedule": crontab(hour=0, minute=1),
+    }
+}
 
 
 

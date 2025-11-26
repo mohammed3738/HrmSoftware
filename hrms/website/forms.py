@@ -123,8 +123,45 @@ class BranchForm(forms.ModelForm):
         
 class OffboardingForm(forms.ModelForm):
     class Meta:
-        model= Offboarding
-        fields = "__all__"
+        model = Offboarding
+        fields = [
+            'employee', 'date_of_resignation', 'date_of_relieving',
+            'experience_certificate', 'relieving_letter', 'other_documents'
+        ]
+        widgets = {
+            'employee': forms.Select(attrs={'class': 'form-control'}),
+            'date_of_resignation': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            'date_of_relieving': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
+            # file widgets get default input type=file; add class via attrs
+            'experience_certificate': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+            'relieving_letter': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+            'other_documents': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+        }
+
+class AssetHandoverForm(forms.ModelForm):
+    class Meta:
+        model = AssetHandover
+        fields = [
+            'asset_type', 'quantity', 'condition_on_return',
+            'remarks', 'asset_photo', 'receipt', 'returned'
+        ]
+        widgets = {
+            'asset_type': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g. Laptop'}),
+            'quantity': forms.NumberInput(attrs={'class': 'form-control', 'min': 1}),
+            'condition_on_return': forms.Select(attrs={'class': 'form-control'}),
+            'remarks': forms.Textarea(attrs={'class': 'form-control', 'rows': 2}),
+            'asset_photo': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+            'receipt': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+            'returned': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+        }
+
+AssetHandoverFormSet = inlineformset_factory(
+    Offboarding,
+    AssetHandover,
+    form=AssetHandoverForm,
+    extra=1,
+    can_delete=True
+)
 
 
 class CompanyForm(forms.ModelForm):

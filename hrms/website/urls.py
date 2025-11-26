@@ -39,7 +39,7 @@ urlpatterns = [
     path('approve-compoff/<int:compoff_id>/', views.approve_compoff, name='approve_compoff'),
     path('reject-compoff/<int:compoff_id>/', views.reject_compoff, name='reject_compoff'),
     path("submit-comp-off-request/", views.submit_comp_off_request, name="submit_comp_off_request"),
-    path("salary-increment/", views.create_increment, name="salary_increment"),
+    path("salary-increment/", views.create_salary_increment, name="salary_increment"),
 
     # path("leave-balance/", leave_balance_view, name="leave_balance"),
 

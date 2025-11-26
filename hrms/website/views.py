@@ -601,7 +601,7 @@ def create_employee(request):
             attachment_formset.save()
 
             messages.success(request, "Employee created successfully!")
-            return redirect('home')
+            return redirect('create-employee')
 
         else:
             print("FORM ERRORS:", form.errors)
@@ -646,26 +646,74 @@ def employee_detail(request, pk):
 
 
 
+# def create_offboarding(request):
+#     if request.method == 'POST':
+#         print('POST data:', request.POST)  # Debugging line
+#         form = OffboardingForm(request.POST, request.FILES)
+#         if form.is_valid():
+#             form.save()
+#             return redirect('home')  # Redirect after successful save
+#         else:
+#             print(form.errors)  # Debugging validation errors
+#     else:
+#         form = OffboardingForm()
+#     employees = Employee.objects.all() 
+#     offboarding = Offboarding.objects.all() 
+#     context = {
+#         'form': form,
+#         'employees': employees,
+#         'offboarding': offboarding,
+#     }
+#     return render(request, 'employee/offboarding2.html', context)
+
 def create_offboarding(request):
     if request.method == 'POST':
-        print('POST data:', request.POST)  # Debugging line
         form = OffboardingForm(request.POST, request.FILES)
+        formset = AssetHandoverFormSet(request.POST, request.FILES)
+
+        # must bind formset to the parent only after parent is saved,
+        # but to validate all at once we can pass prefix-less data and call is_valid() afterwards
         if form.is_valid():
-            form.save()
-            return redirect('home')  # Redirect after successful save
+            off = form.save(commit=False)
+            # If you want to set any fields before saving, do here
+            off.save()
+
+            # bind formset to saved parent and passed POST/FILES
+            formset = AssetHandoverFormSet(request.POST, request.FILES, instance=off)
+            if formset.is_valid():
+                formset.save()
+                messages.success(request, "Offboarding saved successfully.")
+                return redirect('create-offboarding')  # change to your url
+            else:
+                # formset invalid: delete saved off to prevent incomplete parent?
+                # Usually better to leave parent and show errors (but you may delete)
+                # off.delete()  # uncomment if you want to rollback
+                messages.error(request, "Please fix asset handover errors.")
         else:
-            print(form.errors)  # Debugging validation errors
+            messages.error(request, "Please fix the offboarding form errors.")
+
+        # If errors, fall through and re-render template with both form & formset (form already bound)
+        # Note: if the parent was saved and we didn't delete, re-render with bound formset we made
+        # Ensure formset is bound to instance for rendering errors
+        # If off was saved above, instance variable is `off`. If not saved, instance should be None
+        if 'off' in locals():
+            formset = AssetHandoverFormSet(request.POST, request.FILES, instance=off)
+        else:
+            formset = AssetHandoverFormSet(request.POST, request.FILES)
     else:
         form = OffboardingForm()
-    employees = Employee.objects.all() 
-    offboarding = Offboarding.objects.all() 
-    context = {
+        formset = AssetHandoverFormSet()
+
+    employees = Employee.objects.all()
+    offboarding = Offboarding.objects.all()
+
+    return render(request, 'employee/offboarding2.html', {
         'form': form,
+        'formset': formset,
         'employees': employees,
         'offboarding': offboarding,
-    }
-    return render(request, 'employee/offboarding2.html', context)
 
+    })
 
 
 def delete_offboarding(request, pk):
@@ -681,7 +729,7 @@ def create_branch(request):
         form = BranchForm(request.POST)
         if form.is_valid():
             form.save()
-            return redirect('home')  # Redirect after successful save
+            return redirect('admin-dashboard')  # Redirect after successful save
         else:
             print(form.errors)  # Debugging validation errors
     else:
@@ -1155,87 +1203,187 @@ def submit_comp_off_request(request):
 from django.conf import settings
 from decimal import Decimal
 
+# def create_salary(request):
+#     if request.method == "POST":
+#         employee_id = request.POST.get('employee')
+#         employee = Employee.objects.get(pk=employee_id) if employee_id else None
+
+#         # ✅ These come as 'yes'/'no' strings
+#         pf_deducted = request.POST.get('pf_deducted', '').lower() == 'yes'
+#         gratuity_applicable = request.POST.get('gratuity_applicable', '').lower() == 'yes'
+#         esic_applicable = request.POST.get('esic_applicable', '').lower() == 'yes'
+
+#         def get_decimal(field_name):
+#             try:
+#                 return Decimal(request.POST.get(field_name, '0') or '0')
+#             except:
+#                 return Decimal('0')
+
+#         # ✅ Match the actual POST keys
+#         gross_ctc_pm = get_decimal('gross_ctc_pm')
+#         basic_pm = get_decimal('basic_pm')
+#         hra_pm = get_decimal('hra_pm')
+#         stat_bonus_pm = get_decimal('stat_bonus_pm')
+#         allowance1_pm = get_decimal('allowance1_pm')
+#         allowance2_pm = get_decimal('allowance2_pm')
+#         special_allowance_pm = get_decimal('sp_allowance_pm')
+#         guaranteed_cash_pm = get_decimal('guaranteed_cash_pm')
+#         prof_tax_pm = get_decimal('profession_tax_pm')
+
+#         pf_er_cont_pm = get_decimal('pf_er_cont_pm')
+#         pf_ee_cont_pm = get_decimal('pf_ee_cont_pm')
+#         esic_er_cont_pm = get_decimal('esic_er_cont_pm')
+#         esic_ee_cont_pm = get_decimal('esic_ee_cont_pm')
+#         gratuity_pm = get_decimal('gratuity_pm')
+#         net_salary_pm = get_decimal('net_salary_pm')
+#         cost_to_company_pm = get_decimal('ctc_pm')
+
+#         instance = SalaryMaster(
+#             employee=employee,
+#             pf_deducted=pf_deducted,
+#             gratuity_applicable=gratuity_applicable,
+#             esic_applicable=esic_applicable,
+#             gross_ctc_pm=gross_ctc_pm,
+#             gross_ctc_pa=gross_ctc_pm * 12,
+#             basic_pm=basic_pm,
+#             basic_pa=basic_pm * 12,
+#             hra_pm=hra_pm,
+#             hra_pa=hra_pm * 12,
+#             stat_bonus_pm=stat_bonus_pm,
+#             stat_bonus_pa=stat_bonus_pm * 12,
+#             sp_allowance_pm=special_allowance_pm,
+#             sp_allowance_pa=special_allowance_pm * 12,
+#             allowance1_pm=allowance1_pm,
+#             allowance1_pa=allowance1_pm * 12,
+#             allowance2_pm=allowance2_pm,
+#             allowance2_pa=allowance2_pm * 12,
+#             guaranteed_cash_pm=guaranteed_cash_pm,
+#             guaranteed_cash_pa=guaranteed_cash_pm * 12,
+#             gratuity_pm=gratuity_pm,
+#             gratuity_pa=gratuity_pm * 12,
+#             ctc_pm=cost_to_company_pm,
+#             ctc_pa=cost_to_company_pm * 12,
+#             pf_er_cont_pm=pf_er_cont_pm,
+#             pf_er_cont_pa=pf_er_cont_pm * 12,
+#             pf_ee_cont_pm=pf_ee_cont_pm,
+#             pf_ee_cont_pa=pf_ee_cont_pm * 12,
+#             esic_er_cont_pm=esic_er_cont_pm,
+#             esic_er_cont_pa=esic_er_cont_pm * 12,
+#             esic_ee_cont_pm=esic_ee_cont_pm,
+#             esic_ee_cont_pa=esic_ee_cont_pm * 12,
+#             profession_tax_pm=prof_tax_pm,
+#             profession_tax_pa=prof_tax_pm * 12,
+#             net_salary_pm=net_salary_pm,
+#             net_salary_pa=net_salary_pm * 12,
+#         )
+#         instance.save()
+
+#         return redirect('create-salary')
+
+#     employees = Employee.objects.all()
+#     salary = SalaryMaster.objects.all()
+#     return render(request, 'salary/create_salary4.html', {'employees': employees, 'salary': salary})
+
+def extract_decimal(request, key):
+    """Safe decimal extraction helper."""
+    try:
+        return Decimal(request.POST.get(key, "0") or "0")
+    except:
+        return Decimal("0")
+
+
 def create_salary(request):
     if request.method == "POST":
-        employee_id = request.POST.get('employee')
-        employee = Employee.objects.get(pk=employee_id) if employee_id else None
 
-        # ✅ These come as 'yes'/'no' strings
+        # --------------------------
+        # 🔹 1. BASIC FIELD EXTRACTION
+        # --------------------------
+        employee_id = request.POST.get('employee')
+        employee = Employee.objects.get(pk=employee_id)
+
         pf_deducted = request.POST.get('pf_deducted', '').lower() == 'yes'
         gratuity_applicable = request.POST.get('gratuity_applicable', '').lower() == 'yes'
         esic_applicable = request.POST.get('esic_applicable', '').lower() == 'yes'
 
-        def get_decimal(field_name):
-            try:
-                return Decimal(request.POST.get(field_name, '0') or '0')
-            except:
-                return Decimal('0')
+        # Extract all numbers
+        data = {
+            'gross_ctc_pm': extract_decimal(request, 'gross_ctc_pm'),
+            'basic_pm': extract_decimal(request, 'basic_pm'),
+            'hra_pm': extract_decimal(request, 'hra_pm'),
+            'stat_bonus_pm': extract_decimal(request, 'stat_bonus_pm'),
+            'allowance1_pm': extract_decimal(request, 'allowance1_pm'),
+            'allowance2_pm': extract_decimal(request, 'allowance2_pm'),
+            'sp_allowance_pm': extract_decimal(request, 'sp_allowance_pm'),
+            'guaranteed_cash_pm': extract_decimal(request, 'guaranteed_cash_pm'),
+            'profession_tax_pm': extract_decimal(request, 'profession_tax_pm'),
 
-        # ✅ Match the actual POST keys
-        gross_ctc_pm = get_decimal('gross_ctc_pm')
-        basic_pm = get_decimal('basic_pm')
-        hra_pm = get_decimal('hra_pm')
-        stat_bonus_pm = get_decimal('stat_bonus_pm')
-        allowance1_pm = get_decimal('allowance1_pm')
-        allowance2_pm = get_decimal('allowance2_pm')
-        special_allowance_pm = get_decimal('sp_allowance_pm')
-        guaranteed_cash_pm = get_decimal('guaranteed_cash_pm')
-        prof_tax_pm = get_decimal('profession_tax_pm')
+            'pf_er_cont_pm': extract_decimal(request, 'pf_er_cont_pm'),
+            'pf_ee_cont_pm': extract_decimal(request, 'pf_ee_cont_pm'),
+            'esic_er_cont_pm': extract_decimal(request, 'esic_er_cont_pm'),
+            'esic_ee_cont_pm': extract_decimal(request, 'esic_ee_cont_pm'),
 
-        pf_er_cont_pm = get_decimal('pf_er_cont_pm')
-        pf_ee_cont_pm = get_decimal('pf_ee_cont_pm')
-        esic_er_cont_pm = get_decimal('esic_er_cont_pm')
-        esic_ee_cont_pm = get_decimal('esic_ee_cont_pm')
-        gratuity_pm = get_decimal('gratuity_pm')
-        net_salary_pm = get_decimal('net_salary_pm')
-        cost_to_company_pm = get_decimal('ctc_pm')
+            'gratuity_pm': extract_decimal(request, 'gratuity_pm'),
+            'net_salary_pm': extract_decimal(request, 'net_salary_pm'),
+            'ctc_pm': extract_decimal(request, 'ctc_pm'),
+        }
 
-        instance = SalaryMaster(
+        # --------------------------
+        # 🔹 2. SAVE SalaryMaster ENTRY
+        # --------------------------
+
+        sm = SalaryMaster.objects.create(
             employee=employee,
             pf_deducted=pf_deducted,
             gratuity_applicable=gratuity_applicable,
             esic_applicable=esic_applicable,
-            gross_ctc_pm=gross_ctc_pm,
-            gross_ctc_pa=gross_ctc_pm * 12,
-            basic_pm=basic_pm,
-            basic_pa=basic_pm * 12,
-            hra_pm=hra_pm,
-            hra_pa=hra_pm * 12,
-            stat_bonus_pm=stat_bonus_pm,
-            stat_bonus_pa=stat_bonus_pm * 12,
-            sp_allowance_pm=special_allowance_pm,
-            sp_allowance_pa=special_allowance_pm * 12,
-            allowance1_pm=allowance1_pm,
-            allowance1_pa=allowance1_pm * 12,
-            allowance2_pm=allowance2_pm,
-            allowance2_pa=allowance2_pm * 12,
-            guaranteed_cash_pm=guaranteed_cash_pm,
-            guaranteed_cash_pa=guaranteed_cash_pm * 12,
-            gratuity_pm=gratuity_pm,
-            gratuity_pa=gratuity_pm * 12,
-            ctc_pm=cost_to_company_pm,
-            ctc_pa=cost_to_company_pm * 12,
-            pf_er_cont_pm=pf_er_cont_pm,
-            pf_er_cont_pa=pf_er_cont_pm * 12,
-            pf_ee_cont_pm=pf_ee_cont_pm,
-            pf_ee_cont_pa=pf_ee_cont_pm * 12,
-            esic_er_cont_pm=esic_er_cont_pm,
-            esic_er_cont_pa=esic_er_cont_pm * 12,
-            esic_ee_cont_pm=esic_ee_cont_pm,
-            esic_ee_cont_pa=esic_ee_cont_pm * 12,
-            profession_tax_pm=prof_tax_pm,
-            profession_tax_pa=prof_tax_pm * 12,
-            net_salary_pm=net_salary_pm,
-            net_salary_pa=net_salary_pm * 12,
-        )
-        instance.save()
 
+            gross_ctc_pm=data['gross_ctc_pm'],
+            gross_ctc_pa=data['gross_ctc_pm'] * 12,
+            basic_pm=data['basic_pm'],
+            basic_pa=data['basic_pm'] * 12,
+            hra_pm=data['hra_pm'],
+            hra_pa=data['hra_pm'] * 12,
+            stat_bonus_pm=data['stat_bonus_pm'],
+            stat_bonus_pa=data['stat_bonus_pm'] * 12,
+            allowance1_pm=data['allowance1_pm'],
+            allowance1_pa=data['allowance1_pm'] * 12,
+            allowance2_pm=data['allowance2_pm'],
+            allowance2_pa=data['allowance2_pm'] * 12,
+            sp_allowance_pm=data['sp_allowance_pm'],
+            sp_allowance_pa=data['sp_allowance_pm'] * 12,
+            guaranteed_cash_pm=data['guaranteed_cash_pm'],
+            guaranteed_cash_pa=data['guaranteed_cash_pm'] * 12,
+
+            gratuity_pm=data['gratuity_pm'],
+            gratuity_pa=data['gratuity_pm'] * 12,
+            pf_er_cont_pm=data['pf_er_cont_pm'],
+            pf_er_cont_pa=data['pf_er_cont_pm'] * 12,
+            pf_ee_cont_pm=data['pf_ee_cont_pm'],
+            pf_ee_cont_pa=data['pf_ee_cont_pm'] * 12,
+            esic_er_cont_pm=data['esic_er_cont_pm'],
+            esic_er_cont_pa=data['esic_er_cont_pm'] * 12,
+            esic_ee_cont_pm=data['esic_ee_cont_pm'],
+            esic_ee_cont_pa=data['esic_ee_cont_pm'] * 12,
+
+            profession_tax_pm=data['profession_tax_pm'],
+            profession_tax_pa=data['profession_tax_pm'] * 12,
+            net_salary_pm=data['net_salary_pm'],
+            net_salary_pa=data['net_salary_pm'] * 12,
+            ctc_pm=data['ctc_pm'],
+            ctc_pa=data['ctc_pm'] * 12,
+        )
+
+        messages.success(request, "Salary created successfully.")
         return redirect('create-salary')
 
+    # GET Request
     employees = Employee.objects.all()
     salary = SalaryMaster.objects.all()
-    return render(request, 'salary/create_salary4.html', {'employees': employees, 'salary': salary})
 
+    return render(request, 'salary/create_salary4.html', {
+        'employees': employees,
+        'salary': salary
+    })
 
 
 
@@ -1383,98 +1531,88 @@ def skip_installment(request, installment_id):
 
 
 
-def create_increment(request):
+def extract_decimal(request, key):
+    try:
+        return Decimal(request.POST.get(key, "0") or "0")
+    except:
+        return Decimal("0")
+
+
+def create_salary_increment(request):
+
     if request.method == "POST":
-        # Convert string fields from POST to appropriate Python types
-        # For Boolean fields, we assume the form sends "yes" for True and "no" for False.
-        employee_id = request.POST.get('employee')
-        employee = Employee.objects.get(pk=employee_id) if employee_id else None
+        employee_id = request.POST.get("employee")
+        effective_date = request.POST.get("effective_date")
 
-        pf_deducted = request.POST.get('pfSelect', '').lower() == 'yes'
-        gratuity_applicable = request.POST.get('gratuitySelect', '').lower() == 'yes'
-        esic_applicable = request.POST.get('esicSelect', '').lower() == 'yes'
-        
-        # Helper function to get Decimal values safely from POST.
-        def get_decimal(field_name):
-            try:
-                return Decimal(request.POST.get(field_name, '0'))
-            except:
-                return Decimal('0')
-        print(json.dumps(request.POST.dict(), indent=4))
-        # Monthly values from the form
-        gross_ctc_pm       = get_decimal('grossCTC')
-        basic_pm           = get_decimal('basic')
-        hra_pm             = get_decimal('hra')
-        stat_bonus_pm      = get_decimal('statBonus')
-        allowance1_pm      = get_decimal('allowance1')
-        allowance2_pm      = get_decimal('allowance2')
-        special_allowance_pm = get_decimal('specialAllowance')
-        guaranteed_cash_pm = get_decimal('guaranteedCash')
-        pf_er_cont_pm      = get_decimal('pfEr')
-        esic_er_cont_pm    = get_decimal('esicEr')
-        gratuity_pm        = get_decimal('gratuity')
-        cost_to_company_pm = get_decimal('costToCompany')
-        pf_ee_cont_pm      = get_decimal('pfEe')
-        esic_ee_cont_pm    = get_decimal('esicEe')
-        prof_tax_pm        = get_decimal('profTax')
-        net_salary_pm      = get_decimal('netSalary')
-        
-        # Optionally, associate with a logged in Employee instance
-        # employee = None
-        # if request.user.is_authenticated:
-        #     try:
-        #         employee = request.user.employee  # Adjust if your Employee relation is different.
-        #     except Exception:
-        #         employee = None
-        
-        # Create the SalaryMaster instance using both monthly and calculated annual values.
-        instance = SalaryIncrement(
-            employee = employee,
-            pf_deducted = pf_deducted,
-            gratuity_applicable = gratuity_applicable,
-            esic_applicable = esic_applicable,
-            gross_ctc_pm = gross_ctc_pm,
-            gross_ctc_pa = gross_ctc_pm * 12,
-            basic_pm = basic_pm,
-            basic_pa = basic_pm * 12,
-            hra_pm = hra_pm,
-            hra_pa = hra_pm * 12,
-            stat_bonus_pm = stat_bonus_pm,
-            stat_bonus_pa = stat_bonus_pm * 12,
-            sp_allowance_pm = special_allowance_pm,
-            sp_allowance_pa = special_allowance_pm * 12,
-            allowance1_pm = allowance1_pm,
-            allowance1_pa = allowance1_pm * 12,
-            allowance2_pm = allowance2_pm,
-            allowance2_pa = allowance2_pm * 12,
-            guaranteed_cash_pm = guaranteed_cash_pm,
-            guaranteed_cash_pa = guaranteed_cash_pm * 12,
-            ctc_pm = cost_to_company_pm,
-            ctc_pa = cost_to_company_pm * 12,
-            pf_er_cont_pm = pf_er_cont_pm,
-            pf_er_cont_pa = pf_er_cont_pm * 12,
-            esic_er_cont_pm = esic_er_cont_pm,
-            esic_er_cont_pa = esic_er_cont_pm * 12,
-            pf_ee_cont_pm = pf_ee_cont_pm,
-            pf_ee_cont_pa = pf_ee_cont_pm * 12,
-            esic_ee_cont_pm = esic_ee_cont_pm,
-            esic_ee_cont_pa = esic_ee_cont_pm * 12,
-            profession_tax_pm = prof_tax_pm,
-            profession_tax_pa = prof_tax_pm * 12,
-            net_salary_pm = net_salary_pm,
-            net_salary_pa = net_salary_pm * 12,
+        employee = Employee.objects.get(id=employee_id)
+
+        # Checkbox values
+        pf = request.POST.get('pf_deducted', '').lower() == 'yes'
+        esic = request.POST.get('esic_applicable', '').lower() == 'yes'
+        gratuity = request.POST.get('gratuity_applicable', '').lower() == 'yes'
+
+        # Collect all values
+        fields = {
+            "gross_ctc_pm": extract_decimal(request, "gross_ctc_pm"),
+            "basic_pm": extract_decimal(request, "basic_pm"),
+            "hra_pm": extract_decimal(request, "hra_pm"),
+            "stat_bonus_pm": extract_decimal(request, "stat_bonus_pm"),
+            "allowance1_pm": extract_decimal(request, "allowance1_pm"),
+            "allowance2_pm": extract_decimal(request, "allowance2_pm"),
+            "sp_allowance_pm": extract_decimal(request, "sp_allowance_pm"),
+            "guaranteed_cash_pm": extract_decimal(request, "guaranteed_cash_pm"),
+            "profession_tax_pm": extract_decimal(request, "profession_tax_pm"),
+
+            "pf_er_cont_pm": extract_decimal(request, "pf_er_cont_pm"),
+            "pf_ee_cont_pm": extract_decimal(request, "pf_ee_cont_pm"),
+            "esic_er_cont_pm": extract_decimal(request, "esic_er_cont_pm"),
+            "esic_ee_cont_pm": extract_decimal(request, "esic_ee_cont_pm"),
+
+            "gratuity_pm": extract_decimal(request, "gratuity_pm"),
+            "net_salary_pm": extract_decimal(request, "net_salary_pm"),
+            "ctc_pm": extract_decimal(request, "ctc_pm"),
+        }
+
+        inc = SalaryIncrement.objects.create(
+            employee=employee,
+            effective_date=effective_date,
+            is_active=True,
+            is_processed=False,
+
+            pf_deducted=pf,
+            esic_applicable=esic,
+            gratuity_applicable=gratuity,
+
+            # save PM values and convert to PA
+            **fields,
+            gross_ctc_pa=fields["gross_ctc_pm"] * 12,
+            basic_pa=fields["basic_pm"] * 12,
+            hra_pa=fields["hra_pm"] * 12,
+            stat_bonus_pa=fields["stat_bonus_pm"] * 12,
+            allowance1_pa=fields["allowance1_pm"] * 12,
+            allowance2_pa=fields["allowance2_pm"] * 12,
+            sp_allowance_pa=fields["sp_allowance_pm"] * 12,
+            guaranteed_cash_pa=fields["guaranteed_cash_pm"] * 12,
+            pf_er_cont_pa=fields["pf_er_cont_pm"] * 12,
+            pf_ee_cont_pa=fields["pf_ee_cont_pm"] * 12,
+            esic_er_cont_pa=fields["esic_er_cont_pm"] * 12,
+            esic_ee_cont_pa=fields["esic_ee_cont_pm"] * 12,
+            profession_tax_pa=fields["profession_tax_pm"] * 12,
+            gratuity_pa=fields["gratuity_pm"] * 12,
+            net_salary_pa=fields["net_salary_pm"] * 12,
+            ctc_pa=fields["ctc_pm"] * 12,
         )
-        instance.save()
-    employees = Employee.objects.all()
-    context = {
-        'employees': employees
-    }
 
-        # Redirect to a success page or render a success message.
-        # return redirect('salary_success')  # Replace 'salary_success' with your URL name.
-    
-        # For GET requests, simply render the salary calculator template.
-    return render(request, 'salary_increment/create_increment.html', context)
+        messages.success(request, "Increment created successfully.")
+        return redirect("salary-increment")
+
+    employees = Employee.objects.all()
+    increments = SalaryIncrement.objects.all()
+
+    return render(request, "salary_increment/create_increment.html", {
+        "employees": employees,
+        "increments": increments
+    })
 
 
 
@@ -1546,19 +1684,32 @@ def upload_salary_increment(request):
 
 
 def get_payroll_settings(request):
-    settings = PayrollSettings.objects.first()  # or filter by company if needed
-    return JsonResponse({
-        "pf_percentage": float(settings.pf_percentage),
-        "esic_percentage": float(settings.esic_percentage),
-        "gratuity_percentage": float(settings.gratuity_percentage),
-        "professional_tax": float(settings.professional_tax),
-        "bonus_percentage": float(settings.bonus_percentage),
-        "basic_percentage": float(settings.basic_percentage),
-        "hra_percentage": float(settings.hra_percentage),
-        "basic_cap": float(settings.basic_cap)
-
-    })
-
+    settings = PayrollSettings.objects.first()
+    if settings is None:
+        # Handle the case where no payroll settings exist
+        return JsonResponse({
+            'error': 'Payroll settings not found. Please configure them.',
+            'pf_percentage': 0.0, # Provide default values or handle as needed
+            'esic_percentage': 0.0,
+            'gratuity_percentage': 0.0,
+            'professional_tax': 0.0,
+            'bonus_percentage': 0.0,
+            'basic_percentage': 0.0,
+            'hra_percentage': 0.0,
+            'basic_cap': 0.0,
+            # ... other fields
+        }, status=404) # Return a 404 Not Found status
+    else:
+        return JsonResponse({
+            'pf_percentage': float(settings.pf_percentage),
+            'esic_percentage': float(settings.esic_percentage),
+            'gratuity_percentage': float(settings.gratuity_percentage),
+            'professional_tax': float(settings.professional_tax),
+            'bonus_percentage': float(settings.bonus_percentage),
+            'basic_percentage': float(settings.basic_percentage),
+            'hra_percentage': float(settings.hra_percentage),
+            'basic_cap': float(settings.basic_cap)
+        })
 
 
 

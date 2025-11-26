@@ -53,7 +53,7 @@
 				</div>
 				<!-- /Breadcrumb -->
 
-				<div class="row">
+				{% comment %} <div class="row">
 
 					<!-- Total Companies -->
 					<div class="col-lg-3 col-md-6 d-flex">
@@ -131,7 +131,7 @@
 					</div>
 					<!-- /Company Location -->
 
-				</div>
+				</div> {% endcomment %}
 
 				<div class="card">
 					<div class="card-header d-flex align-items-center justify-content-between flex-wrap row-gap-3">
@@ -208,13 +208,16 @@
 												<input class="form-check-input" type="checkbox" id="select-all">
 											</div>
 										</th>
-										<th>Company Name</th>
-										<th>Email</th>
-										<th>Account URL</th>
-										<th>Plan</th>
-										<th>Created Date</th>
+										<th>Short Name</th>
+										<th>Name</th>
+										<th>Address</th>
+										<th>Tan Number</th>
+										<th>Pan Number</th>
+										<th>Employer PF</th>
+										<th>PTRC Number</th>
+										<th>PTEC Number</th>
+										<th>ESIC Number</th>
 										<th>Status</th>
-										<th></th>
 									</tr>
 								</thead>
 								<tbody>
@@ -245,7 +248,13 @@
 											</div>
 										</td>
 										<td>{{company.tan_number}}</td>
-										<td>
+										<td>{{company.pan_number}}</td>
+										<td>{{company.employer_pf}}</td>
+										<td>{{company.ptrc_number}}</td>
+										<td>{{company.ptec_number}}</td>
+										<td>{{company.esic_number}}</td>
+										<td>{{company.status}}</td>
+										{% comment %} <td>
                                             {% if company.status == 'Active' %}
 											<span class="badge badge-success d-inline-flex align-items-center badge-xs">
 												<i class="ti ti-point-filled me-1"></i>{{company.status}}
@@ -255,7 +264,7 @@
 												<i class="ti ti-point-filled me-1"></i>{{company.status}}
 											</span>
                                             {% endif %}
-										</td>
+										</td>  {% endcomment %}
 										<td>
 											<div class="action-icon d-inline-flex">
 												<a href="#" class="me-2"  data-bs-toggle="modal" data-bs-target="#company_detail"><i class="ti ti-eye"></i></a>

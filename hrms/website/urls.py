@@ -60,9 +60,9 @@ urlpatterns = [
          views.salary_history_export_excel,
          name='salary_history_export_excel'),
 
-    path('salary-history/export/pdf/',
-         views.salary_history_export_pdf,
-         name='salary_history_export_pdf'),
+    # path('salary-history/export/pdf/',
+    #      views.salary_history_export_pdf,
+    #      name='salary_history_export_pdf'),
 
     # path("leave-balance/", leave_balance_view, name="leave_balance"),
 

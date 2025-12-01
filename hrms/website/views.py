@@ -1764,63 +1764,63 @@ def salary_history_export_excel(request):
 # -------------------------
 # Export to PDF (WeasyPrint)
 # -------------------------
-from xhtml2pdf import pisa
+# from xhtml2pdf import pisa
 
-def salary_history_export_pdf(request):
-    qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
+# def salary_history_export_pdf(request):
+#     qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
 
-    # Apply same filters used in list page
-    q = request.GET.get("q", "").strip()
-    emp_code = request.GET.get("employee_code", "").strip()
-    date_from = request.GET.get("date_from", "").strip()
-    date_to = request.GET.get("date_to", "").strip()
+#     # Apply same filters used in list page
+#     q = request.GET.get("q", "").strip()
+#     emp_code = request.GET.get("employee_code", "").strip()
+#     date_from = request.GET.get("date_from", "").strip()
+#     date_to = request.GET.get("date_to", "").strip()
 
-    if q:
-        qs = qs.filter(
-            Q(employee__first_name__icontains=q) |
-            Q(employee__last_name__icontains=q) |
-            Q(employee__employee_code__icontains=q)
-        )
+#     if q:
+#         qs = qs.filter(
+#             Q(employee__first_name__icontains=q) |
+#             Q(employee__last_name__icontains=q) |
+#             Q(employee__employee_code__icontains=q)
+#         )
 
-    if emp_code:
-        qs = qs.filter(
-            Q(employee__employee_code__icontains=emp_code) |
-            Q(employee__first_name__icontains=emp_code) |
-            Q(employee__last_name__icontains=emp_code)
-        )
+#     if emp_code:
+#         qs = qs.filter(
+#             Q(employee__employee_code__icontains=emp_code) |
+#             Q(employee__first_name__icontains=emp_code) |
+#             Q(employee__last_name__icontains=emp_code)
+#         )
 
-    if date_from:
-        try:
-            d1 = datetime.strptime(date_from, "%Y-%m-%d").date()
-            qs = qs.filter(end_date__gte=d1)
-        except ValueError:
-            pass
+#     if date_from:
+#         try:
+#             d1 = datetime.strptime(date_from, "%Y-%m-%d").date()
+#             qs = qs.filter(end_date__gte=d1)
+#         except ValueError:
+#             pass
 
-    if date_to:
-        try:
-            d2 = datetime.strptime(date_to, "%Y-%m-%d").date()
-            qs = qs.filter(start_date__lte=d2)
-        except ValueError:
-            pass
+#     if date_to:
+#         try:
+#             d2 = datetime.strptime(date_to, "%Y-%m-%d").date()
+#             qs = qs.filter(start_date__lte=d2)
+#         except ValueError:
+#             pass
 
-    # Render HTML
-    html_string = render(request,"website/salary_history_pdf.html", {
-        "history": qs
-    })
+#     # Render HTML
+#     html_string = render(request,"website/salary_history_pdf.html", {
+#         "history": qs
+#     })
 
-    # Generate PDF
-    response = HttpResponse(content_type="application/pdf")
-    response['Content-Disposition'] = 'attachment; filename="salary_history.pdf"'
+#     # Generate PDF
+#     response = HttpResponse(content_type="application/pdf")
+#     response['Content-Disposition'] = 'attachment; filename="salary_history.pdf"'
 
-    pisa_status = pisa.CreatePDF(
-        html_string,
-        dest=response
-    )
+#     pisa_status = pisa.CreatePDF(
+#         html_string,
+#         dest=response
+#     )
 
-    if pisa_status.err:
-        return HttpResponse("Error creating PDF", status=500)
+#     if pisa_status.err:
+#         return HttpResponse("Error creating PDF", status=500)
 
-    return response
+#     return response
 
 
 # -------------------------

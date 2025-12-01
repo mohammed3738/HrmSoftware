@@ -177,26 +177,54 @@ def process_salary_increments():
     today = date.today()
 
     increments = SalaryIncrement.objects.filter(
-        is_active=True,
         is_processed=False,
         effective_date__lte=today
     )
 
+    # FIELD MAP between increment JSON and SalaryMaster
+    FIELD_MAP = {
+        # Flags
+        "pf_deducted": "pf_deducted",
+        "esic_applicable": "esic_applicable",
+        "gratuity_applicable": "gratuity_applicable",
+
+        # Monthly Components (PM fields)
+        "gross_ctc": "gross_ctc_pm",
+        "basic": "basic_pm",
+        "hra": "hra_pm",
+        "stat_bonus": "stat_bonus_pm",
+        "special_allowance": "sp_allowance_pm",
+        "allowance1": "allowance1_pm",
+        "allowance2": "allowance2_pm",
+        "guaranteed_cash": "guaranteed_cash_pm",
+
+        # Contributions
+        "pf_er": "pf_er_cont_pm",
+        "pf_ee": "pf_ee_cont_pm",
+        "esic_er": "esic_er_cont_pm",
+        "esic_ee": "esic_ee_cont_pm",
+
+        # Professional Tax
+        "professional_tax": "profession_tax_pm",
+
+        # Net salary
+        "net_salary": "net_salary_pm",
+    }
+
     for inc in increments:
         emp = inc.employee
-
-        # 1️⃣ Move current salary to history
         current = SalaryMaster.objects.filter(employee=emp).first()
 
+        # 1️⃣ SAVE CURRENT SALARY TO HISTORY
         if current:
             SalaryHistory.objects.create(
                 employee=emp,
                 data={
-                    "pf_deducted": current.pf_deducted,
-                    "gratuity_applicable": current.gratuity_applicable,
-                    "esic_applicable": current.esic_applicable,
-                    
-                    # store all salary values cleanly
+                    "flags": {
+                        "pf_deducted": current.pf_deducted,
+                        "gratuity_applicable": current.gratuity_applicable,
+                        "esic_applicable": current.esic_applicable,
+                    },
                     "salary": {
                         "gross_ctc_pm": str(current.gross_ctc_pm),
                         "basic_pm": str(current.basic_pm),
@@ -208,46 +236,61 @@ def process_salary_increments():
                         "guaranteed_cash_pm": str(current.guaranteed_cash_pm),
                         "ctc_pm": str(current.ctc_pm),
                         "pf_er_cont_pm": str(current.pf_er_cont_pm),
-                        "esic_er_cont_pm": str(current.esic_er_cont_pm),
                         "pf_ee_cont_pm": str(current.pf_ee_cont_pm),
+                        "esic_er_cont_pm": str(current.esic_er_cont_pm),
                         "esic_ee_cont_pm": str(current.esic_ee_cont_pm),
                         "profession_tax_pm": str(current.profession_tax_pm),
                         "net_salary_pm": str(current.net_salary_pm),
-                        
                     }
                 },
                 start_date=today - timedelta(days=1),
                 end_date=today,
             )
 
-        # 2️⃣ Replace SalaryMaster with increment values
+        # 2️⃣ UPDATE SalaryMaster FROM INCREMENT
         if current:
-            for field in [
-                "gross_ctc_pm", "gross_ctc_pa",
-                "basic_pm", "basic_pa",
-                "hra_pm", "hra_pa",
-                "stat_bonus_pm", "stat_bonus_pa",
-                "allowance1_pm", "allowance1_pa",
-                "allowance2_pm", "allowance2_pa",
-                "sp_allowance_pm", "sp_allowance_pa",
-                "guaranteed_cash_pm", "guaranteed_cash_pa",
-                "pf_er_cont_pm", "pf_er_cont_pa",
-                "pf_ee_cont_pm", "pf_ee_cont_pa",
-                "esic_er_cont_pm", "esic_er_cont_pa",
-                "esic_ee_cont_pm", "esic_ee_cont_pa",
-                "profession_tax_pm", "profession_tax_pa",
-                "gratuity_pm", "gratuity_pa",
-                "net_salary_pm", "net_salary_pa",
-                "ctc_pm", "ctc_pa",
-                "pf_deducted", "esic_applicable", "gratuity_applicable"
-            ]:
-                setattr(current, field, getattr(inc, field))
+
+            flags = inc.change_set.get("flags", {})
+            monthly = inc.change_set.get("monthly", {})
+
+            # Apply flags
+            for key, value in flags.items():
+                field = FIELD_MAP.get(key)
+                if field:
+                    setattr(current, field, value)
+
+            # Apply monthly salary fields
+            for key, value in monthly.items():
+                field = FIELD_MAP.get(key)
+                if field:
+                    setattr(current, field, value)
+
+            # 3️⃣ AUTO-GENERATE ANNUAL FIELDS (PA)
+            for field in SalaryMaster._meta.get_fields():
+                if field.name.endswith("_pa"):
+                    pm_field = field.name.replace("_pa", "_pm")
+                    pm_value = getattr(current, pm_field, None)
+                    if pm_value:
+                        setattr(current, field.name, pm_value * 12)
+
+            # 4️⃣ UPDATE final computed CTC if needed
+            current.ctc_pm = (
+                (current.basic_pm or 0) +
+                (current.hra_pm or 0) +
+                (current.sp_allowance_pm or 0) +
+                (current.allowance1_pm or 0) +
+                (current.allowance2_pm or 0) +
+                (current.stat_bonus_pm or 0)
+            )
+
+            current.ctc_pa = current.ctc_pm * 12
 
             current.save()
 
-        # 3️⃣ Mark increment processed
+        # 5️⃣ MARK increment processed
         inc.is_processed = True
         inc.save()
+
 
 
 

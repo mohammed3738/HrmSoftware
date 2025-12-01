@@ -80,6 +80,7 @@ admin.site.register(Attendance)
 admin.site.register(LeaveBalance)
 admin.site.register(LeaveBalanceHistory)
 admin.site.register(AttendanceCorrectionRequest)
+admin.site.register(SalaryHistory)
 
 
 

@@ -1,0 +1,61 @@
+{% load custom_filters %}
+
+<div class="modal-header">
+    <h5 class="modal-title">Compare Salary</h5>
+    <button class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+
+<div class="modal-body">
+
+    <p><strong>{{ employee.employee_code }} - {{ employee.first_name }}</strong></p>
+
+    <table class="table table-bordered table-sm">
+        <thead>
+            <tr>
+                <th>Component</th>
+                <th>Old</th>
+                <th>Current</th>
+                <th>Diff</th>
+            </tr>
+        </thead>
+
+        <tbody>
+
+        {% for key, label in components.items %}
+            {% with old_val=old|get_item:key|to_float new_val=current|get_item:key|to_float %}
+            {% with diff=new_val|subtract:old_val %}
+
+            <tr>
+                <td>{{ label }}</td>
+                <td>{{ old_val|floatformat:"2" }}</td>
+                <td>{{ new_val|floatformat:"2" }}</td>
+
+                <td>
+                    {% if diff > 0 %}
+                        <span class="text-success fw-bold">
+                            +{{ diff|floatformat:"2" }} ↑
+                        </span>
+
+                    {% elif diff < 0 %}
+                        <span class="text-danger fw-bold">
+                            {{ diff|floatformat:"2" }} ↓
+                        </span>
+
+                    {% else %}
+                        <span class="text-muted">No change</span>
+                    {% endif %}
+                </td>
+            </tr>
+
+            {% endwith %}
+            {% endwith %}
+        {% endfor %}
+
+        </tbody>
+    </table>
+
+</div>
+
+<div class="modal-footer">
+    <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+</div>

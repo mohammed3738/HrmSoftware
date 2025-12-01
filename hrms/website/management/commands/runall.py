@@ -4,46 +4,43 @@ import sys
 from django.core.management.base import BaseCommand
 
 class Command(BaseCommand):
-    help = "Run Django server + Celery worker + Celery beat together (for local dev)."
+    help = "Run Django, Celery Worker, Celery Beat & Flower using the active virtual environment."
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.SUCCESS("🚀 Starting Django + Celery (worker & beat)..."))
+        self.stdout.write(self.style.SUCCESS("🚀 Starting Django + Celery Worker + Beat + Flower...\n"))
 
-        # Paths
         base_dir = os.getcwd()
 
-        # Start Celery worker (solo mode for Windows)
-        worker_cmd = ["celery", "-A", "hrms", "worker", "-l", "info", "--pool=solo"]
-        beat_cmd = ["celery", "-A", "hrms", "beat", "-l", "info"]
-        django_cmd = ["python", "manage.py", "runserver"]
+        python = sys.executable  # <-- USE ACTIVE VENV PYTHON
+
+        commands = {
+            "Celery Worker": [python, "-m", "celery", "-A", "hrms", "worker", "--pool=solo", "-l", "info"],
+            "Celery Beat":   [python, "-m", "celery", "-A", "hrms", "beat", "-l", "info"],
+            "Flower":        [python, "-m", "celery", "-A", "hrms", "flower", "--port=5555"],
+            "Django":        [python, "manage.py", "runserver"],
+        }
 
         processes = []
 
         try:
-            # Start Celery Worker
-            self.stdout.write(self.style.WARNING("⚙️  Starting Celery Worker..."))
-            worker_proc = subprocess.Popen(worker_cmd, cwd=base_dir)
-            processes.append(worker_proc)
+            for name, cmd in commands.items():
+                self.stdout.write(self.style.WARNING(f"▶ Starting {name}..."))
+                p = subprocess.Popen(cmd, cwd=base_dir)
+                processes.append(p)
 
-            # Start Celery Beat
-            self.stdout.write(self.style.WARNING("🕒 Starting Celery Beat..."))
-            beat_proc = subprocess.Popen(beat_cmd, cwd=base_dir)
-            processes.append(beat_proc)
+            self.stdout.write(self.style.SUCCESS("\n✨ All services are running!"))
+            self.stdout.write(self.style.SUCCESS("🌐 Flower: http://localhost:5555"))
+            self.stdout.write(self.style.SUCCESS("💻 Django: http://127.0.0.1:8000\n"))
 
-            # Start Django Server
-            self.stdout.write(self.style.WARNING("💻 Starting Django Server..."))
-            django_proc = subprocess.Popen(django_cmd, cwd=base_dir)
-            processes.append(django_proc)
-
-            # Wait for all
-            django_proc.wait()
+            # keep script alive until Django exits
+            processes[-1].wait()
 
         except KeyboardInterrupt:
-            self.stdout.write(self.style.ERROR("\n🛑 Shutting down all services..."))
-            for p in processes:
-                p.terminate()
+            self.stdout.write(self.style.ERROR("\n🛑 Shutting down..."))
 
-        except Exception as e:
-            self.stderr.write(self.style.ERROR(f"❌ Error: {e}"))
+        finally:
             for p in processes:
-                p.terminate()
+                if p.poll() is None:
+                    p.terminate()
+
+            self.stdout.write(self.style.SUCCESS("✔ All services stopped.\n"))

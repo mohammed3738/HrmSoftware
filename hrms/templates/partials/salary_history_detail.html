@@ -1,0 +1,30 @@
+{% load custom_filters %}
+
+<div class="modal-header">
+    <h5 class="modal-title">Salary Details</h5>
+    <button class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+
+<div class="modal-body">
+
+    <div class="mb-3">
+        <strong>Employee: </strong>
+        {{ entry.employee.employee_code }} - {{ entry.employee.first_name }}
+    </div>
+
+    {% with s=entry.data.salary %}
+    <table class="table table-bordered">
+        <tr><th>Gross</th><td>{{ s.gross_ctc_pm }}</td></tr>
+        <tr><th>Basic</th><td>{{ s.basic_pm }}</td></tr>
+        <tr><th>HRA</th><td>{{ s.hra_pm }}</td></tr>
+        <tr><th>Special Allow.</th><td>{{ s.sp_allowance_pm }}</td></tr>
+        <tr><th>Allowance 1</th><td>{{ s.allowance1_pm }}</td></tr>
+        <tr><th>Allowance 2</th><td>{{ s.allowance2_pm }}</td></tr>
+        <tr><th>Net Salary</th><td>{{ s.net_salary_pm }}</td></tr>
+    </table>
+    {% endwith %}
+</div>
+
+<div class="modal-footer">
+    <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+</div>

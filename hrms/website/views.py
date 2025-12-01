@@ -23,6 +23,10 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Sum
 from .signals import recalculate_leave_balance_for_employee
+from django.db.models import Q
+import io
+
+import openpyxl
 
 # def parse_time(time_value):
 #     """Convert time string or float to a proper datetime.time object."""
@@ -1531,91 +1535,351 @@ def skip_installment(request, installment_id):
 
 
 
-def extract_decimal(request, key):
+def D(request, key):
     try:
         return Decimal(request.POST.get(key, "0") or "0")
     except:
         return Decimal("0")
 
+def to_float(v):
+    try:
+        return float(v)
+    except:
+        return 0.0
 
 def create_salary_increment(request):
 
     if request.method == "POST":
-        employee_id = request.POST.get("employee")
-        effective_date = request.POST.get("effective_date")
 
-        employee = Employee.objects.get(id=employee_id)
+        employee = Employee.objects.get(id=request.POST.get("employee"))
+        effective_date = datetime.strptime(request.POST.get("effective_date"), "%Y-%m-%d").date()
 
-        # Checkbox values
-        pf = request.POST.get('pf_deducted', '').lower() == 'yes'
-        esic = request.POST.get('esic_applicable', '').lower() == 'yes'
-        gratuity = request.POST.get('gratuity_applicable', '').lower() == 'yes'
+        # Flags
+        pf = request.POST.get("pf_deducted") == "yes"
+        esic = request.POST.get("esic_applicable") == "yes"
+        gratuity = request.POST.get("gratuity_applicable") == "yes"
 
-        # Collect all values
-        fields = {
-            "gross_ctc_pm": extract_decimal(request, "gross_ctc_pm"),
-            "basic_pm": extract_decimal(request, "basic_pm"),
-            "hra_pm": extract_decimal(request, "hra_pm"),
-            "stat_bonus_pm": extract_decimal(request, "stat_bonus_pm"),
-            "allowance1_pm": extract_decimal(request, "allowance1_pm"),
-            "allowance2_pm": extract_decimal(request, "allowance2_pm"),
-            "sp_allowance_pm": extract_decimal(request, "sp_allowance_pm"),
-            "guaranteed_cash_pm": extract_decimal(request, "guaranteed_cash_pm"),
-            "profession_tax_pm": extract_decimal(request, "profession_tax_pm"),
+        # Monthly Values
+        m = {
+            "gross_ctc": to_float(D(request, "gross_ctc_pm")),
+            "basic": to_float(D(request, "basic_pm")),
+            "hra": to_float(D(request, "hra_pm")),
+            "stat_bonus": to_float(D(request, "stat_bonus_pm")),
+            "allowance1": to_float(D(request, "allowance1_pm")),
+            "allowance2": to_float(D(request, "allowance2_pm")),
+            "special_allowance": to_float(D(request, "sp_allowance_pm")),
+            "guaranteed_cash": to_float(D(request, "guaranteed_cash_pm")),
+            "professional_tax": to_float(D(request, "profession_tax_pm")),
 
-            "pf_er_cont_pm": extract_decimal(request, "pf_er_cont_pm"),
-            "pf_ee_cont_pm": extract_decimal(request, "pf_ee_cont_pm"),
-            "esic_er_cont_pm": extract_decimal(request, "esic_er_cont_pm"),
-            "esic_ee_cont_pm": extract_decimal(request, "esic_ee_cont_pm"),
+            "pf_er": to_float(D(request, "pf_er_cont_pm")),
+            "pf_ee": to_float(D(request, "pf_ee_cont_pm")),
+            "esic_er": to_float(D(request, "esic_er_cont_pm")),
+            "esic_ee": to_float(D(request, "esic_ee_cont_pm")),
 
-            "gratuity_pm": extract_decimal(request, "gratuity_pm"),
-            "net_salary_pm": extract_decimal(request, "net_salary_pm"),
-            "ctc_pm": extract_decimal(request, "ctc_pm"),
+            "gratuity": to_float(D(request, "gratuity_pm")),
+            "net_salary": to_float(D(request, "net_salary_pm")),
+            "ctc": to_float(D(request, "ctc_pm")),
         }
 
-        inc = SalaryIncrement.objects.create(
+        # Annual Values
+        a = {k: float(v * 12) for k, v in m.items()}
+
+        # Final JSON
+        change_set = {
+            "flags": {
+                "pf_deducted": pf,
+                "esic_applicable": esic,
+                "gratuity_applicable": gratuity,
+            },
+            "monthly": m,
+            "annual": a,
+        }
+
+        SalaryIncrement.objects.create(
             employee=employee,
             effective_date=effective_date,
-            is_active=True,
-            is_processed=False,
-
-            pf_deducted=pf,
-            esic_applicable=esic,
-            gratuity_applicable=gratuity,
-
-            # save PM values and convert to PA
-            **fields,
-            gross_ctc_pa=fields["gross_ctc_pm"] * 12,
-            basic_pa=fields["basic_pm"] * 12,
-            hra_pa=fields["hra_pm"] * 12,
-            stat_bonus_pa=fields["stat_bonus_pm"] * 12,
-            allowance1_pa=fields["allowance1_pm"] * 12,
-            allowance2_pa=fields["allowance2_pm"] * 12,
-            sp_allowance_pa=fields["sp_allowance_pm"] * 12,
-            guaranteed_cash_pa=fields["guaranteed_cash_pm"] * 12,
-            pf_er_cont_pa=fields["pf_er_cont_pm"] * 12,
-            pf_ee_cont_pa=fields["pf_ee_cont_pm"] * 12,
-            esic_er_cont_pa=fields["esic_er_cont_pm"] * 12,
-            esic_ee_cont_pa=fields["esic_ee_cont_pm"] * 12,
-            profession_tax_pa=fields["profession_tax_pm"] * 12,
-            gratuity_pa=fields["gratuity_pm"] * 12,
-            net_salary_pa=fields["net_salary_pm"] * 12,
-            ctc_pa=fields["ctc_pm"] * 12,
+            change_set=change_set,
+            is_processed=False
         )
 
         messages.success(request, "Increment created successfully.")
-        return redirect("salary-increment")
-
-    employees = Employee.objects.all()
-    increments = SalaryIncrement.objects.all()
+        return redirect("salary_increment")
 
     return render(request, "salary_increment/create_increment.html", {
-        "employees": employees,
-        "increments": increments
+        "employees": Employee.objects.all(),
+        "increments": SalaryIncrement.objects.all(),
     })
 
 
 
+
+
+
+
+
+def increment_details(request, pk):
+    inc = SalaryIncrement.objects.get(id=pk)
+
+    monthly = inc.change_set.get("monthly", {})
+    flags = inc.change_set.get("flags", {})
+
+    data = {
+        "employee": str(inc.employee),
+        "effective_date": inc.effective_date.strftime("%Y-%m-%d"),
+
+        # monthly
+        "gross_ctc_pm": monthly.get("gross_ctc"),
+        "net_salary_pm": monthly.get("net_salary"),
+
+        # extras
+        "reason": inc.change_set.get("reason", ""),
+        "is_processed": inc.is_processed,
+        "flags": flags,
+        "all_data": inc.change_set,
+    }
+
+    return JsonResponse(data)
+
+
+
+
+
+# -------------------------
+# Salary History list view
+# -------------------------
+def salary_history(request):
+    qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
+
+    # filters
+    emp = request.GET.get("employee", "")
+    date_from = request.GET.get("from", "")
+    date_to = request.GET.get("to", "")
+
+    if emp:
+        qs = qs.filter(employee__employee_code__icontains=emp)
+
+    if date_from:
+        qs = qs.filter(start_date__gte=date_from)
+
+    if date_to:
+        qs = qs.filter(end_date__lte=date_to)
+
+    employees = Employee.objects.all().order_by("employee_code")
+
+    return render(request, "salary_increment/salary_history_list.html", {
+        "history": qs,
+        "employees": employees,
+        "get": request.GET,
+    })
+
+
+# -------------------------
+# AJAX: SalaryHistory detail (used by modal)
+# -------------------------
+def salary_history_detail(request, pk):
+    entry = get_object_or_404(SalaryHistory, pk=pk)
+    html = render_to_string("partials/salary_history_detail.html", {"entry": entry})
+    return JsonResponse({"html": html})
+
+# -------------------------
+# Export to Excel
+# -------------------------
+def salary_history_export_excel(request):
+    qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
+    # apply same filters as list (to keep export consistent)
+    q = request.GET.get("q", "").strip()
+    emp_code = request.GET.get("employee_code", "").strip()
+    date_from = request.GET.get("date_from", "").strip()
+    date_to = request.GET.get("date_to", "").strip()
+
+    if q:
+        qs = qs.filter(
+            Q(employee__first_name__icontains=q) |
+            Q(employee__last_name__icontains=q) |
+            Q(employee__employee_code__icontains=q)
+        )
+
+    if emp_code:
+        qs = qs.filter(
+            Q(employee__employee_code__icontains=emp_code) |
+            Q(employee__first_name__icontains=emp_code) |
+            Q(employee__last_name__icontains=emp_code)
+        )
+
+    if date_from:
+        try:
+            d1 = datetime.strptime(date_from, "%Y-%m-%d").date()
+            qs = qs.filter(end_date__gte=d1)
+        except ValueError:
+            pass
+
+    if date_to:
+        try:
+            d2 = datetime.strptime(date_to, "%Y-%m-%d").date()
+            qs = qs.filter(start_date__lte=d2)
+        except ValueError:
+            pass
+
+    # Create workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Salary History"
+
+    headers = [
+        "Employee Code", "Employee Name", "Start Date", "End Date",
+        "Gross CTC (PM)", "Basic (PM)", "HRA (PM)", "Net Salary (PM)",
+        "PF Deducted", "ESIC Applicable", "Gratuity Applicable", "Raw JSON"
+    ]
+    ws.append(headers)
+
+    for e in qs:
+        emp = e.employee
+        salary = (e.data or {}).get("salary", {})
+        row = [
+            getattr(emp, "employee_code", ""),
+            f"{getattr(emp,'first_name','') or ''} {getattr(emp,'last_name','') or ''}".strip(),
+            e.start_date.isoformat() if e.start_date else "",
+            e.end_date.isoformat() if e.end_date else "",
+            salary.get("gross_ctc_pm", ""),
+            salary.get("basic_pm", ""),
+            salary.get("hra_pm", ""),
+            salary.get("net_salary_pm", ""),
+            e.data.get("pf_deducted", "") if e.data else "",
+            e.data.get("esic_applicable", "") if e.data else "",
+            e.data.get("gratuity_applicable", "") if e.data else "",
+            str(e.data) if e.data else "",
+        ]
+        ws.append(row)
+
+    # Prepare response
+    f = io.BytesIO()
+    wb.save(f)
+    f.seek(0)
+    filename = "salary_history.xlsx"
+    resp = HttpResponse(f.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
+# -------------------------
+# Export to PDF (WeasyPrint)
+# -------------------------
+from xhtml2pdf import pisa
+
+def salary_history_export_pdf(request):
+    qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
+
+    # Apply same filters used in list page
+    q = request.GET.get("q", "").strip()
+    emp_code = request.GET.get("employee_code", "").strip()
+    date_from = request.GET.get("date_from", "").strip()
+    date_to = request.GET.get("date_to", "").strip()
+
+    if q:
+        qs = qs.filter(
+            Q(employee__first_name__icontains=q) |
+            Q(employee__last_name__icontains=q) |
+            Q(employee__employee_code__icontains=q)
+        )
+
+    if emp_code:
+        qs = qs.filter(
+            Q(employee__employee_code__icontains=emp_code) |
+            Q(employee__first_name__icontains=emp_code) |
+            Q(employee__last_name__icontains=emp_code)
+        )
+
+    if date_from:
+        try:
+            d1 = datetime.strptime(date_from, "%Y-%m-%d").date()
+            qs = qs.filter(end_date__gte=d1)
+        except ValueError:
+            pass
+
+    if date_to:
+        try:
+            d2 = datetime.strptime(date_to, "%Y-%m-%d").date()
+            qs = qs.filter(start_date__lte=d2)
+        except ValueError:
+            pass
+
+    # Render HTML
+    html_string = render(request,"website/salary_history_pdf.html", {
+        "history": qs
+    })
+
+    # Generate PDF
+    response = HttpResponse(content_type="application/pdf")
+    response['Content-Disposition'] = 'attachment; filename="salary_history.pdf"'
+
+    pisa_status = pisa.CreatePDF(
+        html_string,
+        dest=response
+    )
+
+    if pisa_status.err:
+        return HttpResponse("Error creating PDF", status=500)
+
+    return response
+
+
+# -------------------------
+# Compare: return JSON of compare table (modal)
+# -------------------------
+def salary_compare(request, history_id, employee_id):
+    history = SalaryHistory.objects.get(id=history_id)
+    employee = Employee.objects.get(id=employee_id)
+    current = SalaryMaster.objects.filter(employee=employee).first()
+
+    # Convert SalaryMaster model → dict like history.data["salary"]
+    current_salary = {}
+    if current:
+        for field in [
+            "gross_ctc_pm", "basic_pm", "hra_pm", "stat_bonus_pm",
+            "sp_allowance_pm", "allowance1_pm", "allowance2_pm",
+            "guaranteed_cash_pm", "ctc_pm",
+            "pf_er_cont_pm", "pf_ee_cont_pm",
+            "esic_er_cont_pm", "esic_ee_cont_pm",
+            "profession_tax_pm", "net_salary_pm"
+        ]:
+            current_salary[field] = str(getattr(current, field, 0) or 0)
+
+    components = {
+        "gross_ctc_pm": "Gross CTC",
+        "basic_pm": "Basic",
+        "hra_pm": "HRA",
+        "stat_bonus_pm": "Stat Bonus",
+        "sp_allowance_pm": "Special Allowance",
+        "allowance1_pm": "Allowance 1",
+        "allowance2_pm": "Allowance 2",
+        "guaranteed_cash_pm": "Guaranteed Cash",
+        "ctc_pm": "CTC",
+        "pf_er_cont_pm": "PF Employer",
+        "pf_ee_cont_pm": "PF Employee",
+        "esic_er_cont_pm": "ESIC Employer",
+        "esic_ee_cont_pm": "ESIC Employee",
+        "profession_tax_pm": "Profession Tax",
+        "net_salary_pm": "Net Salary",
+    }
+
+    html = render_to_string("partials/salary_compare.html", {
+        "employee": employee,
+        "old": history.data["salary"],
+        "current": current_salary,      # 👉 FIXED
+        "components": components
+    })
+
+    return JsonResponse({"html": html})
+
+# -------------------------
+# Chart data endpoint for timeline
+# -------------------------
+def salary_timeline_data(request, employee_id):
+    # Return JSON data: labels = list of end_date, data = net_salary_pm values
+    entries = SalaryHistory.objects.filter(employee_id=employee_id).order_by("end_date")
+    labels = [e.end_date.isoformat() if e.end_date else "" for e in entries]
+    data_points = [float((e.data or {}).get("salary", {}).get("net_salary_pm") or 0) for e in entries]
+    return JsonResponse({"labels": labels, "data": data_points})
 
 
 from django.core.files.storage import default_storage

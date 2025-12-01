@@ -40,6 +40,29 @@ urlpatterns = [
     path('reject-compoff/<int:compoff_id>/', views.reject_compoff, name='reject_compoff'),
     path("submit-comp-off-request/", views.submit_comp_off_request, name="submit_comp_off_request"),
     path("salary-increment/", views.create_salary_increment, name="salary_increment"),
+    path("salary-history/", views.salary_history, name="salary_history"),
+    path("salary/increment/details/<int:pk>/", views.increment_details, name="increment_details"),
+
+    # DETAIL MODAL
+    path("salary-history/detail/<int:pk>/", 
+        views.salary_history_detail, name="salary_history_detail"),
+
+    path("salary-history/compare/<int:history_id>/<int:employee_id>/",
+        views.salary_compare, name="salary_compare"),
+
+    # CHART DATA
+    path('salary-history/chart-data/<int:employee_id>/',
+         views.salary_timeline_data,
+         name='salary_timeline_data'),
+
+    # EXPORTS
+    path('salary-history/export/excel/',
+         views.salary_history_export_excel,
+         name='salary_history_export_excel'),
+
+    path('salary-history/export/pdf/',
+         views.salary_history_export_pdf,
+         name='salary_history_export_pdf'),
 
     # path("leave-balance/", leave_balance_view, name="leave_balance"),
 

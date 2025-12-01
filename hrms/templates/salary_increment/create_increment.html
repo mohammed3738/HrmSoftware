@@ -70,30 +70,33 @@
           </thead>
 
           <tbody>
-            {% for inc in increments %}
-            <tr>
+          {% for inc in increments %}
+          <tr>
               <td>{{ inc.employee.first_name }} ({{ inc.employee.employee_code }})</td>
               <td>{{ inc.effective_date }}</td>
-              <td>{{ inc.gross_ctc_pm }}</td>
-              <td>{{ inc.net_salary_pm }}</td>
-              <td>{{ inc.reason|default:"-" }}</td>
+
+              <!-- Correct JSON keys -->
+              <td>{{ inc.change_set.monthly.gross_ctc }}</td>
+              <td>{{ inc.change_set.monthly.net_salary }}</td>
+
+              <td>{{ inc.change_set.reason|default:"-" }}</td>
 
               <td>
-                {% if inc.is_processed %}
-                  <span class="badge bg-success">Applied</span>
-                {% else %}
-                  <span class="badge bg-warning text-dark">Pending</span>
-                {% endif %}
+                  {% if inc.is_processed %}
+                      <span class="badge bg-success">Applied</span>
+                  {% else %}
+                      <span class="badge bg-warning text-dark">Pending</span>
+                  {% endif %}
               </td>
 
               <td>
-                <button type="button" class="btn btn-sm btn-secondary"
-                        onclick="viewIncrementDetails({{ inc.id }})">
-                  <i class="ri-eye-line"></i>
-                </button>
+                  <button type="button" class="btn btn-sm btn-secondary"
+                          onclick="viewIncrementDetails({{ inc.id }})">
+                      <i class="ri-eye-line"></i>
+                  </button>
               </td>
-            </tr>
-            {% endfor %}
+          </tr>
+          {% endfor %}
           </tbody>
 
         </table>
@@ -119,7 +122,7 @@
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
 
-      <form id="incrementForm" method="POST">
+      <form id="incrementForm" method="POST" action="{% url 'salary_increment' %}">
         {% csrf_token %}
 
         <div class="modal-body">
@@ -372,9 +375,11 @@
 
 <!-- ===== JS SCRIPT ===== -->
 <script>
-/* --------------------------------------------------------
- * CLEAN PAYROLL SETTINGS LOADER
- * -------------------------------------------------------- */
+/* -------------------------------
+   Final JS — Option B (Basic edits recalc HRA)
+   Paste/replace your previous calculator script with this
+   ------------------------------- */
+
 let payrollSettings = {
     pf_percentage: 0,
     esic_percentage: 0,
@@ -388,171 +393,325 @@ let payrollSettings = {
 
 async function loadPayrollSettings() {
     try {
-        const res = await fetch("/payroll-settings/");
+        const res = await fetch('/payroll-settings/');
         payrollSettings = await res.json();
+        // Init calculation if modal is open/fields present
         calculateIncrementSalary();
     } catch (err) {
-        console.error("⚠ Failed to load payroll settings.");
+        console.error('Failed to load payroll settings', err);
     }
 }
 
-/* --------------------------------------------------------
- * TRUE EXCEL-MATCHED SALARY CALCULATOR
- * -------------------------------------------------------- */
-function calculateIncrementSalary() {
+/* Utility helpers */
+const $ = id => document.getElementById(id);
+const val = id => parseFloat($(id)?.value || 0);
+const round = v => Math.round(v);
+const setIfExists = (id, value) => { if ($(id)) $(id).value = round(value); };
 
-    const get = id => parseFloat(document.getElementById(id)?.value || 0);
+/* Mark manual override when user types */
+function markManual(e) {
+    e.target.dataset.manual = "true";
+}
+
+/* Clear manual flag (used when system should control a field) */
+function clearManualFlag(id) {
+    const el = $(id);
+    if (el) {
+        el.dataset.manual = "false";
+        el.classList.remove('border-warning');
+    }
+}
+
+/* Apply 'manual style' for UX when user manually edits */
+function applyManualStyle(el) {
+    if (!el) return;
+    el.dataset.manual = "true";
+    el.classList.add('border-warning');
+}
+
+/* ----------------------------------------------------
+   Main calculator — respects manual overrides.
+   Option B behaviour:
+     - When Basic is edited: HRA recalculated = basic * hraPerc (overwrites HRA unless user already manually edited HRA afterwards)
+     - Other fields can be manually edited.
+   ---------------------------------------------------- */
+function calculateIncrementSalary(triggeredById) {
+    // Basic validation
+    const grossCTC = val('grossCTC');
+    if (!grossCTC || grossCTC <= 0) {
+        // clear outputs
+        ['basic','hra','statBonus','specialAllowance','pfEr','pfEe','esicEr','esicEe','gratuity','guaranteedCash','costToCompany','netSalary',
+         'grossCTCAnn','basicAnn','hraAnn','statBonusAnn','allowance1Ann','allowance2Ann','specialAllowanceAnn','guaranteedCashAnn',
+         'pfErAnn','pfEeAnn','esicErAnn','esicEeAnn','gratuityAnn','profTaxAnn','costToCompanyAnn','netSalaryAnn'].forEach(id => {
+            if ($(id)) $(id).value = '';
+         });
+        return;
+    }
 
     // Inputs
-    let grossCTC = get("grossCTC");
-    let allowance1 = get("allowance1");
-    let allowance2 = get("allowance2");
+    const allowance1 = val('allowance1');
+    const allowance2 = val('allowance2');
 
-    // Payroll Settings
-    let basicPerc = payrollSettings.basic_percentage / 100;       // 50%
-    let hraPerc = payrollSettings.hra_percentage / 100;           // 60%
-    let pfPerc = payrollSettings.pf_percentage / 100;             // 12%
-    let esicPerc = payrollSettings.esic_percentage / 100;         // 3.67%
-    let gratuityPerc = payrollSettings.gratuity_percentage / 100; // 4.61%
-    let bonusPerc = payrollSettings.bonus_percentage / 100;       // 8.33%
-    let basicCap = payrollSettings.basic_cap;                     // 21000
-    let profTax = payrollSettings.professional_tax;               // 200
+    // Payroll settings (with safe defaults)
+    const basicPerc = (payrollSettings.basic_percentage || 0) / 100;
+    const hraPerc = (payrollSettings.hra_percentage || 0) / 100;
+    const pfPerc = (payrollSettings.pf_percentage || 0) / 100;
+    const esicPerc = (payrollSettings.esic_percentage || 0) / 100;
+    const gratuityPerc = (payrollSettings.gratuity_percentage || 0) / 100;
+    const bonusPerc = (payrollSettings.bonus_percentage || 0) / 100;
+    const basicCap = payrollSettings.basic_cap || 0;
 
-    // Selections
-    let pfEnabled = document.getElementById("pfSelect").value === "yes";
-    let esicEnabled = document.getElementById("esicSelect").value === "yes";
-    let gratuityEnabled = document.getElementById("gratuitySelect").value === "yes";
+    // Professional tax: prefer manual override input (profTax field), otherwise payroll setting
+    let profTax = val('profTax');
+    if (!profTax) profTax = payrollSettings.professional_tax || 0;
 
-    /* --------------------------------------------------------
-     * 1️⃣ BASIC & HRA
-     * -------------------------------------------------------- */
-    let basic = Math.min(grossCTC * basicPerc, basicCap);
-    let hra = basic * hraPerc;
+    // toggles
+    const pfEnabled = $('pfSelect')?.value === 'yes';
+    const esicEnabled = $('esicSelect')?.value === 'yes';
+    const gratuityEnabled = $('gratuitySelect')?.value === 'yes';
 
-    /* --------------------------------------------------------
-     * 2️⃣ STAT BONUS — only when basic < 21,000
-     * -------------------------------------------------------- */
-    let statBonus = 0;
-    if (basic < 21000) {
-        statBonus = Math.round(7000 * bonusPerc);
+    /* ----------------------
+       1) Basic: system default vs manual
+       - If user edited 'basic' (data-manual === "true") we use that.
+       - Otherwise system compute defaultBasic = min(grossCTC*basicPerc, basicCap)
+       However Option B: if user edits basic, HRA will be recalculated from basic.
+       ---------------------- */
+    const basicEl = $('basic');
+    let basicSys = Math.min(grossCTC * basicPerc, basicCap);
+    let basicVal = basicSys;
+
+    if (basicEl && basicEl.dataset.manual === "true") {
+        // user entered basic manually -> use it (still respect rounding)
+        basicVal = round(parseFloat(basicEl.value) || basicSys);
+    } else {
+        // system value (rounded)
+        basicVal = round(basicSys);
     }
 
-    /* --------------------------------------------------------
-     * 3️⃣ PF (ER = EE)
-     * -------------------------------------------------------- */
-    let pfEr = pfEnabled ? Math.min(basic * pfPerc, 1800) : 0;
-    let pfEe = pfEr;
+    // If the trigger was manual typing into 'basic', ensure basicEl reflects rounded value and mark it manual
+    if (triggeredById === 'basic' && basicEl) {
+        basicEl.value = basicVal;
+        applyManualStyle(basicEl); // keep manual flag
+    }
 
-    /* --------------------------------------------------------
-     * 4️⃣ GRATUITY
-     * -------------------------------------------------------- */
-    let gratuity = gratuityEnabled ? basic * gratuityPerc : 0;
+    /* ----------------------
+       2) HRA: Option B rules
+       - If Basic changed (triggeredById === 'basic'), HRA recalculated as basicVal * hraPerc and system-controlled (overwrite unless user manually changed HRA after).
+       - If HRA has been manually edited by user (data-manual === "true") and the trigger wasn't 'basic', keep manual.
+       - If HRA not manual and trigger != 'basic', system compute from basicVal.
+       ---------------------- */
+    const hraEl = $('hra');
+    let hraValSys = round(basicVal * hraPerc);
 
-    /* --------------------------------------------------------
-     * 5️⃣ TEMP GC — FOR ESIC CHECK
-     * Excel calculates ESIC using Guaranteed Cash BEFORE ESIC
-     * -------------------------------------------------------- */
+    if (triggeredById === 'basic') {
+        // force recalc and clear manual flag on HRA (system-controlled now)
+        if (hraEl) {
+            hraEl.value = hraValSys;
+            clearManualFlag('hra');
+        }
+    }
 
-    // First assume ESIC = 0 to get initial GC
-    let specialTemp =
-        grossCTC -
-        (basic + hra + statBonus +
-         allowance1 + allowance2 +
-         pfEr + 0 + gratuity);
+    let hraVal;
+    if (hraEl && hraEl.dataset.manual === "true") {
+        hraVal = round(parseFloat(hraEl.value) || hraValSys);
+    } else {
+        hraVal = hraValSys;
+        if (hraEl) hraEl.value = hraVal;
+    }
 
-    let guaranteedTemp =
-        basic + hra + statBonus + allowance1 + allowance2 + specialTemp;
+    /* ----------------------
+       3) Stat Bonus (system default or manual)
+       Excel rule: if basic < 21000 then statBonus = ROUND(7000 * bonusPerc, 0) else 0
+       ---------------------- */
+    const statEl = $('statBonus');
+    let statSys = (basicVal < 21000) ? Math.round(7000 * bonusPerc) : 0;
+    let statVal = statSys;
+    if (statEl && statEl.dataset.manual === "true") {
+        statVal = round(parseFloat(statEl.value) || statSys);
+    } else {
+        if (statEl) statEl.value = statVal;
+    }
 
-    /* --------------------------------------------------------
-     * 6️⃣ ESIC — Excel: If GuaranteedCash <= 21,000 → 3.67%
-     * -------------------------------------------------------- */
-    let esicEr = 0;
-    let esicEe = 0;
+    /* ----------------------
+       4) PF Employer / Employee
+       - PF ER = min(basic * pfPerc, 1800) if enabled
+       - PF EE = PF ER
+       - PF fields are editable: if user manually changed pfEr, respect it (but ensure pfEe = pfEr)
+       ---------------------- */
+    const pfErEl = $('pfEr');
+    let pfErSys = pfEnabled ? Math.min(basicVal * pfPerc, 1800) : 0;
+    let pfErVal = pfErSys;
+    if (pfErEl && pfErEl.dataset.manual === "true") {
+        pfErVal = round(parseFloat(pfErEl.value) || pfErSys);
+    } else {
+        if (pfErEl) pfErEl.value = round(pfErVal);
+    }
+    // PF Employee mirrors pfErVal
+    const pfEeEl = $('pfEe');
+    if (pfEeEl) pfEeEl.value = round(pfErVal);
 
+    /* ----------------------
+       5) Gratuity
+       ---------------------- */
+    const gratuityEl = $('gratuity');
+    let gratuitySys = gratuityEnabled ? Math.round(basicVal * gratuityPerc) : 0;
+    let gratuityVal = gratuitySys;
+    if (gratuityEl && gratuityEl.dataset.manual === "true") {
+        gratuityVal = round(parseFloat(gratuityEl.value) || gratuitySys);
+    } else {
+        if (gratuityEl) gratuityEl.value = gratuityVal;
+    }
+
+    /* ----------------------
+       6) TEMP guaranteed to decide ESIC:
+       Excel behaviour: compute guaranteed cash *before* ESIC, then if <=21000 compute ESIC on that GC.
+       We'll replicate: calculate temporary specialAllowance (assuming ESIC=0) to compute temp guaranteed, then ESIC uses that temp guaranteed.
+       ---------------------- */
+    // Determine temporary special allowance (assuming ESIC 0)
+    let specialTemp = grossCTC - (basicVal + hraVal + statVal + allowance1 + allowance2 + pfErVal + 0 + gratuityVal);
+    let guaranteedTemp = basicVal + hraVal + statVal + allowance1 + allowance2 + specialTemp;
+
+    // ESIC calculation
+    const esicErEl = $('esicEr');
+    let esicErVal = 0;
     if (esicEnabled && guaranteedTemp <= 21000) {
-        esicEr = guaranteedTemp * esicPerc;
-        esicEe = esicEr;
+        esicErVal = Math.round(guaranteedTemp * esicPerc);
+    }
+    // If user manually edited esicEr, respect that (but ensure esicEe = esicEr)
+    if (esicErEl && esicErEl.dataset.manual === "true") {
+        esicErVal = round(parseFloat(esicErEl.value) || esicErVal);
+    } else {
+        if (esicErEl) esicErEl.value = esicErVal;
+    }
+    if ($('esicEe')) $('esicEe').value = esicErVal;
+
+    /* ----------------------
+       7) Final Special Allowance (balancing figure EXACT to Excel)
+       SA = grossCTC - (basic + hra + statBonus + allowance1 + allowance2 + pfEr + esicEr + gratuity)
+       If user manually edited SA, respect it; otherwise set this balancing figure.
+       ---------------------- */
+    const specialEl = $('specialAllowance');
+    let specialSys = round(grossCTC - (basicVal + hraVal + statVal + allowance1 + allowance2 + pfErVal + esicErVal + gratuityVal));
+    let specialVal = specialSys;
+    if (specialEl && specialEl.dataset.manual === "true") {
+        specialVal = round(parseFloat(specialEl.value) || specialSys);
+    } else {
+        if (specialEl) specialEl.value = specialVal;
     }
 
-    /* --------------------------------------------------------
-     * 7️⃣ FINAL SPECIAL ALLOWANCE (BALANCING FIGURE)
-     * EXACT EXCEL FORMULA:
-     * SA = GrossCTC - (Basic + HRA + StatBonus + A1 + A2 + PF + ESIC + Gratuity)
-     * -------------------------------------------------------- */
-    let specialAllowance =
-        Math.round(grossCTC -
-        (basic + hra + statBonus +
-         allowance1 + allowance2 +
-         pfEr + esicEr + gratuity));
+    /* ----------------------
+       8) Guaranteed Cash final
+       ---------------------- */
+    let guaranteedCash = basicVal + hraVal + statVal + allowance1 + allowance2 + specialVal;
 
-    /* --------------------------------------------------------
-     * 8️⃣ GUARANTEED CASH
-     * -------------------------------------------------------- */
-    let guaranteedCash =
-        basic + hra + statBonus +
-        allowance1 + allowance2 + specialAllowance;
+    /* ----------------------
+       9) Net Salary
+       - net = guaranteedCash - PF Employee - ESIC Employee - profTax
+       If user manually edited netSalary, respect it; otherwise compute.
+       ---------------------- */
+    const netEl = $('netSalary');
+    let netSys = guaranteedCash - pfErVal - esicErVal - profTax;
+    let netVal = netSys;
+    if (netEl && netEl.dataset.manual === "true") {
+        netVal = round(parseFloat(netEl.value) || netSys);
+    } else {
+        if (netEl) netEl.value = round(netVal);
+    }
 
-    /* --------------------------------------------------------
-     * 9️⃣ NET SALARY
-     * -------------------------------------------------------- */
-    let netSalary = guaranteedCash - pfEe - esicEe - profTax;
+    /* ----------------------
+       10) CTC final
+       ---------------------- */
+    let ctc = guaranteedCash + pfErVal + esicErVal + gratuityVal;
 
-    /* --------------------------------------------------------
-     * 🔟 FINAL CTC
-     * -------------------------------------------------------- */
-    let ctc = guaranteedCash + pfEr + esicEr + gratuity;
+    /* ----------------------
+       Write-back rounded monthly values (for fields not manually edited we've already written above; ensure all exist)
+       ---------------------- */
+    setIfExists('basic', basicVal);
+    setIfExists('hra', hraVal);
+    setIfExists('statBonus', statVal);
+    setIfExists('specialAllowance', specialVal);
+    setIfExists('pfEr', pfErVal);
+    setIfExists('pfEe', pfErVal);
+    setIfExists('esicEr', esicErVal);
+    setIfExists('esicEe', esicErVal);
+    setIfExists('gratuity', gratuityVal);
+    setIfExists('guaranteedCash', guaranteedCash);
+    setIfExists('costToCompany', ctc);
+    setIfExists('netSalary', netVal);
 
-    /* --------------------------------------------------------
-     * SET FIELD VALUES
-     * -------------------------------------------------------- */
-    const set = (id, val) => {
-        if (document.getElementById(id))
-            document.getElementById(id).value = val.toFixed(2);
-    };
-
-    // Monthly
-    set("basic", basic);
-    set("hra", hra);
-    set("statBonus", statBonus);
-    set("specialAllowance", specialAllowance);
-    set("pfEr", pfEr);
-    set("pfEe", pfEe);
-    set("esicEr", esicEr);
-    set("esicEe", esicEe);
-    set("gratuity", gratuity);
-    set("guaranteedCash", guaranteedCash);
-    set("costToCompany", ctc);
-    set("netSalary", netSalary);
-
-    // Annual
-    set("grossCTCAnn", grossCTC * 12);
-    set("basicAnn", basic * 12);
-    set("hraAnn", hra * 12);
-    set("statBonusAnn", statBonus * 12);
-    set("allowance1Ann", allowance1 * 12);
-    set("allowance2Ann", allowance2 * 12);
-    set("specialAllowanceAnn", specialAllowance * 12);
-    set("guaranteedCashAnn", guaranteedCash * 12);
-    set("pfErAnn", pfEr * 12);
-    set("pfEeAnn", pfEe * 12);
-    set("esicErAnn", esicEr * 12);
-    set("esicEeAnn", esicEe * 12);
-    set("gratuityAnn", gratuity * 12);
-    set("profTaxAnn", profTax * 12);
-    set("costToCompanyAnn", ctc * 12);
-    set("netSalaryAnn", netSalary * 12);
+    /* ----------------------
+       Annual fields (rounded)
+       ---------------------- */
+    setIfExists('grossCTCAnn', grossCTC * 12);
+    setIfExists('basicAnn', basicVal * 12);
+    setIfExists('hraAnn', hraVal * 12);
+    setIfExists('statBonusAnn', statVal * 12);
+    setIfExists('allowance1Ann', allowance1 * 12);
+    setIfExists('allowance2Ann', allowance2 * 12);
+    setIfExists('specialAllowanceAnn', specialVal * 12);
+    setIfExists('guaranteedCashAnn', guaranteedCash * 12);
+    setIfExists('pfErAnn', pfErVal * 12);
+    setIfExists('pfEeAnn', pfErVal * 12);
+    setIfExists('esicErAnn', esicErVal * 12);
+    setIfExists('esicEeAnn', esicErVal * 12);
+    setIfExists('gratuityAnn', gratuityVal * 12);
+    setIfExists('profTaxAnn', profTax * 12);
+    setIfExists('costToCompanyAnn', ctc * 12);
+    setIfExists('netSalaryAnn', netVal * 12);
 }
 
 /* --------------------------------------------------------
- * EVENT ATTACHMENTS
- * -------------------------------------------------------- */
-document.addEventListener("DOMContentLoaded", () => {
+   Attach events: inputs become manual on user edit.
+   Special behaviour:
+     - basic input will trigger calculateIncrementSalary('basic') so HRA recalculates per option B.
+     - other inputs mark manual and trigger recalculation.
+   -------------------------------------------------------- */
+document.addEventListener('DOMContentLoaded', () => {
     loadPayrollSettings();
 
-    document.querySelectorAll("#incrementModal input, #incrementModal select").forEach(el => {
-        el.addEventListener("input", calculateIncrementSalary);
-        el.addEventListener("change", calculateIncrementSalary);
+    // fields inside increment modal we care about
+    const watched = [
+        'grossCTC','allowance1','allowance2','profTax',
+        'basic','hra','statBonus','specialAllowance',
+        'pfEr','esicEr','gratuity','netSalary',
+        'pfSelect','esicSelect','gratuitySelect'
+    ];
+
+    watched.forEach(id => {
+        const el = $(id);
+        if (!el) return;
+        // For selects and numbers use change + input
+        el.addEventListener('input', (e) => {
+            // For basic: mark manual but indicate it triggered by basic
+            if (id === 'basic') {
+                applyManualStyle(el); // basic is user-entered
+                calculateIncrementSalary('basic');
+            } else {
+                // mark manual override for all other direct user edits (so JS will respect them)
+                applyManualStyle(el);
+                calculateIncrementSalary(id);
+            }
+        });
+        el.addEventListener('change', (e) => {
+            if (id === 'basic') {
+                applyManualStyle(el);
+                calculateIncrementSalary('basic');
+            } else {
+                applyManualStyle(el);
+                calculateIncrementSalary(id);
+            }
+        });
     });
+
+    // also attach calculation to any selects inside modal (pf, esic, gratuity)
+    ['pfSelect','esicSelect','gratuitySelect'].forEach(id => {
+        const s = $(id);
+        if (!s) return;
+        s.addEventListener('change', () => calculateIncrementSalary(id));
+    });
+
+    // initial run
+    calculateIncrementSalary();
 });
 
 /* --------------------------------------------------------
@@ -560,8 +719,8 @@ document.addEventListener("DOMContentLoaded", () => {
  * -------------------------------------------------------- */
 async function viewIncrementDetails(id) {
     const modalBody = document.getElementById("incrementDetailsBody");
-    modalBody.innerHTML = `<div class="text-center py-3"><i class="ri-loader-4-line ri-spin"></i> Loading...</div>`;
 
+    modalBody.innerHTML = `<div class="text-center py-3"><i class="ri-loader-4-line ri-spin"></i> Loading...</div>`;
     new bootstrap.Modal(document.getElementById("incrementDetailsModal")).show();
 
     try {
@@ -572,14 +731,18 @@ async function viewIncrementDetails(id) {
             <table class="table table-bordered table-sm">
                 <tr><th>Employee</th><td>${data.employee}</td></tr>
                 <tr><th>Effective Date</th><td>${data.effective_date}</td></tr>
-                <tr><th>Gross CTC</th><td>${data.gross_ctc_pm}</td></tr>
-                <tr><th>Net Salary</th><td>${data.net_salary_pm}</td></tr>
-                <tr><th>Reason</th><td>${data.reason || "-"}</td></tr>
+                <tr><th>Gross CTC (PM)</th><td>${data.gross_ctc_pm}</td></tr>
+                <tr><th>Net Salary (PM)</th><td>${data.net_salary_pm}</td></tr>
+
+                <tr><th>PF</th><td>${data.flags.pf_deducted ? "Yes" : "No"}</td></tr>
+                <tr><th>ESIC</th><td>${data.flags.esic_applicable ? "Yes" : "No"}</td></tr>
+                <tr><th>Gratuity</th><td>${data.flags.gratuity_applicable ? "Yes" : "No"}</td></tr>
+
                 <tr><th>Status</th>
-                    <td>${data.is_processed ? 
+                    <td>${data.is_processed ?
                         "<span class='badge bg-success'>Applied</span>" :
-                        "<span class='badge bg-warning text-dark'>Pending</span>"
-                    }</td>
+                        "<span class='badge bg-warning text-dark'>Pending</span>"}
+                    </td>
                 </tr>
             </table>
         `;

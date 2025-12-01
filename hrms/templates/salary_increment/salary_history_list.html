@@ -1,0 +1,142 @@
+{% extends "base2.html" %}
+
+{% block body %}
+<div class="container-xxl mt-3">
+
+    <h4>Salary History</h4>
+
+    <!-- Filters -->
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <label>Employee</label>
+            <select id="employee" class="form-select">
+                <option value="">All</option>
+                {% for e in employees %}
+                <option value="{{ e.employee_code }}"
+                    {% if request.GET.employee == e.employee_code %}selected{% endif %}>
+                    {{ e.employee_code }} - {{ e.first_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-md-3">
+            <label>From</label>
+            <input type="date" id="from" value="{{ request.GET.date_from }}" class="form-control">
+        </div>
+
+        <div class="col-md-3">
+            <label>To</label>
+            <input type="date" id="to" value="{{ request.GET.date_to }}" class="form-control">
+        </div>
+
+        <div class="col-md-3 d-grid">
+            <label>&nbsp;</label>
+            <button class="btn btn-primary" onclick="applyFilters()">Filter</button>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="table-responsive">
+        <table class="table table-bordered">
+            <thead class="table-light">
+                <tr>
+                    <th>Employee</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Gross</th>
+                    <th>Basic</th>
+                    <th>Net</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for h in history %}
+                {% with s=h.data.salary %}
+                <tr>
+                    <td>{{ h.employee.employee_code }}</td>
+                    <td>{{ h.start_date }}</td>
+                    <td>{{ h.end_date }}</td>
+                    <td>{{ s.gross_ctc_pm }}</td>
+                    <td>{{ s.basic_pm }}</td>
+                    <td>{{ s.net_salary_pm }}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary"
+                                onclick="openDetail({{ h.id }})">
+                            View
+                        </button>
+
+                        <button class="btn btn-sm btn-outline-warning"
+                                onclick="openCompareModal({{ h.id }}, {{ h.employee.id }})">
+                            Compare
+                        </button>
+                    </td>
+                </tr>
+                {% endwith %}
+                {% empty %}
+                <tr><td colspan="7" class="text-center">No data</td></tr>
+                {% endfor %}
+            </tbody>
+
+        </table>
+    </div>
+</div>
+
+
+<!-- DETAIL MODAL -->
+<div class="modal fade" id="detailModal">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" id="detailContent"></div>
+    </div>
+</div>
+
+<!-- COMPARE MODAL -->
+<div class="modal fade" id="compareModal">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content" id="compareContent"></div>
+    </div>
+</div>
+
+
+
+<script>
+/* -------------------- FILTER -------------------- */
+function applyFilters() {
+    let params = new URLSearchParams({
+        employee: document.getElementById("employee").value,
+        date_from: document.getElementById("from").value,
+        date_to: document.getElementById("to").value
+    });
+    window.location.search = params.toString();
+}
+
+/* -------------------- DETAIL MODAL -------------------- */
+function openDetail(id) {
+    fetch(`/salary-history/detail/${id}/`)
+        .then(r => r.json())
+        .then(res => {
+            document.getElementById("detailContent").innerHTML = res.html;
+            new bootstrap.Modal(document.getElementById("detailModal")).show();
+        });
+}
+
+/* -------------------- COMPARE MODAL -------------------- */
+function openCompareModal(historyId, empId) {
+    const modalElement = document.getElementById('compareModal');
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+
+    document.getElementById('compareContent').innerHTML =
+        "<div class='p-5 text-center'>Loading...</div>";
+
+    fetch(`/salary-history/compare/${historyId}/${empId}/`)
+        .then(r => r.json())
+        .then(res => {
+            document.getElementById("compareContent").innerHTML = res.html;
+            modal.show();
+        })
+        .catch(err => console.log("COMPARE ERROR:", err));
+}
+</script>
+
+{% endblock %}

@@ -1,0 +1,14 @@
+<form method="POST" id="editCompanyForm">
+  {% csrf_token %}
+
+  <div class="row g-3">
+
+    {{ form.as_p }}
+
+  </div>
+
+  <div class="text-end mt-3">
+    <button type="submit" class="btn btn-primary">Update</button>
+  </div>
+
+</form>

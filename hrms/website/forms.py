@@ -166,8 +166,16 @@ AssetHandoverFormSet = inlineformset_factory(
 
 class CompanyForm(forms.ModelForm):
     class Meta:
-        model= Company
-        fields = "__all__"
+        model = Company
+        fields = [
+            "short_name", "name", "address",
+            "tan_number", "pan_number", "employer_pf",
+            "ptrc_number", "ptec_number", "esic_number",
+            "status"
+        ]
+        widgets = {
+            "address": forms.Textarea(attrs={"rows": 3}),
+        }
 
 
 

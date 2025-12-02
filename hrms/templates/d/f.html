@@ -4305,4 +4305,108 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 
+<script>
+// Helper to get CSRF token from cookies (more reliable than {{ csrf_token }})
+function getCSRFToken() {
+    return document.cookie.split('; ')
+        .find(row => row.startsWith('csrftoken='))?.split('=')[1];
+}
+
+// 🚀 Approve Correction Request
+function approveRequest(requestId) {
+
+    Swal.fire({
+        title: 'Approve Request?',
+        text: "Are you sure you want to approve this attendance correction request?",
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#28a745',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Yes, Approve'
+    }).then((result) => {
+
+        if (result.isConfirmed) {
+
+            fetch(`/approve-correction/${requestId}/`, {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": getCSRFToken(),
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Approved!',
+                    text: data.message,
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+
+                setTimeout(() => location.reload(), 1600);
+
+            })
+            .catch(error => {
+                Swal.fire('Error!', 'Something went wrong.', 'error');
+                console.error(error);
+            });
+        }
+    });
+}
+
+// 🚫 Reject Correction Request
+function rejectRequest(requestId) {
+
+    Swal.fire({
+        title: 'Reject Request',
+        input: 'textarea',
+        inputLabel: 'Reason for rejection:',
+        inputPlaceholder: 'Enter rejection reason...',
+        inputAttributes: { 'aria-label': 'Enter rejection reason' },
+        showCancelButton: true,
+        confirmButtonText: 'Reject',
+        confirmButtonColor: '#d33',
+        preConfirm: (reason) => {
+            if (!reason) {
+                Swal.showValidationMessage('Please enter a reason for rejection');
+            }
+            return reason;
+        }
+    }).then((result) => {
+
+        if (result.isConfirmed) {
+
+            fetch(`/reject-correction/${requestId}/`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": getCSRFToken()
+                },
+                body: JSON.stringify({ reason: result.value })
+            })
+            .then(response => response.json())
+            .then(data => {
+
+                Swal.fire({
+                    icon: 'info',
+                    title: 'Rejected!',
+                    text: data.message,
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+
+                setTimeout(() => location.reload(), 1600);
+
+            })
+            .catch(error => {
+                Swal.fire('Error!', 'Something went wrong.', 'error');
+                console.error(error);
+            });
+        }
+    });
+}
+</script>
+
+
 {% endblock %}

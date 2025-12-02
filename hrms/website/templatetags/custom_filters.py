@@ -22,3 +22,10 @@ def subtract(a, b):
         return float(a) - float(b)
     except:
         return 0
+
+
+
+
+@register.filter
+def getattribute(obj, attr_name):
+    return getattr(obj, attr_name, "")

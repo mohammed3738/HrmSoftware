@@ -792,6 +792,33 @@ def create_company(request):
     companies = Company.objects.all()
     return render(request, "company/home2.html",{"companies": companies})
 
+
+
+
+def edit_company(request, company_id):
+    company = get_object_or_404(Company, id=company_id)
+
+    if request.method == "POST":
+        form = CompanyForm(request.POST, instance=company)
+        if form.is_valid():
+            form.save()
+            return HttpResponse("<script>location.reload();</script>")
+    else:
+        form = CompanyForm(instance=company)
+
+    return render(request, "company/_edit_company_form.html", {"form": form, "company": company})
+
+
+def get_company(request, id):
+    company = Company.objects.get(id=id)
+    return JsonResponse({
+        "id": company.id,
+        "short_name": company.short_name,
+        "name": company.name,
+        "address": company.address,
+        "status": company.status
+    })
+
 # def create_salary(request):
 #     form = SalaryMasterForm()
 #     return render(request,'employee/create_employee.html',{'form':form})

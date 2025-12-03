@@ -32,7 +32,7 @@ class Company(models.Model):
 
 class Branch(models.Model):
     branch_name= models.CharField(max_length=100)
-
+    # address 
     def __str__(self):
         return f"{self.branch_name}"
     

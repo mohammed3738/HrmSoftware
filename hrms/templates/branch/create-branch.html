@@ -1,23 +1,695 @@
-<!DOCTYPE html>
+{% extends 'base2.html' %}
+{% block body %}
+{% load static %}
+
+
+<!-- <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Employee Form</title>
-  </head>
-  <body>
-    <form method="post">
-      <!-- Personal Details -->
-       <h3>Branch Creation</h3>
-      {% csrf_token %}
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Employee Form</title>
+</head>
+
+<body>
+  <form method="post">
+    <h3>Branch Creations</h3>
+    {% csrf_token %}
 
 
-      <label for="branch">Branch:</label>
-      <input type="text" id="branch" name="branch_name" required /><br />
+    <label for="branch">Branch:</label>
+    <input type="text" id="branch" name="branch_name" required /><br />
 
 
 
-      <button type="submit">Submit</button>
-    </form>
-  </body>
-</html>
+    <button type="submit">Submit</button>
+  </form>
+</body>
+
+</html> -->
+
+
+
+
+
+
+
+<!-- Page Wrapper -->
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="content">
+
+    <!-- Breadcrumb -->
+    <div class="d-md-flex d-block align-items-center justify-content-between page-breadcrumb mb-3">
+      <div class="my-auto mb-2">
+        <h2 class="mb-1">Branches</h2>
+        <nav>
+          <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item">
+              <a href="https://smarthr.dreamstechnologies.com/html/template/index.html"><i
+                  class="ti ti-smart-home"></i></a>
+            </li>
+            <li class="breadcrumb-item">
+              Application
+            </li>
+            <li class="breadcrumb-item active" aria-current="page">Branches List</li>
+          </ol>
+        </nav>
+      </div>
+      <div class="d-flex my-xl-auto right-content align-items-center flex-wrap ">
+        <div class="me-2 mb-2">
+          <div class="dropdown">
+            <a href="javascript:void(0);" class="dropdown-toggle btn btn-white d-inline-flex align-items-center"
+              data-bs-toggle="dropdown">
+              <i class="ti ti-file-export me-1"></i>Export
+            </a>
+            <ul class="dropdown-menu  dropdown-menu-end p-3">
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"><i
+                    class="ti ti-file-type-pdf me-1"></i>Export as PDF</a>
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"><i
+                    class="ti ti-file-type-xls me-1"></i>Export as Excel </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div class="mb-2">
+          <a href="#" data-bs-toggle="modal" data-bs-target="#add_branch"
+            class="btn btn-primary d-flex align-items-center"><i class="ti ti-circle-plus me-2"></i>Add Branch</a>
+        </div>
+        <div class="ms-2 head-icons">
+          <a href="javascript:void(0);" class="" data-bs-toggle="tooltip" data-bs-placement="top"
+            data-bs-original-title="Collapse" id="collapse-header">
+            <i class="ti ti-chevrons-up"></i>
+          </a>
+        </div>
+      </div>
+    </div>
+    <!-- /Breadcrumb -->
+
+    {% comment %} <div class="row">
+
+      <!-- Total Branches -->
+      <div class="col-lg-3 col-md-6 d-flex">
+        <div class="card flex-fill">
+          <div class="card-body d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center overflow-hidden">
+              <span class="avatar avatar-lg bg-primary flex-shrink-0">
+                <i class="ti ti-building fs-16"></i>
+              </span>
+              <div class="ms-2 overflow-hidden">
+                <p class="fs-12 fw-medium mb-1 text-truncate">Total Branches</p>
+                <h4>950</h4>
+              </div>
+            </div>
+            <div id="total-chart"></div>
+          </div>
+        </div>
+      </div>
+      <!-- /Total Branches -->
+
+      <!-- Total Branches -->
+      <div class="col-lg-3 col-md-6 d-flex">
+        <div class="card flex-fill">
+          <div class="card-body d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center overflow-hidden">
+              <span class="avatar avatar-lg bg-success flex-shrink-0">
+                <i class="ti ti-building fs-16"></i>
+              </span>
+              <div class="ms-2 overflow-hidden">
+                <p class="fs-12 fw-medium mb-1 text-truncate">Active Branches</p>
+                <h4>920</h4>
+              </div>
+            </div>
+            <div id="active-chart"></div>
+          </div>
+        </div>
+      </div>
+      <!-- /Total Branches -->
+
+      <!-- Inactive Branches -->
+      <div class="col-lg-3 col-md-6 d-flex">
+        <div class="card flex-fill">
+          <div class="card-body d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center overflow-hidden">
+              <span class="avatar avatar-lg bg-danger flex-shrink-0">
+                <i class="ti ti-building fs-16"></i>
+              </span>
+              <div class="ms-2 overflow-hidden">
+                <p class="fs-12 fw-medium mb-1 text-truncate">Inactive Branches</p>
+                <h4>30</h4>
+              </div>
+            </div>
+            <div id="inactive-chart"></div>
+          </div>
+        </div>
+      </div>
+      <!-- /Inactive Branches -->
+
+      <!-- Company Location -->
+      <div class="col-lg-3 col-md-6 d-flex">
+        <div class="card flex-fill">
+          <div class="card-body d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center overflow-hidden">
+              <span class="avatar avatar-lg bg-skyblue flex-shrink-0">
+                <i class="ti ti-map-pin-check fs-16"></i>
+              </span>
+              <div class="ms-2 overflow-hidden">
+                <p class="fs-12 fw-medium mb-1 text-truncate">Company Location</p>
+                <h4>180</h4>
+              </div>
+            </div>
+            <div id="location-chart"></div>
+          </div>
+        </div>
+      </div>
+      <!-- /Company Location -->
+
+    </div> {% endcomment %}
+
+    <div class="card">
+      <div class="card-header d-flex align-items-center justify-content-between flex-wrap row-gap-3">
+        <h5>Branches List</h5>
+        <div class="d-flex my-xl-auto right-content align-items-center flex-wrap row-gap-3">
+          <div class="me-3">
+            <div class="input-icon-end position-relative">
+              <input type="text" class="form-control date-range bookingrange" placeholder="dd/mm/yyyy - dd/mm/yyyy">
+              <span class="input-icon-addon">
+                <i class="ti ti-chevron-down"></i>
+              </span>
+            </div>
+          </div>
+          <div class="dropdown me-3">
+            <a href="javascript:void(0);" class="dropdown-toggle btn btn-white d-inline-flex align-items-center"
+              data-bs-toggle="dropdown">
+              Select Plan
+            </a>
+            <ul class="dropdown-menu  dropdown-menu-end p-3">
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1">Advanced</a>
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1">Basic</a>
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1">Enterprise</a>
+              </li>
+            </ul>
+          </div>
+          <div class="dropdown me-3">
+            <a href="javascript:void(0);" class="dropdown-toggle btn btn-white d-inline-flex align-items-center"
+              data-bs-toggle="dropdown">
+              Select Status
+            </a>
+            <ul class="dropdown-menu  dropdown-menu-end p-3">
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1">Active</a>
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1">Inactive</a>
+              </li>
+            </ul>
+          </div>
+          <div class="dropdown">
+            <a href="javascript:void(0);" class="dropdown-toggle btn btn-white d-inline-flex align-items-center"
+              data-bs-toggle="dropdown">
+              Sort By : Last 7 Days
+            </a>
+            <ul class="dropdown-menu  dropdown-menu-end p-3">
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1">Recently Added</a>
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1">Ascending</a>
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1">Desending</a>
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1">Last Month</a>
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1">Last 7 Days</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <div class="custom-datatable-filter table-responsive">
+          <table class="table datatable">
+            <thead class="thead-light">
+              <tr>
+                <th class="no-sort">
+                  <div class="form-check form-check-md">
+                    <input class="form-check-input" type="checkbox" id="select-all">
+                  </div>
+                </th>
+                <th>Name</th>
+                <!-- <th>Address</th> -->
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if branches %}
+              {% for branch in branches %}
+
+              <tr>
+                <td>
+                  <div class="form-check form-check-md">
+                    <input class="form-check-input" type="checkbox">
+                  </div>
+                </td>
+                <!-- <td>
+                  <div class="d-flex align-items-center file-name-icon">
+                    <a href="#" class="avatar avatar-md border rounded-circle">
+                      <img src="https://smarthr.dreamstechnologies.com/html/template/assets/img/company/company-01.svg"
+                        class="img-fluid" alt="img">
+                    </a>
+                    <div class="ms-2">
+                      <h6 class="fw-medium"><a href="#">{{branch.branch_name}}</a></h6>
+                    </div>
+                  </div>
+                </td> -->
+                {% comment %} <td><a href="https://smarthr.dreamstechnologies.com/cdn-cgi/l/email-protection"
+                    class="__cf_email__"
+                    data-cfemail="e885818b80898d84a88d90898598848dc68b8785">[email&#160;protected]</a></td>
+                {% endcomment %}
+                <td>{{branch.branch_name}}</td>
+                <!-- <td>
+                  <div class="d-flex align-items-center justify-content-between">
+                    <p class="mb-0 me-2">{{ company.address|truncatewords:6 }}</p>
+                  </div>
+                </td>
+                <td id="company_">{{company.tan_number}}</td>
+                <td>{{company.pan_number}}</td>
+                <td>{{company.employer_pf}}</td>
+                <td>{{company.ptrc_number}}</td>
+                <td>{{company.ptec_number}}</td>
+                <td>{{company.esic_number}}</td>
+                <td>{{company.status}}</td> -->
+                <td>
+                  <div class="dropdown">
+                    <a class="text-muted" href="#" data-bs-toggle="dropdown">
+                      <i class="ti ti-dots-vertical"></i>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-end">
+                      <a class="dropdown-item" href="#" data-bs-toggle="modal"
+                        data-bs-target="#company_detail_{{ company.id }}">
+                        <i class="ti ti-eye me-2"></i> View
+                      </a>
+                      <a class="dropdown-item edit-company-btn" href="#" data-id="{{ company.id }}">
+                        <i class="ti ti-edit me-2"></i> Edit
+                      </a>
+                      <a class="dropdown-item text-danger" href="#" data-bs-toggle="modal"
+                        data-bs-target="#delete_company_{{ company.id }}">
+                        <i class="ti ti-trash me-2"></i> Delete
+                      </a>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+              {% else %}
+              <tr>
+                <td colspan="9" class="text-center">No data available</td>
+              </tr>
+              {% endif %}
+
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+</div>
+<!-- /Page Wrapper -->
+
+<!-- Add Branch -->
+<div class="modal fade" id="add_branch">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 class="modal-title">Add New Branch</h4>
+        <button type="button" class="btn-close custom-btn-close" data-bs-dismiss="modal" aria-label="Close">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <div class="modal-body pb-0">
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Name <span class="text-danger"> *</span></label>
+                <input type="text" class="form-control" name="branch_name">
+              </div>
+            </div>
+            <!-- <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Company Name <span class="text-danger"> *</span></label>
+                <input type="text" class="form-control" name="name">
+              </div>
+            </div>
+            <div class="col-md-12">
+              <div class="mb-3">
+                <label class="form-label">Company Address <span class="text-danger"> *</span></label>
+                <textarea class="form-control" name="address"></textarea>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">TAN Number</label>
+                <input type="text" class="form-control" name="tan_number">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">PAN Number</label>
+                <input type="text" class="form-control" name="pan_number">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Employer PF Number</label>
+                <input type="text" class="form-control" name="employer_pf">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">PTRC Number</label>
+                <input type="text" class="form-control" name="ptrc_number">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">PTEC Number</label>
+                <input type="text" class="form-control" name="ptec_number">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">ESIC Number</label>
+                <input type="text" class="form-control" name="esic_number">
+              </div>
+            </div> -->
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Branch</button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+</div>
+<!-- /Add Branch -->
+
+<!-- Edit Branch -->
+<!-- EDIT BRANCH MODAL -->
+<div class="modal fade" id="editBranchModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">Edit Branch</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body" id="editCompanyBody">
+        <div class="text-center text-muted p-3">Loading...</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+<!-- /Edit Company -->
+<!-- /Edit Company -->
+
+<!-- Upgrade Information -->
+<div class="modal fade" id="upgrade_info">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 class="modal-title">Upgrade Package</h4>
+        <button type="button" class="btn-close custom-btn-close" data-bs-dismiss="modal" aria-label="Close">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <div class="p-3 mb-1">
+        <div class="rounded bg-light p-3">
+          <h5 class="mb-3">Current Plan Details</h5>
+          <div class="row align-items-center">
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Company Name</p>
+                <p class="text-gray-9">BrightWave Innovations</p>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Plan Name</p>
+                <p class="text-gray-9">Advanced</p>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Plan Type</p>
+                <p class="text-gray-9">Monthly</p>
+              </div>
+            </div>
+          </div>
+          <div class="row align-items-center">
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Price</p>
+                <p class="text-gray-9">200</p>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Register Date</p>
+                <p class="text-gray-9">12 Sep 2024</p>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Expiring On</p>
+                <p class="text-gray-9">11 Oct 2024</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <form action="https://smarthr.dreamstechnologies.com/html/template/companies.html">
+        <div class="modal-body pb-0">
+          <h5 class="mb-4">Change Plan</h5>
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3 ">
+                <label class="form-label">Plan Name <span class="text-danger">*</span></label>
+                <select class="select">
+                  <option>Select</option>
+                  <option>Advanced</option>
+                  <option>Basic</option>
+                  <option>Enterprise</option>
+                </select>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3 ">
+                <label class="form-label">Plan Type <span class="text-danger">*</span></label>
+                <select class="select">
+                  <option>Select</option>
+                  <option>Monthly</option>
+                  <option>Yearly</option>
+                </select>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Ammount<span class="text-danger">*</span></label>
+                <input type="text" class="form-control">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Payment Date <span class="text-danger">*</span></label>
+                <div class="input-icon-end position-relative">
+                  <input type="text" class="form-control datetimepicker" placeholder="dd/mm/yyyy">
+                  <span class="input-icon-addon">
+                    <i class="ti ti-calendar text-gray-7"></i>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Next Payment Date <span class="text-danger">*</span></label>
+                <div class="input-icon-end position-relative">
+                  <input type="text" class="form-control datetimepicker" placeholder="dd/mm/yyyy">
+                  <span class="input-icon-addon">
+                    <i class="ti ti-calendar text-gray-7"></i>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Expiring On <span class="text-danger">*</span></label>
+                <div class="input-icon-end position-relative">
+                  <input type="text" class="form-control datetimepicker" placeholder="dd/mm/yyyy">
+                  <span class="input-icon-addon">
+                    <i class="ti ti-calendar text-gray-7"></i>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<!-- /Upgrade Information -->
+
+<!-- Company Detail -->
+<!-- Company Detail Modal -->
+<!-- Company Detail Modal -->
+<div class="modal fade" id="company_detail_{{ company.id }}">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h4 class="modal-title">Branch Details - {{ branch.branch_name }}</h4>
+        <button type="button" class="btn-close custom-btn-close" data-bs-dismiss="modal">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+
+      <div class="modal-body p-4">
+
+        <div class="d-flex align-items-center mb-4">
+          <span class="avatar avatar-lg rounded-circle bg-primary text-white me-3">
+            {{ branch.branch_name|slice:":2" }}
+          </span>
+          <div>
+            <h5 class="mb-0">{{ branch.branch_name }}</h5>
+            <span class="badge {% if branch.status == 'active' %}bg-success{% else %}bg-danger{% endif %}">
+              {{ branch.status|title }}
+            </span>
+          </div>
+        </div>
+
+        <div class="row">
+
+          <div class="col-md-6 mb-3">
+            <strong>Branch Name:</strong>
+            <p class="text-muted">{{ branch.branch_name }}</p>
+          </div>
+
+          <!-- <div class="col-md-6 mb-3">
+            <strong>Address:</strong>
+            <p class="text-muted">{{ company.address }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>TAN Number:</strong>
+            <p class="text-muted">{{ company.tan_number|default:"—" }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>PAN Number:</strong>
+            <p class="text-muted">{{ company.pan_number|default:"—" }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>Employer PF:</strong>
+            <p class="text-muted">{{ company.employer_pf|default:"—" }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>PTRC Number:</strong>
+            <p class="text-muted">{{ company.ptrc_number|default:"—" }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>PTEC Number:</strong>
+            <p class="text-muted">{{ company.ptec_number|default:"—" }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>ESIC Number:</strong>
+            <p class="text-muted">{{ company.esic_number|default:"—" }}</p>
+          </div> -->
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+<!-- /Company Detail -->
+
+<!-- Delete Modal -->
+<div class="modal fade" id="delete_modal">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-body text-center">
+        <span class="avatar avatar-xl bg-transparent-danger text-danger mb-3">
+          <i class="ti ti-trash-x fs-36"></i>
+        </span>
+        <h4 class="mb-1">Confirm Delete</h4>
+        <p class="mb-3">You want to delete all the marked items, this cant be undone once you delete.</p>
+        <div class="d-flex justify-content-center">
+          <a href="javascript:void(0);" class="btn btn-light me-3" data-bs-dismiss="modal">Cancel</a>
+          <a href="https://smarthr.dreamstechnologies.com/html/template/companies.html" class="btn btn-danger">Yes,
+            Delete</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- /Delete Modal -->
+
+<!-- /Main Wrapper -->
+
+
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".edit-company-btn").forEach(btn => {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        const companyId = this.dataset.id;
+        const modalBody = document.getElementById("editCompanyBody");
+
+        modalBody.innerHTML = "<div class='text-center p-3 text-muted'>Loading...</div>";
+
+        fetch(`/company/${companyId}/edit/`)
+          .then(response => response.text())
+          .then(html => {
+            modalBody.innerHTML = html;
+            const modal = new bootstrap.Modal(document.getElementById("editCompanyModal"));
+            modal.show();
+          })
+          .catch(() => {
+            modalBody.innerHTML = "<div class='alert alert-danger'>Failed to load data.</div>";
+          });
+      });
+    });
+  });
+</script>
+
+{% endblock %}

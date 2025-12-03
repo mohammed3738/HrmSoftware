@@ -17,6 +17,7 @@ urlpatterns = [
     path("company/<int:company_id>/edit/", views.edit_company, name="edit_company"),
     path("company/<int:company_id>/get/", views.get_company, name="get_company"),
 
+    path("company/delete/<int:company_id>/", views.delete_company, name="delete_company"),
 
 
 

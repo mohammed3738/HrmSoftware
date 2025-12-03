@@ -857,6 +857,20 @@ def get_company(request, company_id):
         "status": company.status,
     })
 
+
+
+def delete_company(request, company_id):
+    company = get_object_or_404(Company, id=company_id)
+
+    if request.method == "POST":
+        company.delete()
+        messages.success(request, "Company deleted successfully.")
+        return redirect("create-company")
+
+    messages.error(request, "Invalid request.")
+    return redirect("create-company")
+
+
 # def create_salary(request):
 #     form = SalaryMasterForm()
 #     return render(request,'employee/create_employee.html',{'form':form})

@@ -809,14 +809,19 @@ def edit_company(request, company_id):
     return render(request, "company/_edit_company_form.html", {"form": form, "company": company})
 
 
-def get_company(request, id):
-    company = Company.objects.get(id=id)
+def get_company(request, company_id):
+    company = Company.objects.get(id=company_id)
     return JsonResponse({
-        "id": company.id,
         "short_name": company.short_name,
         "name": company.name,
         "address": company.address,
-        "status": company.status
+        "tan_number": company.tan_number,
+        "pan_number": company.pan_number,
+        "employer_pf": company.employer_pf,
+        "ptrc_number": company.ptrc_number,
+        "ptec_number": company.ptec_number,
+        "esic_number": company.esic_number,
+        "status": company.status,
     })
 
 # def create_salary(request):

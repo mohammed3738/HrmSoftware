@@ -657,4 +657,34 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
+
+<script>
+  // When clicking the Edit button
+$(".edit-company-btn").click(function () {
+    const companyId = $(this).data("id");
+
+    $.ajax({
+        url: `/company/${companyId}/get/`,
+        type: "GET",
+        success: function (res) {
+            $("#edit_short_name").val(res.short_name);
+            $("#edit_name").val(res.name);
+            $("#edit_address").val(res.address);
+            $("#edit_tan").val(res.tan_number);
+            $("#edit_pan").val(res.pan_number);
+            $("#edit_pf").val(res.employer_pf);
+            $("#edit_ptrc").val(res.ptrc_number);
+            "#edit_ptec").val(res.ptec_number);
+            $("#edit_esic").val(res.esic_number);
+            $("#edit_status").val(res.status);
+            
+            // Update form action
+            $("#editCompanyForm").attr("action", `/company/${companyId}/edit/`);
+
+            $("#editCompanyModal").modal("show");
+        }
+    });
+});
+
+</script>
     {% endblock %}

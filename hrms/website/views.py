@@ -66,6 +66,21 @@ def company_details_api(request, pk):
 
     return JsonResponse(data)
 
+
+def delete_employee(request, employee_id):
+    employee = get_object_or_404(Employee, id=employee_id)
+
+    if request.method == "POST":
+        employee.delete()
+        messages.success(request, "Employee deleted successfully.")
+        return redirect("create-employee")  
+
+    messages.error(request, "Invalid request.")
+    return redirect("create-employee")
+
+
+
+
 # atul
 
 # Vaishu
@@ -700,6 +715,31 @@ def employee_detail(request, pk):
     }
     return render(request, 'employee/employee_detail.html', context)
 
+
+def edit_employee(request, employee_id):
+    employee = get_object_or_404(Employee, id=employee_id)
+
+    if request.method == "POST":
+        form = EmployeeForm(request.POST, request.FILES, instance=employee)
+        formset = PreviousEmploymentFormSet(request.POST, instance=employee)
+        attachment_formset = EmployeeAttachmentFormSet(request.POST, request.FILES, instance=employee)
+
+        if form.is_valid() and formset.is_valid() and attachment_formset.is_valid():
+            form.save()
+            formset.save()
+            attachment_formset.save()
+            return JsonResponse({"success": True})
+    else:
+        form = EmployeeForm(instance=employee)
+        formset = PreviousEmploymentFormSet(instance=employee)
+        attachment_formset = EmployeeAttachmentFormSet(instance=employee)
+
+    return render(request, "employee/edit_employee_form.html", {
+        "form": form,
+        "formset": formset,
+        "attachment_formset": attachment_formset,
+        "employee": employee,
+    })
 
 
 # def create_offboarding(request):

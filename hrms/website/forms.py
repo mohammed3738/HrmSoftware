@@ -67,6 +67,12 @@ class EmployeeForm(forms.ModelForm):
             "date_of_confirmation": forms.DateInput(attrs={"type": "date"}),
             "date_of_marriage": forms.DateInput(attrs={"type": "date"}),  # ✅ date picker
         }
+        
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs['class'] = 'form-control'
+
 
 
 # Create an inline formset for PreviousEmployment related to Employee.
@@ -101,6 +107,15 @@ EmployeeAttachmentFormSet = inlineformset_factory(
 
 
 
+# class EmployeeEditForm(forms.ModelForm):
+#     class Meta:
+#         model = Employee
+#         fields = "__all__"
+
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
+#         for field in self.fields.values():
+#             field.widget.attrs['class'] = 'form-control'
 
     # assets = forms.ModelMultipleChoiceField(queryset=Asset.objects.all(), widget=forms.CheckboxSelectMultiple, required=False)
     # def save(self, commit=True):

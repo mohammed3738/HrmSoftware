@@ -57,7 +57,7 @@
               <th>Last Name</th>
               <th>Father's Name</th>
               <th>Gender</th>
-              <th>Blood Group</th>
+              <!-- <th>Blood Group</th>
               <th>Date of Birth</th>
               <th>Place of Birth</th>
               <th>Personal Email</th>
@@ -86,7 +86,7 @@
               <th>Emergency Contact Mobile 1</th>
               <th>Emergency Contact Name 2</th>
               <th>Emergency Contact Relation 2</th>
-              <th>Emergency Contact Mobile 2</th>
+              <th>Emergency Contact Mobile 2</th> -->
               <th>Status</th>
               <th class="sticky-actions">Actions</th>
                   </tr>
@@ -120,7 +120,7 @@
               <td>{{employee.last_name}}</td>
               <td>{{employee.father_name}}</td>
               <td>{{employee.gender}}</td>
-              <td>{{employee.blood_group}}</td>
+              <!-- <td>{{employee.blood_group}}</td>
               <td>{{employee.date_of_birth}}</td>
               <td>{{employee.place_of_birth}}</td>
               <td>{{employee.personal_email}}</td>
@@ -149,7 +149,7 @@
               <td>{{employee.emergency_contact_mobile1}}</td>
               <td>{{employee.emergency_contact_name2}}</td> 
               <td>{{employee.emergency_contact_relation2}}</td>
-              <td>{{employee.emergency_contact_mobile2}}</td>
+              <td>{{employee.emergency_contact_mobile2}}</td> -->
               <td>
                 {% if employee.status == "Active" %}
                 <p style="color: red;">{{employee.status}}</p>
@@ -170,13 +170,15 @@
                     <i class="ri-more-2-line"></i>
                   </button>
                   <div class="dropdown-menu">
-                    <a class="dropdown-item" href="javascript:void(0);"
-                      ><i class="ri-pencil-line me-2"></i> Edit</a
-                    >
-                    <a class="dropdown-item" href="javascript:void(0);"
-                      ><i class="ri-delete-bin-7-line me-2"></i> Delete</a
-                    >
-                  </div>
+                    <a href="#" class="dropdown-item edit-employee-btn" data-id="{{ employee.id }}">
+                        <i class="ti ti-edit me-2"></i> Edit
+                    </a>
+                    <a class="dropdown-item text-danger"
+                href="javascript:void(0);"
+                onclick="confirmEmployeeDelete({{ employee.id }})">
+                  <i class="ri-delete-bin-7-line me-2"></i> Delete
+              </a>                  
+            </div>
                 </div>
               </td>
             </tr>
@@ -194,6 +196,37 @@
 
 
 
+{% comment %} employee modal {% endcomment %}
+
+
+<!-- ==========================
+     EMPLOYEE EDIT MODAL
+========================== -->
+<div class="modal fade" id="editEmployeeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+
+      <div
+        class="modal-header bg-primary bg-gradient text-white rounded-top-4 py-3"
+      >
+        <h5 class="modal-title fw-bold d-flex align-items-center text-white">
+          <i class="ti ti-building-bank me-2 fs-4 text-white"></i> Edit Employee
+          Details
+        </h5>
+        <button
+          type="button"
+          class="btn-close btn-close-white text-white"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
+
+      <div class="modal-body" id="editEmployeeBody">
+        <div class="text-center text-muted p-3">Loading...</div>
+      </div>
+
+    </div>
+  </div>
+</div>
 
 
 
@@ -1273,6 +1306,41 @@
 
 
 </div>
+<!-- Delete Modal -->
+<div class="modal fade" id="delete_modal">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-body text-center">
+        <span class="avatar avatar-xl bg-transparent-danger text-danger mb-3">
+          <i class="ti ti-trash-x fs-36"></i>
+        </span>
+        <h4 class="mb-1">Confirm Delete</h4>
+        <p class="mb-3">
+          You want to delete all the marked items, this cant be undone once you
+          delete.
+        </p>
+        <div class="d-flex justify-content-center">
+          <a
+            href="javascript:void(0);"
+            class="btn btn-light me-3"
+            data-bs-dismiss="modal"
+            >Cancel</a
+          >
+          <a
+            href="https://smarthr.dreamstechnologies.com/html/template/companies.html"
+            class="btn btn-danger"
+            >Yes, Delete</a
+          >
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- /Delete Modal -->
+<form id="deleteEmployeeForm" method="POST" style="display:none;">
+    {% csrf_token %}
+</form>
+
 
 
 <!--/ Responsive Datatable -->
@@ -1368,5 +1436,94 @@
 
 })();
 </script>
+
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".edit-employee-btn").forEach((btn) => {
+
+        btn.addEventListener("click", function (e) {
+            e.preventDefault();
+
+            const employeeId = this.dataset.id;
+            const modalBody = document.getElementById("editEmployeeBody");
+
+            modalBody.innerHTML = "<div class='text-center p-3 text-muted'>Loading...</div>";
+
+            fetch(`/employee/${employeeId}/edit/`)
+                .then((response) => response.text())
+                .then((html) => {
+                    modalBody.innerHTML = html;
+                    const modal = new bootstrap.Modal(
+                        document.getElementById("editEmployeeModal")
+                    );
+                    modal.show();
+                })
+                .catch(() => {
+                    modalBody.innerHTML =
+                      "<div class='alert alert-danger'>Failed to load employee details.</div>";
+                });
+        });
+
+    });
+});
+</script>
+
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".edit-employee-btn").forEach((btn) => {
+
+        btn.addEventListener("click", function (e) {
+            e.preventDefault();
+
+            const employeeId = this.dataset.id;
+            const modalBody = document.getElementById("editEmployeeBody");
+
+            modalBody.innerHTML = "<div class='text-center p-3 text-muted'>Loading...</div>";
+
+            fetch(`/employee/${employeeId}/edit/`)
+                .then((response) => response.text())
+                .then((html) => {
+                    modalBody.innerHTML = html;
+                    const modal = new bootstrap.Modal(
+                        document.getElementById("editEmployeeModal")
+                    );
+                    modal.show();
+                })
+                .catch(() => {
+                    modalBody.innerHTML =
+                      "<div class='alert alert-danger'>Failed to load employee details.</div>";
+                });
+        });
+
+    });
+});
+</script>
+<script>
+function confirmEmployeeDelete(employeeId) {
+
+    Swal.fire({
+        title: "Are you sure?",
+        text: "This employee will be permanently deleted!",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        cancelButtonColor: "#3085d6",
+        confirmButtonText: "Yes, delete!"
+    }).then((result) => {
+        if (result.isConfirmed) {
+
+            const form = document.getElementById("deleteEmployeeForm");
+            form.action = `/employee/delete/${employeeId}/`;
+            form.submit();
+        }
+    });
+
+}
+</script>
+
 
 {% endblock %}

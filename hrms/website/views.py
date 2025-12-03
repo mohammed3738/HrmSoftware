@@ -819,7 +819,8 @@ def edit_branch(request, branch_id):
         form = BranchForm(request.POST, instance=branch)
         if form.is_valid():
             form.save()
-            return HttpResponse("<script>location.reload();</script>")
+            messages.success(request, "Branch Updated successfully!")
+            return redirect("create-branch")
     else:
         form = BranchForm(instance=branch)
 
@@ -839,6 +840,17 @@ def get_branch(request, branch_id):
         # "esic_number": company.esic_number,
         # "status": company.status,
     })
+
+def delete_branch(request, branch_id):
+    branch = get_object_or_404(Branch, id=branch_id)
+
+    if request.method == "POST":
+        branch.delete()
+        messages.success(request, "Branch deleted successfully.")
+        return redirect("create-branch")
+
+    messages.error(request, "Invalid request.")
+    return redirect("create-branch")
 
 # def create_company(request):
 #     if request.method == 'POST':

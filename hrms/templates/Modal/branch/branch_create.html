@@ -1,0 +1,52 @@
+<!-- Add Branch -->
+<div class="modal fade" id="add_branch">
+  <div class="modal-dialog modal-dialog-centered modal-md">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 class="modal-title">Add New Branch</h4>
+        <button
+          type="button"
+          class="btn-close custom-btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        >
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <div class="modal-body pb-0">
+          <div class="row">
+            <div class="col-md-12">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Name <span class="text-danger"> *</span></label
+                >
+                <input type="text" class="form-control" name="branch_name" />
+              </div>
+            </div>
+            <div class="col-md-12">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Branch Address <span class="text-danger"> *</span></label
+                >
+                <textarea class="form-control" name="branch_address"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-light me-2"
+            data-bs-dismiss="modal"
+          >
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary">Add Branch</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<!-- /Add Branch -->

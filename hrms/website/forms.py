@@ -117,8 +117,13 @@ class BranchForm(forms.ModelForm):
     class Meta:
         model= Branch
         fields = [
-            'branch_name'
+            'branch_name',
+            'branch_address',
         ]
+        widgets = {
+            'branch_name': forms.TextInput(attrs={'class':'form-control'}),
+            'branch_address': forms.Textarea(attrs={'class':'form-control', "rows": 4}),
+        }
 
         
 class OffboardingForm(forms.ModelForm):

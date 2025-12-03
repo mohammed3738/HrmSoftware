@@ -17,6 +17,23 @@ urlpatterns = [
     path("company/<int:company_id>/edit/", views.edit_company, name="edit_company"),
     path("company/<int:company_id>/get/", views.get_company, name="get_company"),
 
+
+
+
+
+
+
+
+    path("company/<int:pk>/details/", views.company_details_api, name="company_details_api"),
+
+
+
+
+
+
+
+
+
     path('create-salary',views.create_salary,name="create-salary"),
     path("salary/details/<int:pk>/", views.salary_details, name="salary_details"),
     path("download-employees/", views.download_employees_excel, name="download_employees"),

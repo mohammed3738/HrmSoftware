@@ -1,690 +1,1092 @@
+{% extends 'base2.html' %} {% block body %} {% load static %}
+<!-- <style>
+/* Modal Glass Look */
+.premium-modal {
+    background: rgba(255,255,255,0.9);
+    backdrop-filter: blur(12px);
+    border-radius: 14px;
+    box-shadow: 0px 15px 40px rgba(0,0,0,0.12);
+}
 
-{% extends 'base2.html' %}
-{% block body %}
-{% load static %}
+/* Gradient Header */
+.modal-gradient {
+    background: linear-gradient(135deg, #6366F1, #666CFF);
+    padding: 16px;
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+}
 
+/* Card container */
+.detail-card {
+    background: white;
+    padding: 18px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    margin-bottom: 18px;
+}
 
+/* Section Title */
+.detail-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #4F46E5;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+}
+.detail-title i {
+    margin-right: 8px;
+    font-size: 18px;
+}
 
+/* Responsive Grid */
+.detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 20px;
+}
 
-		<!-- Page Wrapper -->
-		<div class="container-xxl flex-grow-1 container-p-y">
-			<div class="content">
+/* Mobile responsive: 1 column */
+@media (max-width: 768px) {
+    .detail-grid {
+        grid-template-columns: 1fr !important;
+    }
 
-				<!-- Breadcrumb -->
-				<div class="d-md-flex d-block align-items-center justify-content-between page-breadcrumb mb-3">
-					<div class="my-auto mb-2">
-						<h2 class="mb-1">Companies</h2>
-						<nav>
-							<ol class="breadcrumb mb-0">
-								<li class="breadcrumb-item">
-									<a href="https://smarthr.dreamstechnologies.com/html/template/index.html"><i class="ti ti-smart-home"></i></a>
-								</li>
-								<li class="breadcrumb-item">
-									Application
-								</li>
-								<li class="breadcrumb-item active" aria-current="page">Companies List</li>
-							</ol>
-						</nav>
-					</div>
-					<div class="d-flex my-xl-auto right-content align-items-center flex-wrap ">
-						<div class="me-2 mb-2">
-							<div class="dropdown">
-								<a href="javascript:void(0);" class="dropdown-toggle btn btn-white d-inline-flex align-items-center" data-bs-toggle="dropdown">
-									<i class="ti ti-file-export me-1"></i>Export
-								</a>
-								<ul class="dropdown-menu  dropdown-menu-end p-3">
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1"><i class="ti ti-file-type-pdf me-1"></i>Export as PDF</a>
-									</li>
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1"><i class="ti ti-file-type-xls me-1"></i>Export as Excel </a>
-									</li>
-								</ul>
-							</div>
-						</div>
-						<div class="mb-2">
-							<a href="#" data-bs-toggle="modal" data-bs-target="#add_company" class="btn btn-primary d-flex align-items-center"><i class="ti ti-circle-plus me-2"></i>Add Company</a>
-						</div>
-						<div class="ms-2 head-icons">
-							<a href="javascript:void(0);" class="" data-bs-toggle="tooltip" data-bs-placement="top" data-bs-original-title="Collapse" id="collapse-header">
-								<i class="ti ti-chevrons-up"></i>
-							</a>
-						</div>
-					</div>
-				</div>
-				<!-- /Breadcrumb -->
+    .full {
+        grid-column: auto !important;
+    }
 
-				{% comment %} <div class="row">
+    .modal-dialog {
+        margin: 10px;
+    }
+}
 
-					<!-- Total Companies -->
-					<div class="col-lg-3 col-md-6 d-flex">
-						<div class="card flex-fill">
-							<div class="card-body d-flex align-items-center justify-content-between">
-								<div class="d-flex align-items-center overflow-hidden">
-									<span class="avatar avatar-lg bg-primary flex-shrink-0">
-										<i class="ti ti-building fs-16"></i>
-									</span>
-									<div class="ms-2 overflow-hidden">
-										<p class="fs-12 fw-medium mb-1 text-truncate">Total Companies</p>
-										<h4>950</h4>
-									</div>
-								</div>
-								<div id="total-chart"></div>
-							</div>
-						</div>
-					</div>
-					<!-- /Total Companies -->
+/* Label & Value styling */
+.detail-item .label {
+    font-size: 12px;
+    color: #6B7280;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.detail-item .value {
+    font-size: 15px;
+    font-weight: 600;
+    color: #111827;
+}
 
-					<!-- Total Companies -->
-					<div class="col-lg-3 col-md-6 d-flex">
-						<div class="card flex-fill">
-							<div class="card-body d-flex align-items-center justify-content-between">
-								<div class="d-flex align-items-center overflow-hidden">
-									<span class="avatar avatar-lg bg-success flex-shrink-0">
-										<i class="ti ti-building fs-16"></i>
-									</span>
-									<div class="ms-2 overflow-hidden">
-										<p class="fs-12 fw-medium mb-1 text-truncate">Active Companies</p>
-										<h4>920</h4>
-									</div>
-								</div>
-								<div id="active-chart"></div>
-							</div>
-						</div>
-					</div>
-					<!-- /Total Companies -->
+/* Fade animation */
+.fade-in {
+    animation: fadeIn 0.4s ease;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+</style> -->
 
-					<!-- Inactive Companies -->
-					<div class="col-lg-3 col-md-6 d-flex">
-						<div class="card flex-fill">
-							<div class="card-body d-flex align-items-center justify-content-between">
-								<div class="d-flex align-items-center overflow-hidden">
-									<span class="avatar avatar-lg bg-danger flex-shrink-0">
-										<i class="ti ti-building fs-16"></i>
-									</span>
-									<div class="ms-2 overflow-hidden">
-										<p class="fs-12 fw-medium mb-1 text-truncate">Inactive Companies</p>
-										<h4>30</h4>
-									</div>
-								</div>
-								<div id="inactive-chart"></div>
-							</div>
-						</div>
-					</div>
-					<!-- /Inactive Companies -->
+<!-- //modal view close -->
 
-					<!-- Company Location -->
-					<div class="col-lg-3 col-md-6 d-flex">
-						<div class="card flex-fill">
-							<div class="card-body d-flex align-items-center justify-content-between">
-								<div class="d-flex align-items-center overflow-hidden">
-									<span class="avatar avatar-lg bg-skyblue flex-shrink-0">
-										<i class="ti ti-map-pin-check fs-16"></i>
-									</span>
-									<div class="ms-2 overflow-hidden">
-										<p class="fs-12 fw-medium mb-1 text-truncate">Company Location</p>
-										<h4>180</h4>
-									</div>
-								</div>
-								<div id="location-chart"></div>
-							</div>
-						</div>
-					</div>
-					<!-- /Company Location -->
+<!-- Page Wrapper -->
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="content">
+    <!-- Breadcrumb -->
+    <div
+      class="d-md-flex d-block align-items-center justify-content-between page-breadcrumb mb-3 mt-40"
+    >
+      <div class="my-auto mb-2">
+        <h2 class="mb-1">Companies</h2>
+        <nav>
+          <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item">
+              <a
+                href="https://smarthr.dreamstechnologies.com/html/template/index.html"
+                ><i class="ti ti-smart-home"></i
+              ></a>
+            </li>
+            <li class="breadcrumb-item">Application</li>
+            <li class="breadcrumb-item active" aria-current="page">
+              Companies List
+            </li>
+          </ol>
+        </nav>
+      </div>
+      <div class="d-flex my-xl-auto right-content align-items-center flex-wrap">
+        <div class="me-2 mb-2">
+          <div class="dropdown">
+            <a
+              href="javascript:void(0);"
+              class="dropdown-toggle btn btn-white d-inline-flex align-items-center"
+              data-bs-toggle="dropdown"
+            >
+              <i class="ti ti-file-export me-1"></i>Export
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end p-3">
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  ><i class="ti ti-file-type-pdf me-1"></i>Export as PDF</a
+                >
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  ><i class="ti ti-file-type-xls me-1"></i>Export as Excel
+                </a>
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div class="mb-2">
+          <a
+            href="#"
+            data-bs-toggle="modal"
+            data-bs-target="#add_company"
+            class="btn btn-primary d-flex align-items-center"
+            ><i class="ti ti-circle-plus me-2"></i>Add Company</a
+          >
+        </div>
+        <div class="ms-2 head-icons">
+          <a
+            href="javascript:void(0);"
+            class=""
+            data-bs-toggle="tooltip"
+            data-bs-placement="top"
+            data-bs-original-title="Collapse"
+            id="collapse-header"
+          >
+            <i class="ti ti-chevrons-up"></i>
+          </a>
+        </div>
+      </div>
+    </div>
+    <!-- /Breadcrumb -->
 
-				</div> {% endcomment %}
+    {% comment %}
+    <div class="row">
+      <!-- Total Companies -->
+      <div class="col-lg-3 col-md-6 d-flex">
+        <div class="card flex-fill">
+          <div
+            class="card-body d-flex align-items-center justify-content-between"
+          >
+            <div class="d-flex align-items-center overflow-hidden">
+              <span class="avatar avatar-lg bg-primary flex-shrink-0">
+                <i class="ti ti-building fs-16"></i>
+              </span>
+              <div class="ms-2 overflow-hidden">
+                <p class="fs-12 fw-medium mb-1 text-truncate">
+                  Total Companies
+                </p>
+                <h4>950</h4>
+              </div>
+            </div>
+            <div id="total-chart"></div>
+          </div>
+        </div>
+      </div>
+      <!-- /Total Companies -->
 
-				<div class="card">
-					<div class="card-header d-flex align-items-center justify-content-between flex-wrap row-gap-3">
-						<h5>Companies List</h5>
-						<div class="d-flex my-xl-auto right-content align-items-center flex-wrap row-gap-3">
-							<div class="me-3">
-								<div class="input-icon-end position-relative">
-									<input type="text" class="form-control date-range bookingrange" placeholder="dd/mm/yyyy - dd/mm/yyyy">
-									<span class="input-icon-addon">
-										<i class="ti ti-chevron-down"></i>
-									</span>
-								</div>
-							</div>
-							<div class="dropdown me-3">
-								<a href="javascript:void(0);" class="dropdown-toggle btn btn-white d-inline-flex align-items-center" data-bs-toggle="dropdown">
-									Select Plan
-								</a>
-								<ul class="dropdown-menu  dropdown-menu-end p-3">
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1">Advanced</a>
-									</li>
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1">Basic</a>
-									</li>
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1">Enterprise</a>
-									</li>
-								</ul>
-							</div>
-							<div class="dropdown me-3">
-								<a href="javascript:void(0);" class="dropdown-toggle btn btn-white d-inline-flex align-items-center" data-bs-toggle="dropdown">
-									Select Status
-								</a>
-								<ul class="dropdown-menu  dropdown-menu-end p-3">
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1">Active</a>
-									</li>
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1">Inactive</a>
-									</li>
-								</ul>
-							</div>
-							<div class="dropdown">
-								<a href="javascript:void(0);" class="dropdown-toggle btn btn-white d-inline-flex align-items-center" data-bs-toggle="dropdown">
-									Sort By : Last 7 Days
-								</a>
-								<ul class="dropdown-menu  dropdown-menu-end p-3">
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1">Recently Added</a>
-									</li>
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1">Ascending</a>
-									</li>
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1">Desending</a>
-									</li>
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1">Last Month</a>
-									</li>
-									<li>
-										<a href="javascript:void(0);" class="dropdown-item rounded-1">Last 7 Days</a>
-									</li>
-								</ul>
-							</div>
-						</div>
-					</div>
-					<div class="card-body p-0">
-						<div class="custom-datatable-filter table-responsive">
-							<table class="table datatable">
-								<thead class="thead-light">
-									<tr>
-										<th class="no-sort">
+      <!-- Total Companies -->
+      <div class="col-lg-3 col-md-6 d-flex">
+        <div class="card flex-fill">
+          <div
+            class="card-body d-flex align-items-center justify-content-between"
+          >
+            <div class="d-flex align-items-center overflow-hidden">
+              <span class="avatar avatar-lg bg-success flex-shrink-0">
+                <i class="ti ti-building fs-16"></i>
+              </span>
+              <div class="ms-2 overflow-hidden">
+                <p class="fs-12 fw-medium mb-1 text-truncate">
+                  Active Companies
+                </p>
+                <h4>920</h4>
+              </div>
+            </div>
+            <div id="active-chart"></div>
+          </div>
+        </div>
+      </div>
+      <!-- /Total Companies -->
+
+      <!-- Inactive Companies -->
+      <div class="col-lg-3 col-md-6 d-flex">
+        <div class="card flex-fill">
+          <div
+            class="card-body d-flex align-items-center justify-content-between"
+          >
+            <div class="d-flex align-items-center overflow-hidden">
+              <span class="avatar avatar-lg bg-danger flex-shrink-0">
+                <i class="ti ti-building fs-16"></i>
+              </span>
+              <div class="ms-2 overflow-hidden">
+                <p class="fs-12 fw-medium mb-1 text-truncate">
+                  Inactive Companies
+                </p>
+                <h4>30</h4>
+              </div>
+            </div>
+            <div id="inactive-chart"></div>
+          </div>
+        </div>
+      </div>
+      <!-- /Inactive Companies -->
+
+      <!-- Company Location -->
+      <div class="col-lg-3 col-md-6 d-flex">
+        <div class="card flex-fill">
+          <div
+            class="card-body d-flex align-items-center justify-content-between"
+          >
+            <div class="d-flex align-items-center overflow-hidden">
+              <span class="avatar avatar-lg bg-skyblue flex-shrink-0">
+                <i class="ti ti-map-pin-check fs-16"></i>
+              </span>
+              <div class="ms-2 overflow-hidden">
+                <p class="fs-12 fw-medium mb-1 text-truncate">
+                  Company Location
+                </p>
+                <h4>180</h4>
+              </div>
+            </div>
+            <div id="location-chart"></div>
+          </div>
+        </div>
+      </div>
+      <!-- /Company Location -->
+    </div>
+    {% endcomment %}
+
+    <div class="card">
+      <div
+        class="card-header d-flex align-items-center justify-content-between flex-wrap row-gap-3"
+      >
+        <h5>Companies List</h5>
+        <div
+          class="d-flex my-xl-auto right-content align-items-center flex-wrap row-gap-3"
+        >
+          <div class="me-3">
+            <div class="input-icon-end position-relative">
+              <input
+                type="text"
+                class="form-control date-range bookingrange"
+                placeholder="dd/mm/yyyy - dd/mm/yyyy"
+              />
+              <span class="input-icon-addon">
+                <i class="ti ti-chevron-down"></i>
+              </span>
+            </div>
+          </div>
+          <div class="dropdown me-3">
+            <a
+              href="javascript:void(0);"
+              class="dropdown-toggle btn btn-white d-inline-flex align-items-center"
+              data-bs-toggle="dropdown"
+            >
+              Select Plan
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end p-3">
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  >Advanced</a
+                >
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  >Basic</a
+                >
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  >Enterprise</a
+                >
+              </li>
+            </ul>
+          </div>
+          <div class="dropdown me-3">
+            <a
+              href="javascript:void(0);"
+              class="dropdown-toggle btn btn-white d-inline-flex align-items-center"
+              data-bs-toggle="dropdown"
+            >
+              Select Status
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end p-3">
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  >Active</a
+                >
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  >Inactive</a
+                >
+              </li>
+            </ul>
+          </div>
+          <div class="dropdown">
+            <a
+              href="javascript:void(0);"
+              class="dropdown-toggle btn btn-white d-inline-flex align-items-center"
+              data-bs-toggle="dropdown"
+            >
+              Sort By : Last 7 Days
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end p-3">
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  >Recently Added</a
+                >
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  >Ascending</a
+                >
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  >Desending</a
+                >
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  >Last Month</a
+                >
+              </li>
+              <li>
+                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                  >Last 7 Days</a
+                >
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <div class="custom-datatable-filter table-responsive">
+          <table class="table datatable">
+            <thead class="thead-light">
+              <tr>
+                <!-- <th class="no-sort">
 											<div class="form-check form-check-md">
 												<input class="form-check-input" type="checkbox" id="select-all">
 											</div>
-										</th>
-										<th>Short Name</th>
-										<th>Name</th>
-										<th>Address</th>
-										<th>Tan No</th>
-										<th>Pan No</th>
-										<th>Employer PF</th>
-										<th>PTRC No</th>
-										<th>PTEC No</th>
-										<th>ESIC No</th>
-										<th>Status</th>
-										<th>Action</th>
-									</tr>
-								</thead>
-								<tbody>
-                                     {% if companies %}
-                                    {% for company in companies %} 
+										</th> -->
+                <th>Short Name</th>
+                <th>Name</th>
+                <th>Address</th>
+                <th>Tan No</th>
+                <th>Pan No</th>
+                <th>Employer PF</th>
+                <th>PTRC No</th>
+                <th>PTEC No</th>
+                <th>ESIC No</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if companies %} {% for company in companies %}
 
-									<tr>
-										<td>
+              <tr>
+                <!-- <td>
 											<div class="form-check form-check-md">
 												<input class="form-check-input" type="checkbox">
 											</div>
-										</td>
-										<td>
-											<div class="d-flex align-items-center file-name-icon">
-												<a href="#" class="avatar avatar-md border rounded-circle">
+										</td> -->
+                <td>
+                  <div class="d-flex align-items-center file-name-icon">
+                    <!-- <a href="#" class="avatar avatar-md border rounded-circle">
 													<img src="https://smarthr.dreamstechnologies.com/html/template/assets/img/company/company-01.svg" class="img-fluid" alt="img">
-												</a>
-												<div class="ms-2">
-													<h6 class="fw-medium"><a href="#">{{company.short_name}}</a></h6>
-												</div>
-											</div>
-										</td>
-										{% comment %} <td><a href="https://smarthr.dreamstechnologies.com/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="e885818b80898d84a88d90898598848dc68b8785">[email&#160;protected]</a></td> {% endcomment %}
-										<td>{{company.name}}</td>
-										<td>
-											<div class="d-flex align-items-center justify-content-between">
-												<p class="mb-0 me-2">{{ company.address|truncatewords:6 }}</p>
-											</div>
-										</td>
-										<td id="company_" >{{company.tan_number}}</td>
-										<td>{{company.pan_number}}</td>
-										<td>{{company.employer_pf}}</td>
-										<td>{{company.ptrc_number}}</td>
-										<td>{{company.ptec_number}}</td>
-										<td>{{company.esic_number}}</td>
-										<td>{{company.status}}</td>
-											<td>
-												<div class="dropdown">
-													<a class="text-muted" href="#" data-bs-toggle="dropdown">
-														<i class="ti ti-dots-vertical"></i>
-													</a>
-													<div class="dropdown-menu dropdown-menu-end">
-														<a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#company_detail_{{ company.id }}">
-															<i class="ti ti-eye me-2"></i> View
-														</a>
-														<a class="dropdown-item edit-company-btn" 
-														href="#" 
-														data-id="{{ company.id }}">
-															<i class="ti ti-edit me-2"></i> Edit
-														</a>
-														<a class="dropdown-item text-danger" href="#" data-bs-toggle="modal" data-bs-target="#delete_company_{{ company.id }}">
-															<i class="ti ti-trash me-2"></i> Delete
-														</a>
-													</div>
-												</div>
-											</td>
-									</tr>
-                                    {% endfor %}
-                                    {% else %}
-                                    <tr>
-                                        <td colspan="9" class="text-center">No data available</td>
-                                    </tr>
-                                    {% endif %}
+												</a> -->
+                    <div class="ms-2">
+                      <h6 class="fw-medium">
+                        <a href="#">{{company.short_name}}</a>
+                      </h6>
+                    </div>
+                  </div>
+                </td>
+                {% comment %}
+                <td>
+                  <a
+                    href="https://smarthr.dreamstechnologies.com/cdn-cgi/l/email-protection"
+                    class="__cf_email__"
+                    data-cfemail="e885818b80898d84a88d90898598848dc68b8785"
+                    >[email&#160;protected]</a
+                  >
+                </td>
+                {% endcomment %}
+                <td>{{company.name}}</td>
+                <td>
+                  <div
+                    class="d-flex align-items-center justify-content-between"
+                  >
+                    <p class="mb-0 me-2">
+                      {{ company.address|truncatewords:6 }}
+                    </p>
+                  </div>
+                </td>
+                <td id="company_">{{company.tan_number}}</td>
+                <td>{{company.pan_number}}</td>
+                <td>{{company.employer_pf}}</td>
+                <td>{{company.ptrc_number}}</td>
+                <td>{{company.ptec_number}}</td>
+                <td>{{company.esic_number}}</td>
+                <td>{{company.status}}</td>
+                <td>
+                  <div class="dropdown">
+                    <a class="text-muted" href="#" data-bs-toggle="dropdown">
+                      <i class="ti ti-dots-vertical"></i>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-end">
+                      <!-- <a
+                        class="dropdown-item"
+                        href="#"
+                        data-bs-toggle="modal"
+                        data-bs-target="#company_detail_{{ company.id }}"
+                      >
+                        <i class="ti ti-eye me-2"></i> View
+                      </a> -->
+                      <a
+                        class="dropdown-item view-company-btn"
+                        href="#"
+                        data-id="{{ company.id }}"
+                      >
+                        <i class="ti ti-eye me-2"></i> View
+                      </a>
 
-								</tbody>
-							</table>
-						</div>
-					</div>
-				</div>
+                      <a
+                        class="dropdown-item edit-company-btn"
+                        href="#"
+                        data-id="{{ company.id }}"
+                      >
+                        <i class="ti ti-edit me-2"></i> Edit
+                      </a>
+                      <a
+                        class="dropdown-item text-danger"
+                        href="#"
+                        data-bs-toggle="modal"
+                        data-bs-target="#delete_company_{{ company.id }}"
+                      >
+                        <i class="ti ti-trash me-2"></i> Delete
+                      </a>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %} {% else %}
+              <tr>
+                <td colspan="9" class="text-center">No data available</td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
-			</div>
+      <!-- //modal view open -->
+      <div
+        class="modal fade"
+        id="companyViewModal"
+        tabindex="-1"
+        aria-hidden="true"
+      >
+        <div
+          class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable"
+        >
+          <div class="modal-content shadow-lg border-0 rounded-4">
+            <!-- Header -->
+            <div
+              class="modal-header bg-primary bg-gradient text-white rounded-top-4 py-3"
+            >
+              <h5 class="modal-title fw-bold d-flex align-items-center text-white">
+                <i class="ti ti-building-bank me-2 fs-4 text-white"></i> Company Details
+              </h5>
+              <button
+                type="button"
+                class="btn-close btn-close-white text-white"
+                data-bs-dismiss="modal"
+              ></button>
+            </div>
 
+            <!-- Body -->
+            <div class="modal-body p-4" id="companyViewBody">
+              <!-- Loader (default content before JS loads data) -->
+              <div class="text-center text-muted py-4">
+                <div class="spinner-border text-primary" role="status"></div>
+              </div>
+            </div>
 
-		</div>
-		<!-- /Page Wrapper -->
+            <!-- Footer -->
+            <div class="modal-footer bg-white rounded-bottom-4">
+              <button class="btn btn-secondary px-4" data-bs-dismiss="modal">
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- /Page Wrapper -->
 
-		<!-- Add Company -->
-		<div class="modal fade" id="add_company">
-			<div class="modal-dialog modal-dialog-centered modal-lg">
-				<div class="modal-content">
-					<div class="modal-header">
-						<h4 class="modal-title">Add New Company</h4>
-						<button type="button" class="btn-close custom-btn-close" data-bs-dismiss="modal" aria-label="Close">
-							<i class="ti ti-x"></i>
-						</button>
-					</div>
-                    <form method = "post">
-                        {% csrf_token %}
-                        <div class="modal-body pb-0">
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Short Name <span class="text-danger"> *</span></label>
-                                        <input type="text" class="form-control" name="short_name">
-                                    </div>                                    
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Company Name <span class="text-danger"> *</span></label>
-                                        <input type="text" class="form-control" name="name">
-                                    </div>                                    
-                                </div>
-                                <div class="col-md-12">
-                                    <div class="mb-3">
-                                        <label class="form-label">Company Address <span class="text-danger"> *</span></label>
-                                        <textarea class="form-control" name="address"></textarea>
-                                    </div>                                    
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">TAN Number</label>
-                                        <input type="text" class="form-control" name="tan_number">
-                                    </div>                                    
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">PAN Number</label>
-                                        <input type="text" class="form-control" name="pan_number">
-                                    </div>                                    
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Employer PF Number</label>
-                                        <input type="text" class="form-control" name="employer_pf">
-                                    </div>                                    
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">PTRC Number</label>
-                                        <input type="text" class="form-control" name="ptrc_number">
-                                    </div>                                    
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">PTEC Number</label>
-                                        <input type="text" class="form-control" name="ptec_number">
-                                    </div>                                    
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">ESIC Number</label>
-                                        <input type="text" class="form-control" name="esic_number">
-                                    </div>                                    
-                                </div>
-                            </div>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" class="btn btn-primary">Add Company</button>
-                        </div>
-                    </form>
-                    
-				</div>
-			</div>
-		</div>
-		<!-- /Add Company -->
+<!-- Add Company -->
+<div class="modal fade" id="add_company">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 class="modal-title">Add New Company</h4>
+        <button
+          type="button"
+          class="btn-close custom-btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        >
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <div class="modal-body pb-0">
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Short Name <span class="text-danger"> *</span></label
+                >
+                <input type="text" class="form-control" name="short_name" />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Company Name <span class="text-danger"> *</span></label
+                >
+                <input type="text" class="form-control" name="name" />
+              </div>
+            </div>
+            <div class="col-md-12">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Company Address <span class="text-danger"> *</span></label
+                >
+                <textarea class="form-control" name="address"></textarea>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">TAN Number</label>
+                <input type="text" class="form-control" name="tan_number" />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">PAN Number</label>
+                <input type="text" class="form-control" name="pan_number" />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Employer PF Number</label>
+                <input type="text" class="form-control" name="employer_pf" />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">PTRC Number</label>
+                <input type="text" class="form-control" name="ptrc_number" />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">PTEC Number</label>
+                <input type="text" class="form-control" name="ptec_number" />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">ESIC Number</label>
+                <input type="text" class="form-control" name="esic_number" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-light me-2"
+            data-bs-dismiss="modal"
+          >
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary">Add Company</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<!-- /Add Company -->
 
-		<!-- Edit Company -->
+<!-- Edit Company -->
 <!-- EDIT COMPANY MODAL -->
-		<div class="modal fade" id="editCompanyModal" tabindex="-1" aria-hidden="true">
-		<div class="modal-dialog modal-lg modal-dialog-centered">
-			<div class="modal-content">
+<div class="modal fade" id="editCompanyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">Edit Company</h5>
+        <button
+          type="button"
+          class="btn-close btn-close-white"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
 
-			<div class="modal-header bg-primary text-white">
-				<h5 class="modal-title">Edit Company</h5>
-				<button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-			</div>
-
-			<div class="modal-body" id="editCompanyBody">
-				<div class="text-center text-muted p-3">Loading...</div>
-			</div>
-
-			</div>
-		</div>
-		</div>
+      <div class="modal-body" id="editCompanyBody">
+        <div class="text-center text-muted p-3">Loading...</div>
+      </div>
+    </div>
+  </div>
+</div>
 <!-- /Edit Company -->
-		<!-- /Edit Company -->
+<!-- /Edit Company -->
 
-		<!-- Upgrade Information -->
-		<div class="modal fade" id="upgrade_info">
-			<div class="modal-dialog modal-dialog-centered modal-lg">
-				<div class="modal-content">
-					<div class="modal-header">
-						<h4 class="modal-title">Upgrade Package</h4>
-						<button type="button" class="btn-close custom-btn-close" data-bs-dismiss="modal" aria-label="Close">
-							<i class="ti ti-x"></i>
-						</button>
-					</div>
-					<div class="p-3 mb-1">
-						<div class="rounded bg-light p-3">                                                
-							<h5 class="mb-3">Current Plan Details</h5>                                              
-							<div class="row align-items-center">
-								<div class="col-md-4">
-									<div class="mb-3">
-										<p class="fs-12 mb-0">Company Name</p>
-										<p class="text-gray-9">BrightWave Innovations</p>
-									</div>
-								</div>
-								<div class="col-md-4">
-									<div class="mb-3">
-										<p class="fs-12 mb-0">Plan Name</p>
-										<p class="text-gray-9">Advanced</p>
-									</div>
-								</div>
-								<div class="col-md-4">
-									<div class="mb-3">
-										<p class="fs-12 mb-0">Plan Type</p>
-										<p class="text-gray-9">Monthly</p>
-									</div>
-								</div>
-							</div>
-							<div class="row align-items-center">
-								<div class="col-md-4">
-									<div class="mb-3">
-										<p class="fs-12 mb-0">Price</p>
-										<p class="text-gray-9">200</p>
-									</div>
-								</div>
-								<div class="col-md-4">
-									<div class="mb-3">
-										<p class="fs-12 mb-0">Register Date</p>
-										<p class="text-gray-9">12 Sep 2024</p>
-									</div>
-								</div>
-								<div class="col-md-4">
-									<div class="mb-3">
-										<p class="fs-12 mb-0">Expiring On</p>
-										<p class="text-gray-9">11 Oct 2024</p>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-					
-					<form action="https://smarthr.dreamstechnologies.com/html/template/companies.html">
-						<div class="modal-body pb-0">
-							<h5 class="mb-4">Change Plan</h5>
-							<div class="row">
-								<div class="col-md-6">
-									<div class="mb-3 ">
-										<label class="form-label">Plan Name <span class="text-danger">*</span></label>
-										<select class="select">
-											<option>Select</option>
-											<option>Advanced</option>
-											<option>Basic</option>
-											<option>Enterprise</option>
-										</select>
-									</div>
-								</div>
-								<div class="col-md-6">
-									<div class="mb-3 ">
-										<label class="form-label">Plan Type <span class="text-danger">*</span></label>
-										<select class="select">
-											<option>Select</option>
-											<option>Monthly</option>
-											<option>Yearly</option>
-										</select>
-									</div>
-								</div>
-								<div class="col-md-6">
-									<div class="mb-3">
-										<label class="form-label">Ammount<span class="text-danger">*</span></label>
-										<input type="text" class="form-control">
-									</div>									
-								</div>
-								<div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Payment Date <span class="text-danger">*</span></label>
-                                        <div class="input-icon-end position-relative">
-                                            <input type="text" class="form-control datetimepicker" placeholder="dd/mm/yyyy">
-                                            <span class="input-icon-addon">
-                                                <i class="ti ti-calendar text-gray-7"></i>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-								<div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Next Payment Date <span class="text-danger">*</span></label>
-                                        <div class="input-icon-end position-relative">
-                                            <input type="text" class="form-control datetimepicker" placeholder="dd/mm/yyyy">
-                                            <span class="input-icon-addon">
-                                                <i class="ti ti-calendar text-gray-7"></i>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-								<div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Expiring On <span class="text-danger">*</span></label>
-                                        <div class="input-icon-end position-relative">
-                                            <input type="text" class="form-control datetimepicker" placeholder="dd/mm/yyyy">
-                                            <span class="input-icon-addon">
-                                                <i class="ti ti-calendar text-gray-7"></i>
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div> 
-							</div>
-						</div>
-						<div class="modal-footer">
-							<button type="button" class="btn btn-light me-2" data-bs-dismiss="modal">Cancel</button>
-							<button type="submit" class="btn btn-primary">Save Changes</button>
-						</div>
-					</form>
-				</div>
-			</div>
-		</div>
-		<!-- /Upgrade Information -->
+<!-- Upgrade Information -->
+<div class="modal fade" id="upgrade_info">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 class="modal-title">Upgrade Package</h4>
+        <button
+          type="button"
+          class="btn-close custom-btn-close"
+          data-bs-dismiss="modal"
+          aria-label="Close"
+        >
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <div class="p-3 mb-1">
+        <div class="rounded bg-light p-3">
+          <h5 class="mb-3">Current Plan Details</h5>
+          <div class="row align-items-center">
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Company Name</p>
+                <p class="text-gray-9">BrightWave Innovations</p>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Plan Name</p>
+                <p class="text-gray-9">Advanced</p>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Plan Type</p>
+                <p class="text-gray-9">Monthly</p>
+              </div>
+            </div>
+          </div>
+          <div class="row align-items-center">
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Price</p>
+                <p class="text-gray-9">200</p>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Register Date</p>
+                <p class="text-gray-9">12 Sep 2024</p>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="mb-3">
+                <p class="fs-12 mb-0">Expiring On</p>
+                <p class="text-gray-9">11 Oct 2024</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-		<!-- Company Detail -->
+      <form
+        action="https://smarthr.dreamstechnologies.com/html/template/companies.html"
+      >
+        <div class="modal-body pb-0">
+          <h5 class="mb-4">Change Plan</h5>
+          <div class="row">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Plan Name <span class="text-danger">*</span></label
+                >
+                <select class="select">
+                  <option>Select</option>
+                  <option>Advanced</option>
+                  <option>Basic</option>
+                  <option>Enterprise</option>
+                </select>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Plan Type <span class="text-danger">*</span></label
+                >
+                <select class="select">
+                  <option>Select</option>
+                  <option>Monthly</option>
+                  <option>Yearly</option>
+                </select>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Ammount<span class="text-danger">*</span></label
+                >
+                <input type="text" class="form-control" />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Payment Date <span class="text-danger">*</span></label
+                >
+                <div class="input-icon-end position-relative">
+                  <input
+                    type="text"
+                    class="form-control datetimepicker"
+                    placeholder="dd/mm/yyyy"
+                  />
+                  <span class="input-icon-addon">
+                    <i class="ti ti-calendar text-gray-7"></i>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Next Payment Date <span class="text-danger">*</span></label
+                >
+                <div class="input-icon-end position-relative">
+                  <input
+                    type="text"
+                    class="form-control datetimepicker"
+                    placeholder="dd/mm/yyyy"
+                  />
+                  <span class="input-icon-addon">
+                    <i class="ti ti-calendar text-gray-7"></i>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Expiring On <span class="text-danger">*</span></label
+                >
+                <div class="input-icon-end position-relative">
+                  <input
+                    type="text"
+                    class="form-control datetimepicker"
+                    placeholder="dd/mm/yyyy"
+                  />
+                  <span class="input-icon-addon">
+                    <i class="ti ti-calendar text-gray-7"></i>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-light me-2"
+            data-bs-dismiss="modal"
+          >
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<!-- /Upgrade Information -->
+
+<!-- Company Detail -->
 <!-- Company Detail Modal -->
 <!-- Company Detail Modal -->
 <div class="modal fade" id="company_detail_{{ company.id }}">
-    <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content">
-            
-            <div class="modal-header">
-                <h4 class="modal-title">Company Details - {{ company.name }}</h4>
-                <button type="button" class="btn-close custom-btn-close" data-bs-dismiss="modal">
-                    <i class="ti ti-x"></i>
-                </button>
-            </div>
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 class="modal-title">Company Details - {{ company.name }}</h4>
+        <button
+          type="button"
+          class="btn-close custom-btn-close"
+          data-bs-dismiss="modal"
+        >
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
 
-            <div class="modal-body p-4">
-                
-                <div class="d-flex align-items-center mb-4">
-                    <span class="avatar avatar-lg rounded-circle bg-primary text-white me-3">
-                        {{ company.short_name|slice:":2" }}
-                    </span>
-                    <div>
-                        <h5 class="mb-0">{{ company.name }}</h5>
-                        <span class="badge {% if company.status == 'active' %}bg-success{% else %}bg-danger{% endif %}">
-                            {{ company.status|title }}
-                        </span>
-                    </div>
-                </div>
-
-					<div class="row">
-
-						<div class="col-md-6 mb-3">
-							<strong>Short Name:</strong>
-							<p class="text-muted">{{ company.short_name }}</p>
-						</div>
-
-						<div class="col-md-6 mb-3">
-							<strong>Address:</strong>
-							<p class="text-muted">{{ company.address }}</p>
-						</div>
-
-						<div class="col-md-6 mb-3">
-							<strong>TAN Number:</strong>
-							<p class="text-muted">{{ company.tan_number|default:"—" }}</p>
-						</div>
-
-						<div class="col-md-6 mb-3">
-							<strong>PAN Number:</strong>
-							<p class="text-muted">{{ company.pan_number|default:"—" }}</p>
-						</div>
-
-						<div class="col-md-6 mb-3">
-							<strong>Employer PF:</strong>
-							<p class="text-muted">{{ company.employer_pf|default:"—" }}</p>
-						</div>
-
-						<div class="col-md-6 mb-3">
-							<strong>PTRC Number:</strong>
-							<p class="text-muted">{{ company.ptrc_number|default:"—" }}</p>
-						</div>
-
-						<div class="col-md-6 mb-3">
-							<strong>PTEC Number:</strong>
-							<p class="text-muted">{{ company.ptec_number|default:"—" }}</p>
-						</div>
-
-						<div class="col-md-6 mb-3">
-							<strong>ESIC Number:</strong>
-							<p class="text-muted">{{ company.esic_number|default:"—" }}</p>
-						</div>
-
-					</div>
-
-            </div>
+      <div class="modal-body p-4">
+        <div class="d-flex align-items-center mb-4">
+          <span
+            class="avatar avatar-lg rounded-circle bg-primary text-white me-3"
+          >
+            {{ company.short_name|slice:":2" }}
+          </span>
+          <div>
+            <h5 class="mb-0">{{ company.name }}</h5>
+            <span
+              class="badge {% if company.status == 'active' %}bg-success{% else %}bg-danger{% endif %}"
+            >
+              {{ company.status|title }}
+            </span>
+          </div>
         </div>
+
+        <div class="row">
+          <div class="col-md-6 mb-3">
+            <strong>Short Name:</strong>
+            <p class="text-muted">{{ company.short_name }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>Address:</strong>
+            <p class="text-muted">{{ company.address }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>TAN Number:</strong>
+            <p class="text-muted">{{ company.tan_number|default:"—" }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>PAN Number:</strong>
+            <p class="text-muted">{{ company.pan_number|default:"—" }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>Employer PF:</strong>
+            <p class="text-muted">{{ company.employer_pf|default:"—" }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>PTRC Number:</strong>
+            <p class="text-muted">{{ company.ptrc_number|default:"—" }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>PTEC Number:</strong>
+            <p class="text-muted">{{ company.ptec_number|default:"—" }}</p>
+          </div>
+
+          <div class="col-md-6 mb-3">
+            <strong>ESIC Number:</strong>
+            <p class="text-muted">{{ company.esic_number|default:"—" }}</p>
+          </div>
+        </div>
+      </div>
     </div>
+  </div>
 </div>
-		<!-- /Company Detail -->
+<!-- /Company Detail -->
 
-		<!-- Delete Modal -->
-		<div class="modal fade" id="delete_modal">
-			<div class="modal-dialog modal-dialog-centered modal-sm">
-				<div class="modal-content">
-					<div class="modal-body text-center">
-						<span class="avatar avatar-xl bg-transparent-danger text-danger mb-3">
-							<i class="ti ti-trash-x fs-36"></i>
-						</span>
-						<h4 class="mb-1">Confirm Delete</h4>
-						<p class="mb-3">You want to delete all the marked items, this cant be undone once you delete.</p>
-						<div class="d-flex justify-content-center">
-							<a href="javascript:void(0);" class="btn btn-light me-3" data-bs-dismiss="modal">Cancel</a>
-							<a href="https://smarthr.dreamstechnologies.com/html/template/companies.html" class="btn btn-danger">Yes, Delete</a>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
-		<!-- /Delete Modal -->
+<!-- Delete Modal -->
+<div class="modal fade" id="delete_modal">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-body text-center">
+        <span class="avatar avatar-xl bg-transparent-danger text-danger mb-3">
+          <i class="ti ti-trash-x fs-36"></i>
+        </span>
+        <h4 class="mb-1">Confirm Delete</h4>
+        <p class="mb-3">
+          You want to delete all the marked items, this cant be undone once you
+          delete.
+        </p>
+        <div class="d-flex justify-content-center">
+          <a
+            href="javascript:void(0);"
+            class="btn btn-light me-3"
+            data-bs-dismiss="modal"
+            >Cancel</a
+          >
+          <a
+            href="https://smarthr.dreamstechnologies.com/html/template/companies.html"
+            class="btn btn-danger"
+            >Yes, Delete</a
+          >
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- /Delete Modal -->
 
-	<!-- /Main Wrapper -->
-
-
-
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-    document.querySelectorAll(".edit-company-btn").forEach(btn => {
-        btn.addEventListener("click", function (e) {
-            e.preventDefault();
-            const companyId = this.dataset.id;
-            const modalBody = document.getElementById("editCompanyBody");
-
-            modalBody.innerHTML = "<div class='text-center p-3 text-muted'>Loading...</div>";
-
-            fetch(`/company/${companyId}/edit/`)
-                .then(response => response.text())
-                .then(html => {
-                    modalBody.innerHTML = html;
-                    const modal = new bootstrap.Modal(document.getElementById("editCompanyModal"));
-                    modal.show();
-                })
-                .catch(() => {
-                    modalBody.innerHTML = "<div class='alert alert-danger'>Failed to load data.</div>";
-                });
-        });
-    });
-});
-</script>
-
+<!-- /Main Wrapper -->
 
 <script>
-  // When clicking the Edit button
-$(".edit-company-btn").click(function () {
-    const companyId = $(this).data("id");
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".edit-company-btn").forEach((btn) => {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        const companyId = this.dataset.id;
+        const modalBody = document.getElementById("editCompanyBody");
 
-    $.ajax({
-        url: `/company/${companyId}/get/`,
-        type: "GET",
-        success: function (res) {
-            $("#edit_short_name").val(res.short_name);
-            $("#edit_name").val(res.name);
-            $("#edit_address").val(res.address);
-            $("#edit_tan").val(res.tan_number);
-            $("#edit_pan").val(res.pan_number);
-            $("#edit_pf").val(res.employer_pf);
-            $("#edit_ptrc").val(res.ptrc_number);
-            "#edit_ptec").val(res.ptec_number);
-            $("#edit_esic").val(res.esic_number);
-            $("#edit_status").val(res.status);
-            
-            // Update form action
-            $("#editCompanyForm").attr("action", `/company/${companyId}/edit/`);
+        modalBody.innerHTML =
+          "<div class='text-center p-3 text-muted'>Loading...</div>";
 
-            $("#editCompanyModal").modal("show");
-        }
+        fetch(`/company/${companyId}/edit/`)
+          .then((response) => response.text())
+          .then((html) => {
+            modalBody.innerHTML = html;
+            const modal = new bootstrap.Modal(
+              document.getElementById("editCompanyModal")
+            );
+            modal.show();
+          })
+          .catch(() => {
+            modalBody.innerHTML =
+              "<div class='alert alert-danger'>Failed to load data.</div>";
+          });
+      });
     });
-});
-
+  });
 </script>
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".view-company-btn").forEach((btn) => {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+
+        const id = this.dataset.id;
+        const modalBody = document.getElementById("companyViewBody");
+
+        // STEP 1: Show loader FIRST (NO DATA USED HERE)
+        modalBody.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <div class="spinner-border text-primary"></div>
+                    <div class="mt-2">Loading details...</div>
+                </div>
+            `;
+
+        // STEP 2: Open Modal
+        const modal = new bootstrap.Modal(
+          document.getElementById("companyViewModal")
+        );
+        modal.show();
+
+        // STEP 3: Now fetch REAL DATA
+        fetch(`/company/${id}/details/`)
+          .then((res) => res.json())
+          .then((data) => {
+            // STEP 4: Replace content AFTER data arrives
+            modalBody.innerHTML = `
+<div class="container-fluid">
+
+  <!-- Basic Info -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom fw-bold text-primary d-flex align-items-center py-2 px-3">
+    <i class="ti ti-building fs-6 me-2"></i> Basic Information
+</div>
+
+
+    <div class="card-body row g-3  py-3 ">
+
+      <div class="col-md-6">
+        <div class="text-muted small fw-semibold text-uppercase">Short Name</div>
+        <div class="fw-bold fs-6">${data.short_name}</div>
+      </div>
+
+      <div class="col-md-6">
+        <div class="text-muted small fw-semibold text-uppercase">Full Name</div>
+        <div class="fw-bold fs-6">${data.name}</div>
+      </div>
+
+      <div class="col-md-6">
+        <div class="text-muted small fw-semibold text-uppercase">Status</div>
+        <div class="fw-bold fs-6">${data.status}</div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- Address -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom fw-bold text-primary d-flex align-items-center py-2 px-3">
+      <i class="ti ti-map-pin fs-5 me-2"></i> Address
+    </div>
+
+    <div class="card-body py-3">
+      <div class="text-muted small fw-semibold text-uppercase">Address</div>
+      <div class="fw-bold fs-6">${data.address}</div>
+    </div>
+  </div>
+
+
+  <!-- Government Identifiers -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom fw-bold text-primary d-flex align-items-center py-2 px-3">
+      <i class="ti ti-id-badge fs-5 me-2"></i> Government Identifiers
+    </div>
+
+    <div class="card-body row g-4">
+
+      <div class="col-md-6 py-3">
+        <div class="text-muted small fw-semibold text-uppercase">TAN Number</div>
+        <div class="fw-bold">${data.tan_number}</div>
+      </div>
+
+      <div class="col-md-6 py-3">
+        <div class="text-muted small fw-semibold text-uppercase">PAN Number</div>
+        <div class="fw-bold">${data.pan_number}</div>
+      </div>
+
+      <div class="col-md-6">
+        <div class="text-muted small fw-semibold text-uppercase">PTRC Number</div>
+        <div class="fw-bold">${data.ptrc_number}</div>
+      </div>
+
+      <div class="col-md-6">
+        <div class="text-muted small fw-semibold text-uppercase">PTEC Number</div>
+        <div class="fw-bold">${data.ptec_number}</div>
+      </div>
+
+      <div class="col-md-6">
+        <div class="text-muted small fw-semibold text-uppercase">ESIC Number</div>
+        <div class="fw-bold">${data.esic_number}</div>
+      </div>
+
+      <div class="col-md-6">
+        <div class="text-muted small fw-semibold text-uppercase">Employer PF</div>
+        <div class="fw-bold">${data.employer_pf}</div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+`;
+          })
+
+          .catch(() => {
+            modalBody.innerHTML = `
+                        <div class="alert alert-danger">Failed to load data.</div>
+                    `;
+          });
+      });
+    });
+  });
+</script>
+
     {% endblock %}

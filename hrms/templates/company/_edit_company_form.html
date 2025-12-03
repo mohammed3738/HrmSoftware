@@ -1,104 +1,71 @@
-<form method="POST" id="editCompanyForm">
+<form method="POST" id="editCompanyForm" action="{% url 'edit_company' company.id %}">
     {% csrf_token %}
 
-    <div class="row">
+    <div class="row g-3">
+
         <!-- Short Name -->
         <div class="col-md-6">
-            <div class="form-group">
-                <label class="form-label">Short Name</label>
-                <input type="text" name="short_name" id="edit_short_name"
-                       class="form-control" placeholder="Enter short name">
-            </div>
+            <label class="form-label">Short Name</label>
+            {{ form.short_name }}
         </div>
 
-        <!-- Full Name -->
+        <!-- Company Name -->
         <div class="col-md-6">
-            <div class="form-group">
-                <label class="form-label">Company Name</label>
-                <input type="text" name="name" id="edit_name"
-                       class="form-control" placeholder="Enter company name">
-            </div>
+            <label class="form-label">Company Name</label>
+            {{ form.name }}
         </div>
 
-        <!-- Address -->
-        <div class="col-md-12">
-            <div class="form-group">
-                <label class="form-label">Address</label>
-                <textarea name="address" id="edit_address"
-                          class="form-control" rows="3"
-                          placeholder="Enter address"></textarea>
-            </div>
+        <!-- Company Address (Full Row) -->
+        <div class="col-12">
+            <label class="form-label">Company Address</label>
+            {{ form.address }}
         </div>
 
-        <!-- Tan No -->
+        <!-- TAN Number -->
         <div class="col-md-6">
-            <div class="form-group">
-                <label class="form-label">TAN Number</label>
-                <input type="text" name="tan_number" id="edit_tan"
-                       class="form-control">
-            </div>
+            <label class="form-label">TAN Number</label>
+            {{ form.tan_number }}
         </div>
 
-        <!-- PAN No -->
+        <!-- PAN Number -->
         <div class="col-md-6">
-            <div class="form-group">
-                <label class="form-label">PAN Number</label>
-                <input type="text" name="pan_number" id="edit_pan"
-                       class="form-control">
-            </div>
+            <label class="form-label">PAN Number</label>
+            {{ form.pan_number }}
         </div>
 
-        <!-- Employer PF -->
+        <!-- Employer PF Number -->
         <div class="col-md-6">
-            <div class="form-group">
-                <label class="form-label">Employer PF</label>
-                <input type="text" name="employer_pf" id="edit_pf"
-                       class="form-control">
-            </div>
+            <label class="form-label">Employer PF Number</label>
+            {{ form.employer_pf }}
         </div>
 
-        <!-- PTRC -->
+        <!-- PTRC Number -->
         <div class="col-md-6">
-            <div class="form-group">
-                <label class="form-label">PTRC Number</label>
-                <input type="text" name="ptrc_number" id="edit_ptrc"
-                       class="form-control">
-            </div>
+            <label class="form-label">PTRC Number</label>
+            {{ form.ptrc_number }}
         </div>
 
-        <!-- PTEC -->
+        <!-- PTEC Number -->
         <div class="col-md-6">
-            <div class="form-group">
-                <label class="form-label">PTEC Number</label>
-                <input type="text" name="ptec_number" id="edit_ptec"
-                       class="form-control">
-            </div>
+            <label class="form-label">PTEC Number</label>
+            {{ form.ptec_number }}
         </div>
 
-        <!-- ESIC -->
+        <!-- ESIC Number -->
         <div class="col-md-6">
-            <div class="form-group">
-                <label class="form-label">ESIC Number</label>
-                <input type="text" name="esic_number" id="edit_esic"
-                       class="form-control">
-            </div>
+            <label class="form-label">ESIC Number</label>
+            {{ form.esic_number }}
         </div>
 
         <!-- Status -->
         <div class="col-md-6">
-            <div class="form-group">
-                <label class="form-label">Status</label>
-                <select class="form-select" name="status" id="edit_status">
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                </select>
-            </div>
+            <label class="form-label">Status</label>
+            {{ form.status }}
         </div>
+
     </div>
 
-    <div class="text-end mt-4">
-        <button type="submit" class="btn btn-primary">
-            <i class="ti ti-device-floppy me-1"></i> Update Company
-        </button>
+    <div class="text-end mt-3">
+        <button type="submit" class="btn btn-primary">Update</button>
     </div>
 </form>

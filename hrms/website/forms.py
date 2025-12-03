@@ -167,14 +167,18 @@ AssetHandoverFormSet = inlineformset_factory(
 class CompanyForm(forms.ModelForm):
     class Meta:
         model = Company
-        fields = [
-            "short_name", "name", "address",
-            "tan_number", "pan_number", "employer_pf",
-            "ptrc_number", "ptec_number", "esic_number",
-            "status"
-        ]
+        fields = "__all__"
         widgets = {
-            "address": forms.Textarea(attrs={"rows": 3}),
+            "short_name": forms.TextInput(attrs={"class": "form-control"}),
+            "name": forms.TextInput(attrs={"class": "form-control"}),
+            "address": forms.Textarea(attrs={"class": "form-control", "rows": 4}),
+            "tan_number": forms.TextInput(attrs={"class": "form-control"}),
+            "pan_number": forms.TextInput(attrs={"class": "form-control"}),
+            "employer_pf": forms.TextInput(attrs={"class": "form-control"}),
+            "ptrc_number": forms.TextInput(attrs={"class": "form-control"}),
+            "ptec_number": forms.TextInput(attrs={"class": "form-control"}),
+            "esic_number": forms.TextInput(attrs={"class": "form-control"}),
+            "status": forms.Select(attrs={"class": "form-select"}),
         }
 
 

@@ -761,21 +761,36 @@ def delete_offboarding(request, pk):
     return JsonResponse({'success': False, 'message': 'Invalid request.'})
 
 
-def create_branch(request):
-    if request.method == 'POST':
-        form = BranchForm(request.POST)
-        if form.is_valid():
-            form.save()
-            return redirect('admin-dashboard')  # Redirect after successful save
-        else:
-            print(form.errors)  # Debugging validation errors
-    else:
-        form = BranchForm()
+# def create_branch(request):
+#     if request.method == 'POST':
+#         form = BranchForm(request.POST)
+#         if form.is_valid():
+#             form.save()
+#             return redirect('admin-dashboard')  # Redirect after successful save
+#         else:
+#             print(form.errors)  # Debugging validation errors
+#     else:
+#         form = BranchForm()
 
-    context = {
-        'form': form,
-    }
-    return render(request, 'branch/create-branch.html', context)
+#     context = {
+#         'form': form,
+#     }
+#     return render(request, 'branch/create-branch.html', context)
+
+def create_branchs(request):
+    if request.method == "POST":
+        branch_name = request.POST.get("branch_name")
+        # address = request.POST.get("address")
+       
+        # Save company to database
+        branch = Branch.objects.create(
+            branch_name=branch_name,
+            # address=address,          
+        )
+        messages.success(request, "Branch added successfully!")
+        return redirect("create-branch")  # Redirect to company list page
+    branches = Branch.objects.all()
+    return render(request, "branch/create-branch.html",{"branches": branches})
 
 # def create_company(request):
 #     if request.method == 'POST':

@@ -173,10 +173,12 @@
                     <a href="#" class="dropdown-item edit-employee-btn" data-id="{{ employee.id }}">
                         <i class="ti ti-edit me-2"></i> Edit
                     </a>
-                    <a class="dropdown-item" href="javascript:void(0);"
-                      ><i class="ri-delete-bin-7-line me-2"></i> Delete</a
-                    >
-                  </div>
+                    <a class="dropdown-item text-danger"
+                href="javascript:void(0);"
+                onclick="confirmEmployeeDelete({{ employee.id }})">
+                  <i class="ri-delete-bin-7-line me-2"></i> Delete
+              </a>                  
+            </div>
                 </div>
               </td>
             </tr>

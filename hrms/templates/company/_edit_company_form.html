@@ -1,4 +1,4 @@
-<form method="POST" id="editCompanyForm">
+<form method="POST" id="editCompanyForm" action="{% url 'edit_company' company.id %}">
     {% csrf_token %}
 
     <div class="row g-3">

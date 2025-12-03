@@ -847,12 +847,15 @@ def edit_company(request, company_id):
     company = get_object_or_404(Company, id=company_id)
 
     if request.method == "POST":
-        form = CompanyForm(request.POST, instance=company)
+        form = CompanyForm(request.POST, instance=company)   # ← IMPORTANT
         if form.is_valid():
             form.save()
-            return HttpResponse("<script>location.reload();</script>")
+            messages.success(request, "Company updated successfully.")
+            return redirect("create-company")   # your listing page
+        else:
+            messages.error(request, "Please correct the errors below.")
     else:
-        form = CompanyForm(instance=company)
+        form = CompanyForm(instance=company)   # ← IMPORTANT
 
     return render(request, "company/_edit_company_form.html", {"form": form, "company": company})
 

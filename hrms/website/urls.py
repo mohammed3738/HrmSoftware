@@ -10,6 +10,9 @@ urlpatterns = [
     path('home',views.home,name="home"),
     path('create-employee',views.create_employee,name="create-employee"),
     path('employee/<int:pk>/', views.employee_detail, name='employee_detail'),
+    # urls.py
+    path("employee/<int:employee_id>/edit/", views.edit_employee, name="edit_employee"),
+
     path('create-offboarding',views.create_offboarding,name="create-offboarding"),
     path('delete-offboarding/<int:pk>/', views.delete_offboarding, name='delete-offboarding'),
     # path('create-branch',views.create_branch,name="create-branch"),

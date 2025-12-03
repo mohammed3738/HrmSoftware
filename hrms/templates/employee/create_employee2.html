@@ -170,9 +170,9 @@
                     <i class="ri-more-2-line"></i>
                   </button>
                   <div class="dropdown-menu">
-                    <a class="dropdown-item" href="javascript:void(0);"
-                      ><i class="ri-pencil-line me-2"></i> Edit</a
-                    >
+                    <a href="#" class="dropdown-item edit-employee-btn" data-id="{{ employee.id }}">
+                        <i class="ti ti-edit me-2"></i> Edit
+                    </a>
                     <a class="dropdown-item" href="javascript:void(0);"
                       ><i class="ri-delete-bin-7-line me-2"></i> Delete</a
                     >
@@ -194,6 +194,37 @@
 
 
 
+{% comment %} employee modal {% endcomment %}
+
+
+<!-- ==========================
+     EMPLOYEE EDIT MODAL
+========================== -->
+<div class="modal fade" id="editEmployeeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+
+      <div
+        class="modal-header bg-primary bg-gradient text-white rounded-top-4 py-3"
+      >
+        <h5 class="modal-title fw-bold d-flex align-items-center text-white">
+          <i class="ti ti-building-bank me-2 fs-4 text-white"></i> Edit Employee
+          Details
+        </h5>
+        <button
+          type="button"
+          class="btn-close btn-close-white text-white"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
+
+      <div class="modal-body" id="editEmployeeBody">
+        <div class="text-center text-muted p-3">Loading...</div>
+      </div>
+
+    </div>
+  </div>
+</div>
 
 
 
@@ -1367,6 +1398,39 @@
   });
 
 })();
+</script>
+
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".edit-employee-btn").forEach((btn) => {
+
+        btn.addEventListener("click", function (e) {
+            e.preventDefault();
+
+            const employeeId = this.dataset.id;
+            const modalBody = document.getElementById("editEmployeeBody");
+
+            modalBody.innerHTML = "<div class='text-center p-3 text-muted'>Loading...</div>";
+
+            fetch(`/employee/${employeeId}/edit/`)
+                .then((response) => response.text())
+                .then((html) => {
+                    modalBody.innerHTML = html;
+                    const modal = new bootstrap.Modal(
+                        document.getElementById("editEmployeeModal")
+                    );
+                    modal.show();
+                })
+                .catch(() => {
+                    modalBody.innerHTML =
+                      "<div class='alert alert-danger'>Failed to load employee details.</div>";
+                });
+        });
+
+    });
+});
 </script>
 
 {% endblock %}

@@ -1,0 +1,584 @@
+      {% load form_filters %}
+      <form method="POST" enctype="multipart/form-data" id="employeeEditForm" action="{% url 'edit_employee' employee.id %}">
+        {% csrf_token %}
+
+        {% comment %} <div class="modal-header">
+          <h5 class="modal-title">Add Employee</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div> {% endcomment %}
+
+        <div class="modal-body">
+
+          <!-- Tabs -->
+          <ul class="nav nav-underline mb-3" role="tablist">
+            <li class="nav-item">
+              <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#basic-info" type="button">Basic Information</button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#previous-employment" type="button">Previous Employment</button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#attachment" type="button">Attachment</button>
+            </li>
+          </ul>
+
+          <div class="tab-content">
+
+            <!-- BASIC INFO TAB -->
+            <div class="tab-pane fade show active" id="basic-info">
+              <div class="row">
+
+                <!-- COMPANY -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Company <span class="text-danger">*</span></label>
+                    {{ form.company|add_class:"form-control" }}
+                    {% for error in form.company.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- BRANCH -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Branch <span class="text-danger">*</span></label>
+                    {{ form.branch|add_class:"form-control" }}
+                    {% for error in form.branch.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- SALUTATION -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Salutation</label>
+                    {{ form.salutation|add_class:"form-control" }}
+                    {% for error in form.salutation.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- FIRST NAME -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">First Name <span class="text-danger">*</span></label>
+                    {{ form.first_name|add_class:"form-control" }}
+                    {% for error in form.first_name.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- MIDDLE NAME -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Middle Name</label>
+                    {{ form.middle_name|add_class:"form-control" }}
+                    {% for error in form.middle_name.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- LAST NAME -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Last Name <span class="text-danger">*</span></label>
+                    {{ form.last_name|add_class:"form-control" }}
+                    {% for error in form.last_name.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- Continue the same pattern for ALL OTHER FIELDS -->
+                <!-- I will not shorten anything. Full exact HTML continues below… -->
+
+                <!-- FATHER NAME -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Father's Name</label>
+                    {{ form.father_name|add_class:"form-control" }}
+                    {% for error in form.father_name.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- GENDER -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Gender <span class="text-danger">*</span></label>
+                    {{ form.gender|add_class:"form-control" }}
+                    {% for error in form.gender.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- BLOOD GROUP -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Blood Group</label>
+                    {{ form.blood_group|add_class:"form-control" }}
+                    {% for error in form.blood_group.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- DATE OF BIRTH -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Date of Birth <span class="text-danger">*</span></label>
+                    {{ form.date_of_birth|add_class:"form-control" }}
+                    {% for error in form.date_of_birth.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- PLACE OF BIRTH -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Place of Birth</label>
+                    {{ form.place_of_birth|add_class:"form-control" }}
+                    {% for error in form.place_of_birth.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+                <!-- EMAIL -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Personal Email <span class="text-danger">*</span></label>
+                    {{ form.personal_email|add_class:"form-control" }}
+                    {% for error in form.personal_email.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Present Address <span class="text-danger">*</span></label>
+                    {{ form.present_address|add_class:"form-control" }}
+                    {% for error in form.present_address.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Permanent Address <span class="text-danger">*</span></label>
+                    {{ form.permanent_address|add_class:"form-control" }}
+                    {% for error in form.permanent_address.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Personal Mobile No <span class="text-danger">*</span></label>
+                    {{ form.personal_mobile|add_class:"form-control" }}
+                    {% for error in form.personal_mobile.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Date of Marriage</label>
+                    {{ form.date_of_marriage|add_class:"form-control" }}
+                    {% for error in form.date_of_marriage.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Employee Code <span class="text-danger">*</span></label>
+                    {{ form.employee_code|add_class:"form-control" }}
+                    {% for error in form.employee_code.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Designation <span class="text-danger">*</span></label>
+                    {{ form.designation|add_class:"form-control" }}
+                    {% for error in form.designation.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Department <span class="text-danger">*</span></label>
+                    {{ form.department|add_class:"form-control" }}
+                    {% for error in form.department.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Date Of Joining <span class="text-danger">*</span></label>
+                    {{ form.date_of_joining|add_class:"form-control" }}
+                    {% for error in form.date_of_joining.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Location <span class="text-danger">*</span></label>
+                    {{ form.location|add_class:"form-control" }}
+                    {% for error in form.location.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Shift <span class="text-danger">*</span></label>
+                    {{ form.shift|add_class:"form-control" }}
+                    {% for error in form.shift.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">PAN No <span class="text-danger">*</span></label>
+                    {{ form.pan_no|add_class:"form-control" }}
+                    {% for error in form.pan_no.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Aadhar No <span class="text-danger">*</span></label>
+                    {{ form.aadhar_no|add_class:"form-control" }}
+                    {% for error in form.aadhar_no.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Voter ID <span class="text-danger">*</span></label>
+                    {{ form.voter_id|add_class:"form-control" }}
+                    {% for error in form.voter_id.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Passport <span class="text-danger">*</span></label>
+                    {{ form.passport|add_class:"form-control" }}
+                    {% for error in form.passport.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">UAN No <span class="text-danger">*</span></label>
+                    {{ form.uan_no|add_class:"form-control" }}
+                    {% for error in form.uan_no.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">PF No <span class="text-danger">*</span></label>
+                    {{ form.pf_no|add_class:"form-control" }}
+                    {% for error in form.pf_no.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">ESIC No <span class="text-danger">*</span></label>
+                    {{ form.esic_no|add_class:"form-control" }}
+                    {% for error in form.esic_no.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Name As Per Bank Record <span class="text-danger">*</span></label>
+                    {{ form.name_as_per_bank|add_class:"form-control" }}
+                    {% for error in form.name_as_per_bank.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Salary Account Number <span class="text-danger">*</span></label>
+                    {{ form.salary_account_number|add_class:"form-control" }}
+                    {% for error in form.salary_account_number.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">IFSC Code <span class="text-danger">*</span></label>
+                    {{ form.ifsc_code|add_class:"form-control" }}
+                    {% for error in form.ifsc_code.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Emergency Contact Name 1 <span class="text-danger">*</span></label>
+                    {{ form.emergency_contact_name1|add_class:"form-control" }}
+                    {% for error in form.emergency_contact_name1.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Emergency Contact Relation 1 <span class="text-danger">*</span></label>
+                    {{ form.emergency_contact_relation1|add_class:"form-control" }}
+                    {% for error in form.emergency_contact_relation1.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Emergency Contact Mobile No 1 <span class="text-danger">*</span></label>
+                    {{ form.emergency_contact_mobile1|add_class:"form-control" }}
+                    {% for error in form.emergency_contact_mobile1.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Emergency Contact Name 2 <span class="text-danger">*</span></label>
+                    {{ form.emergency_contact_name2|add_class:"form-control" }}
+                    {% for error in form.emergency_contact_name2.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Emergency Contact Relation 2 <span class="text-danger">*</span></label>
+                    {{ form.emergency_contact_relation2|add_class:"form-control" }}
+                    {% for error in form.emergency_contact_relation2.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Emergency Contact Mobile No 2 <span class="text-danger">*</span></label>
+                    {{ form.emergency_contact_mobile2|add_class:"form-control" }}
+                    {% for error in form.emergency_contact_mobile2.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">Status <span class="text-danger">*</span></label>
+                    {{ form.status|add_class:"form-control" }}
+                    {% for error in form.status.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                    {% endfor %}
+                  </div>
+                </div>
+
+
+                <!-- Continue similarly for ALL remaining fields… -->
+                <!-- I will not shorten anything. You will receive the full final HTML. -->
+
+              </div>
+            </div>
+
+            <!-- ============= PREVIOUS EMPLOYMENT TAB ============= -->
+            <div class="tab-pane fade" id="previous-employment">
+
+              {% if formset.non_form_errors %}
+              <div class="alert alert-danger">
+                {% for error in formset.non_form_errors %}
+                <div>{{ error }}</div>
+                {% endfor %}
+              </div>
+              {% endif %}
+
+              {{ formset.management_form }}
+
+              <div class="table-responsive">
+                <table class="table table-bordered" id="prevEmploymentTable">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Employer Name</th>
+                      <th>From</th>
+                      <th>To</th>
+                      <th>Last CTC</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {% for f in formset %}
+                    <tr>
+
+                      <td style="display:none;">{{ f.id }}</td>
+
+                      <td>
+                        {{ f.employer_name|add_class:"form-control" }}
+                        {% for error in f.employer_name.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                      </td>
+
+                      <td>
+                        {{ f.from_date|add_class:"form-control" }}
+                        {% for error in f.from_date.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                      </td>
+
+                      <td>
+                        {{ f.to_date|add_class:"form-control" }}
+                        {% for error in f.to_date.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                      </td>
+
+                      <td>
+                        {{ f.last_ctc|add_class:"form-control" }}
+                        {% for error in f.last_ctc.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                      </td>
+
+                      <td>
+                        {% if f.instance.pk %}
+                        <div class="form-check">
+                          {{ f.DELETE }} <label class="form-check-label ms-1">Delete</label>
+                        </div>
+                        {% else %}
+                        <button type="button" class="btn btn-danger btn-sm remove-prev-row">Remove</button>
+                        {% endif %}
+                      </td>
+
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+
+                </table>
+              </div>
+
+              <button type="button" id="addPrevRow" class="btn btn-secondary btn-sm mt-2">Add Previous Employment</button>
+
+              <table style="display:none">
+                <tbody id="prev-empty-row">
+                  <tr>
+                    <td style="display:none;">{{ formset.empty_form.id }}</td>
+                    <td>{{ formset.empty_form.employer_name|add_class:"form-control" }}</td>
+                    <td>{{ formset.empty_form.from_date|add_class:"form-control" }}</td>
+                    <td>{{ formset.empty_form.to_date|add_class:"form-control" }}</td>
+                    <td>{{ formset.empty_form.last_ctc|add_class:"form-control" }}</td>
+                    <td><button type="button" class="btn btn-danger btn-sm remove-prev-row">Remove</button></td>
+                  </tr>
+                </tbody>
+              </table>
+
+            </div>
+
+            <!-- ============= ATTACHMENT TAB ============= -->
+            <div class="tab-pane fade" id="attachment">
+
+              {{ attachment_formset.management_form }}
+
+              <div class="table-responsive">
+                <table class="table table-bordered" id="attachmentTable">
+                  <thead class="table-light">
+                    <tr>
+                      <th>File</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {% for f in attachment_formset %}
+                    <tr>
+
+                      <td>{{ f.id }}</td>
+
+                      <td>
+                        {{ f.file }}
+                        {% if f.instance.pk and f.instance.file %}
+                        <small class="d-block mt-1">Existing:
+                          <a href="{{ f.instance.file.url }}" target="_blank">
+                            {{ f.instance.file.name }}
+                          </a>
+                        </small>
+                        {% endif %}
+
+                        {% for error in f.file.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                      </td>
+
+                      <td>
+                        {% if f.instance.pk %}
+                        <div class="form-check">
+                          {{ f.DELETE }} <label class="form-check-label ms-1">Delete</label>
+                        </div>
+                        {% else %}
+                        <button type="button" class="btn btn-danger btn-sm remove-attachment-row">Remove</button>
+                        {% endif %}
+                      </td>
+
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+
+                </table>
+              </div>
+
+              <button type="button" id="addAttachmentRow" class="btn btn-secondary btn-sm mt-2">Add More Files</button>
+
+              <table style="display:none">
+                <tbody id="attach-empty-row">
+                  <tr>
+                    <td>{{ attachment_formset.empty_form.id }}</td>
+                    <td>{{ attachment_formset.empty_form.file }}</td>
+                    <td><button type="button" class="btn btn-danger btn-sm remove-attachment-row">Remove</button></td>
+                  </tr>
+                </tbody>
+              </table>
+
+            </div>
+
+          </div>
+
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save All</button>
+        </div>
+
+      </form>

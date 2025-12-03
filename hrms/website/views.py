@@ -66,6 +66,21 @@ def company_details_api(request, pk):
 
     return JsonResponse(data)
 
+
+def delete_employee(request, employee_id):
+    employee = get_object_or_404(Employee, id=employee_id)
+
+    if request.method == "POST":
+        employee.delete()
+        messages.success(request, "Employee deleted successfully.")
+        return redirect("create-employee")  
+
+    messages.error(request, "Invalid request.")
+    return redirect("create-employee")
+
+
+
+
 # atul
 
 # Vaishu

@@ -248,7 +248,7 @@
                   </div>
                 </th>
                 <th>Name</th>
-                <!-- <th>Address</th> -->
+                <th>Address</th>
                 <th>Action</th>
               </tr>
             </thead>
@@ -278,13 +278,12 @@
                     data-cfemail="e885818b80898d84a88d90898598848dc68b8785">[email&#160;protected]</a></td>
                 {% endcomment %}
                 <td>{{branch.branch_name}}</td>
-                <!-- <td>
+                <td>
                   <div class="d-flex align-items-center justify-content-between">
-                    <p class="mb-0 me-2">{{ company.address|truncatewords:6 }}</p>
+                    <p class="mb-0 me-2">{{ branch.branch_address|truncatewords:6 }}</p>
                   </div>
                 </td>
-                <td id="company_">{{company.tan_number}}</td>
-                <td>{{company.pan_number}}</td>
+                <!-- <td>{{company.pan_number}}</td>
                 <td>{{company.employer_pf}}</td>
                 <td>{{company.ptrc_number}}</td>
                 <td>{{company.ptec_number}}</td>
@@ -296,15 +295,14 @@
                       <i class="ti ti-dots-vertical"></i>
                     </a>
                     <div class="dropdown-menu dropdown-menu-end">
-                      <a class="dropdown-item" href="#" data-bs-toggle="modal"
-                        data-bs-target="#company_detail_{{ company.id }}">
+                      <a class="dropdown-item view-branch-btn" href="#" data-id="{{ branch.id }}">
                         <i class="ti ti-eye me-2"></i> View
                       </a>
-                      <a class="dropdown-item edit-company-btn" href="#" data-id="{{ company.id }}">
+                      <a class="dropdown-item edit-branch-btn" href="#" data-id="{{ branch.id }}">
                         <i class="ti ti-edit me-2"></i> Edit
                       </a>
                       <a class="dropdown-item text-danger" href="#" data-bs-toggle="modal"
-                        data-bs-target="#delete_company_{{ company.id }}">
+                        data-bs-target="#delete_branch_{{ branch.id }}">
                         <i class="ti ti-trash me-2"></i> Delete
                       </a>
                     </div>
@@ -320,6 +318,36 @@
 
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <!-- //modal view open -->
+      <div class="modal fade" id="branchViewModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+          <div class="modal-content shadow-lg border-0 rounded-4">
+            <!-- Header -->
+            <div class="modal-header bg-primary bg-gradient text-white rounded-top-4 py-3">
+              <h5 class="modal-title fw-bold d-flex align-items-center text-white">
+                <i class="ti ti-building-bank me-2 fs-4 text-white"></i> Branch Details
+              </h5>
+              <button type="button" class="btn-close btn-close-white text-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <!-- Body -->
+            <div class="modal-body p-4" id="branchViewBody">
+              <!-- Loader (default content before JS loads data) -->
+              <div class="text-center text-muted py-4">
+                <div class="spinner-border text-primary" role="status"></div>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="modal-footer bg-white rounded-bottom-4">
+              <button class="btn btn-secondary px-4" data-bs-dismiss="modal">
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -348,6 +376,12 @@
               <div class="mb-3">
                 <label class="form-label">Name <span class="text-danger"> *</span></label>
                 <input type="text" class="form-control" name="branch_name">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Branch Address <span class="text-danger"> *</span></label>
+                <textarea class="form-control" name="branch_address"></textarea>
               </div>
             </div>
             <!-- <div class="col-md-6">
@@ -416,21 +450,20 @@
 <div class="modal fade" id="editBranchModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
-
       <div class="modal-header bg-primary text-white">
         <h5 class="modal-title">Edit Branch</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
 
-      <div class="modal-body" id="editCompanyBody">
+      <div class="modal-body" id="editBranchBody">
         <div class="text-center text-muted p-3">Loading...</div>
       </div>
-
     </div>
   </div>
 </div>
-<!-- /Edit Company -->
-<!-- /Edit Company -->
+<!-- /Edit Branch -->
+<!-- /Edit Branch -->
+
 
 <!-- Upgrade Information -->
 <div class="modal fade" id="upgrade_info">
@@ -564,84 +597,6 @@
 </div>
 <!-- /Upgrade Information -->
 
-<!-- Company Detail -->
-<!-- Company Detail Modal -->
-<!-- Company Detail Modal -->
-<div class="modal fade" id="company_detail_{{ company.id }}">
-  <div class="modal-dialog modal-dialog-centered modal-lg">
-    <div class="modal-content">
-
-      <div class="modal-header">
-        <h4 class="modal-title">Branch Details - {{ branch.branch_name }}</h4>
-        <button type="button" class="btn-close custom-btn-close" data-bs-dismiss="modal">
-          <i class="ti ti-x"></i>
-        </button>
-      </div>
-
-      <div class="modal-body p-4">
-
-        <div class="d-flex align-items-center mb-4">
-          <span class="avatar avatar-lg rounded-circle bg-primary text-white me-3">
-            {{ branch.branch_name|slice:":2" }}
-          </span>
-          <div>
-            <h5 class="mb-0">{{ branch.branch_name }}</h5>
-            <span class="badge {% if branch.status == 'active' %}bg-success{% else %}bg-danger{% endif %}">
-              {{ branch.status|title }}
-            </span>
-          </div>
-        </div>
-
-        <div class="row">
-
-          <div class="col-md-6 mb-3">
-            <strong>Branch Name:</strong>
-            <p class="text-muted">{{ branch.branch_name }}</p>
-          </div>
-
-          <!-- <div class="col-md-6 mb-3">
-            <strong>Address:</strong>
-            <p class="text-muted">{{ company.address }}</p>
-          </div>
-
-          <div class="col-md-6 mb-3">
-            <strong>TAN Number:</strong>
-            <p class="text-muted">{{ company.tan_number|default:"—" }}</p>
-          </div>
-
-          <div class="col-md-6 mb-3">
-            <strong>PAN Number:</strong>
-            <p class="text-muted">{{ company.pan_number|default:"—" }}</p>
-          </div>
-
-          <div class="col-md-6 mb-3">
-            <strong>Employer PF:</strong>
-            <p class="text-muted">{{ company.employer_pf|default:"—" }}</p>
-          </div>
-
-          <div class="col-md-6 mb-3">
-            <strong>PTRC Number:</strong>
-            <p class="text-muted">{{ company.ptrc_number|default:"—" }}</p>
-          </div>
-
-          <div class="col-md-6 mb-3">
-            <strong>PTEC Number:</strong>
-            <p class="text-muted">{{ company.ptec_number|default:"—" }}</p>
-          </div>
-
-          <div class="col-md-6 mb-3">
-            <strong>ESIC Number:</strong>
-            <p class="text-muted">{{ company.esic_number|default:"—" }}</p>
-          </div> -->
-
-        </div>
-
-      </div>
-    </div>
-  </div>
-</div>
-<!-- /Company Detail -->
-
 <!-- Delete Modal -->
 <div class="modal fade" id="delete_modal">
   <div class="modal-dialog modal-dialog-centered modal-sm">
@@ -667,7 +622,7 @@
 
 
 
-<script>
+<!-- <script>
   document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll(".edit-company-btn").forEach(btn => {
       btn.addEventListener("click", function (e) {
@@ -690,6 +645,109 @@
       });
     });
   });
+</script> -->
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".edit-branch-btn").forEach((btn) => {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        const companyId = this.dataset.id;
+        const modalBody = document.getElementById("editBranchBody");
+
+        modalBody.innerHTML =
+          "<div class='text-center p-3 text-muted'>Loading...</div>";
+
+        fetch(`/company/${companyId}/edit/`)
+          .then((response) => response.text())
+          .then((html) => {
+            modalBody.innerHTML = html;
+            const modal = new bootstrap.Modal(
+              document.getElementById("editBranchModal")
+            );
+            modal.show();
+          })
+          .catch(() => {
+            modalBody.innerHTML =
+              "<div class='alert alert-danger'>Failed to load data.</div>";
+          });
+      });
+    });
+  });
 </script>
 
+
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll(".view-branch-btn").forEach((btn) => {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+
+        const id = this.dataset.id;
+        const modalBody = document.getElementById("branchViewBody");
+
+        // STEP 1: Show loader FIRST (NO DATA USED HERE)
+        modalBody.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <div class="spinner-border text-primary"></div>
+                    <div class="mt-2">Loading details...</div>
+                </div>
+            `;
+
+        // STEP 2: Open Modal
+        const modal = new bootstrap.Modal(
+          document.getElementById("branchViewModal")
+        );
+        modal.show();
+
+        // STEP 3: Now fetch REAL DATA
+        fetch(`/branch/${id}/details/`)
+          .then((res) => res.json())
+          .then((data) => {
+            // STEP 4: Replace content AFTER data arrives
+            modalBody.innerHTML = `
+<div class="container-fluid">
+
+  <!-- Basic Info -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom fw-bold text-primary d-flex align-items-center py-2 px-3">
+    <i class="ti ti-building fs-6 me-2"></i> Basic Information
+</div>
+
+
+    <div class="card-body row g-3  py-3 ">
+
+      <div class="col-md-6">
+        <div class="text-muted small fw-semibold text-uppercase">Branch Name</div>
+        <div class="fw-bold fs-6">${data.branch_name}</div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- Address -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom fw-bold text-primary d-flex align-items-center py-2 px-3">
+      <i class="ti ti-map-pin fs-5 me-2"></i> Address
+    </div>
+
+    <div class="card-body py-3">
+      <div class="text-muted small fw-semibold text-uppercase">Address</div>
+      <div class="fw-bold fs-6">${data.branch_address}</div>
+    </div>
+  </div>
+</div>
+`;
+          })
+
+          .catch(() => {
+            modalBody.innerHTML = `
+                        <div class="alert alert-danger">Failed to load data.</div>
+                    `;
+          });
+      });
+    });
+  });
+</script>
 {% endblock %}

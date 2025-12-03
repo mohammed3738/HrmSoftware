@@ -68,6 +68,25 @@ def company_details_api(request, pk):
 
 # atul
 
+# Vaishu
+def branch_details_api(request, pk):
+    branch = get_object_or_404(Branch, pk=pk)
+
+    data = {
+        "branch_name": branch.branch_name,
+        "branch_address": branch.branch_address,
+        # "tan_number": company.tan_number,
+        # "pan_number": company.pan_number,
+        # "employer_pf": company.employer_pf,
+        # "ptrc_number": company.ptrc_number,
+        # "ptec_number": company.ptec_number,
+        # "esic_number": company.esic_number,
+        # "status": company.status,
+    }
+
+    return JsonResponse(data)
+# Vaishu
+
 
 
 
@@ -780,17 +799,46 @@ def delete_offboarding(request, pk):
 def create_branchs(request):
     if request.method == "POST":
         branch_name = request.POST.get("branch_name")
-        # address = request.POST.get("address")
+        branch_address = request.POST.get("branch_address")
        
         # Save company to database
         branch = Branch.objects.create(
             branch_name=branch_name,
-            # address=address,          
+            branch_address=branch_address,          
         )
         messages.success(request, "Branch added successfully!")
         return redirect("create-branch")  # Redirect to company list page
     branches = Branch.objects.all()
     return render(request, "branch/create-branch.html",{"branches": branches})
+
+
+def edit_branch(request, branch_id):
+    branch = get_object_or_404(Branch, id=branch_id)
+
+    if request.method == "POST":
+        form = BranchForm(request.POST, instance=branch)
+        if form.is_valid():
+            form.save()
+            return HttpResponse("<script>location.reload();</script>")
+    else:
+        form = BranchForm(instance=branch)
+
+    return render(request, "branch/_edit_branch_form.html", {"form": form, "branch": branch})
+
+
+def get_branch(request, branch_id):
+    branch = Branch.objects.get(id=branch_id)
+    return JsonResponse({
+        "branch_name": branch.branch_name,
+        "branch_address": branch.branch_address,
+        # "tan_number": company.tan_number,
+        # "pan_number": company.pan_number,
+        # "employer_pf": company.employer_pf,
+        # "ptrc_number": company.ptrc_number,
+        # "ptec_number": company.ptec_number,
+        # "esic_number": company.esic_number,
+        # "status": company.status,
+    })
 
 # def create_company(request):
 #     if request.method == 'POST':

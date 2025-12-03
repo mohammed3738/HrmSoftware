@@ -26,6 +26,10 @@ urlpatterns = [
 
 
     path("company/<int:pk>/details/", views.company_details_api, name="company_details_api"),
+    path("branch/<int:pk>/details/", views.branch_details_api, name="branch_details_api"),
+    path("branch/<int:branch_id>/edit/", views.edit_branch, name="edit_branch"),
+    path("branch/<int:branch_id>/get/", views.get_branch, name="get_branch"),
+
 
 
 

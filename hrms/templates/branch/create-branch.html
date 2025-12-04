@@ -297,15 +297,6 @@
           <table class="table datatable">
             <thead class="thead-light">
               <tr>
-                <th class="no-sort">
-                  <div class="form-check form-check-md">
-                    <input
-                      class="form-check-input"
-                      type="checkbox"
-                      id="select-all"
-                    />
-                  </div>
-                </th>
                 <th>Name</th>
                 <th>Address</th>
                 <th>Action</th>
@@ -314,33 +305,7 @@
             <tbody>
               {% if branches %} {% for branch in branches %}
 
-              <tr>
-                <td>
-                  <div class="form-check form-check-md">
-                    <input class="form-check-input" type="checkbox" />
-                  </div>
-                </td>
-                <!-- <td>
-                  <div class="d-flex align-items-center file-name-icon">
-                    <a href="#" class="avatar avatar-md border rounded-circle">
-                      <img src="https://smarthr.dreamstechnologies.com/html/template/assets/img/company/company-01.svg"
-                        class="img-fluid" alt="img">
-                    </a>
-                    <div class="ms-2">
-                      <h6 class="fw-medium"><a href="#">{{branch.branch_name}}</a></h6>
-                    </div>
-                  </div>
-                </td> -->
-                {% comment %}
-                <td>
-                  <a
-                    href="https://smarthr.dreamstechnologies.com/cdn-cgi/l/email-protection"
-                    class="__cf_email__"
-                    data-cfemail="e885818b80898d84a88d90898598848dc68b8785"
-                    >[email&#160;protected]</a
-                  >
-                </td>
-                {% endcomment %}
+              <tr>                              
                 <td>{{branch.branch_name}}</td>
                 <td>
                   <div

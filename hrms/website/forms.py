@@ -191,6 +191,9 @@ class CompanyForm(forms.ModelForm):
         widgets = {
             "short_name": forms.TextInput(attrs={"class": "form-control"}),
             "name": forms.TextInput(attrs={"class": "form-control"}),
+         "phone": forms.TextInput(attrs={"class": "form-control"}),
+            "email": forms.EmailInput(attrs={"class": "form-control"}),
+            
             "address": forms.Textarea(attrs={"class": "form-control", "rows": 4}),
             "tan_number": forms.TextInput(attrs={"class": "form-control"}),
             "pan_number": forms.TextInput(attrs={"class": "form-control"}),

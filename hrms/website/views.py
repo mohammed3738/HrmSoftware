@@ -54,6 +54,8 @@ def company_details_api(request, pk):
     data = {
         "short_name": company.short_name,
         "name": company.name,
+        "phone": company.phone,
+        "email": company.email,
         "address": company.address,
         "tan_number": company.tan_number,
         "pan_number": company.pan_number,
@@ -911,6 +913,8 @@ def create_company(request):
     if request.method == "POST":
         short_name = request.POST.get("short_name")
         name = request.POST.get("name")
+        phone = request.POST.get("phone")
+        email = request.POST.get("email")
         address = request.POST.get("address")
         tan_number = request.POST.get("tan_number")
         pan_number = request.POST.get("pan_number")
@@ -927,6 +931,8 @@ def create_company(request):
         company = Company.objects.create(
             short_name=short_name,
             name=name,
+            phone=phone,
+            email=email,
             address=address,
             tan_number=tan_number,
             pan_number=pan_number,

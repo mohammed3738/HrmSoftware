@@ -25,7 +25,8 @@ from django.db.models import Sum
 from .signals import recalculate_leave_balance_for_employee
 from django.db.models import Q
 import io
-
+import os
+from django.http import FileResponse, Http404
 import openpyxl
 
 # def parse_time(time_value):
@@ -54,6 +55,8 @@ def company_details_api(request, pk):
     data = {
         "short_name": company.short_name,
         "name": company.name,
+        "phone": company.phone,
+        "email": company.email,
         "address": company.address,
         "tan_number": company.tan_number,
         "pan_number": company.pan_number,
@@ -815,14 +818,93 @@ def create_employee(request):
 
 
 
+# def employee_detail(request, pk):
+#     employee = get_object_or_404(Employee, pk=pk)
+#     employeement= PreviousEmployment.objects.filter(employee=employee)
+#     first_name = getattr(employee, "first_name", None) or (getattr(user, "first_name", None) if user else None)
+#     # last_name  = getattr(employee, "last_name", None)  or (getattr(user, "last_name", None) if user else None)
+#     context = {
+#         'employee': employee,
+#         'employeement': employeement,
+#         'display': {
+#             'first_name': first_name,
+#         }
+#     }
+#     print('Employee Details:', employee)
+#     print('Previous Employeement Details:', employeement)
+#     return render(request, 'employee/employee_detail.html', context)
+
+from django.shortcuts import get_object_or_404, render
+
 def employee_detail(request, pk):
     employee = get_object_or_404(Employee, pk=pk)
-    employeement= PreviousEmployment.objects.filter(employee=employee)
+    # employeement = PreviousEmployment.objects.filter(employee=employee)
+    # previous_employments = employee.previous_employments.all().order_by('-to_date')
+    previous_employments = PreviousEmployment.objects.filter(employee=employee).order_by('-to_date')
+    # attachments = employee.attachments.all().order_by('-uploaded_at')
+    attachments = EmployeeAttachment.objects.filter(employee=employee).order_by('-uploaded_at')
+
+    # safe related user (if Employee has a user FK/OneToOne)
+    user = getattr(employee, "user", None)
+
+    # safe lookups with fallbacks
+    first_name = getattr(employee, "first_name", None) or (getattr(user, "first_name", None) if user else None)
+    last_name  = getattr(employee, "last_name", None)  or (getattr(user, "last_name", None) if user else None)
+    email      = getattr(employee, "email", None)      or (getattr(user, "email", None) if user else None)
+    phone      = getattr(employee, "phone", None)      or getattr(employee, "contact", None) or ""
+
+    full_name = " ".join(filter(None, [first_name, last_name])) or getattr(employee, "full_name", None) or str(employee)
+
+    # photo url safe
+    photo_url = None
+    photo_field = getattr(employee, "photo", None) or getattr(employee, "avatar", None)
+    if photo_field:
+        try:
+            photo_url = photo_field.url
+        except Exception:
+            photo_url = None
+
     context = {
         'employee': employee,
-        'employeement': employeement,
+        'previous_employments': previous_employments,
+        'attachments': attachments,
+        'display': {
+            'first_name': first_name,
+            'last_name': last_name,
+            'full_name': full_name,
+            'email': email,
+            'phone': phone,
+            'photo_url': photo_url,
+        }
     }
+
+    # debug prints (ok to remove later)
+    print('Employee Details:', employee)
+    print('Previous Employment Details:', previous_employments)
+    print('Display dict:', context['display'])
+
     return render(request, 'employee/employee_detail.html', context)
+
+
+def download_attachment(request, pk):
+    attachment = get_object_or_404(EmployeeAttachment, pk=pk)
+
+    # OPTIONAL: extra permission checks
+    # if not request.user.has_perm('yourapp.view_attachment') or attachment.owner != request.user:
+    #     raise Http404()
+
+    if not attachment.file:
+        raise Http404("File not found")
+
+    # open file for streaming
+    try:
+        file_handle = attachment.file.open('rb')
+    except Exception:
+        raise Http404("Unable to open file")
+
+    filename = os.path.basename(attachment.file.name)
+    response = FileResponse(file_handle, as_attachment=True, filename=filename)
+    return response
 
 
 def edit_employee(request, employee_id):
@@ -875,7 +957,8 @@ def create_offboarding(request):
     if request.method == 'POST':
         form = OffboardingForm(request.POST, request.FILES)
         formset = AssetHandoverFormSet(request.POST, request.FILES)
-
+        # print('formset',formset)
+        print('form',form)                                  
         # must bind formset to the parent only after parent is saved,
         # but to validate all at once we can pass prefix-less data and call is_valid() afterwards
         if form.is_valid():
@@ -1020,6 +1103,8 @@ def create_company(request):
     if request.method == "POST":
         short_name = request.POST.get("short_name")
         name = request.POST.get("name")
+        phone = request.POST.get("phone")
+        email = request.POST.get("email")
         address = request.POST.get("address")
         tan_number = request.POST.get("tan_number")
         pan_number = request.POST.get("pan_number")
@@ -1036,6 +1121,8 @@ def create_company(request):
         company = Company.objects.create(
             short_name=short_name,
             name=name,
+            phone=phone,
+            email=email,
             address=address,
             tan_number=tan_number,
             pan_number=pan_number,

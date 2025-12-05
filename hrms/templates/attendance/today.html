@@ -44,7 +44,6 @@
             <th>View History</th>
             <th>Raise Approval</th>
             <th>Raise Comp-Off</th>
-
           </tr>
         </thead>
         <tbody>
@@ -359,11 +358,61 @@
 </script>
 
 <script>
+  function formatTimeForDisplay(time) {
+    let [h, m] = time.split(":");
+    h = parseInt(h);
+    let ampm = h >= 12 ? "PM" : "AM";
+    if (h === 0) h = 12;
+    if (h > 12) h -= 12;
+    return `${String(h).padStart(2, "0")}:${m} ${ampm}`;
+  }
+
+  function convertTo24Hour(time) {
+    if (!time) return "";
+
+    time = time.trim();
+
+    // If it's already HH or HH:undefined → fix minutes
+    if (/^\d{1,2}(:\d{2})?$/.test(time)) {
+      let [h, m] = time.split(":");
+      if (!m || m === "undefined") m = "00"; // <-- MAIN FIX
+      return `${h.padStart(2, "0")}:${m}`;
+    }
+
+    // If format is like "09:30 AM" etc.
+    let [t, modifier] = time.split(" ");
+    if (!t) return "";
+    let [hours, minutes] = t.split(":");
+
+    if (!minutes || minutes === "undefined") minutes = "00";
+
+    if (modifier) {
+      modifier = modifier.toUpperCase();
+      if (modifier === "PM" && hours !== "12")
+        hours = String(Number(hours) + 12);
+      if (modifier === "AM" && hours === "12") hours = "00";
+    }
+
+    return `${hours.padStart(2, "0")}:${minutes}`;
+  }
+
   function openCorrectionModal(attendanceId, inTime, outTime, date) {
+      // Convert for input type=time
+    let newIn = convertTo24Hour(inTime);
+    let newOut = convertTo24Hour(outTime);
+
+    // Convert for display with AM/PM
+    let dispIn = formatTimeForDisplay(newIn);
+    let dispOut = formatTimeForDisplay(newOut);
     document.getElementById("attendance_id").value = attendanceId;
     document.getElementById("date").value = date;
-    document.getElementById("old_in_time").value = inTime;
-    document.getElementById("old_out_time").value = outTime;
+    // Current Time (readonly with AM/PM)
+    document.getElementById("old_in_time").value = dispIn;
+    document.getElementById("old_out_time").value = dispOut;
+
+    // Prefill new values editable (24HR format)
+    document.getElementById("new_in_time").value = newIn;
+    document.getElementById("new_out_time").value = newOut;
     document.getElementById("correctionModal").style.display = "block";
   }
 

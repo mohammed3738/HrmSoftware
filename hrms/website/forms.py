@@ -93,7 +93,7 @@ class EmployeeAttachmentForm(forms.ModelForm):
 
     class Meta:
         model = EmployeeAttachment
-        fields = ['file']
+        fields = ['id','file']
 
 
 EmployeeAttachmentFormSet = inlineformset_factory(
@@ -164,7 +164,7 @@ class OffboardingForm(forms.ModelForm):
         model = Offboarding
         fields = [
             'employee', 'date_of_resignation', 'date_of_relieving',
-            'experience_certificate', 'relieving_letter', 'other_documents'
+            'experience_certificate', 'relieving_letter', 'other_documents','fnf_documents'
         ]
         widgets = {
             'employee': forms.Select(attrs={'class': 'form-control'}),
@@ -174,6 +174,7 @@ class OffboardingForm(forms.ModelForm):
             'experience_certificate': forms.ClearableFileInput(attrs={'class': 'form-control'}),
             'relieving_letter': forms.ClearableFileInput(attrs={'class': 'form-control'}),
             'other_documents': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+            'fnf_documents': forms.ClearableFileInput(attrs={'class': 'form-control'}),
         }
 
 class AssetHandoverForm(forms.ModelForm):
@@ -209,6 +210,9 @@ class CompanyForm(forms.ModelForm):
         widgets = {
             "short_name": forms.TextInput(attrs={"class": "form-control"}),
             "name": forms.TextInput(attrs={"class": "form-control"}),
+         "phone": forms.TextInput(attrs={"class": "form-control"}),
+            "email": forms.EmailInput(attrs={"class": "form-control"}),
+            
             "address": forms.Textarea(attrs={"class": "form-control", "rows": 4}),
             "tan_number": forms.TextInput(attrs={"class": "form-control"}),
             "pan_number": forms.TextInput(attrs={"class": "form-control"}),

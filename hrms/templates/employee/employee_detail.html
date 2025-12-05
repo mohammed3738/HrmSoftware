@@ -26,27 +26,27 @@
               class="d-flex align-items-md-end align-items-sm-start align-items-center justify-content-md-between justify-content-start mx-5 flex-md-row flex-column gap-6"
             >
               <div class="user-profile-info">
-                <h4 class="mb-2">John Doe</h4>
+                <h4 class="mb-2">{{ display.full_name }}</h4>
                 <ul
                   class="list-inline mb-0 d-flex align-items-center flex-wrap justify-content-sm-start justify-content-center gap-4"
                 >
                   <li class="list-inline-item">
-                    <i class="ri-palette-line me-2 ri-24px"></i
-                    ><span class="fw-medium">UX Designer</span>
+                    <i class="ri-user-3-line me-2 ri-24px"></i
+                    ><span class="fw-medium">{{ employee.designation }}</span>
                   </li>
                   <li class="list-inline-item">
-                    <i class="ri-map-pin-line me-2 ri-24px"></i
-                    ><span class="fw-medium">Vatican City</span>
+                    <i class="ri-building-2-line me-2 ri-24px"></i
+                    ><span class="fw-medium">{{employee.department}}</span>
                   </li>
                   <li class="list-inline-item">
                     <i class="ri-calendar-line me-2 ri-24px"></i
-                    ><span class="fw-medium"> Joined April 2021</span>
+                    ><span class="fw-medium">{{ employee.date_of_joining }}</span>
                   </li>
                 </ul>
               </div>
-              <a href="javascript:void(0)" class="btn btn-primary">
+              {% comment %} <a href="javascript:void(0)" class="btn btn-primary">
                 <i class="ri-user-follow-line ri-16px me-2"></i>Connected
-              </a>
+              </a> {% endcomment %}
             </div>
           </div>
         </div>
@@ -65,7 +65,7 @@
               ><i class="ri-user-3-line me-2"></i>Profile</a
             >
           </li>
-          <li class="nav-item">
+          {% comment %} <li class="nav-item">
             <a class="nav-link" href="pages-profile-teams.html"
               ><i class="ri-team-line me-2"></i>Teams</a
             >
@@ -79,7 +79,7 @@
             <a class="nav-link" href="pages-profile-connections.html"
               ><i class="ri-link-m me-2"></i>Connections</a
             >
-          </li>
+          </li> {% endcomment %}
         </ul>
       </div>
     </div>
@@ -92,68 +92,126 @@
       <!-- About User -->
       <div class="card mb-6">
         <div class="card-body">
-          <small class="card-text text-uppercase text-muted small">About</small>
+          <small class="card-text text-uppercase text-muted small">
+            <i class="ri-building-4-line ri-24px"></i>
+          About</small> 
+            {% comment %} <div class="card-header align-items-center">
+          <h5 class="card-action-title mb-0">
+            <i class="ri-profile-line ri-24px text-body me-4"></i>Personal Info
+          </h5>
+        </div> {% endcomment %}
           <ul class="list-unstyled my-3 py-1">
             <li class="d-flex align-items-center mb-4">
-              <i class="ri-user-3-line ri-24px"></i
-              ><span class="fw-medium mx-2">Full Name:</span>
-              <span>John Doe</span>
+              <i class="ri-id-card-line ri-24px"></i
+              ><span class="fw-medium mx-2">Employee Code:</span>
+              <span>{{ employee.employee_code }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              <i class="ri-briefcase-4-line ri-24px"></i
+              ><span class="fw-medium mx-2">Designation:</span>
+              <span>{{ employee.designation }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              <i class="ri-building-2-line ri-24px"></i
+              ><span class="fw-medium mx-2">Department</span>
+              <span>{{ employee.department }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              <i class="ri-calendar-check-line ri-24px"></i
+              ><span class="fw-medium mx-2">Date of Joining:</span>
+              <span>{{ employee.date_of_joining }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              <i class="ri-calendar-todo-line ri-24px"></i
+              ><span class="fw-medium mx-2">Date of Confirmation:</span>
+              <span>{{ employee.date_of_confirmation }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              <i class="ri-map-pin-line ri-24px"></i
+              ><span class="fw-medium mx-2">Location:</span>
+              <span>{{ employee.location }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              <i class="ri-wallet-3-line ri-24px"></i
+              ><span class="fw-medium mx-2">Payroll Of:</span>
+              <span>{{ employee.payroll_of }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              <i class="ri-time-line ri-24px"></i
+              ><span class="fw-medium mx-2">Shift:</span>
+              <span>{{ employee.shift }}</span>
             </li>
             <li class="d-flex align-items-center mb-4">
               <i class="ri-check-line ri-24px"></i
               ><span class="fw-medium mx-2">Status:</span>
-              <span>Active</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-star-smile-line ri-24px"></i
-              ><span class="fw-medium mx-2">Role:</span>
-              <span>Developer</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-flag-2-line ri-24px"></i
-              ><span class="fw-medium mx-2">Country:</span>
-              <span>USA</span>
-            </li>
-            <li class="d-flex align-items-center mb-2">
-              <i class="ri-translate-2 ri-24px"></i
-              ><span class="fw-medium mx-2">Languages:</span>
-              <span>English</span>
+              <span>{{ employee.status }}</span>
             </li>
           </ul>
           <small class="card-text text-uppercase text-muted small"
-            >Contacts</small
+            >
+            <i class="ri-shield-user-line ri-24px"></i>
+            Statutory Details</small
           >
           <ul class="list-unstyled my-3 py-1">
             <li class="d-flex align-items-center mb-4">
-              <i class="ri-phone-line ri-24px"></i
-              ><span class="fw-medium mx-2">Contact:</span>
-              <span>(123) 456-7890</span>
+              {% comment %} <i class="ri-building-4-line ri-24px"></i> {% endcomment %}
+              <span class="fw-medium mx-2">PAN No:</span>
+              <span>{{ employee.pan_no }}</span>
             </li>
             <li class="d-flex align-items-center mb-4">
-              <i class="ri-wechat-line ri-24px"></i
-              ><span class="fw-medium mx-2">Skype:</span>
-              <span>john.doe</span>
+              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
+              <span class="fw-medium mx-2">Aadhar No:</span>
+              <span>{{ employee.aadhar_no }}</span>
             </li>
-            <li class="d-flex align-items-center mb-2">
-              <i class="ri-mail-open-line ri-24px"></i
-              ><span class="fw-medium mx-2">Email:</span>
-              <span>john.doe@example.com</span>
+            <li class="d-flex align-items-center mb-4">
+              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
+              <span class="fw-medium mx-2">Voter ID:</span>
+              <span>{{ employee.voter_id }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
+              <span class="fw-medium mx-2">Passport No:</span>
+              <span>{{ employee.passport }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
+              <span class="fw-medium mx-2">UAN No:</span>
+              <span>{{ employee.uan_no }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
+              <span class="fw-medium mx-2">PF No:</span>
+              <span>{{ employee.pf_no }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
+              <span class="fw-medium mx-2">ESIC No:</span>
+              <span>{{ employee.esic_no }}</span>
             </li>
           </ul>
-          <small class="card-text text-uppercase text-muted small">Teams</small>
+          <small class="card-text text-uppercase text-muted small">
+            <i class="ri-bank-line ri-24px"></i>
+            Bank Details</small>
           <ul class="list-unstyled mb-0 mt-3 pt-1">
             <li class="d-flex align-items-center mb-4">
-              <i class="ri-github-line ri-24px text-body me-2"></i>
+              {% comment %} <i class="ri-github-line ri-24px text-body me-2"></i> {% endcomment %}
               <div class="d-flex flex-wrap">
-                <span class="fw-medium me-2">Backend Developer</span
-                ><span>(126 Members)</span>
+                <span class="fw-medium me-2">Bank Name:</span
+                ><span>{{employee.name_as_per_bank}}</span>
               </div>
             </li>
-            <li class="d-flex align-items-center">
-              <i class="ri-reactjs-line ri-24px text-body me-2"></i>
+            <li class="d-flex align-items-center mb-4">
+              {% comment %} <i class="ri-github-line ri-24px text-body me-2"></i> {% endcomment %}
               <div class="d-flex flex-wrap">
-                <span class="fw-medium me-2">React Developer</span
-                ><span>(98 Members)</span>
+                <span class="fw-medium me-2">Account Number:</span
+                ><span>{{employee.salary_account_number}}</span>
+              </div>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              {% comment %} <i class="ri-github-line ri-24px text-body me-2"></i> {% endcomment %}
+              <div class="d-flex flex-wrap">
+                <span class="fw-medium me-2">IFSC Code:</span
+                ><span>{{employee.ifsc_code}}</span>
               </div>
             </li>
           </ul>
@@ -192,328 +250,292 @@
       <div class="card card-action mb-6">
         <div class="card-header align-items-center">
           <h5 class="card-action-title mb-0">
-            <i class="ri-bar-chart-2-line ri-24px text-body me-4"></i>Activity
-            Timeline
+            <i class="ri-profile-line ri-24px text-body me-4"></i>Personal Info
           </h5>
-          <div class="card-action-element">
-            <div class="dropdown">
-              <button
-                type="button"
-                class="btn dropdown-toggle hide-arrow p-0"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i class="ri-more-2-line ri-22px text-muted"></i>
-              </button>
-              <ul class="dropdown-menu dropdown-menu-end">
-                <li>
-                  <a class="dropdown-item" href="javascript:void(0);"
-                    >Share timeline</a
-                  >
-                </li>
-                <li>
-                  <a class="dropdown-item" href="javascript:void(0);"
-                    >Suggest edits</a
-                  >
-                </li>
-                <li>
-                  <hr class="dropdown-divider" />
-                </li>
-                <li>
-                  <a class="dropdown-item" href="javascript:void(0);"
-                    >Report bug</a
-                  >
-                </li>
-              </ul>
+        </div>
+        <div class="card-body pt-0">
+         <div class="row">
+          <!-- LEFT COLUMN -->
+          <div class="col-md-6">
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-account-circle-line ri-24px"></i>
+              <span class="fw-medium mx-2">Full Name:</span>
+              <span>{{ display.full_name }}</span>
+            </div>
+
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-user-line ri-24px"></i>
+              <span class="fw-medium mx-2">Gender:</span>
+              <span>{{ employee.gender }}</span>
+            </div>
+
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-heart-pulse-line ri-24px"></i>
+              <span class="fw-medium mx-2">Blood Group:</span>
+              <span>{{ employee.blood_group }}</span>
             </div>
           </div>
+
+          <!-- RIGHT COLUMN -->
+          <div class="col-md-6">
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-user-2-line ri-24px"></i>
+              <span class="fw-medium mx-2">Father Name:</span>
+              <span>{{ employee.father_name }}</span>
+            </div>
+
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-briefcase-4-line ri-24px"></i>
+              <span class="fw-medium mx-2">Role:</span>
+              <span>{{ employee.designation }}</span>
+            </div>
+
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-cake-2-line ri-24px"></i>
+              <span class="fw-medium mx-2">Date of Birth:</span>
+              <span>{{ employee.date_of_birth }}</span>
+            </div>
+          </div>
+
+          <!-- Now back to 2-column layout for the rest -->
+
+          <div class="col-md-6">
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-mail-open-line ri-24px"></i>
+              <span class="fw-medium mx-2">Personal Email:</span>
+              <span>{{ employee.personal_email }}</span>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-smartphone-line ri-24px"></i>
+              <span class="fw-medium mx-2">Personal Mobile:</span>
+              <span>{{ employee.personal_mobile }}</span>
+            </div>
+          </div>
+
+          <!-- FULL WIDTH ROW: Present Address -->
+          <div class="col-12">
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-map-pin-line ri-24px"></i>
+              <span class="fw-medium mx-2">Present Address:</span>
+              <span>{{ employee.present_address }}</span>
+            </div>
+          </div>
+
+          <!-- FULL WIDTH ROW: Permanent Address -->
+          <div class="col-12">
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-home-4-line ri-24px"></i>
+              <span class="fw-medium mx-2">Permanent Address:</span>
+              <span>{{ employee.permanent_address }}</span>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-calendar-event-line ri-24px"></i>
+              <span class="fw-medium mx-2">Date of Marriage:</span>
+              <span>{{ employee.date_of_marriage }}</span>
+            </div>
+          </div>
+
+        <div class="card-header align-items-center">
+          <h5 class="card-action-title mb-0">
+            <i class="ri-contacts-book-line ri-24px text-body me-4"></i>Emergency Contact Details
+          </h5>
         </div>
-        <div class="card-body pt-5">
-          <ul class="timeline mb-0">
-            <li class="timeline-item timeline-item-transparent">
-              <span class="timeline-point timeline-point-primary"></span>
-              <div class="timeline-event">
-                <div class="timeline-header mb-3">
-                  <h6 class="mb-0">12 Invoices have been paid</h6>
-                  <small class="text-muted">12 min ago</small>
-                </div>
-                <p class="mb-2">Invoices have been paid to the company</p>
-                <div class="d-flex align-items-center">
-                  <div class="badge bg-lighter rounded-3">
-                    <img
-                      src="../../assets//img/icons/misc/pdf.png"
-                      alt="img"
-                      width="15"
-                      class="me-2"
-                    />
-                    <span class="h6 mb-0 text-body">invoices.pdf</span>
-                  </div>
-                </div>
-              </div>
-            </li>
-            <li class="timeline-item timeline-item-transparent">
-              <span class="timeline-point timeline-point-success"></span>
-              <div class="timeline-event">
-                <div class="timeline-header mb-3">
-                  <h6 class="mb-0">Client Meeting</h6>
-                  <small class="text-muted">45 min ago</small>
-                </div>
-                <p class="mb-2">Project meeting with john @10:15am</p>
-                <div class="d-flex justify-content-between flex-wrap gap-2">
-                  <div class="d-flex flex-wrap align-items-center">
-                    <div class="avatar avatar-sm me-2">
-                      <img
-                        src="../../assets/img/avatars/1.png"
-                        alt="Avatar"
-                        class="rounded-circle"
-                      />
-                    </div>
-                    <div>
-                      <p class="mb-0 small fw-medium">
-                        Lester McCarthy (Client)
-                      </p>
-                      <small>CEO of Pixinvent</small>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </li>
-            <li class="timeline-item timeline-item-transparent">
-              <span class="timeline-point timeline-point-info"></span>
-              <div class="timeline-event">
-                <div class="timeline-header mb-3">
-                  <h6 class="mb-0">Create a new project for client</h6>
-                  <small class="text-muted">2 Day Ago</small>
-                </div>
-                <p class="mb-2">6 team members in a project</p>
-                <ul class="list-group list-group-flush">
-                  <li
-                    class="list-group-item d-flex justify-content-between align-items-center flex-wrap p-0"
-                  >
-                    <div class="d-flex flex-wrap align-items-center">
-                      <ul
-                        class="list-unstyled users-list d-flex align-items-center avatar-group m-0 me-2"
-                      >
-                        <li
-                          data-bs-toggle="tooltip"
-                          data-popup="tooltip-custom"
-                          data-bs-placement="top"
-                          title="Vinnie Mostowy"
-                          class="avatar pull-up"
-                        >
-                          <img
-                            class="rounded-circle"
-                            src="../../assets/img/avatars/5.png"
-                            alt="Avatar"
-                          />
-                        </li>
-                        <li
-                          data-bs-toggle="tooltip"
-                          data-popup="tooltip-custom"
-                          data-bs-placement="top"
-                          title="Allen Rieske"
-                          class="avatar pull-up"
-                        >
-                          <img
-                            class="rounded-circle"
-                            src="../../assets/img/avatars/12.png"
-                            alt="Avatar"
-                          />
-                        </li>
-                        <li
-                          data-bs-toggle="tooltip"
-                          data-popup="tooltip-custom"
-                          data-bs-placement="top"
-                          title="Julee Rossignol"
-                          class="avatar pull-up"
-                        >
-                          <img
-                            class="rounded-circle"
-                            src="../../assets/img/avatars/6.png"
-                            alt="Avatar"
-                          />
-                        </li>
-                        <li class="avatar">
-                          <span
-                            class="avatar-initial rounded-circle pull-up text-heading"
-                            data-bs-toggle="tooltip"
-                            data-bs-placement="bottom"
-                            title="3 more"
-                            >+3</span
-                          >
-                        </li>
-                      </ul>
-                    </div>
-                  </li>
-                </ul>
-              </div>
-            </li>
-          </ul>
+        <div class="card-body pt-0">
+         <div class="row">
+          <!-- LEFT COLUMN -->
+          <div class="col-md-6">
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-account-circle-line ri-24px"></i>
+              <span class="fw-medium mx-2">Contact Name:</span>
+              <span>{{ employee.emergency_contact_name1 }}</span>
+            </div>
+
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-user-line ri-24px"></i>
+              <span class="fw-medium mx-2">Relation:</span>
+              <span>{{ employee.emergency_contact_relation1 }}</span>
+            </div>
+
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-phone-line ri-24px"></i>
+              <span class="fw-medium mx-2">Mobile No:</span>
+              <span>{{ employee.emergency_contact_mobile1 }}</span>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN -->
+          <div class="col-md-6">
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-account-circle-line ri-24px"></i>
+              <span class="fw-medium mx-2">Contact Name:</span>
+              <span>{{ employee.emergency_contact_name2 }}</span>
+            </div>
+
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-user-line ri-24px"></i>
+              <span class="fw-medium mx-2">Relation:</span>
+              <span>{{ employee.emergency_contact_relation2 }}</span>
+            </div>
+
+            <div class="mb-4 d-flex align-items-center">
+              <i class="ri-phone-line ri-24px"></i>
+              <span class="fw-medium mx-2">Mobile No:</span>
+              <span>{{ employee.emergency_contact_mobile2 }}</span>
+            </div>
+          </div>
+</div>
+
         </div>
       </div>
       <!--/ Activity Timeline -->
-      <div class="row">
-        <!-- Connections -->
-        <div class="col-lg-12 col-xl-6">
-          <div class="card card-action mb-6">
-            <div class="card-header align-items-center">
-              <h5 class="card-action-title mb-0">Connections</h5>
-              <div class="card-action-element">
-                <div class="dropdown">
-                  <button
-                    type="button"
-                    class="btn dropdown-toggle hide-arrow p-0"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
-                  >
-                    <i class="ri-more-2-line ri-22px text-muted"></i>
-                  </button>
-                  <ul class="dropdown-menu dropdown-menu-end">
-                    <li>
-                      <a class="dropdown-item" href="javascript:void(0);"
-                        >Share connections</a
-                      >
-                    </li>
-                    <li>
-                      <a class="dropdown-item" href="javascript:void(0);"
-                        >Suggest edits</a
-                      >
-                    </li>
-                    <li>
-                      <hr class="dropdown-divider" />
-                    </li>
-                    <li>
-                      <a class="dropdown-item" href="javascript:void(0);"
-                        >Report bug</a
-                      >
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <div class="card-body">
-              <ul class="list-unstyled mb-0">
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/avatars/2.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">Cecilia Payne</h6>
-                        <small>45 Connections</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <button class="btn btn-outline-primary btn-icon">
-                        <i class="ri-user-add-line ri-22px"></i>
-                      </button>
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/avatars/3.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">Curtis Fletcher</h6>
-                        <small>1.32k Connections</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <button class="btn btn-primary btn-icon">
-                        <i class="ri-user-3-line ri-22px"></i>
-                      </button>
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/avatars/8.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">Alice Stone</h6>
-                        <small>125 Connections</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <button class="btn btn-primary btn-icon">
-                        <i class="ri-user-3-line ri-22px"></i>
-                      </button>
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/avatars/7.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">Darrell Barnes</h6>
-                        <small>456 Connections</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <button class="btn btn-outline-primary btn-icon">
-                        <i class="ri-user-add-line ri-22px"></i>
-                      </button>
-                    </div>
-                  </div>
-                </li>
 
-                <li class="mb-5">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/avatars/12.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">Eugenia Moore</h6>
-                        <small>1.2k Connections</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <button class="btn btn-outline-primary btn-icon">
-                        <i class="ri-user-add-line ri-22px"></i>
-                      </button>
+      
+      
+    </div>
+  </div>
+  <!--/ User Profile Content -->
+        <div class="row" style="padding: 14px">
+          <!-- Projects table -->
+            <div class="card mb-4">
+              <h5 class="card-header">Previous Employment</h5>
+              <div class="card-datatable table-responsive pb-0">
+                <table class="table datatable-project table-border-bottom-0">
+                  <thead>
+                    <tr>
+                      <th>Employer Name</th>
+                      <th>From Date</th>
+                      <th>To Date</th>
+                      <th>Last CTC</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+              {% if previous_employments %} {% for pre_emp in previous_employments %}
+
+              <tr>                              
+                <td>{{pre_emp.employer_name}}</td>
+                <td>{{pre_emp.from_date}}</td>
+                <td>{{pre_emp.to_date}}</td>
+                <td>{{pre_emp.last_ctc}}</td>
+                {% comment %} <td>
+                  <div class="dropdown">
+                    <a class="text-muted" href="#" data-bs-toggle="dropdown">
+                      <i class="ti ti-dots-vertical"></i>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-end">
+                      <a
+                        class="dropdown-item view-branch-btn"
+                        href="#"
+                        data-id="{{ branch.id }}"
+                      >
+                        <i class="ti ti-eye me-2"></i> View
+                      </a>
+                      <a
+                        class="dropdown-item edit-branch-btn"
+                        href="#"
+                        data-id="{{ branch.id }}"
+                      >
+                        <i class="ti ti-edit me-2"></i> Edit
+                      </a>
+                      <a
+                        class="dropdown-item text-danger"
+                        href="javascript:void(0)"
+                        onclick="confirmDelete({{ branch.id }})"
+                      >
+                        <i class="ti ti-trash me-2"></i> Delete
+                      </a>
                     </div>
                   </div>
-                </li>
-                <li class="text-center">
-                  <a href="javascript:;">View all connections</a>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-        <!--/ Connections -->
-        <!-- Teams -->
-        <div class="col-lg-12 col-xl-6">
+                </td> {% endcomment %}
+              </tr>
+              {% endfor %} {% else %}
+              <tr>
+                <td colspan="9" class="text-center">No data available</td>
+              </tr>
+              {% endif %}
+            </tbody>
+                </table>
+              </div>
+            </div> 
+          <!--/ Projects table -->
+          <!-- Projects table -->
+            <div class="card mb-4">
+              <h5 class="card-header">Attachments</h5>
+              <div class="card-datatable table-responsive pb-0">
+                <table class="table datatable-project table-border-bottom-0">
+                  <thead>
+                    <tr>
+                      <th>File Name</th>
+                      <th>Uploaded At</th>
+                      {% comment %} <th>To Date</th>
+                      <th>Last CTC</th> {% endcomment %}
+                    </tr>
+                  </thead>
+                  <tbody>
+              {% if attachments %} {% for attachment in attachments %}
+
+              <tr>                              
+                {% comment %} <td>{{attachment.file}}</td> {% endcomment %}
+                <td>
+                  <a href="{% url 'download_attachment' attachment.pk %}">
+                    {{ attachment.file.name|cut:"uploads/"|default:attachment.file.name }}
+                  </a>
+                </td>
+                <td>{{attachment.uploaded_at}}</td>
+                {% comment %} <td>{{attachment.to_date}}</td> {% endcomment %}
+                {% comment %} <td>{{attachment.last_ctc}}</td> {% endcomment %}
+                {% comment %} <td>
+                  <div class="dropdown">
+                    <a class="text-muted" href="#" data-bs-toggle="dropdown">
+                      <i class="ti ti-dots-vertical"></i>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-end">
+                      <a
+                        class="dropdown-item view-branch-btn"
+                        href="#"
+                        data-id="{{ branch.id }}"
+                      >
+                        <i class="ti ti-eye me-2"></i> View
+                      </a>
+                      <a
+                        class="dropdown-item edit-branch-btn"
+                        href="#"
+                        data-id="{{ branch.id }}"
+                      >
+                        <i class="ti ti-edit me-2"></i> Edit
+                      </a>
+                      <a
+                        class="dropdown-item text-danger"
+                        href="javascript:void(0)"
+                        onclick="confirmDelete({{ branch.id }})"
+                      >
+                        <i class="ti ti-trash me-2"></i> Delete
+                      </a>
+                    </div>
+                  </div>
+                </td> {% endcomment %}
+              </tr>
+              {% endfor %} {% else %}
+              <tr>
+                <td colspan="9" class="text-center">No data available</td>
+              </tr>
+              {% endif %}
+            </tbody>
+                </table>
+              </div>
+            </div> 
+          <!--/ Projects table -->
+
+
+
+          
+        <!-- Connections -->
+        {% comment %} <div class="col-lg-12 col-xl-6">
           <div class="card card-action mb-6">
             <div class="card-header align-items-center">
               <h5 class="card-action-title mb-0">Teams</h5>
@@ -678,33 +700,178 @@
               </ul>
             </div>
           </div>
-        </div>
+        </div> {% endcomment %}
+        <!--/ Connections -->
+        <!-- Teams -->
+        {% comment %} <div class="col-lg-12 col-xl-6">
+          <div class="card card-action mb-6">
+            <div class="card-header align-items-center">
+              <h5 class="card-action-title mb-0">Teams</h5>
+              <div class="card-action-element">
+                <div class="dropdown">
+                  <button
+                    type="button"
+                    class="btn dropdown-toggle hide-arrow p-0"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                  >
+                    <i class="ri-more-2-line ri-24px text-muted"></i>
+                  </button>
+                  <ul class="dropdown-menu dropdown-menu-end">
+                    <li>
+                      <a class="dropdown-item" href="javascript:void(0);"
+                        >Share teams</a
+                      >
+                    </li>
+                    <li>
+                      <a class="dropdown-item" href="javascript:void(0);"
+                        >Suggest edits</a
+                      >
+                    </li>
+                    <li>
+                      <hr class="dropdown-divider" />
+                    </li>
+                    <li>
+                      <a class="dropdown-item" href="javascript:void(0);"
+                        >Report bug</a
+                      >
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+            <div class="card-body">
+              <ul class="list-unstyled mb-0">
+                <li class="mb-4">
+                  <div class="d-flex align-items-center">
+                    <div class="d-flex align-items-center">
+                      <div class="avatar me-2">
+                        <img
+                          src="../../assets/img/icons/brands/react-label.png"
+                          alt="Avatar"
+                          class="rounded-circle"
+                        />
+                      </div>
+                      <div class="me-2">
+                        <h6 class="mb-1">React Developers</h6>
+                        <small>72 Members</small>
+                      </div>
+                    </div>
+                    <div class="ms-auto">
+                      <a href="javascript:;"
+                        ><span class="badge bg-label-danger rounded-pill"
+                          >Developer</span
+                        ></a
+                      >
+                    </div>
+                  </div>
+                </li>
+                <li class="mb-4">
+                  <div class="d-flex align-items-center">
+                    <div class="d-flex align-items-center">
+                      <div class="avatar me-2">
+                        <img
+                          src="../../assets/img/icons/brands/support-label.png"
+                          alt="Avatar"
+                          class="rounded-circle"
+                        />
+                      </div>
+                      <div class="me-2">
+                        <h6 class="mb-1">Support Team</h6>
+                        <small>122 Members</small>
+                      </div>
+                    </div>
+                    <div class="ms-auto">
+                      <a href="javascript:;"
+                        ><span class="badge bg-label-primary rounded-pill"
+                          >Support</span
+                        ></a
+                      >
+                    </div>
+                  </div>
+                </li>
+                <li class="mb-4">
+                  <div class="d-flex align-items-center">
+                    <div class="d-flex align-items-center">
+                      <div class="avatar me-2">
+                        <img
+                          src="../../assets/img/icons/brands/figma-label.png"
+                          alt="Avatar"
+                          class="rounded-circle"
+                        />
+                      </div>
+                      <div class="me-2">
+                        <h6 class="mb-1">UI Designers</h6>
+                        <small>7 Members</small>
+                      </div>
+                    </div>
+                    <div class="ms-auto">
+                      <a href="javascript:;"
+                        ><span class="badge bg-label-info rounded-pill"
+                          >Designer</span
+                        ></a
+                      >
+                    </div>
+                  </div>
+                </li>
+                <li class="mb-4">
+                  <div class="d-flex align-items-center">
+                    <div class="d-flex align-items-center">
+                      <div class="avatar me-2">
+                        <img
+                          src="../../assets/img/icons/brands/vue-label.png"
+                          alt="Avatar"
+                          class="rounded-circle"
+                        />
+                      </div>
+                      <div class="me-2">
+                        <h6 class="mb-1">Vue.js Developers</h6>
+                        <small>289 Members</small>
+                      </div>
+                    </div>
+                    <div class="ms-auto">
+                      <a href="javascript:;"
+                        ><span class="badge bg-label-danger rounded-pill"
+                          >Developer</span
+                        ></a
+                      >
+                    </div>
+                  </div>
+                </li>
+                <li class="mb-5">
+                  <div class="d-flex align-items-center">
+                    <div class="d-flex align-items-center">
+                      <div class="avatar me-2">
+                        <img
+                          src="../../assets/img/icons/brands/twitter-label.png"
+                          alt="Avatar"
+                          class="rounded-circle"
+                        />
+                      </div>
+                      <div class="me-w">
+                        <h6 class="mb-1">Digital Marketing</h6>
+                        <small>24 Members</small>
+                      </div>
+                    </div>
+                    <div class="ms-auto">
+                      <a href="javascript:;"
+                        ><span class="badge bg-label-secondary rounded-pill"
+                          >Marketing</span
+                        ></a
+                      >
+                    </div>
+                  </div>
+                </li>
+                <li class="text-center">
+                  <a href="javascript:;">View all teams</a>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div> {% endcomment %}
         <!--/ Teams -->
       </div>
 
-      <!-- Projects table -->
-      <div class="card mb-4">
-        <h5 class="card-header">Project List</h5>
-        <div class="card-datatable table-responsive pb-0">
-          <table class="table datatable-project table-border-bottom-0">
-            <thead>
-              <tr>
-                <th></th>
-                <th></th>
-                <th>Project</th>
-                <th>leader</th>
-                <th>teams</th>
-                <th>Progress</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-          </table>
-        </div>
-      </div>
-      <!--/ Projects table -->
-    </div>
-  </div>
-  <!--/ User Profile Content -->
 </div>
 <!--/ Content -->
 {% endblock %}

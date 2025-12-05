@@ -194,13 +194,14 @@
 										</th> -->
                 <th>Short Name</th>
                 <th>Name</th>
+                <th>Phone</th>
+                <th>Email</th>
                 <th>Address</th>
+
                 <th>Tan No</th>
                 <th>Pan No</th>
                 <th>Employer PF</th>
-                <th>PTRC No</th>
-                <th>PTEC No</th>
-                <th>ESIC No</th>
+             
                 <th>Status</th>
                 <th>Action</th>
               </tr>
@@ -237,6 +238,8 @@
                 </td>
                 {% endcomment %}
                 <td>{{company.name}}</td>
+                <td>{{company.phone}}</td>
+                <td>{{company.email}}</td>
                 <td>
                   <div
                     class="d-flex align-items-center justify-content-between"
@@ -249,9 +252,7 @@
                 <td id="company_">{{company.tan_number}}</td>
                 <td>{{company.pan_number}}</td>
                 <td>{{company.employer_pf}}</td>
-                <td>{{company.ptrc_number}}</td>
-                <td>{{company.ptec_number}}</td>
-                <td>{{company.esic_number}}</td>
+            
                 <td>{{company.status}}</td>
                 <td>
                   <div class="dropdown">
@@ -386,6 +387,22 @@
                   >Company Name <span class="text-danger"> *</span></label
                 >
                 <input type="text" class="form-control" name="name" />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Phone Number <span class="text-danger"> *</span></label
+                >
+                <input type="number" class="form-control" name="phone" />
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label"
+                  >Email <span class="text-danger"> *</span></label
+                >
+                <input type="email" class="form-control" name="email" />
               </div>
             </div>
             <div class="col-md-12">
@@ -842,6 +859,14 @@
       <div class="col-md-6">
         <div class="text-muted small fw-semibold text-uppercase">Full Name</div>
         <div class="fw-bold fs-6">${data.name}</div>
+      </div>
+      <div class="col-md-6">
+        <div class="text-muted small fw-semibold text-uppercase">Phone Number</div>
+        <div class="fw-bold fs-6">${data.phone}</div>
+      </div>
+      <div class="col-md-6">
+        <div class="text-muted small fw-semibold text-uppercase">Email</div>
+        <div class="fw-bold fs-6">${data.email}</div>
       </div>
 
       <div class="col-md-6">

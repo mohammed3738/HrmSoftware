@@ -10,6 +10,7 @@ urlpatterns = [
     path('home',views.home,name="home"),
     path('create-employee',views.create_employee,name="create-employee"),
     path('employee/<int:pk>/', views.employee_detail, name='employee_detail'),
+    path('attachments/<int:pk>/download/', views.download_attachment, name='download_attachment'),
     # urls.py
     path("employee/<int:employee_id>/edit/", views.edit_employee, name="edit_employee"),
 
@@ -52,6 +53,7 @@ urlpatterns = [
     path("upload-attendance/", views.upload_attendance_excel, name="upload_attendance"),
     path("attendance/", views.attendance_list, name="attendance"),
     path("attendance/<int:employee_id>/", views.employee_attendance_detail, name="employee_attendance_detail"),
+    
     path("submit-correction-request/", views.submit_correction_request, name="submit_correction_request"),
     path("approve-correction/<int:request_id>/", views.approve_correction_request, name="approve_correction"),
     path("reject-correction/<int:request_id>/", views.reject_correction_request, name="reject_correction"),  

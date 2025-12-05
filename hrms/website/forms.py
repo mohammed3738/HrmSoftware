@@ -104,7 +104,25 @@ EmployeeAttachmentFormSet = inlineformset_factory(
     can_delete=True
 )
 
+AttachmentFormSet = inlineformset_factory(
+    Employee, EmployeeAttachment,
+    fields=['file'], extra=1, can_delete=True
+)
 
+
+# class PreviousEmploymentAttachmentForm(forms.ModelForm):
+#     class Meta:
+#         model = PreviousEmploymentAttachment
+#         fields = ['file', 'document_name']
+
+
+# PreviousEmploymentAttachmentFormSet = inlineformset_factory(
+#     PreviousEmployment,
+#     PreviousEmploymentAttachment,
+#     form=PreviousEmploymentAttachmentForm,
+#     extra=1,
+#     can_delete=True
+# )
 
 
 # class EmployeeEditForm(forms.ModelForm):

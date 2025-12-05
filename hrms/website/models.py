@@ -37,6 +37,16 @@ class Branch(models.Model):
         return f"{self.branch_name}"
     
 
+BLOOD_GROUP_CHOICES = [
+    ("A+", "A+"),
+    ("A-", "A-"),
+    ("B+", "B+"),
+    ("B-", "B-"),
+    ("AB+", "AB+"),
+    ("AB-", "AB-"),
+    ("O+", "O+"),
+    ("O-", "O-"),
+]
 
 
 class Employee(models.Model):
@@ -49,7 +59,7 @@ class Employee(models.Model):
     last_name = models.CharField(max_length=100, verbose_name="Last Name")
     father_name = models.CharField(max_length=100, verbose_name="Father's Name")
     gender = models.CharField(max_length=10, choices=[("Male", "Male"), ("Female", "Female")], verbose_name="Gender")
-    blood_group = models.CharField(max_length=3, verbose_name="Blood Group")
+    blood_group = models.CharField(max_length=3, verbose_name="Blood Group", choices=BLOOD_GROUP_CHOICES)
     date_of_birth = models.DateField(verbose_name="Date of Birth")
     place_of_birth = models.CharField(max_length=255, verbose_name="Place of Birth")
     personal_email = models.EmailField(verbose_name="Personal Email ID")
@@ -119,6 +129,19 @@ class PreviousEmployment(models.Model):
 
     def __str__(self):
         return f"{self.employer_name} ({self.employee})"
+
+
+class PreviousEmploymentAttachment(models.Model):
+    previous_employment = models.ForeignKey(
+        PreviousEmployment,
+        related_name="documents",
+        on_delete=models.CASCADE
+    )
+    file = models.FileField(upload_to="previous_employment_docs/")
+    document_name = models.CharField(max_length=255, blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.document_name or 'Document'} - {self.previous_employment.employer_name}"
 
 
 class EmployeeAttachment(models.Model):

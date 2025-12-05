@@ -643,60 +643,169 @@ def home(request):
 
 
 
+# working
+# def create_employee(request):
+#     if request.method == 'POST':
+#         form = EmployeeForm(request.POST, request.FILES)
+        
+#         if form.is_valid():
+#             employee = form.save(commit=False)
+
+#             # Assign branch if selected
+#             branch_id = request.POST.get("branch")
+#             if branch_id:
+#                 try:
+#                     employee.branch = Branch.objects.get(id=branch_id)
+#                 except Branch.DoesNotExist:
+#                     pass
+
+#             # Formset for previous employments
+#             prev_formset = PreviousEmploymentFormSet(request.POST, request.FILES, instance=employee)
+
+#             # ---- NEW: Prepare Attachment Formsets for each previous employment row ----
+#             attachment_sets = []  # store child formsets
+
+#             if prev_formset.is_valid():
+#                 # Save employee first, then previous rows
+#                 employee.save()
+#                 prev_instances = prev_formset.save(commit=False)
+
+#                 for index, prev_obj in enumerate(prev_instances):
+#                     prev_obj.employee = employee  # attach FK
+#                     prev_obj.save()
+
+#                     # Detect nested attachment forms by prefix
+#                     prefix = f"attach-{index}"
+
+#                     attach_formset = AttachmentFormSet(
+#                         request.POST,
+#                         request.FILES,
+#                         prefix=prefix,
+#                         instance=prev_obj
+#                     )
+
+#                     attachment_sets.append(attach_formset)
+
+#                 # Validate all nested attachment formsets
+#                 if all([fs.is_valid() for fs in attachment_sets]):
+#                     # Save attachments
+#                     for fs in attachment_sets:
+#                         fs.save()
+
+#                     messages.success(request, "Employee created successfully with nested attachments!")
+#                     return redirect('home')
+#                 else:
+#                     messages.error(request, "Error in nested attachments")
+#                     print("Attachment errors:", [fs.errors for fs in attachment_sets])
+
+#             else:
+#                 messages.error(request, "There were validation errors in previous employment.")
+#                 print("Previous Employment Errors:", prev_formset.errors)
+
+#         else:
+#             messages.error(request, "Employee form has errors.")
+#             print("Employee Form Errors:", form.errors)
+
+#         # If failing validation → rebuild formsets for re-render
+#         prev_formset = PreviousEmploymentFormSet(request.POST, request.FILES)
+
+#     else:
+#         # GET request → empty forms
+#         form = EmployeeForm()
+#         prev_formset = PreviousEmploymentFormSet(instance=Employee())
+
+#     # Context
+#     context = {
+#         'form': form,
+#         'formset': prev_formset,
+#         'employees': Employee.objects.all(),
+#         'branches': Branch.objects.all(),
+#         'employee_count': Employee.objects.filter(status="Active").count(),
+#         'employee_count_inactive': Employee.objects.filter(status="Left ").count(),
+#         'companies': Company.objects.all(),
+#     }
+
+#     return render(request, 'employee/create_employee2.html', context)
+
+
 
 def create_employee(request):
-    PREV_PREFIX = "previous_employments"
-    ATTACH_PREFIX = "attachments"
-
     if request.method == 'POST':
-
         form = EmployeeForm(request.POST, request.FILES)
 
-        formset = PreviousEmploymentFormSet(
-            request.POST, request.FILES,
-            prefix=PREV_PREFIX
-        )
+        # Main Attachments (already working guest attachments)
+        attachment_formset = AttachmentFormSet(request.POST, request.FILES)
 
-        attachment_formset = EmployeeAttachmentFormSet(
-            request.POST, request.FILES,
-            prefix=ATTACH_PREFIX
-        )
+        # Previous Employment records formset
+        formset = PreviousEmploymentFormSet(request.POST)
 
         if form.is_valid() and formset.is_valid() and attachment_formset.is_valid():
-            employee = form.save()
 
-            formset.instance = employee
+            # Create Employee instance
+            employee = form.save(commit=False)
+
+            # Assign selected branch
+            branch_id = request.POST.get('branch')
+            if branch_id:
+                employee.branch = Branch.objects.filter(id=branch_id).first()
+
+            employee.save()
+
+            # -------------------------------
+            # Save Previous Employment records
+            # -------------------------------
+            previous_records = formset.save(commit=False)
+
+            for idx, emp_record in enumerate(previous_records):
+                emp_record.employee = employee
+                emp_record.save()
+
+                prefix = f"attach-{idx}-"
+                file_keys = [k for k in request.FILES.keys() if k.startswith(prefix)]
+
+                for key in file_keys:
+                    index = key.split("-")[2]
+                    doc_name = request.POST.get(f"attach-{idx}-{index}-document_name", "")
+
+                    PreviousEmploymentAttachment.objects.create(
+                        previous_employment=emp_record,
+                        file=request.FILES[key],
+                        document_name=doc_name
+                    )
+
+            # Delete removed rows
+            for obj in formset.deleted_objects:
+                obj.delete()
+
+            # -------------------------------
+            # Save Main Attachments (not nested)
+            # -------------------------------
             attachment_formset.instance = employee
-
-            formset.save()
             attachment_formset.save()
 
             messages.success(request, "Employee created successfully!")
-            return redirect('create-employee')
+            return redirect('home')
 
         else:
-            print("FORM ERRORS:", form.errors)
-            print("PREV ERRORS:", formset.errors)
-            print("ATTACH ERRORS:", attachment_formset.errors)
+            messages.error(request, "Some fields are missing or invalid. Please check again.")
 
     else:
         form = EmployeeForm()
-        formset = PreviousEmploymentFormSet(prefix="previous_employments")
-        attachment_formset = EmployeeAttachmentFormSet(prefix="attachments")
+        formset = PreviousEmploymentFormSet(instance=Employee())
+        attachment_formset = AttachmentFormSet()
 
-    return render(request, 'employee/create_employee2.html', {
-        'form': form,
-        'formset': formset,
-        'attachment_formset': attachment_formset,
-        'employees': Employee.objects.all(),
-        'branches': Branch.objects.all(),
-        'companies': Company.objects.all()
-    })
+    context = {
+        "form": form,
+        "formset": formset,
+        "attachment_formset": attachment_formset,
+        "employees": Employee.objects.all(),
+        "branches": Branch.objects.all(),
+        "companies": Company.objects.all(),
+        "employee_count": Employee.objects.filter(status="Active").count(),
+        "employee_count_inactive": Employee.objects.filter(status="Left").count(),
+    }
 
-
-
-
-
+    return render(request, 'employee/create_employee2.html', context)
 
 
 
@@ -800,7 +909,7 @@ def create_offboarding(request):
         form = OffboardingForm()
         formset = AssetHandoverFormSet()
 
-    employees = Employee.objects.all()
+    employees = Employee.objects.filter(status='Active')
     offboarding = Offboarding.objects.all()
 
     return render(request, 'employee/offboarding2.html', {

@@ -146,7 +146,7 @@ class OffboardingForm(forms.ModelForm):
         model = Offboarding
         fields = [
             'employee', 'date_of_resignation', 'date_of_relieving',
-            'experience_certificate', 'relieving_letter', 'other_documents'
+            'experience_certificate', 'relieving_letter', 'other_documents','fnf_documents'
         ]
         widgets = {
             'employee': forms.Select(attrs={'class': 'form-control'}),
@@ -156,6 +156,7 @@ class OffboardingForm(forms.ModelForm):
             'experience_certificate': forms.ClearableFileInput(attrs={'class': 'form-control'}),
             'relieving_letter': forms.ClearableFileInput(attrs={'class': 'form-control'}),
             'other_documents': forms.ClearableFileInput(attrs={'class': 'form-control'}),
+            'fnf_documents': forms.ClearableFileInput(attrs={'class': 'form-control'}),
         }
 
 class AssetHandoverForm(forms.ModelForm):

@@ -151,6 +151,7 @@ class Offboarding(models.Model):
     experience_certificate = models.FileField(upload_to="offboarding/certificates/", verbose_name="Experience Certificate")
     relieving_letter = models.FileField(upload_to="offboarding/relieving_letters/", verbose_name="Relieving Letter")
     other_documents = models.FileField(upload_to="offboarding/other_documents/", blank=True, verbose_name="Other Documents")
+    fnf_documents = models.FileField(upload_to="offboarding/fnf/", blank=True, verbose_name="FNF Document")
 
     def __str__(self):
         return f"Offboarding for {self.employee}"

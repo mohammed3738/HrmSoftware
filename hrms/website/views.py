@@ -768,7 +768,8 @@ def create_offboarding(request):
     if request.method == 'POST':
         form = OffboardingForm(request.POST, request.FILES)
         formset = AssetHandoverFormSet(request.POST, request.FILES)
-
+        # print('formset',formset)
+        print('form',form)                                  
         # must bind formset to the parent only after parent is saved,
         # but to validate all at once we can pass prefix-less data and call is_valid() afterwards
         if form.is_valid():

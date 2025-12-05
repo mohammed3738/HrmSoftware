@@ -1033,15 +1033,13 @@
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 
-    /* -----------------------------
-       PREVIOUS EMPLOYMENT DUPLICATE
-    ------------------------------*/
-
+    /* -----------------------------------
+       1️⃣ PREVIOUS EMPLOYMENT MANAGEMENT
+    -----------------------------------*/
     const prevTableBody = document.querySelector("#prevEmploymentTable tbody");
     const prevTotalForms = document.getElementById("id_previous_employments-TOTAL_FORMS");
 
     document.getElementById("addPrevRow").addEventListener("click", function () {
-
         let newIndex = parseInt(prevTotalForms.value);
         let template = document.querySelector("#prev-empty-row").innerHTML.replace(/__prefix__/g, newIndex);
 
@@ -1049,15 +1047,12 @@ document.addEventListener("DOMContentLoaded", function () {
         temp.innerHTML = template;
 
         let newRow = temp.querySelector("tr");
-
-        // FIX: Add new Manage Documents button dynamically
         newRow.querySelector(".manage-documents").setAttribute("data-index", newIndex);
 
         prevTableBody.appendChild(newRow);
         prevTotalForms.value = newIndex + 1;
     });
 
-    // Delete previous employment row
     prevTableBody.addEventListener("click", function (event) {
         if (event.target.classList.contains("remove-prev-row")) {
             event.target.closest("tr").remove();
@@ -1066,15 +1061,12 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
 
-    /* -----------------------------
-       ATTACHMENT MODAL HANDLING
-    ------------------------------*/
-
+    /* -----------------------------------
+       2️⃣ NESTED ATTACHMENTS (Modal System)
+    -----------------------------------*/
     let currentIndex = null;
 
-    // Event delegation to handle dynamically added rows
     document.body.addEventListener("click", function(e) {
-
         if (e.target.classList.contains("manage-documents")) {
 
             currentIndex = e.target.dataset.index;
@@ -1083,7 +1075,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const container = document.getElementById("attachments_container");
             container.innerHTML = "";
 
-            // Load existing saved input rows
+            // Load stored inputs
             document.querySelectorAll(`[data-row="${currentIndex}"]`).forEach(item => {
                 container.appendChild(item.cloneNode(true));
             });
@@ -1092,39 +1084,33 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    // Add new attachment row inside modal
     document.getElementById("add_attachment_btn").addEventListener("click", () => {
         document.getElementById("attachments_container")
             .insertAdjacentHTML("beforeend", document.getElementById("attachment-empty-template").innerHTML);
     });
 
-    // Remove attachment row
     document.addEventListener("click", e => {
-        if (e.target.classList.contains("remove-attachment")) {
+        if (e.target.classList.contains("nested-remove-attachment")) {
             e.target.closest(".attachment-row").remove();
         }
     });
 
-    // Save attachment rows back to the form before modal close
     document.getElementById("save_attachments_btn").addEventListener("click", () => {
 
         const container = document.getElementById("attachments_container");
         const rows = container.querySelectorAll(".attachment-row");
 
-        // Remove previously saved rows for same entry
         document.querySelectorAll(`[data-row="${currentIndex}"]`).forEach(x => x.remove());
 
         const storage = document.getElementById("hidden-nested-files");
 
         rows.forEach((row, index) => {
-
             const fileInput = row.querySelector(".attachment-file");
             const nameValue = row.querySelector(".attachment-name").value;
 
             let block = document.createElement("div");
             block.dataset.row = currentIndex;
 
-            // Rename input so backend detects it
             fileInput.name = `attach-${currentIndex}-${index}-file`;
             block.appendChild(fileInput);
 
@@ -1134,16 +1120,39 @@ document.addEventListener("DOMContentLoaded", function () {
             hidden.value = nameValue;
 
             block.appendChild(hidden);
-
             storage.appendChild(block);
         });
 
         bootstrap.Modal.getInstance(document.getElementById("attachments_modal")).hide();
     });
 
-}); 
-</script>
 
+    /* -----------------------------------
+       3️⃣ MAIN EMPLOYEE ATTACHMENTS
+    -----------------------------------*/
+    const attachTableBody = document.querySelector("#attachmentTable tbody");
+    const attachTotalForms = document.getElementById("id_attachments-TOTAL_FORMS");
+
+    document.getElementById("addAttachmentRow").addEventListener("click", function () {
+        let index = parseInt(attachTotalForms.value);
+        let newRowHtml = document.querySelector("#attach-empty-row").innerHTML.replace(/__prefix__/g, index);
+
+        let temp = document.createElement("tbody");
+        temp.innerHTML = newRowHtml;
+
+        attachTableBody.appendChild(temp.querySelector("tr"));
+        attachTotalForms.value = index + 1;
+    });
+
+    attachTableBody.addEventListener("click", function (event) {
+        if (event.target.classList.contains("main-remove-row")) {
+            event.target.closest("tr").remove();
+            attachTotalForms.value = Math.max(0, parseInt(attachTotalForms.value) - 1);
+        }
+    });
+
+});
+</script>
 
 <script>
   function confirmEmployeeDelete(employeeId) {

@@ -93,7 +93,7 @@ class EmployeeAttachmentForm(forms.ModelForm):
 
     class Meta:
         model = EmployeeAttachment
-        fields = ['file']
+        fields = ['id','file']
 
 
 EmployeeAttachmentFormSet = inlineformset_factory(

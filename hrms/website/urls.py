@@ -10,6 +10,7 @@ urlpatterns = [
     path('home',views.home,name="home"),
     path('create-employee',views.create_employee,name="create-employee"),
     path('employee/<int:pk>/', views.employee_detail, name='employee_detail'),
+    path('attachments/<int:pk>/download/', views.download_attachment, name='download_attachment'),
     # urls.py
     path("employee/<int:employee_id>/edit/", views.edit_employee, name="edit_employee"),
 

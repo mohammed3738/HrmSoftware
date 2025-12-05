@@ -17,6 +17,8 @@ status = {
 class Company(models.Model):
     short_name = models.CharField(max_length=10, unique=True, verbose_name="Short Name")  # ZC, UI, etc.
     name = models.CharField(max_length=100, verbose_name="Company Name")  # Full company name
+    phone = models.CharField(max_length=15, verbose_name="Phone Number")  # Contact phone number
+    email = models.EmailField(verbose_name="Email")  # Contact email
     address = models.TextField(verbose_name="Company Address")  # Full address
     tan_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="TAN Number")  # TAN No
     pan_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="PAN Number")  # PAN No
@@ -149,6 +151,7 @@ class Offboarding(models.Model):
     experience_certificate = models.FileField(upload_to="offboarding/certificates/", verbose_name="Experience Certificate")
     relieving_letter = models.FileField(upload_to="offboarding/relieving_letters/", verbose_name="Relieving Letter")
     other_documents = models.FileField(upload_to="offboarding/other_documents/", blank=True, verbose_name="Other Documents")
+    fnf_documents = models.FileField(upload_to="offboarding/fnf/", blank=True, verbose_name="FNF Document")
 
     def __str__(self):
         return f"Offboarding for {self.employee}"

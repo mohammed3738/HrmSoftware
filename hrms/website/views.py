@@ -55,6 +55,8 @@ def company_details_api(request, pk):
     data = {
         "short_name": company.short_name,
         "name": company.name,
+        "phone": company.phone,
+        "email": company.email,
         "address": company.address,
         "tan_number": company.tan_number,
         "pan_number": company.pan_number,
@@ -846,7 +848,8 @@ def create_offboarding(request):
     if request.method == 'POST':
         form = OffboardingForm(request.POST, request.FILES)
         formset = AssetHandoverFormSet(request.POST, request.FILES)
-
+        # print('formset',formset)
+        print('form',form)                                  
         # must bind formset to the parent only after parent is saved,
         # but to validate all at once we can pass prefix-less data and call is_valid() afterwards
         if form.is_valid():
@@ -991,6 +994,8 @@ def create_company(request):
     if request.method == "POST":
         short_name = request.POST.get("short_name")
         name = request.POST.get("name")
+        phone = request.POST.get("phone")
+        email = request.POST.get("email")
         address = request.POST.get("address")
         tan_number = request.POST.get("tan_number")
         pan_number = request.POST.get("pan_number")
@@ -1007,6 +1012,8 @@ def create_company(request):
         company = Company.objects.create(
             short_name=short_name,
             name=name,
+            phone=phone,
+            email=email,
             address=address,
             tan_number=tan_number,
             pan_number=pan_number,

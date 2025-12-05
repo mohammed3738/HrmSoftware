@@ -140,8 +140,21 @@
                           <td>{{ req.new_out_time }}</td>
                           <td>{{ req.reason }}</td>
                           <td>
-                            <button class='btn btn-primary' onclick="approveRequest({{ req.id }})">Approve</button>
-                            <button class='btn btn-danger' onclick="rejectRequest({{ req.id }})">Reject</button>
+                                            <button class="btn btn-info"
+                            onclick="openApprovalModal(
+                                '{{ req.attendance.employee.employee_code }}',
+                                '{{ req.attendance.employee.first_name }}',
+                                '{{ req.attendance.date }}',
+                                '{{ req.attendance.in_time }}',
+                                '{{ req.attendance.out_time }}',
+                                '{{ req.new_in_time }}',
+                                '{{ req.new_out_time }}',
+                                `{{ req.reason }}`,
+                                {{ req.id }}
+                            )">
+                            View
+                        </button>
+                             
                           </td>
                         </tr>
                       {% endfor %}
@@ -154,6 +167,114 @@
                   </table>
                 </div>
               </div>
+
+
+
+              <!-- //////////////modal for attendance approval ///////////// -->
+               <!-- Attendance Request Modal -->
+
+<div class="modal fade" id="approvalModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content rounded-4 shadow-lg border-0">
+
+      <!-- Header -->
+      <div class="modal-header d-flex align-items-center justify-content-between px-4 py-3 border-0" style="background:#4c6ef5; color:white;">
+        <h4 class="modal-title fw-bold text-white">
+          <i class="ri-time-line"></i> Attendance Correction Review
+        </h4>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <!-- Body -->
+      <div class="modal-body p-4">
+
+        <!-- Employee Info -->
+        <div class="mb-3 pb-2 border-bottom">
+          <h6 class="text-primary fw-bold mb-3"><i class="ri-user-line"></i> Employee Details</h6>
+            <!-- <h6 class="text-primary fw-bold mb-3"><i class="ri-time-line"></i> Time Comparison</h6> -->
+          <div class="row g-3">
+            <div class="col-md-6">
+              <div class="small text-muted">Employee ID</div>
+              <div id="m_emp_id" class="fw-semibold fs-6"></div>
+            </div>
+            <div class="col-md-6">
+              <div class="small text-muted">Employee Name</div>
+              <div id="m_emp_name" class="fw-semibold fs-6"></div>
+            </div>
+            <div class="col-md-6 mt-3">
+              <div class="small text-muted">Date</div>
+              <div id="m_date" class="fw-semibold fs-6"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Time Comparison Section -->
+        <div class="mb-3 pb-2 border-bottom">
+          <h6 class="text-primary fw-bold mb-3"><i class="ri-time-line"></i> Time Comparison</h6>
+
+          <div class="row g-3 text-center">
+
+            <div class="col-md-6">
+  <div class="rounded-3 p-3" style="background: linear-gradient(135deg, #ffe5e5, #ffefef); border:1px solid #ffb3b3;">
+    <div class="text-danger fw-bold">Old In Time</div>
+    <div id="m_old_in" class="fs-5 mt-1"></div>
+  </div>
+</div>
+
+<div class="col-md-6">
+  <div class="rounded-3 p-3" style="background: linear-gradient(135deg, #ffe5e5, #ffefef); border:1px solid #ffb3b3;">
+    <div class="text-danger fw-bold">Old Out Time</div>
+    <div id="m_old_out" class="fs-5 mt-1"></div>
+  </div>
+</div>
+
+
+            <div class="col-md-6">
+              <div class="border rounded-3 p-3 mt-3 bg-success bg-opacity-10">
+                <div class="text-success fw-bold">New In Time</div>
+                <div id="m_new_in" class="fs-5 mt-1"></div>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <div class="border rounded-3 p-3 mt-3 bg-success bg-opacity-10">
+                <div class="text-success fw-bold">New Out Time</div>
+                <div id="m_new_out" class="fs-5 mt-1"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Reason -->
+        <div class="mb-2">
+          <h6 class="text-primary fw-bold mb-2"><i class="ri-file-text-line"></i> Reason Provided</h6>
+          <div id="m_reason" class="p-3 border rounded-3  fs-6" style="white-space:pre-line; min-height:60px; 
+background:#f7faff; border:1px solid #c9e6ff; color:#004085;"></div>
+        </div>
+
+      </div>
+
+      <!-- Buttons Footer -->
+      <div class="modal-footer justify-content-between border-0 px-4 pb-4">
+
+        <button class="btn btn-success px-4 rounded-pill shadow-sm" style="font-size:16px;" id="approveBtn">
+          <i class="ri-check-line"></i> Approve
+        </button>
+
+        <button class="btn btn-danger px-4 rounded-pill shadow-sm" style="font-size:16px;" id="rejectBtn">
+          <i class="ri-close-line"></i> Reject
+        </button>
+
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+
+
             </div>
 
             <div class="container-xxl flex-grow-1 container-p-y">
@@ -4218,6 +4339,8 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
+
+
 <script>
   // ✅ Approve Comp-Off Request
   function approveCompOff(compoffId) {
@@ -4303,6 +4426,24 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 </script>
 
+<script>
+function openApprovalModal(empId, name, date, oldIn, oldOut, newIn, newOut, reason, id) {
+
+    document.getElementById("m_emp_id").innerText = empId;
+    document.getElementById("m_emp_name").innerText = name;
+    document.getElementById("m_date").innerText = date;
+    document.getElementById("m_old_in").innerText = oldIn;
+    document.getElementById("m_old_out").innerText = oldOut;
+    document.getElementById("m_new_in").innerText = newIn;
+    document.getElementById("m_new_out").innerText = newOut;
+    document.getElementById("m_reason").innerText = reason;
+
+    document.getElementById("approveBtn").setAttribute("onclick",`approveRequest(${id})`);
+    document.getElementById("rejectBtn").setAttribute("onclick",`rejectRequest(${id})`);
+
+    new bootstrap.Modal(document.getElementById('approvalModal')).show();
+}
+</script>
 
 
 <script>
@@ -4314,7 +4455,9 @@ function getCSRFToken() {
 
 // 🚀 Approve Correction Request
 function approveRequest(requestId) {
-
+  document.getElementById('approvalModal').classList.remove('show');
+    document.getElementById('approvalModal').style.display = 'none';
+    document.querySelector('.modal-backdrop')?.remove();
     Swal.fire({
         title: 'Approve Request?',
         text: "Are you sure you want to approve this attendance correction request?",
@@ -4355,9 +4498,11 @@ function approveRequest(requestId) {
     });
 }
 
-// 🚫 Reject Correction Request
+//  Reject Correction Request
 function rejectRequest(requestId) {
-
+ document.getElementById('approvalModal').classList.remove('show');
+    document.getElementById('approvalModal').style.display = 'none';
+    document.querySelector('.modal-backdrop')?.remove();
     Swal.fire({
         title: 'Reject Request',
         input: 'textarea',

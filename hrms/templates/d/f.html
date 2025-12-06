@@ -280,7 +280,7 @@ background:#f7faff; border:1px solid #c9e6ff; color:#004085;"></div>
             <div class="container-xxl flex-grow-1 container-p-y">
               <!-- Basic Bootstrap Table -->
               <div class="card">
-                <h5 class="card-header">Comoff Requests</h5>
+                <h5 class="card-header">Compoff Requests</h5>
                 <div class="table-responsive text-nowrap">
                   <table class="table">
                     <thead>
@@ -304,12 +304,23 @@ background:#f7faff; border:1px solid #c9e6ff; color:#004085;"></div>
 												<td><h6 class="fw-medium"><a href="project-details.html">{{compoff.to_date}}</a></h6></td>
 												<td><h6 class="fw-medium"><a href="project-details.html">{{compoff.reason}}</a></h6></td>
                         <td>
-                          <button class="btn btn-success btn-sm" onclick="approveCompOff({{ compoff.id }})">
+                            <button class="btn btn-info btn-sm" 
+          onclick="openCompOffModalView(
+            '{{ compoff.employee.employee_code }}',
+            '{{ compoff.employee.first_name }}',
+            '{{ compoff.from_date }}',
+            '{{ compoff.to_date }}',
+            `{{ compoff.reason }}`,
+            {{ compoff.id }}
+          )">
+    View
+  </button>
+                          <!-- <button class="btn btn-success btn-sm" onclick="approveCompOff({{ compoff.id }})">
                             <i class="ri-check-line"></i> Approve
                           </button>
                           <button class="btn btn-danger btn-sm" onclick="rejectCompOff({{ compoff.id }})">
                             <i class="ri-close-line"></i> Reject
-                          </button>
+                          </button> -->
                         </td>
 											</tr>                      
                       {% endfor %}
@@ -323,6 +334,82 @@ background:#f7faff; border:1px solid #c9e6ff; color:#004085;"></div>
                 </div>
               </div>
             </div>
+
+            <!-- ///modal for compoff request view //// -->
+<!-- ================= Comp-Off Request Modal ================= -->
+<div class="modal fade" id="compOffModalView" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content rounded-4 shadow-lg border-0">
+
+      <!-- Header -->
+      <div class="modal-header bg-primary text-white d-flex align-items-center justify-content-between px-4 py-3 rounded-top shadow-sm"
+           >
+        <h5 class="modal-title fw-bold d-flex align-items-center gap-2 m-0 text-white ">
+          <i class="ri-calendar-todo-fill fs-4 "></i> Comp-Off Request Review
+        </h5>
+        <button type="button" class="btn-close btn-close-white shadow-sm" data-bs-dismiss="modal"></button>
+      </div>
+
+      <!-- Body -->
+      <div class="modal-body p-4">
+
+        <h6 class="text-secondary fw-bold mb-3"><i class="ri-user-line"></i> Employee Details</h6>
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <small class="text-muted">Employee ID</small>
+            <div id="c_emp_id" class="fw-semibold fs-6    py-1 bg-white"></div>
+          </div>
+          <div class="col-md-6">
+            <small class="text-muted">Employee Name</small>
+            <div id="c_emp_name" class="fw-semibold fs-6    py-1 bg-white"></div>
+          </div>
+        </div>
+
+        <hr>
+
+        <h6 class="text-primary fw-bold mb-3"><i class="ri-time-line"></i> CompOff Details</h6>
+        <div class="row mb-3 text-center">
+          <div class="col-md-6">
+            <div class="rounded-3 p-3" style="background:#fff4ec; border:1px solid #ffd8b5;">
+              <div class="text-dark fw-bold">From Date</div>
+              <div id="c_from_date" class="fs-5 mt-1"></div>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="rounded-3 p-3" style="background:#eafcf3; border:1px solid #b6f1d1;">
+              <div class="text-dark fw-bold">To Date</div>
+              <div id="c_to_date" class="fs-5 mt-1"></div>
+            </div>
+          </div>
+        </div>
+
+        <hr>
+
+        <h6 class="text-primary fw-bold mb-2"><i class="ri-file-text-line"></i> Reason Provided</h6>
+        <div id="c_reason" class="p-3 rounded-3 fs-6"
+             style="white-space:pre-line; min-height:60px; background:#f7faff; border:1px solid #c9e6ff; color:#003f6b;">
+        </div>
+
+      </div>
+
+      <!-- Footer -->
+      <div class="modal-footer justify-content-between border-0 px-4 pb-4">
+        <button class="btn btn-success px-4 rounded-pill shadow-sm" id="c_approveBtn">
+          <i class="ri-check-line"></i> Approve
+        </button>
+        <button class="btn btn-danger px-4 rounded-pill shadow-sm" id="c_rejectBtn">
+          <i class="ri-close-line"></i> Reject
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<!-- 
+            ///modal for compoff request view //// -->
               <!--/ Basic Bootstrap Table -->
 
               <!-- <hr class="my-12" /> -->
@@ -4339,11 +4426,30 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
+<script>
+function openCompOffModalView(id, name, fromDate, toDate, reason, compId) {
+
+    document.getElementById("c_emp_id").innerText = id;
+    document.getElementById("c_emp_name").innerText = name;
+    document.getElementById("c_from_date").innerText = fromDate;
+    document.getElementById("c_to_date").innerText = toDate;
+    document.getElementById("c_reason").innerText = reason;
+
+    document.getElementById("c_approveBtn").setAttribute("onclick",`approveCompOff(${compId})`);
+    document.getElementById("c_rejectBtn").setAttribute("onclick",`rejectCompOff(${compId})`);
+
+    new bootstrap.Modal(document.getElementById('compOffModalView')).show();
+}
+</script>
 
 
 <script>
   // ✅ Approve Comp-Off Request
   function approveCompOff(compoffId) {
+    let modalEl = document.getElementById('compOffModalView');
+  let modalInstance = bootstrap.Modal.getInstance(modalEl);
+  modalInstance.hide();
+  document.querySelector('.modal-backdrop')?.remove();
     Swal.fire({
       title: 'Approve Comp-Off?',
       text: "Are you sure you want to approve this request?",
@@ -4381,6 +4487,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // ✅ Reject Comp-Off Request
   function rejectCompOff(compoffId) {
+    let modalEl = document.getElementById('compOffModalView');
+  let modalInstance = bootstrap.Modal.getInstance(modalEl);
+  modalInstance.hide();
+  document.querySelector('.modal-backdrop')?.remove();
     Swal.fire({
       title: 'Reject Comp-Off',
       input: 'textarea',

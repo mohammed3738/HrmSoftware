@@ -1,0 +1,99 @@
+{# templates/attendance/comp_off_request_table.html - TABLE ONLY #}
+
+<style>
+    /* Modal-like tooltip styling */
+    .modal-tooltip .tooltip-inner {
+    /* gradient similar to your modal header */
+    background: linear-gradient(135deg, #6b6bff 0%, #6366ff 50%, #5f7bff 100%) !important;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 0.45rem 0.65rem;
+    border-radius: 0.6rem;
+    box-shadow: 0 6px 22px rgba(99, 80, 255, 0.18);
+    max-width: 260px;          /* keep tooltip narrow */
+    white-space: normal;       /* allow wrapping */
+    text-align: center;
+    line-height: 1.2;
+    font-size: 0.9rem;
+    }
+
+    /* Hide the small built-in arrow to avoid border-color limitations */
+    .modal-tooltip .tooltip-arrow {
+    color: #0d6efd;
+    }  
+
+
+    /* Optional: tweak placement spacing so the tooltip isn't touching the element */
+    .tooltip.modal-tooltip.bs-tooltip-top .tooltip-inner { margin-bottom: 8px; }
+    .tooltip.modal-tooltip.bs-tooltip-bottom .tooltip-inner { margin-top: 8px; }
+
+    /* Small device tweak: make it full width-ish */
+    @media (max-width: 480px) {
+    .modal-tooltip .tooltip-inner {
+        max-width: 86vw;
+        font-size: 0.95rem;
+    }
+  }
+</style> 
+
+<!-- EMPLOYEE INFO HEADER -->
+<div class="mb-3">
+  <div class="d-flex justify-content-between align-items-center">
+    <div>
+      <div class="fw-bold text-primary">
+        {{ employee.employee_code }} – {{ employee.first_name }} {{ employee.last_name }}
+      </div>
+      <div class="text-muted small">
+        Showing Comp-Off's requests for {{ month_name }} {{ year }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TABLE -->
+<div class="table-responsive">
+  <table class="table table-sm table-bordered align-middle mb-0">
+    <thead class="table-light">
+      <tr>
+        <th>Sr No.</th>
+        <th>From</th>
+        <th>To</th>
+        <th>Days</th>
+        <th>Reason</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if comp_off_entries %}
+        {% for e in comp_off_entries %}
+          <tr>
+            <td>{{ forloop.counter }}</td>
+            <td>{{ e.from_date }}</td>
+            <td>{{ e.to_date|default:"—" }}</td>
+            <td>{{ e.days_count }}</td>
+            <td>{{ e.reason|default:"—" }}</td>
+            <td>
+              {% if e.status == "Rejected" %}
+                <span
+                class="badge bg-danger rejection-badge"
+                role="button"
+                data-bs-toggle="tooltip"
+                data-bs-custom-class="modal-tooltip"
+                data-bs-html="true"
+                data-bs-trigger="hover focus click"
+                title="{{ e.rejection_reason|default:'No reason provided'|escape }}"
+                >Rejected</span>
+              {% elif e.status == 'Approved' %}
+              <span class="badge bg-success">Approved</span>
+              {% else %}
+              <span class="badge bg-warning px-3">{{ e.status }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="6" class="text-center">No comp-off requests for this month.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>

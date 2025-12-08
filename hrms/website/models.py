@@ -338,8 +338,6 @@ class Attendance(models.Model):
     #     super().save(*args, **kwargs)
 
 
-
-
 class AttendanceCorrectionRequest(models.Model):
     attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE, related_name="correction_requests")
     # requested_by = models.ForeignKey(Employee, on_delete=models.CASCADE)  # The employee requesting the change
@@ -396,8 +394,6 @@ class LeaveSettings(models.Model):
         return f"Carry Forward: {'Yes' if self.carry_forward else 'No'} | Reset Month: {self.reset_month or 'N/A'}"
 
 
-
-
 class CompOff(models.Model):
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
     from_date = models.DateField()  # Start date of comp-off
@@ -416,6 +412,7 @@ class CompOffRequest(models.Model):
     from_date = models.DateField(null=True, blank=True)
     to_date = models.DateField(null=True, blank=True)
     reason = models.TextField(null=True, blank=True)
+    rejection_reason = models.TextField(null=True, blank=True)
     count = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     status = models.CharField(
         max_length=20,

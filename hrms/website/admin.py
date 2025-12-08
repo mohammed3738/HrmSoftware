@@ -69,10 +69,16 @@ class EmployeeSalarayAdmin(admin.ModelAdmin):
     list_filter = ('employee', 'gross_ctc_pm')  # Filter by status or employee
 
 admin.site.register(SalaryMaster, EmployeeSalarayAdmin)
-admin.site.register(CompOffRequest)
+# admin.site.register(CompOffRequest)
 admin.site.register(CompOff)
 # admin.site.register(PayrollSettings)
 admin.site.register(SalaryIncrement)
+
+class CompOffRequestAdmin(admin.ModelAdmin):
+    list_display = ('employee','from_date', 'to_date', 'count', 'status', 'rejection_reason')
+    search_fields = ('emp__first_name', 'emp__last_name', 'status')
+    list_filter = ('status',)
+admin.site.register(CompOffRequest, CompOffRequestAdmin)
 
 
 

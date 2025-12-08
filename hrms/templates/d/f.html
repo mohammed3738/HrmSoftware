@@ -408,6 +408,182 @@ background:#f7faff; border:1px solid #c9e6ff; color:#004085;"></div>
 </div>
 
 
+
+<!-- /////////////////////leave application///// -->
+     <!-- ///////////////////// Leave Application /////////////////// -->
+<!-- ///////////////////// Leave Applications ///////////////////// -->
+<div class="container-xxl flex-grow-1 container-p-y">
+    <div class="card">
+        <h5 class="card-header">Leave Requests</h5>
+
+        <div class="table-responsive text-nowrap">
+            <table class="table">
+                <thead>
+                <tr>
+                    <th>Employee</th>
+                    <th>Leave Type</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Total Days</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+                </thead>
+
+                <tbody class="table-border-bottom-0">
+
+                {% if leave_requests %}
+                {% for l in leave_requests %}
+                <tr>
+                    <td>{{ l.employee.first_name }}</td>
+                    <td>{{ l.get_leave_type_display }}</td>
+                    <td>{{ l.start_date }}</td>
+                    <td>{{ l.end_date }}</td>
+                    <td>{{ l.total_days }}</td>
+
+                    <td>
+                        <span class="badge 
+                            {% if l.status == 'Approved' %} bg-success
+                            {% elif l.status == 'Rejected' %} bg-danger
+                            {% else %} bg-warning text-dark {% endif %}">
+                            {{ l.status }}
+                        </span>
+                    </td>
+
+                    <td>
+<button class="btn btn-info btn-sm"
+    onclick="openLeaveModal(
+        '{{ l.employee.first_name }}',
+        '{{ l.get_leave_type_display }}',
+        '{{ l.start_date }}',
+        '{{ l.end_date }}',
+        '{{ l.total_days }}',
+        `{{ l.reason }}`,
+        '{{ l.status }}',
+        {{ l.id }}
+    )">
+    View
+</button>
+</td>
+
+                </tr>
+
+                {% endfor %}
+                {% else %}
+                <tr><td colspan="7" class="text-center text-muted">No Leave Requests Found</td></tr>
+                {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+
+
+
+
+
+
+<!-- ================= Leave Request Modal ================= -->
+<div class="modal fade" id="leaveViewModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content rounded-4 shadow-lg border-0">
+
+      <!-- Header -->
+      <div class="modal-header bg-primary text-white d-flex align-items-center justify-content-between px-4 py-3 rounded-top shadow-sm">
+        <h5 class="modal-title fw-bold d-flex align-items-center gap-2 m-0 text-white">
+          <i class="ri-calendar-event-fill fs-4"></i> Leave Request Review
+        </h5>
+        <button type="button" class="btn-close btn-close-white shadow-sm" data-bs-dismiss="modal"></button>
+      </div>
+
+      <!-- Body -->
+      <div class="modal-body p-4">
+
+        <h6 class="text-secondary fw-bold mb-3"><i class="ri-user-line"></i> Employee Details</h6>
+        <div class="row mb-3">
+          <div class="col-md-6">
+            <small class="text-muted">Employee Name</small>
+            <div id="lv_emp_name" class="fw-semibold fs-6 bg-white p-2 rounded"></div>
+          </div>
+          <div class="col-md-6">
+            <small class="text-muted">Leave Type</small>
+            <div id="lv_type" class="fw-semibold fs-6 bg-white p-2 rounded"></div>
+          </div>
+        </div>
+
+        <hr>
+
+        <h6 class="text-primary fw-bold mb-3"><i class="ri-time-line"></i> Leave Duration</h6>
+        <div class="row mb-3 text-center">
+          <div class="col-md-4">
+            <div class="rounded-3 p-3" style="background:#fff4ec;border:1px solid #ffd8b5;">
+              <div class="text-dark fw-bold">Start Date</div>
+              <div id="lv_start" class="fs-5"></div>
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <div class="rounded-3 p-3" style="background:#eafcf3;border:1px solid #b6f1d1;">
+              <div class="text-dark fw-bold">End Date</div>
+              <div id="lv_end" class="fs-5"></div>
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <div class="rounded-3 p-3" style="background:#e6e9ff;border:1px solid #b8bfff;">
+              <div class="text-dark fw-bold">Total Days</div>
+              <div id="lv_days" class="fs-5"></div>
+            </div>
+          </div>
+        </div>
+
+        <hr>
+
+        <h6 class="text-primary fw-bold mb-2"><i class="ri-file-text-line"></i> Reason</h6>
+        <div id="lv_reason" class="p-3 rounded-3 fs-6"
+             style="white-space:pre-line; min-height:60px;background:#f7faff;border:1px solid #c9e6ff;color:#003f6b;"></div>
+
+        <!-- <hr> -->
+
+        <!-- <h6 class="text-primary fw-bold mb-2"><i class="ri-information-line"></i> Status</h6>
+        <span id="lv_status" class="badge p-2 fs-6"></span>sdfsdf -->
+
+      </div>
+
+      <!-- Footer (Approve / Reject) -->
+      <div class="modal-footer justify-content-between border-0 px-4 pb-4">
+        <button class="btn btn-success px-4 rounded-pill shadow-sm" id="lv_approveBtn">
+          <i class="ri-check-line"></i> Approve
+        </button>
+
+        <button class="btn btn-danger px-4 rounded-pill shadow-sm" id="lv_rejectBtn">
+          <i class="ri-close-line"></i> Reject
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 <!-- 
             ///modal for compoff request view //// -->
               <!--/ Basic Bootstrap Table -->
@@ -4662,6 +4838,95 @@ function rejectRequest(requestId) {
     });
 }
 </script>
+
+<!-- ////////////////////////leave js/////////////////////// -->
+<script>
+function openLeaveModal(name, type, start, end, days, reason, status, id) {
+
+    document.getElementById("lv_emp_name").innerText = name;
+    document.getElementById("lv_type").innerText = type;
+    document.getElementById("lv_start").innerText = start;
+    document.getElementById("lv_end").innerText = end;
+    document.getElementById("lv_days").innerText = days;
+    document.getElementById("lv_reason").innerText = reason;
+
+    // buttons action set
+    document.getElementById("lv_approveBtn").setAttribute("onclick", `approveLeave(${id})`);
+    document.getElementById("lv_rejectBtn").setAttribute("onclick", `rejectLeave(${id})`);
+
+    new bootstrap.Modal(document.getElementById('leaveViewModal')).show();
+}
+
+
+
+// ============= APPROVE LEAVE =============
+function approveLeave(id){
+      let modal = bootstrap.Modal.getInstance(document.getElementById("leaveViewModal"));
+    modal.hide();
+    document.querySelector(".modal-backdrop")?.remove();
+    Swal.fire({
+        title: "Approve Leave?",
+        text: "Do you want to approve this leave?",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonText: "Approve",
+        confirmButtonColor:"#28a745"
+    }).then((result)=>{
+        if(result.isConfirmed){
+
+            fetch(`/approve-leave/${id}/`,{
+                method:"POST",
+                headers:{ "X-CSRFToken":"{{csrf_token}}" }
+            })
+            .then(res=>res.json())
+            .then(data=>{
+                Swal.fire("Approved!",data.message,"success");
+                setTimeout(()=>location.reload(),1300)
+            });
+        }
+    })
+}
+
+
+
+// ============= REJECT LEAVE =============
+function rejectLeave(id){
+   let modal = bootstrap.Modal.getInstance(document.getElementById("leaveViewModal"));
+    modal.hide();
+    document.querySelector(".modal-backdrop")?.remove();
+    Swal.fire({
+        title:"Reject Leave",
+        input:"textarea",
+        inputLabel:"Rejection reason",
+        inputPlaceholder:"Enter reason...",
+        showCancelButton:true,
+        confirmButtonText:"Reject",
+        confirmButtonColor:"#d33",
+        preConfirm:(value)=>{
+            if(!value) return Swal.showValidationMessage("Reason required!");
+            return value;
+        }
+    }).then((result)=>{
+        if(result.isConfirmed){
+            fetch(`/reject-leave/${id}/`,{
+                method:"POST",
+                headers:{
+                    "Content-Type":"application/json",
+                    "X-CSRFToken":"{{csrf_token}}"
+                },
+                body:JSON.stringify({reason:result.value})
+            })
+            .then(res=>res.json())
+            .then(data=>{
+                Swal.fire("Rejected!",data.message,"info");
+                setTimeout(()=>location.reload(),1300)
+            })
+        }
+    })
+}
+</script>
+
+
 
 
 {% endblock %}

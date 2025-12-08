@@ -345,3 +345,18 @@ class LeaveCreditPolicyForm(forms.ModelForm):
             "credit_mid": forms.NumberInput(attrs={"class": "form-control"}),
             "credit_high": forms.NumberInput(attrs={"class": "form-control"}),
         }
+
+
+
+class LeaveApplicationForm(forms.ModelForm):
+    class Meta:
+        model = LeaveApplication
+        fields = ['employee', 'leave_type', 'start_date', 'end_date', 'reason']
+        widgets = {
+            'employee': forms.Select(attrs={'class':'form-control'}),
+            'leave_type': forms.Select(attrs={'class':'form-control'}),
+            'start_date': forms.DateInput(attrs={'type':'date','class':'form-control'}),
+            'end_date': forms.DateInput(attrs={'type':'date','class':'form-control'}),
+            'reason': forms.Textarea(attrs={'class':'form-control','rows':3}),
+        }
+

@@ -1,0 +1,129 @@
+{% extends 'base2.html' %}
+{% block body %}
+
+<div class="container-fluid p-4">
+
+    <h3 class="fw-bold mb-1">Leave Applications</h3>
+    <small class="text-muted">Dashboard / Leave Management / Leave Apply</small>
+
+    <!-- 🔹 Top Filter + Button -->
+   <!-- 🔹 Top Filter + Button -->
+<div class="d-flex justify-content-between align-items-center mt-4 gap-2 flex-wrap">
+
+    <form method="get" class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
+
+    
+
+        <select name="status" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
+            <option value="">Status</option>
+            <option value="Pending"  {% if status == 'Pending' %} selected {% endif %}>Pending</option>
+            <option value="Approved" {% if status == 'Approved' %} selected {% endif %}>Approved</option>
+            <option value="Rejected" {% if status == 'Rejected' %} selected {% endif %}>Rejected</option>
+        </select>
+
+    </form>
+
+    <button class="btn btn-primary btn-sm align-self-start d-flex align-items-center gap-1"
+            data-bs-toggle="modal" data-bs-target="#applyLeaveModal">
+        <i class="ri-add-line"></i> Apply Leave
+    </button>
+
+</div>
+
+
+
+    <!-- 🔹 Table Card -->
+    <div class="card shadow-sm mt-3">
+        <div class="card-body p-0">
+
+            <table class="table table-hover text-center align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Employee</th>
+                        <th>Leave Type</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Total Days</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for l in leaves %}
+                    <tr>
+                        <td class="fw-semibold">{{ l.employee.first_name }}</td>
+                        <td>{{ l.get_leave_type_display }}</td>
+                        <td>{{ l.start_date }}</td>
+                        <td>{{ l.end_date }}</td>
+                        <td>{{ l.total_days }}</td>
+
+                        <td>
+                            <span class="badge 
+                                  {% if l.status == 'Approved' %} bg-success
+                                  {% elif l.status == 'Rejected' %} bg-danger
+                                  {% else %} bg-warning text-dark {% endif %}">
+                                {{ l.status }}
+                            </span>
+                        </td>
+
+                        <td>
+                            <button class="btn btn-outline-primary btn-sm"
+                                    onclick="openLeaveView('{{l.id}}')">
+                                View
+                            </button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="text-muted p-3">No leave records found</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 🔹 Pagination -->
+        <div class="card-footer d-flex justify-content-end p-2">
+            <nav>
+                <ul class="pagination pagination-sm mb-0">
+                    {% if leaves.has_previous %}
+                    <li class="page-item"><a class="page-link" href="?page={{ leaves.previous_page_number }}">Prev</a></li>
+                    {% endif %}
+
+                    <li class="page-item active"><span class="page-link">{{ leaves.number }}</span></li>
+
+                    {% if leaves.has_next %}
+                    <li class="page-item"><a class="page-link" href="?page={{ leaves.next_page_number }}">Next</a></li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+
+<!-- ==================== APPLY LEAVE MODAL ==================== -->
+<div class="modal fade" id="applyLeaveModal" tabindex="-1">
+    <div class="modal-dialog modal-md modal-dialog-centered">
+        <div class="modal-content">
+
+            <div class="modal-header bg-primary  d-flex align-items-center justify-content-between px-4 py-3 border-0">
+                <h5 class="modal-title text-white"><i class="ri-calendar-2-line text-white"></i> Apply for Leave</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <form method="POST">
+                <div class="modal-body">
+                    {% csrf_token %}
+                    {{ form.as_p }}
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn btn-success w-100">Submit</button>
+                </div>
+            </form>
+
+        </div>
+    </div>
+</div>
+
+{% endblock %}

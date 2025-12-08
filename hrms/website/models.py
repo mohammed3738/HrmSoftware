@@ -387,6 +387,37 @@ class AttendanceCorrectionRequest(models.Model):
 
 
 
+# atul
+
+class LeaveApplication(models.Model):
+    LEAVE_TYPES = [
+        ("CL", "Casual Leave"),
+        ("SL", "Sick Leave"),
+        ("PL", "Paid Leave"),
+        ("COFF", "Comp-Off Adjustment"),
+        ("LWP", "Leave Without Pay"),
+    ]
+
+    employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
+    leave_type = models.CharField(max_length=10, choices=LEAVE_TYPES)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    reason = models.TextField()
+    status = models.CharField(max_length=10, default="Pending")   # Pending / Approved / Rejected
+    applied_on = models.DateTimeField(auto_now_add=True)
+
+    def total_days(self):
+        return (self.end_date - self.start_date).days + 1
+
+    def __str__(self):
+        return f"{self.employee} - {self.leave_type} ({self.start_date} to {self.end_date})"
+
+
+
+# atul
+
+
+
 class LeaveRecord(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="leave_records")
     opening_balance = models.FloatField(default=0.0)

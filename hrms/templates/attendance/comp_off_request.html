@@ -1,0 +1,608 @@
+{% extends 'base2.html' %} {% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="card shadow p-3 rounded-4">
+    <h4 class="m-6  fw-bold">Comp Off's Requests List</h4>
+
+    <form method="GET" class="row g-2 align-items-end mb-3">
+      <div class="col-md-3">
+          <label class="form-label fw-semibold">Year</label>
+          <select name="year" class="form-select form-select-sm">
+              <option value="" {% if not selected_year %}selected{% endif %}>All Years</option>
+              {% for year in years %}
+              <option value="{{ year.year }}" {% if selected_year == year.year|stringformat:"s" %}selected{% endif %}>
+                  {{ year.year }}
+              </option>
+              {% endfor %}
+          </select>
+      </div>
+
+      <div class="col-md-3">
+          <label class="form-label fw-semibold">Month</label>
+          {% comment %} <select name="month" class="form-select form-select-sm">
+              <option value="" {% if not selected_month %}selected{% endif %}>All Months</option>
+              {% for month in months %}
+              <option value="{{ month.month }}" {% if selected_month == month.month|stringformat:"s" %}selected{% endif %}>
+                  {{ month|date:"F" }}
+              </option>
+              {% endfor %}
+          </select> {% endcomment %}
+          <select name="month" class="form-select form-select-sm">
+              <option value="" {% if not selected_month %}selected{% endif %}>All Months</option>
+              {% for m in months %}
+              <option value="{{ m.month }}" {% if selected_month == m.month|stringformat:"s" %}selected{% endif %}>
+                  {{ m.name }}
+              </option>
+              {% endfor %}
+          </select>
+      </div>
+
+      <div class="col-md-3 d-flex gap-2">
+          <button type="submit" class="btn btn-sm btn-primary mt-auto">
+              <i class="ri-filter-2-line me-1"></i> Filter
+          </button>
+          {% comment %} <a href="{% url 'employee_attendance_detail' employee.id %}" class="btn btn-sm btn-outline-secondary mt-auto">
+              <i class="ri-refresh-line me-1"></i> Reset
+          </a> {% endcomment %}
+      </div>
+    </form>
+
+
+
+    
+<!-- 🔹 Attendance Table -->
+    {% if comp_off_requests %}
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Employee Code</th>
+            <th>Employee Name</th>
+            <th>Month</th>
+            <th>Comp Off's</th>
+            <th>Action</th>
+            {% comment %} <th>Reason</th>
+            <th>Rejection Reason</th> {% endcomment %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for comp_off in comp_off_requests %}
+          <tr>
+            <td>{{ comp_off.emp_code }}</td>
+            <td>
+              {{ comp_off.emp_name }} 
+            </td>
+            <td>{{ comp_off.month }} {{ comp_off.year}}</td>
+            <td>{{ comp_off.count }}</td>
+            <td>
+                  <div class="dropdown">
+                    <a class="text-muted" href="#" data-bs-toggle="dropdown">
+                      <i class="ti ti-dots-vertical"></i>
+                    </a>
+                    <div class="dropdown-menu dropdown-menu-end">
+                      <a
+                        class="dropdown-item view-compoff-btn"
+                        href="#"
+                        data-emp-id="{{ comp_off.emp_id }}"
+                        data-year="{{ comp_off.year }}"
+                        data-month="{{ comp_off.month_number }}"
+                      >
+                        <i class="ti ti-eye me-2"></i> View
+                      </a>
+                      <a
+                        class="dropdown-item edit-attendance-btn"
+                        href="#"
+                        data-id="{{ branch.id }}"
+                      >
+                        <i class="ti ti-edit me-2"></i> Edit
+                      </a>
+                      <a
+                        class="dropdown-item text-danger"
+                        href="javascript:void(0)"
+                        onclick="confirmDelete({{ branch.id }})"
+                      >
+                        <i class="ti ti-trash me-2"></i> Delete
+                      </a>
+                    </div>
+                  </div>
+                </td>
+            {% comment %} <td>{{ attendance.reason|default:"-" }}</td>
+            <td>
+              {% if attendance.status == 'Rejected' %}
+                {{ attendance.rejection_reason|default:"-" }}
+              {% else %}
+                --
+              {% endif %}
+            </td> {% endcomment %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="alert alert-warning text-center mt-4">
+      No Comp Off's found for <b>{{ selected_date }}</b>.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- //modal view open -->
+<div class="modal fade" id="compoffViewModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content shadow-lg border-0 rounded-4">
+      <!-- Header -->
+      <div class="modal-header bg-primary bg-gradient text-white rounded-top-4 py-3">
+        <h5 class="modal-title fw-bold d-flex align-items-center text-white m-4" >
+          Comp Off Request Details
+        </h5>
+        <button
+          type="button"
+          class="btn-close btn-close-white text-white"
+          data-bs-dismiss="modal"
+        ></button>
+      </div>
+
+      <!-- Body -->
+      <div class="modal-body p-4" id="compoffViewBody">
+        <!-- Loader (default content before JS loads data) -->
+        <div class="text-center text-muted py-4">
+          <div class="spinner-border text-primary" role="status">          
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="modal-footer bg-white rounded-bottom-4">
+        <button class="btn btn-secondary px-4" data-bs-dismiss="modal">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Correction Request Modal -->
+<div id="correctionModal" class="custom-modal">
+  <div class="custom-modal-content animate">
+    <span class="close-btn" onclick="closeCorrectionModal()">&times;</span>
+    <h3 class="modal-title">🕒 Attendance Correction Request</h3>
+
+    <form id="correctionForm" class="modal-form">
+      {% csrf_token %}
+      <input type="hidden" id="attendance_id" name="attendance_id" />
+
+      <div class="form-group">
+        <label>Date</label>
+        <input type="text" id="date" name="date" readonly />
+      </div>
+
+      <div class="form-group">
+        <label>Current In Time</label>
+        <input type="text" id="old_in_time" name="old_in_time" readonly />
+      </div>
+
+      <div class="form-group">
+        <label>Current Out Time</label>
+        <input type="text" id="old_out_time" name="old_out_time" readonly />
+      </div>
+
+      <div class="form-group">
+        <label>New In Time</label>
+        <input type="time" id="new_in_time" name="new_in_time" required />
+      </div>
+
+      <div class="form-group">
+        <label>New Out Time</label>
+        <input type="time" id="new_out_time" name="new_out_time" required />
+      </div>
+
+      <div class="form-group">
+        <label>Reason</label>
+        <textarea
+          id="reason"
+          name="reason"
+          placeholder="Enter reason..."
+          required
+        ></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          onclick="closeCorrectionModal()"
+        >
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary">Submit Request</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+  /* Modern modal styling */
+  .custom-modal {
+    display: none;
+    position: fixed;
+    z-index: 1050;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    background-color: rgba(0, 0, 0, 0.5);
+    animation: fadeIn 0.3s ease-in-out;
+  }
+
+  .custom-modal-content {
+    background: #fff;
+    margin: 5% auto;
+    padding: 25px 30px;
+    border-radius: 12px;
+    width: 450px;
+    max-width: 90%;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+    position: relative;
+  }
+
+  .modal-title {
+    text-align: center;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: #0d6efd;
+  }
+
+  .close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 22px;
+    cursor: pointer;
+    color: #555;
+    transition: color 0.2s;
+  }
+  .close-btn:hover {
+    color: #000;
+  }
+
+  .modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+  }
+
+  .form-group label {
+    font-weight: 500;
+    margin-bottom: 5px;
+  }
+
+  .form-group input,
+  .form-group textarea {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+  }
+
+  textarea {
+    resize: none;
+    height: 80px;
+  }
+
+  .form-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+  }
+
+  .btn {
+    padding: 8px 15px;
+    border-radius: 6px;
+    font-size: 14px;
+    border: none;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+
+  .btn-primary {
+    background: #0d6efd;
+    color: white;
+  }
+  .btn-primary:hover {
+    background: #0b5ed7;
+  }
+
+  .btn-secondary {
+    background: #6c757d;
+    color: white;
+  }
+  .btn-secondary:hover {
+    background: #5a6268;
+  }
+
+  /* Animation */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideIn {
+    from {
+      transform: translateY(-20px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  .animate {
+    animation: slideIn 0.4s ease;
+  }
+</style>
+
+<!-- View Attendance Correction Request Script -->
+ {% comment %} <script>
+document.addEventListener("DOMContentLoaded", function () {
+  const toText = (v) => (v === null || v === undefined || v === "" ? "—" : v);
+
+  document.querySelectorAll(".view-compoff-btn").forEach((btn) => {
+    btn.addEventListener("click", function (e) {
+      e.preventDefault();
+      const id = this.dataset.id;
+      const modalBody = document.getElementById("compoffViewBody");
+
+      // show loader
+      modalBody.innerHTML = `
+        <div class="text-center text-muted py-4">
+          <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+          <div class="mt-2">Loading details...</div>
+        </div>
+      `;
+
+      // open modal
+      const modalEl = document.getElementById("compoffViewModal");
+      const modal = new bootstrap.Modal(modalEl);
+      modal.show();
+
+      fetch(`/comp-off/${empId}/month/?`)
+        .then((res) => {
+          if (!res.ok) throw new Error("Network response was not ok");
+          return res.json();
+        })
+        .then((data) => {
+          const emp = data.employee || {};
+          const empCode = toText(emp.employee_code ?? emp.emp_code ?? emp.code);
+          const empNameRaw = `${toText(emp.first_name)} ${toText(emp.last_name)}`.trim();
+          const displayName = empNameRaw === "— —" ? "—" : empNameRaw;
+
+          // --- ATTENDANCE DATE: try a few keys, then format ---
+          const rawDate =
+            (data.attendance && (data.attendance.date || data.attendance.attendance_date)) ??
+            data.attendance_date ??
+            data.date ??
+            null;
+
+          let formattedDate = "—";
+          if (rawDate) {
+            // defend against non-ISO strings
+            const d = new Date(rawDate);
+            if (!Number.isNaN(d.getTime())) {
+              // format as locale date (you can change options or force yyyy-mm-dd)
+              formattedDate = d.toLocaleDateString();
+            } else {
+              // fallback to raw string truncated
+              formattedDate = rawDate.toString().split("T")[0];
+            }
+          }
+
+          const status = (data.status || "").toString().trim();
+          const statusLower = status.toLowerCase();
+
+          // Approved block (shown only when status is approved)
+          const approvedBlock = `
+            <div class="card border-0 shadow-sm mb-4">
+              <div class="card-body d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-primary small fw-semibold text-uppercase">Status:</span>
+                    <span class="fw-bold fs-6 text-success">Approved</span>
+                </div>
+                <div>
+                  <!-- any extra controls for approved state can go here -->
+                </div>
+              </div>
+            </div>
+          `;
+
+          // Rejected block (shown only when status is rejected)
+          const rejectedBlock = `
+            <div class="card border-0 shadow-sm mb-4">
+              <div class="card-body">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-primary small fw-semibold text-uppercase">Status:</span>
+                    <span class="fw-bold fs-6 text-danger">Rejected</span>
+                </div>
+
+                <hr />
+
+                <div class="text-muted small fw-semibold text-uppercase">Rejection Reason</div>
+                <div class="fw-bold fs-6">${toText(data.rejection_reason)}</div>
+                
+              </div>
+            </div>
+          `;
+
+          // Neutral status block (for other statuses)
+          const neutralStatusBlock = `
+            <div class="card border-0 shadow-sm mb-4">
+              <div class="card-body">
+                <div class="d-flex align-items-center gap-2">
+                    <span class="text-primary small fw-semibold text-uppercase">Status:</span>
+                    <span class="fw-bold fs-6 text-warning">${toText(data.status)}</span>
+                </div>
+
+              </div>
+            </div>
+          `;
+
+          // pick which block to show
+          let statusSectionHtml = "";
+          if (statusLower === "approved") {
+            statusSectionHtml = approvedBlock;
+          } else if (statusLower === "rejected") {
+            statusSectionHtml = rejectedBlock;
+          } else {
+            statusSectionHtml = neutralStatusBlock;
+          }
+
+          // main modal content
+          modalBody.innerHTML = `
+            <div class="container-fluid">
+
+              <!-- Basic Info -->
+              <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-bottom fw-bold text-primary d-flex align-items-center py-2 px-3">
+                  <div class="d-flex justify-content-between align-items-center w-100">
+                    <div class="me-2">
+                      ${toText(empCode)} - ${toText(displayName)}
+                    </div>
+                    <div class="text-end text-primary small fw-semibold">
+                      ${toText(formattedDate)}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card-body row g-3 py-3">
+                  <div class="col-md-6">
+                    <div class="text-muted small fw-semibold text-uppercase">Old In Time</div>
+                    <div class="fw-bold fs-6">${toText(data.old_in_time)}</div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="text-muted small fw-semibold text-uppercase">New In Time</div>
+                    <div class="fw-bold fs-6">${toText(data.new_in_time)}</div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="text-muted small fw-semibold text-uppercase">Old Out Time</div>
+                    <div class="fw-bold fs-6">${toText(data.old_out_time)}</div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="text-muted small fw-semibold text-uppercase">New Out Time</div>
+                    <div class="fw-bold fs-6">${toText(data.new_out_time)}</div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="text-muted small fw-semibold text-uppercase">Request Raised At</div>
+                    <div class="fw-bold fs-6">${toText(data.created_at)}</div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="text-muted small fw-semibold text-uppercase">Reason</div>
+                    <div class="fw-bold fs-6">${toText(data.reason)}</div>
+                  </div>
+                </div>
+              </div>
+
+              ${statusSectionHtml}
+
+            </div>
+          `;
+        })
+        .catch((err) => {
+          console.error("Failed to fetch attendance details:", err);
+          modalBody.innerHTML = `
+            <div class="alert alert-danger">Failed to load data. Please try again.</div>
+          `;
+        });
+    });
+  });
+});
+</script> {% endcomment %}
+
+
+<!-- /View Branch Script -->
+
+<script>
+function initTooltips(container = document) {
+// Remove any old Tooltip instances inside container to avoid duplicates
+// (Bootstrap 5 stores instances; safe to clean up)
+const els = container.querySelectorAll('[data-bs-toggle="tooltip"]');
+els.forEach((el) => {
+  // Destroy existing instance if present
+  const existing = bootstrap.Tooltip.getInstance(el);
+  if (existing) existing.dispose();
+
+  // Create new Tooltip instance
+  new bootstrap.Tooltip(el, {
+    // Optional: customize delay or offset here
+    // delay: { "show": 100, "hide": 50 },
+    // offset: [0, 6],
+  });
+});
+}
+document.addEventListener('DOMContentLoaded', function () {
+  initTooltips(document);
+});
+document.addEventListener('click', async function (e) {
+  const btn = e.target.closest('.view-compoff-btn');
+  if (!btn) return;
+
+  e.preventDefault();
+
+  const empId = btn.dataset.empId;
+  const year = btn.dataset.year;
+  const month = btn.dataset.month;
+
+  // Build URL (change path if your URL differs)
+  const params = new URLSearchParams();
+  if (year) params.set('year', year);
+  if (month) params.set('month', month);
+  const url = `/comp-off/${empId}/month/?` + params.toString();
+
+  // modal elements
+  const modalEl = document.getElementById('compoffViewModal');
+  const modalBody = document.getElementById('compoffViewBody');
+
+  // show modal immediately with loader
+  const modal = new bootstrap.Modal(modalEl, { backdrop: 'static' });
+  modalBody.innerHTML = `
+    <div class="text-center text-muted py-4">
+      <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+      <div class="mt-2">Loading details...</div>
+    </div>
+  `;
+  modal.show();
+
+  try {
+    const res = await fetch(url, { method: 'GET', credentials: 'same-origin' });
+    if (!res.ok) {
+      // try to read error message text if server returned something
+      let errText = '';
+      try { errText = await res.text(); } catch (_) { errText = ''; }
+      throw new Error(`Server returned ${res.status}${errText ? ': ' + errText.slice(0,200) : ''}`);
+    }
+
+    // server returns HTML fragment (the modal body)
+    const html = await res.text();
+    modalBody.innerHTML = html;
+
+    initTooltips(modalBody);
+
+  } catch (err) {
+    console.error('Failed to load comp-off details:', err);
+    modalBody.innerHTML = `
+      <div class="alert alert-danger">Failed to load data. Please try again later.</div>
+      <div class="text-muted small mt-2">Error: ${String(err).replace(/</g, '&lt;').slice(0,300)}</div>
+    `;
+  }
+});
+</script> 
+
+
+
+
+{% endblock %}

@@ -113,5 +113,12 @@ urlpatterns = [
     path("leave-credit-policy/update/", views.update_leave_credit_policy, name="update_leave_credit_policy"),
     path("recalculate-leaves/", views.recalculate_leave_balances, name="recalculate_leave_balances"),
 
+    path('attendance-correction-requests/', views.attendance_correction_requests_list, name='attendance_correction_requests_list'),
+    path("branch/<int:pk>/details/", views.branch_details_api, name="branch_details_api"),
+    path("attendance-correction/<int:pk>/details/", views.attendance_correction_detail, name="attendance_correction_detail"),
+
+    path('comp-off-requests/', views.comp_off_requests_list, name='comp_off_requests_list'),
+    path("comp-off/<int:pk>/month/", views.comp_off_requests, name="comp_off_requests"),
+
 ]
 

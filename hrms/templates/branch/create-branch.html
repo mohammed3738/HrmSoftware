@@ -632,6 +632,7 @@
 
 <!-- /Main Wrapper -->
 
+<!-- Edit Branch Script -->
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll(".edit-branch-btn").forEach((btn) => {
@@ -660,7 +661,9 @@
     });
   });
 </script>
+<!-- /Edit Branch Script -->
 
+<!-- View Branch Script -->
 <script>
   document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll(".view-branch-btn").forEach((btn) => {
@@ -690,51 +693,53 @@
           .then((data) => {
             // STEP 4: Replace content AFTER data arrives
             modalBody.innerHTML = `
-<div class="container-fluid">
+  <div class="container-fluid">
 
-  <!-- Basic Info -->
-  <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-white border-bottom fw-bold text-primary d-flex align-items-center py-2 px-3">
-    <i class="ti ti-building fs-6 me-2"></i> Basic Information
-</div>
+    <!-- Basic Info -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white border-bottom fw-bold text-primary d-flex align-items-center py-2 px-3">
+        <i class="ti ti-building fs-6 me-2"></i> Basic Information
+        </div>
 
 
-    <div class="card-body row g-3  py-3 ">
+        <div class="card-body row g-3  py-3 ">
 
-      <div class="col-md-6">
-        <div class="text-muted small fw-semibold text-uppercase">Branch Name</div>
-        <div class="fw-bold fs-6">${data.branch_name}</div>
+          <div class="col-md-6">
+            <div class="text-muted small fw-semibold text-uppercase">Branch Name</div>
+            <div class="fw-bold fs-6">${data.branch_name}</div>
+          </div>
+
+        </div>
+    </div>
+
+
+    <!-- Address -->
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom fw-bold text-primary d-flex align-items-center py-2 px-3">
+        <i class="ti ti-map-pin fs-5 me-2"></i> Address
       </div>
 
+      <div class="card-body py-3">
+        <div class="text-muted small fw-semibold text-uppercase">Address</div>
+          <div class="fw-bold fs-6">${data.branch_address}</div>
+      </div>
     </div>
-  </div>
+  </div> 
+    `;
+    })
 
-
-  <!-- Address -->
-  <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-white border-bottom fw-bold text-primary d-flex align-items-center py-2 px-3">
-      <i class="ti ti-map-pin fs-5 me-2"></i> Address
-    </div>
-
-    <div class="card-body py-3">
-      <div class="text-muted small fw-semibold text-uppercase">Address</div>
-      <div class="fw-bold fs-6">${data.branch_address}</div>
-    </div>
-  </div>
-</div> 
-`;
-          })
-
-          .catch(() => {
-            modalBody.innerHTML = `
-                        <div class="alert alert-danger">Failed to load data.</div>
-                    `;
-          });
+            .catch(() => {
+              modalBody.innerHTML = `
+                          <div class="alert alert-danger">Failed to load data.</div>
+                      `;
+            });
+        });
       });
     });
-  });
 </script>
+<!-- /View Branch Script -->
 
+<!-- Delete Branch Script -->
 <script>
 function confirmDelete(branchId) {
     Swal.fire({
@@ -756,4 +761,5 @@ function confirmDelete(branchId) {
     });
 }
 </script>
+<!-- /Delete Branch Script -->
 {% endblock %}

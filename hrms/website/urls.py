@@ -105,8 +105,20 @@ urlpatterns = [
     path('settings/save/leave/', views.save_leave_settings, name='save-leave-settings'),
 
     path("leave-credit-policy/", views.leave_credit_policy_view, name="leave_credit_policy"),
+    path("leave-apply/", views.leave_apply_view, name="leave_apply"),
+    path("approve-leave/<int:leave_id>/", views.approve_leave, name="approve_leave"),
+    path("reject-leave/<int:leave_id>/", views.reject_leave, name="reject_leave"),
+
+
     path("leave-credit-policy/update/", views.update_leave_credit_policy, name="update_leave_credit_policy"),
     path("recalculate-leaves/", views.recalculate_leave_balances, name="recalculate_leave_balances"),
+
+    path('attendance-correction-requests/', views.attendance_correction_requests_list, name='attendance_correction_requests_list'),
+    path("branch/<int:pk>/details/", views.branch_details_api, name="branch_details_api"),
+    path("attendance-correction/<int:pk>/details/", views.attendance_correction_detail, name="attendance_correction_detail"),
+
+    path('comp-off-requests/', views.comp_off_requests_list, name='comp_off_requests_list'),
+    path("comp-off/<int:pk>/month/", views.comp_off_requests, name="comp_off_requests"),
 
 ]
 

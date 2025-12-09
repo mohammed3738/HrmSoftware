@@ -9,7 +9,6 @@ from django.contrib import messages
 import pandas as pd
 from django.http import HttpResponse
 from .models import *  # Import your Employee model
-
 from datetime import datetime,timedelta
 from django.http import JsonResponse
 from django.utils.timezone import now
@@ -82,8 +81,6 @@ def delete_employee(request, employee_id):
     return redirect("create-employee")
 
 
-
-
 # atul
 
 # Vaishu
@@ -104,18 +101,6 @@ def branch_details_api(request, pk):
 
     return JsonResponse(data)
 # Vaishu
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def parse_time(time_value):
@@ -238,12 +223,6 @@ def upload_attendance_excel(request):
     return JsonResponse({"success": False, "message": "No file uploaded!"}, status=400)
 
 
-
-
-
-
-
-
 def attendance_list(request):
     """View attendance by selected date (default: today)"""
     date_str = request.GET.get('date')
@@ -268,7 +247,6 @@ def attendance_list(request):
         "next_date": next_date,
     }
     return render(request, "attendance/today.html", context)
-
 
 
 def employee_attendance_detail(request, employee_id):
@@ -307,8 +285,6 @@ def employee_attendance_detail(request, employee_id):
     return render(request, "attendance/employee_attendance_detail.html", context)
 
 
-# attendance over rider
-
 def submit_correction_request(request):
     if request.method == "POST":
         attendance_id = request.POST.get("attendance_id")
@@ -330,7 +306,6 @@ def submit_correction_request(request):
         )
         
         return JsonResponse({"message": "Correction request submitted successfully!"})
-
 
 
 # approval
@@ -356,7 +331,6 @@ def approve_correction_request(request, request_id):
     return JsonResponse({"message": "Correction Approved!"})
 
 
-
 def reject_correction_request(request, request_id):
     correction_request = get_object_or_404(AttendanceCorrectionRequest, id=request_id)
 
@@ -378,9 +352,404 @@ def reject_correction_request(request, request_id):
     return JsonResponse({"error": "Invalid request"}, status=400)
 
 
+# --- Date / Time helpers (platform-safe) ---
+def _format_date(d):
+    """Return 'Dec. 5, 2025' or None."""
+    if not d:
+        return None
+    month_abbr = d.strftime("%b")  # e.g. "Dec"
+    return f"{month_abbr}. {d.day}, {d.year}"
+
+def _format_time(t):
+    """Return '9 a.m.' or '1:30 p.m.' or '—' for None."""
+    if not t:
+        return "—"
+    hour_24 = t.hour
+    minute = t.minute
+    period = "a.m." if hour_24 < 12 else "p.m."
+    hour_12 = hour_24 % 12
+    if hour_12 == 0:
+        hour_12 = 12
+    if minute == 0:
+        return f"{hour_12} {period}"
+    return f"{hour_12}:{minute:02d} {period}"
+
+def _format_date_iso(d):
+    """Return ISO string or None."""
+    return d.isoformat() if d else None
+
+def attendance_correction_requests_list(request):
+    from .models import AttendanceCorrectionRequest, Attendance
+
+    # Base queryset
+    base_qs = AttendanceCorrectionRequest.objects.select_related("attendance__employee")
+
+    # Dropdown values from Attendance table
+    years = Attendance.objects.dates("date", "year", order="DESC")
+
+    raw_months_all = Attendance.objects.dates("date", "month", order="DESC")
+
+    # --- Deduplicate months (2024-Nov & 2025-Nov appear only once) ---
+    seen_months = set()
+    months_all = []
+    for m in raw_months_all:
+        if m.month not in seen_months:
+            seen_months.add(m.month)
+            months_all.append(m)
+
+    # Read filters
+    selected_year = request.GET.get("year", "").strip()
+    selected_month = request.GET.get("month", "").strip()
+
+    # Start with all correction requests
+    qs = base_qs
+
+    # ----------------
+    # YEAR FILTER
+    # ----------------
+    if selected_year:
+        try:
+            year_int = int(selected_year)
+            qs = qs.filter(attendance__date__year=year_int)
+
+            # Build month dropdown only for that year (also deduped)
+            raw_months_year = Attendance.objects.filter(date__year=year_int).dates(
+                "date", "month", order="DESC"
+            )
+
+            seen = set()
+            months_qs = []
+            for m in raw_months_year:
+                if m.month not in seen:
+                    seen.add(m.month)
+                    months_qs.append(m)
+
+        except ValueError:
+            months_qs = months_all
+    else:
+        months_qs = months_all
+
+    if selected_month:
+        try:
+            month_int = int(selected_month)
+            qs = qs.filter(attendance__date__month=month_int)
+        except ValueError:
+            pass
+
+    # Final ordering
+    qs = qs.order_by("-created_at")
+
+    # Build rows (your same structure)
+    rows = []
+    for req in qs:
+        att = req.attendance
+        emp = att.employee
+
+        rows.append({
+            "id": req.id,
+            "emp_name": f"{emp.first_name} {emp.last_name}".strip(),
+            "emp_code": emp.employee_code,
+            "shift_date": att.date,
+            "shift_date_str": _format_date(att.date),
+            "old_in_time": _format_time(req.old_in_time),
+            "old_out_time": _format_time(req.old_out_time),
+            "new_in_time": _format_time(req.new_in_time),
+            "new_out_time": _format_time(req.new_out_time),
+            "status": req.status,
+            "created_at": _format_date_iso(req.created_at),
+        })
+
+    # Render
+    return render(request, "attendance/attendance_request_status.html", {
+        "years": years,
+        "months": months_qs,
+        "selected_year": selected_year,
+        "selected_month": selected_month,
+        "attendance_requests": rows,
+    })
+
+def attendance_correction_detail(request, pk):
+    obj = get_object_or_404(AttendanceCorrectionRequest, pk=pk)
+
+    att = obj.attendance  # related Attendance object
+    employee = att.employee  # related Employee object
+
+    data = {
+        "attendance": {
+            "id": att.id,
+            "date": att.date.isoformat() if att.date else None,
+            "in_time": att.in_time.isoformat() if att.in_time else None,
+            "out_time": att.out_time.isoformat() if att.out_time else None,
+            "status": att.status,
+        },
+        "old_in_time": obj.old_in_time.isoformat() if obj.old_in_time else None,
+        "old_out_time": obj.old_out_time.isoformat() if obj.old_out_time else None,
+        "new_in_time": obj.new_in_time.isoformat() if obj.new_in_time else None,
+        "new_out_time": obj.new_out_time.isoformat() if obj.new_out_time else None,
+        "reason": obj.reason,
+        "rejection_reason": obj.rejection_reason,
+        "created_at": obj.created_at.strftime("%Y-%m-%d") if obj.created_at else None,
+        "status": obj.status,
+        "employee": {
+            "id": employee.id,
+            "first_name": employee.first_name,
+            "last_name": employee.last_name,
+            "employee_code": employee.employee_code,
+        },
+    }
+
+    return JsonResponse(data)
+
+
+# def comp_off_requests_list(request): 
+#     # Pull attendance correction requests and avoid N+1 queries 
+#     attendance_requests = CompOffRequest.objects.select_related( 'employee' ) 
+#     rows = [] 
+#     for r in attendance_requests: 
+#         employee = r.employee # Employee object 
+#         # employee = attendance.employee # Employee object 
+#         # Build clean row for frontend table 
+#         rows.append({ 
+#             "id": r.id, 
+#             "emp_name": f"{employee.first_name} {employee.last_name}".strip(), 
+#             "emp_code": getattr(employee, "employee_code", "—"), 
+#             "from_date": r.from_date,
+#             "to_date": r.to_date,
+#             "reason": r.reason,
+#             "status": r.status,
+#             }) 
+#             # Debug print (optional) 
+#             # for row in rows: 
+#             # print(row) 
+#         return render(request, "attendance/comp_off_request.html", { "attendance_requests": rows }) 
+from django.db.models import Count
+from django.db.models.functions import ExtractMonth, ExtractYear
+import calendar        
+
+# def comp_off_requests_list(request):
+
+#     # read optional filters from GET
+#     selected_year = request.GET.get("year")   # e.g. "2025" or empty
+#     selected_month = request.GET.get("month") # e.g. "12" or empty
+
+#     # base queryset: only requests that have from_date (safe)
+#     qs = CompOffRequest.objects.filter(from_date__isnull=False).select_related("employee")
+
+#     # annotate year/month using from_date
+#     qs = qs.annotate(year=ExtractYear("from_date"), month=ExtractMonth("from_date"))
+
+#     # apply filters if provided
+#     if selected_year:
+#         try:
+#             qs = qs.filter(year=int(selected_year))
+#         except ValueError:
+#             pass
+#     if selected_month:
+#         try:
+#             qs = qs.filter(month=int(selected_month))
+#         except ValueError:
+#             pass
+
+#     # group by employee + year + month and count requests
+#     grouped = (
+#         qs.values(
+#             "employee__id",
+#             "employee__first_name",
+#             "employee__last_name",
+#             "employee__employee_code",
+#             "year",
+#             "month",
+#         )
+#         .annotate(requests_count=Count("id"))
+#         .order_by("employee__employee_code", "year", "month")
+#     )
+
+#     # build rows for frontend
+#     rows = []
+#     for g in grouped:
+#         month_num = g["month"]
+#         month_name = calendar.month_abbr[month_num] if month_num else "—"
+#         emp_name = f"{g['employee__first_name'] or ''} {g['employee__last_name'] or ''}".strip()
+
+#         rows.append(
+#             {
+#                 "emp_id": g["employee__id"],
+#                 "emp_code": g.get("employee__employee_code") or "—",
+#                 "emp_name": emp_name or "—",
+#                 "year": g.get("year"),
+#                 "month": month_name,
+#                 "month_number": month_num,
+#                 "count": g["requests_count"],  # number of comp-off requests in that month
+#             }
+#         )
+
+#     return render(
+#         request,
+#         "attendance/comp_off_request.html",
+#         {
+#             "comp_off_requests": rows,
+#             "selected_year": selected_year,
+#             "selected_month": selected_month,
+#         },
+#     )
+
+
+import calendar
+from django.db.models import Count
+from django.db.models.functions import ExtractYear, ExtractMonth
+from django.shortcuts import render
+
+def comp_off_requests_list(request):
+    # read optional filters from GET
+    selected_year = request.GET.get("year")   # e.g. "2025" or ""
+    selected_month = request.GET.get("month") # e.g. "12" or ""
+
+    # base queryset: only requests that have from_date (safe)
+    qs = CompOffRequest.objects.filter(from_date__isnull=False).select_related("employee")
+
+    # annotate year/month using from_date
+    qs = qs.annotate(year=ExtractYear("from_date"), month=ExtractMonth("from_date"))
+
+    # Build distinct year/month lists from the annotated queryset for the dropdowns
+    years_qs = qs.values("year").distinct().order_by("-year")
+    years = [{"year": y["year"]} for y in years_qs if y.get("year") is not None]
+
+    months_qs = qs.values("month").distinct().order_by("month")
+    # convert numeric month to name for template convenience
+    months = []
+    for m in months_qs:
+        mn = m.get("month")
+        if mn:
+            months.append({"month": mn, "name": calendar.month_name[mn]})
+
+    # apply filters if provided
+    if selected_year:
+        try:
+            qs = qs.filter(year=int(selected_year))
+        except ValueError:
+            pass
+    if selected_month:
+        try:
+            qs = qs.filter(month=int(selected_month))
+        except ValueError:
+            pass
+
+    # group by employee + year + month and count requests
+    grouped = (
+        qs.values(
+            "employee__id",
+            "employee__first_name",
+            "employee__last_name",
+            "employee__employee_code",
+            "year",
+            "month",
+        )
+        .annotate(requests_count=Count("id"))
+        .order_by("employee__employee_code", "year", "month")
+    )
+
+    # build rows for frontend
+    rows = []
+    for g in grouped:
+        month_num = g["month"]
+        month_name = calendar.month_abbr[month_num] if month_num else "—"
+        emp_name = f"{g['employee__first_name'] or ''} {g['employee__last_name'] or ''}".strip()
+
+        rows.append(
+            {
+                "emp_id": g["employee__id"],
+                "emp_code": g.get("employee__employee_code") or "—",
+                "emp_name": emp_name or "—",
+                "year": g.get("year"),
+                "month": month_name,
+                "month_number": month_num,
+                "count": g["requests_count"],
+            }
+        )
+
+    return render(
+        request,
+        "attendance/comp_off_request.html",
+        {
+            "comp_off_requests": rows,
+            "selected_year": selected_year,
+            "selected_month": selected_month,
+            "years": years,
+            "months": months,
+        },
+    )
+
+from django.shortcuts import render, get_object_or_404
+from django.utils import timezone
+from datetime import datetime
+import datetime as dt
+
+
+def comp_off_requests(request, pk):
+    """
+    Return all comp-off requests for the employee with id=pk for the requested month/year.
+    Expects optional GET params: ?year=2025&month=12
+    If year/month are missing, falls back to the current month/year.
+    Renders a template fragment that can be loaded into a modal.
+    """
+    # ensure employee exists (optional, helpful for clearer 404)
+    employee = get_object_or_404(Employee, pk=pk)
+
+    # read optional filters from GET; fallback to current month/year
+    selected_year = request.GET.get("year")
+    selected_month = request.GET.get("month")
+
+    now = timezone.now().date()
+    try:
+        year = int(selected_year) if selected_year else now.year
+    except (TypeError, ValueError):
+        year = now.year
+
+    try:
+        month = int(selected_month) if selected_month else now.month
+    except (TypeError, ValueError):
+        month = now.month
+
+    # filter requests for the employee and month/year
+    qs = (
+        CompOffRequest.objects.filter(employee__id=pk, from_date__isnull=False)
+        .filter(from_date__year=year, from_date__month=month)
+        .order_by("from_date")
+    )
+
+    # build rows for the modal table (individual requests)
+    rows = []
+    for r in qs:
+        rows.append(
+            {
+                "id": r.id,
+                "from_date": r.from_date,
+                "to_date": r.to_date,
+                "days_count": r.count,    # the per-request day span from your model
+                "reason": r.reason,
+                "status": r.status,
+                "rejection_reason": r.rejection_reason
+            }
+        )
+
+    context = {
+        "employee": employee,
+        "year": year,
+        "month": month,
+        # "month_name": datetime.date(year, month, 1).strftime("%b"),
+        "month_name": dt.date(year, month, 1).strftime("%b"),
+        "comp_off_entries": rows,
+    }
+
+    # Render a fragment suitable for modal body
+    return render(request, "attendance/comp_off_request_table.html", context)
+
+
 def admin_dashboard(request):
     requests = AttendanceCorrectionRequest.objects.filter(status='Pending')  # Attendance approvals
     compoff_requests = CompOffRequest.objects.filter(status='Pending')  # CompOff approvals
+    leave_requests = LeaveApplication.objects.select_related("employee").filter(status="Pending").order_by("-id")
+
     today = date.today()
     current_month = date.today().month
 
@@ -402,9 +771,9 @@ def admin_dashboard(request):
     print(compoff,'aaaaaa') 
     return render(request, 'd/f.html', {
         "requests": requests,
-        "compoff_requests": compoff_requests
+        "compoff_requests": compoff_requests,
+        "leave_requests": leave_requests
     })
-
 
 
 @csrf_exempt
@@ -417,18 +786,38 @@ def approve_compoff(request, compoff_id):
     except CompOffRequest.DoesNotExist:
         return JsonResponse({"message": "Request not found!"}, status=404)
 
-@csrf_exempt
+# @csrf_exempt
+# def reject_compoff(request, compoff_id):
+#     if request.method == "POST":
+#         try:
+#             compoff = CompOffRequest.objects.get(id=compoff_id)
+#             data = json.loads(request.body)
+#             compoff.status = "Rejected"
+#             compoff.rejection_reason = data.get("reason", "No reason provided")
+#             compoff.save()
+#             return JsonResponse({"message": "CompOff request rejected successfully!"})
+#         except CompOffRequest.DoesNotExist:
+#             return JsonResponse({"message": "Request not found!"}, status=404)
+
 def reject_compoff(request, compoff_id):
+    correction_request = get_object_or_404(CompOffRequest, id=compoff_id)
+
     if request.method == "POST":
-        try:
-            compoff = CompOffRequest.objects.get(id=compoff_id)
-            data = json.loads(request.body)
-            compoff.status = "Rejected"
-            compoff.rejection_reason = data.get("reason", "No reason provided")
-            compoff.save()
-            return JsonResponse({"message": "CompOff request rejected successfully!"})
-        except CompOffRequest.DoesNotExist:
-            return JsonResponse({"message": "Request not found!"}, status=404)
+        data = json.loads(request.body)
+        rejection_reason = data.get("reason", "")
+
+        if not rejection_reason:
+            return JsonResponse({"error": "Rejection reason is required."}, status=400)
+
+        # Update request as rejected
+        correction_request.status = "Rejected"
+        correction_request.rejection_reason = rejection_reason  # Save reason for employee reference
+        correction_request.reviewed_at = now()
+        correction_request.save()
+
+        return JsonResponse({"message": "Correction Request Rejected!"})
+
+    return JsonResponse({"error": "Invalid request"}, status=400)
 
 
 def download_employees_excel(request):
@@ -498,7 +887,6 @@ def download_employees_excel(request):
         df.to_excel(writer, sheet_name="Active Employees", index=False)
 
     return response
-
 
 def download_leave_excel(request):
     # Fetch active leave balances along with related employee info
@@ -570,13 +958,6 @@ def download_leave_excel(request):
     return response
 
 
-
-
-
-
-
-
-
 def test(request):
     test_func.delay()
 
@@ -641,10 +1022,6 @@ def home(request):
 #         'companies': companies,
 #     }
 #     return render(request, 'employee/create_employee2.html', context)
-
-
-
-
 
 # working
 # def create_employee(request):
@@ -874,6 +1251,8 @@ def employee_detail(request, pk):
             'full_name': full_name,
             'email': email,
             'phone': phone,
+            \
+
             'photo_url': photo_url,
         }
     }
@@ -1390,6 +1769,81 @@ def update_leave_credit_policy(request):
 
 
 
+
+
+
+
+def leave_apply_view(request):
+    leaves = LeaveApplication.objects.select_related("employee").order_by("-id")
+
+    # ================== Filters ==================
+    status = request.GET.get("status")
+    search = request.GET.get("search")
+
+    if status and status != "All":
+        leaves = leaves.filter(status=status)
+
+    if search:
+        leaves = leaves.filter(
+            Q(employee__first_name__icontains=search) | 
+            Q(employee__last_name__icontains=search) |
+            Q(leave_type__icontains=search)
+        )
+
+    # Pagination
+    paginator = Paginator(leaves, 8)  # 8 rows per page
+    page = request.GET.get("page")
+    leaves = paginator.get_page(page)
+
+    # ================== POST Submit ==================
+    if request.method == "POST":
+        form = LeaveApplicationForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request,"Leave Applied Successfully!")
+            return redirect("leave_apply")
+        messages.error(request,"Please fix the errors.")
+    else:
+        form = LeaveApplicationForm()
+
+    return render(request,"leave_balance/leave_apply.html",{
+        "form":form,
+        "leaves":leaves,
+        "status":status,
+        "search":search,
+    })
+
+
+@require_POST
+def approve_leave(request, leave_id):
+    try:
+        leave = LeaveApplication.objects.get(id=leave_id)
+        leave.status = "Approved"
+        leave.save()
+
+        return JsonResponse({"message": "Leave Approved Successfully!"})
+    except:
+        return JsonResponse({"message": "Leave not found"}, status=404)
+
+
+@require_POST
+def reject_leave(request, leave_id):
+    try:
+        data = json.loads(request.body)
+        reason = data.get("reason")
+
+        if not reason:
+            return JsonResponse({"message": "Reason required"}, status=400)
+
+        leave = LeaveApplication.objects.get(id=leave_id)
+        leave.status = "Rejected"
+        leave.save()
+
+        return JsonResponse({"message": "Leave Rejected Successfully!"})
+    except:
+        return JsonResponse({"message": "Error while rejecting"}, status=404)
+
+
 def leave_credit_policy_view(request):
     # Assume HR selects the company or logged-in user company
     company = Company.objects.first()  # You can customise this
@@ -1508,6 +1962,7 @@ def employee_compoff_details(request, employee_id):
 
 
 
+from datetime import datetime
 
 
 

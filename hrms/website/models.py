@@ -361,8 +361,6 @@ class Attendance(models.Model):
     #     super().save(*args, **kwargs)
 
 
-
-
 class AttendanceCorrectionRequest(models.Model):
     attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE, related_name="correction_requests")
     # requested_by = models.ForeignKey(Employee, on_delete=models.CASCADE)  # The employee requesting the change
@@ -384,6 +382,37 @@ class AttendanceCorrectionRequest(models.Model):
     def __str__(self):
         return f"Correction Request {self.id} - {self.status}"
 
+
+
+
+# atul
+
+class LeaveApplication(models.Model):
+    LEAVE_TYPES = [
+        ("CL", "Casual Leave"),
+        ("SL", "Sick Leave"),
+        ("PL", "Paid Leave"),
+        ("COFF", "Comp-Off Adjustment"),
+        ("LWP", "Leave Without Pay"),
+    ]
+
+    employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
+    leave_type = models.CharField(max_length=10, choices=LEAVE_TYPES)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    reason = models.TextField()
+    status = models.CharField(max_length=10, default="Pending")   # Pending / Approved / Rejected
+    applied_on = models.DateTimeField(auto_now_add=True)
+
+    def total_days(self):
+        return (self.end_date - self.start_date).days + 1
+
+    def __str__(self):
+        return f"{self.employee} - {self.leave_type} ({self.start_date} to {self.end_date})"
+
+
+
+# atul
 
 
 
@@ -419,8 +448,6 @@ class LeaveSettings(models.Model):
         return f"Carry Forward: {'Yes' if self.carry_forward else 'No'} | Reset Month: {self.reset_month or 'N/A'}"
 
 
-
-
 class CompOff(models.Model):
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
     from_date = models.DateField()  # Start date of comp-off
@@ -439,6 +466,7 @@ class CompOffRequest(models.Model):
     from_date = models.DateField(null=True, blank=True)
     to_date = models.DateField(null=True, blank=True)
     reason = models.TextField(null=True, blank=True)
+    rejection_reason = models.TextField(null=True, blank=True)
     count = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     status = models.CharField(
         max_length=20,

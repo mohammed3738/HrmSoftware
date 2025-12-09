@@ -912,26 +912,73 @@ def edit_employee(request, employee_id):
 
     if request.method == "POST":
         form = EmployeeForm(request.POST, request.FILES, instance=employee)
-        formset = PreviousEmploymentFormSet(request.POST, instance=employee)
-        attachment_formset = EmployeeAttachmentFormSet(request.POST, request.FILES, instance=employee)
+
+        # Main attachment formset
+        attachment_formset = AttachmentFormSet(
+            request.POST, request.FILES, instance=employee
+        )
+
+        # Previous employment formset
+        formset = PreviousEmploymentFormSet(
+            request.POST, request.FILES, instance=employee
+        )
 
         if form.is_valid() and formset.is_valid() and attachment_formset.is_valid():
-            form.save()
-            formset.save()
-            attachment_formset.save()
-            return JsonResponse({"success": True})
-    else:
-        form = EmployeeForm(instance=employee)
-        formset = PreviousEmploymentFormSet(instance=employee)
-        attachment_formset = EmployeeAttachmentFormSet(instance=employee)
 
-    return render(request, "employee/edit_employee_form.html", {
+            form.save()   # Update employee
+
+            prev_records = formset.save(commit=False)
+
+            # SAVE previous employment records
+            for idx, emp_record in enumerate(prev_records):
+                emp_record.employee = employee
+                emp_record.save()
+
+                # Check nested attachments (same as create)
+                prefix = f"attach-{idx}-"
+                file_keys = [k for k in request.FILES.keys() if k.startswith(prefix)]
+
+                for key in file_keys:
+                    index = key.split("-")[2]
+                    doc_name = request.POST.get(f"attach-{idx}-{index}-document_name", "")
+
+                    PreviousEmploymentAttachment.objects.create(
+                        previous_employment=emp_record,
+                        file=request.FILES[key],
+                        document_name=doc_name,
+                    )
+
+            # Handle deleted previous employment rows
+            for obj in formset.deleted_objects:
+                obj.delete()
+
+            # SAVE main attachments
+            attachment_formset.save()
+
+            messages.success(request, "Employee updated successfully!")
+            return redirect("create-employee")
+
+        else:
+            messages.error(request, "Please fix the errors and try again.")
+
+    else:
+        # Load existing employee
+        form = EmployeeForm(instance=employee)
+
+        # Existing previous employment
+        formset = PreviousEmploymentFormSet(instance=employee)
+
+        # Existing employee attachments
+        attachment_formset = AttachmentFormSet(instance=employee)
+
+    context = {
+        "employee": employee,
         "form": form,
         "formset": formset,
         "attachment_formset": attachment_formset,
-        "employee": employee,
-    })
+    }
 
+    return render(request, "employee/edit_employee_form.html", context)
 
 # def create_offboarding(request):
 #     if request.method == 'POST':

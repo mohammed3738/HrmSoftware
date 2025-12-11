@@ -201,7 +201,7 @@
                 <th>Tan No</th>
                 <th>Pan No</th>
                 <th>Employer PF</th>
-             
+
                 <th>Status</th>
                 <th>Action</th>
               </tr>
@@ -252,7 +252,7 @@
                 <td id="company_">{{company.tan_number}}</td>
                 <td>{{company.pan_number}}</td>
                 <td>{{company.employer_pf}}</td>
-            
+
                 <td>{{company.status}}</td>
                 <td>
                   <div class="dropdown">
@@ -448,6 +448,14 @@
                 <label class="form-label">ESIC Number</label>
                 <input type="text" class="form-control" name="esic_number" />
               </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Status</label>
+              <select name="status" class="form-select">
+                <option value="">Select Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
             </div>
           </div>
         </div>
@@ -947,25 +955,24 @@
 </script>
 
 <script>
-function confirmDelete(companyId) {
+  function confirmDelete(companyId) {
     Swal.fire({
-        title: "Are you sure?",
-        text: "This action will permanently delete the company!",
-        icon: "warning",
-        showCancelButton: true,
-        confirmButtonColor: "#d33",
-        cancelButtonColor: "#3085d6",
-        confirmButtonText: "Yes, delete it!"
+      title: "Are you sure?",
+      text: "This action will permanently delete the company!",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonColor: "#d33",
+      cancelButtonColor: "#3085d6",
+      confirmButtonText: "Yes, delete it!",
     }).then((result) => {
-        if (result.isConfirmed) {
-
-            // Submit hidden POST form
-            const form = document.getElementById("deleteCompanyForm");
-            form.action = `/company/delete/${companyId}/`;
-            form.submit();
-        }
+      if (result.isConfirmed) {
+        // Submit hidden POST form
+        const form = document.getElementById("deleteCompanyForm");
+        form.action = `/company/delete/${companyId}/`;
+        form.submit();
+      }
     });
-}
+  }
 </script>
 
 {% endblock %}

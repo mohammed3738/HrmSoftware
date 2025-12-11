@@ -1538,6 +1538,7 @@ def create_company(request):
         ptrc_number = request.POST.get("ptrc_number")
         ptec_number = request.POST.get("ptec_number")
         esic_number = request.POST.get("esic_number")
+        status = request.POST.get("status")
 
         if not short_name or not name or not address:
             messages.error(request, "Short Name, Company Name, and Address are required.")
@@ -1556,6 +1557,7 @@ def create_company(request):
             ptrc_number=ptrc_number,
             ptec_number=ptec_number,
             esic_number=esic_number,
+            status=status,
         )
         messages.success(request, "Company added successfully!")
         return redirect("create-company")  # Redirect to company list page

@@ -1,0 +1,346 @@
+{% extends 'base2.html' %}
+{% load static %}
+{% block title %}Advance Details{% endblock %}
+
+{% block body %}
+
+<div class="container-xxl flex-grow-1 container-p-y">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2 class="fw-bold mb-1">Advance Details</h2>
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="#"><i class="ti ti-smart-home"></i></a></li>
+                <li class="breadcrumb-item">Application</li>
+                <li class="breadcrumb-item active">Advance #{{ advance.id }}</li>
+            </ol>
+        </div>
+    </div>
+
+    <!-- MAIN SUMMARY CARD -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+
+            <div class="d-flex justify-content-between align-items-start flex-wrap row-gap-3">
+                <div>
+                    <h3 class="fw-bold mb-1">Advance #{{ advance.id }}</h3>
+                    <p class="text-muted">
+                        <i class="ti ti-user"></i> {{ advance.employee }}
+                    </p>
+                </div>
+
+                <!-- Status Badge -->
+                <span class="
+                    badge px-3 py-2 rounded-pill
+                    {% if advance.status == 'completed' %} bg-success
+                    {% else %} bg-info
+                    {% endif %}
+                ">
+                    {{ advance.status|title }}
+                </span>
+            </div>
+
+            <div class="row mt-4">
+                <!-- Total Amount -->
+                <div class="col-md-4 mb-3">
+                    <div class="p-3 rounded border">
+                        <p class="fw-semibold text-muted mb-1">Total Amount</p>
+                        <h3 class="fw-bold text-primary mb-0">₹{{ advance.advance_amount }}</h3>
+                    </div>
+                </div>
+
+                <!-- Outstanding -->
+                <div class="col-md-4 mb-3">
+                    <div class="p-3 rounded border">
+                        <p class="fw-semibold text-muted mb-1">Outstanding</p>
+                        <h3 class="fw-bold text-danger mb-0" id="outstanding">₹{{ advance.outstanding_amount }}</h3>
+                    </div>
+                </div>
+
+                <!-- Make Payment Button -->
+                <div class="col-md-4 text-md-end">
+                    {% if advance.status != "completed" %}
+                    <button 
+                        class="btn btn-primary btn-lg mt-3 mt-md-0"
+                        data-bs-toggle="modal" 
+                        data-bs-target="#payModal">
+                        <i class="ti ti-cash"></i> Make Payment
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+
+    <!-- EMI SCHEDULE CARD -->
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-header bg-white fw-bold d-flex align-items-center">
+            <i class="ti ti-calendar me-2"></i> EMI Schedule
+        </div>
+
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Month</th>
+                            <th>Scheduled</th>
+                            <th>Paid</th>
+                            <th>Status</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="scheduleBody">
+                        {% for s in schedules %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            <td>{{ s.due_month|date:"Y-m" }}</td>
+                            <td>₹{{ s.scheduled_amount }}</td>
+                            <td>₹{{ s.paid_amount }}</td>
+
+                            <td>
+                                {% if s.status == "paid" %}
+                                    <span class="badge bg-success rounded-pill">
+                                        <i class="ti ti-check"></i> Paid
+                                    </span>
+                                {% elif s.status == "pending" %}
+                                    <span class="badge bg-warning rounded-pill text-dark">
+                                        <i class="ti ti-hourglass"></i> Pending
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-secondary rounded-pill">
+                                        <i class="ti ti-player-stop"></i> Skipped
+                                    </span>
+                                {% endif %}
+                            </td>
+
+                            <td class="text-center">
+
+                                {% if s.status == "pending" %}
+                                <button class="btn btn-outline-warning btn-sm skip-btn"
+                                    data-due="{{ s.due_month|date:'Y-m-d' }}">
+                                    <i class="ti ti-player-track-next"></i>
+                                </button>
+                                {% endif %}
+
+                                {% if s.status == "skipped" %}
+                                <button class="btn btn-outline-secondary btn-sm revert-btn"
+                                    data-due="{{ s.due_month|date:'Y-m-d' }}">
+                                    <i class="ti ti-arrow-back-up"></i>
+                                </button>
+                                {% endif %}
+
+                                {% if s.status == "paid" %}-{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+
+                </table>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- PAYMENT HISTORY -->
+    <div class="card shadow-sm border-0 mb-5">
+        <div class="card-header bg-white fw-bold">
+            <i class="ti ti-history me-2"></i> Payment History
+        </div>
+
+        <div class="card-body">
+
+            {% if payments %}
+            <ul class="list-group list-group-flush">
+                {% for p in payments %}
+                <li class="list-group-item d-flex justify-content-between align-items-center px-0">
+
+                    <div>
+                        <strong>₹{{ p.amount }}</strong><br>
+                        <small class="text-muted">{{ p.note }}</small>
+                    </div>
+
+                    <div class="text-muted small">
+                        <i class="ti ti-calendar-clock"></i> {{ p.date|date:"M d, Y - H:i" }}
+                    </div>
+
+                </li>
+                {% endfor %}
+            </ul>
+
+            {% else %}
+            <div class="alert alert-info mb-0">
+                <i class="ti ti-info-circle"></i> No payments found.
+            </div>
+            {% endif %}
+
+        </div>
+    </div>
+
+</div>
+
+
+
+<!-- PAYMENT MODAL -->
+<div class="modal fade" id="payModal" tabindex="-1">
+    <div class="modal-dialog modal-md modal-dialog-centered">
+        <div class="modal-content shadow">
+
+            <form id="payForm">
+                {% csrf_token %}
+
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        <i class="ti ti-cash"></i> Make Payment
+                    </h5>
+                    <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+
+                <div class="modal-body">
+                    {{ payment_form.as_p }}
+                </div>
+
+                <div class="modal-footer bg-light">
+                    <button class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-success">
+                        <i class="ti ti-check"></i> Pay Now
+                    </button>
+                </div>
+
+            </form>
+
+        </div>
+    </div>
+</div>
+
+
+
+<script>
+const CSRF = "{{ csrf_token }}";
+
+function showToast(msg, type = "success") {
+    const toast = document.createElement("div");
+    toast.className = `toast align-items-center text-white bg-${type} shadow border-0 position-fixed top-0 end-0 m-4`;
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${msg}</div>
+            <button type="button" class="btn-close btn-close-white me-2" data-bs-dismiss="toast"></button>
+        </div>`;
+    document.body.appendChild(toast);
+    new bootstrap.Toast(toast).show();
+}
+
+
+/* ============================
+   PAYMENT HANDLER
+============================ */
+document.getElementById("payForm").addEventListener("submit", async function(e){
+    e.preventDefault();
+
+    const data = new FormData(this);
+
+    const res = await fetch("{% url 'advances-pay' advance.id %}", {
+        method: "POST",
+        headers: { "X-CSRFToken": CSRF },
+        body: data
+    });
+
+    const json = await res.json();
+
+    if (json.success) {
+        showToast("Payment successful!");
+        document.getElementById("outstanding").textContent = "₹" + json.outstanding;
+        updateSchedule(json);
+
+        bootstrap.Modal.getInstance(document.getElementById("payModal")).hide();
+    } else {
+        showToast(json.error, "danger");
+    }
+});
+
+
+/* ===========================================
+   EVENT DELEGATION FOR SKIP AND REVERT BUTTONS
+=========================================== */
+document.addEventListener("click", async function(e){
+
+    /* SKIP BUTTON */
+    if (e.target.closest(".skip-btn")) {
+        let btn = e.target.closest(".skip-btn");
+        let due = btn.dataset.due;
+
+        const data = new URLSearchParams();
+        data.append("due_month", due);
+
+        const res = await fetch("{% url 'advances-skip' advance.id %}", {
+            method: "POST",
+            headers: { "X-CSRFToken": CSRF },
+            body: data
+        });
+
+        const json = await res.json();
+
+        if (json.success) {
+            showToast("EMI Skipped");
+            document.getElementById("outstanding").textContent = "₹" + json.outstanding;
+            updateSchedule(json);
+        } else {
+            showToast(json.error, "danger");
+        }
+    }
+
+    /* REVERT SKIP BUTTON */
+    if (e.target.closest(".revert-btn")) {
+        let btn = e.target.closest(".revert-btn");
+        let due = btn.dataset.due;
+
+        const data = new URLSearchParams();
+        data.append("due_month", due);
+
+        const res = await fetch("{% url 'revert-skip' advance.id %}", {
+            method: "POST",
+            headers: { "X-CSRFToken": CSRF },
+            body: data
+        });
+
+        const json = await res.json();
+
+        if (json.success) {
+            showToast("Skip Reverted");
+            updateSchedule(json);
+        } else {
+            showToast(json.error, "danger");
+        }
+    }
+
+});
+        
+
+/* ============================
+   REBUILD TABLE
+============================ */
+function updateSchedule(json){
+    const tbody = document.getElementById("scheduleBody");
+    tbody.innerHTML = "";
+
+    json.schedules.forEach((s, index) => {
+        tbody.innerHTML += `
+            <tr>
+                <td>${index+1}</td>
+                <td>${s.due_month}</td>
+                <td>₹${s.scheduled_amount}</td>
+                <td>₹${s.paid_amount}</td>
+                <td>${s.status}</td>
+                <td class="text-center">-</td>
+            </tr>
+        `;
+    });
+}
+
+</script>
+{% endblock %}

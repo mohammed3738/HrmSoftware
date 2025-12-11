@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+table { width: 100%; border-collapse: collapse; font-size: 11px; }
+th, td { border: 1px solid #333; padding: 5px; }
+th { background: #003366; color: white; }
+</style>
+</head>
+
+<body>
+
+<h2>Payroll – {{ run.month|date:"F Y" }}</h2>
+<p><strong>Company:</strong> {{ run.company.name }}</p>
+
+<table>
+<thead>
+<tr>
+    <th>Code</th>
+    <th>Name</th>
+    <th>Gross CTC</th>
+    <th>Present</th>
+    <th>Leave</th>
+    <th>Gross Processed</th>
+    <th>Deductions</th>
+    <th>Net Pay</th>
+</tr>
+</thead>
+
+<tbody>
+{% for r in records %}
+<tr>
+    <td>{{ r.employee_code }}</td>
+    <td>{{ r.employee_name }}</td>
+    <td>{{ r.gross_ctc }}</td>
+    <td>{{ r.present_days }}</td>
+    <td>{{ r.leave_taken }}</td>
+    <td>{{ r.gross_processed }}</td>
+    <td>{{ r.total_deductions }}</td>
+    <td>{{ r.net_salary }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+
+</body>
+</html>

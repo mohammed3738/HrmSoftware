@@ -1,0 +1,14 @@
+{% extends 'advances/base1.html' %}
+{% block content %}
+<div class="card">
+  <div class="card-body">
+    <h4>Create Advance</h4>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button class="btn btn-primary">Create</button>
+      <a href="{% url 'advances-list' %}" class="btn btn-secondary">Cancel</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

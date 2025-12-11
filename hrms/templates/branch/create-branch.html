@@ -188,7 +188,7 @@
     {% endcomment %}
 
     <div class="card">
-      <div
+      {% comment %} <div
         class="card-header d-flex align-items-center justify-content-between flex-wrap row-gap-3"
       >
         <h5>Branches List</h5>
@@ -291,7 +291,7 @@
             </ul>
           </div>
         </div>
-      </div>
+      </div> {% endcomment %}
       <div class="card-body p-0">
         <div class="custom-datatable-filter table-responsive">
           <table class="table datatable">
@@ -355,7 +355,7 @@
               </tr>
               {% endfor %} {% else %}
               <tr>
-                <td colspan="9" class="text-center">No data available</td>
+                <td colspan="9" class="text-center">No data available</td> 
               </tr>
               {% endif %}
             </tbody>
@@ -762,4 +762,18 @@ function confirmDelete(branchId) {
 }
 </script>
 <!-- /Delete Branch Script -->
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    let table = $('.datatable').DataTable({
+        pageLength: 10,
+        responsive: true,
+        dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
+    });
+ 
+    // Convert DataTables elements into Bootstrap style
+    $('.dataTables_filter input').addClass('form-control');
+    $('.dataTables_length select').addClass('form-select');
+});
+</script>
 {% endblock %}

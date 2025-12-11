@@ -887,6 +887,7 @@ def download_employees_excel(request):
 
     return response
 
+
 def download_leave_excel(request):
     # Fetch active leave balances along with related employee info
     leave_balances = LeaveBalance.objects.select_related("employee").filter(employee__status="Active")
@@ -1493,7 +1494,7 @@ def create_company(request):
 
         if not short_name or not name or not address:
             messages.error(request, "Short Name, Company Name, and Address are required.")
-            return redirect("add_company")  # Redirect back if validation fails
+            return redirect("create-company")  # Redirect back if validation fails
 
         # Save company to database
         company = Company.objects.create(
@@ -1713,15 +1714,13 @@ def update_leave_credit_policy(request):
     return JsonResponse({"status": "error", "message": "Invalid request."})
 
 
-
 # def recalc_leave_balances_view(request):
 #     recalculate_all_leave_balances()
 #     messages.success(request, "Leave balances recalculated successfully!")
 #     return redirect("leave_balance")
 
 
-
-def leave_credit_policy_view(request):
+def leave_credit_policy_view(request):                           
     # Assume HR selects the company or logged-in user company
     company = Company.objects.first()  # You can customise this
 
@@ -1742,12 +1741,6 @@ def leave_credit_policy_view(request):
         "form": form,
         "company": company
     })
-
-
-
-
-
-
 
 
 # def leave_balance_view(request):
@@ -2227,7 +2220,7 @@ def create_advance(request):
             remarks=remarks
         )
         return JsonResponse({"status": "success", "message": "Advance created successfully!"})
-
+    # return render(request, "advances/create.html")  
 
 @csrf_exempt
 def add_installment(request, advance_id):

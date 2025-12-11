@@ -27,8 +27,6 @@ import io
 import os
 from django.http import FileResponse, Http404
 import openpyxl
-from django.db.models import Prefetch
-from datetime import date
 
 # def parse_time(time_value):
 #     """Convert time string or float to a proper datetime.time object."""
@@ -750,6 +748,8 @@ def comp_off_requests(request, pk):
 def admin_dashboard(request):
     requests = AttendanceCorrectionRequest.objects.filter(status='Pending')  # Attendance approvals
     compoff_requests = CompOffRequest.objects.filter(status='Pending')  # CompOff approvals
+    leave_requests = LeaveApplication.objects.select_related("employee").filter(status="Pending").order_by("-id")
+
     today = date.today()
     current_month = date.today().month
 
@@ -771,7 +771,8 @@ def admin_dashboard(request):
     print(compoff,'aaaaaa') 
     return render(request, 'd/f.html', {
         "requests": requests,
-        "compoff_requests": compoff_requests
+        "compoff_requests": compoff_requests,
+        "leave_requests": leave_requests
     })
 
 
@@ -1291,26 +1292,73 @@ def edit_employee(request, employee_id):
 
     if request.method == "POST":
         form = EmployeeForm(request.POST, request.FILES, instance=employee)
-        formset = PreviousEmploymentFormSet(request.POST, instance=employee)
-        attachment_formset = EmployeeAttachmentFormSet(request.POST, request.FILES, instance=employee)
+
+        # Main attachment formset
+        attachment_formset = AttachmentFormSet(
+            request.POST, request.FILES, instance=employee
+        )
+
+        # Previous employment formset
+        formset = PreviousEmploymentFormSet(
+            request.POST, request.FILES, instance=employee
+        )
 
         if form.is_valid() and formset.is_valid() and attachment_formset.is_valid():
-            form.save()
-            formset.save()
-            attachment_formset.save()
-            return JsonResponse({"success": True})
-    else:
-        form = EmployeeForm(instance=employee)
-        formset = PreviousEmploymentFormSet(instance=employee)
-        attachment_formset = EmployeeAttachmentFormSet(instance=employee)
 
-    return render(request, "employee/edit_employee_form.html", {
+            form.save()   # Update employee
+
+            prev_records = formset.save(commit=False)
+
+            # SAVE previous employment records
+            for idx, emp_record in enumerate(prev_records):
+                emp_record.employee = employee
+                emp_record.save()
+
+                # Check nested attachments (same as create)
+                prefix = f"attach-{idx}-"
+                file_keys = [k for k in request.FILES.keys() if k.startswith(prefix)]
+
+                for key in file_keys:
+                    index = key.split("-")[2]
+                    doc_name = request.POST.get(f"attach-{idx}-{index}-document_name", "")
+
+                    PreviousEmploymentAttachment.objects.create(
+                        previous_employment=emp_record,
+                        file=request.FILES[key],
+                        document_name=doc_name,
+                    )
+
+            # Handle deleted previous employment rows
+            for obj in formset.deleted_objects:
+                obj.delete()
+
+            # SAVE main attachments
+            attachment_formset.save()
+
+            messages.success(request, "Employee updated successfully!")
+            return redirect("create-employee")
+
+        else:
+            messages.error(request, "Please fix the errors and try again.")
+
+    else:
+        # Load existing employee
+        form = EmployeeForm(instance=employee)
+
+        # Existing previous employment
+        formset = PreviousEmploymentFormSet(instance=employee)
+
+        # Existing employee attachments
+        attachment_formset = AttachmentFormSet(instance=employee)
+
+    context = {
+        "employee": employee,
         "form": form,
         "formset": formset,
         "attachment_formset": attachment_formset,
-        "employee": employee,
-    })
+    }
 
+    return render(request, "employee/edit_employee_form.html", context)
 
 # def create_offboarding(request):
 #     if request.method == 'POST':
@@ -1718,6 +1766,81 @@ def update_leave_credit_policy(request):
 #     recalculate_all_leave_balances()
 #     messages.success(request, "Leave balances recalculated successfully!")
 #     return redirect("leave_balance")
+
+
+
+
+
+
+def leave_apply_view(request):
+    leaves = LeaveApplication.objects.select_related("employee").order_by("-id")
+
+    # ================== Filters ==================
+    status = request.GET.get("status")
+    search = request.GET.get("search")
+
+    if status and status != "All":
+        leaves = leaves.filter(status=status)
+
+    if search:
+        leaves = leaves.filter(
+            Q(employee__first_name__icontains=search) | 
+            Q(employee__last_name__icontains=search) |
+            Q(leave_type__icontains=search)
+        )
+
+    # Pagination
+    paginator = Paginator(leaves, 8)  # 8 rows per page
+    page = request.GET.get("page")
+    leaves = paginator.get_page(page)
+
+    # ================== POST Submit ==================
+    if request.method == "POST":
+        form = LeaveApplicationForm(request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request,"Leave Applied Successfully!")
+            return redirect("leave_apply")
+        messages.error(request,"Please fix the errors.")
+    else:
+        form = LeaveApplicationForm()
+
+    return render(request,"leave_balance/leave_apply.html",{
+        "form":form,
+        "leaves":leaves,
+        "status":status,
+        "search":search,
+    })
+
+
+@require_POST
+def approve_leave(request, leave_id):
+    try:
+        leave = LeaveApplication.objects.get(id=leave_id)
+        leave.status = "Approved"
+        leave.save()
+
+        return JsonResponse({"message": "Leave Approved Successfully!"})
+    except:
+        return JsonResponse({"message": "Leave not found"}, status=404)
+
+
+@require_POST
+def reject_leave(request, leave_id):
+    try:
+        data = json.loads(request.body)
+        reason = data.get("reason")
+
+        if not reason:
+            return JsonResponse({"message": "Reason required"}, status=400)
+
+        leave = LeaveApplication.objects.get(id=leave_id)
+        leave.status = "Rejected"
+        leave.save()
+
+        return JsonResponse({"message": "Leave Rejected Successfully!"})
+    except:
+        return JsonResponse({"message": "Error while rejecting"}, status=404)
 
 
 def leave_credit_policy_view(request):                           

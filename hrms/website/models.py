@@ -32,7 +32,6 @@ class Company(models.Model):
         return f"{self.short_name} - {self.name}"
 
 
-
 class Branch(models.Model):
     branch_name= models.CharField(max_length=100)
     branch_address = models.TextField(verbose_name="Branch Address", blank=True, null=True,)  # Full address
@@ -209,6 +208,7 @@ class AssetHandover(models.Model):
     #     verbose_name="Employee Status"
     # )
 
+
 class SalaryMaster(models.Model):
     # Dropdowns
     employee = models.ForeignKey(Employee,null=True,blank=True,on_delete=models.CASCADE)
@@ -264,9 +264,6 @@ class SalaryMaster(models.Model):
     net_salary_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Net Salary (P.A)")
     def __str__(self):
         return f"Offboarding for {self.employee} - {self.gross_ctc_pm}"
-    
-
-
 
 
 class Attendance(models.Model):
@@ -433,7 +430,6 @@ class LeaveRecord(models.Model):
         return f"{self.employee.name} - Leave Record"
 
 
-
 class LeaveSettings(models.Model):
     carry_forward = models.BooleanField(default=True)
     reset_month = models.PositiveIntegerField(
@@ -459,7 +455,6 @@ class CompOff(models.Model):
         return f"{self.employee.name} ({self.employee.code}) - {self.from_date} to {self.to_date}"
 
 
-
 class CompOffRequest(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
     # applied_date = models.DateField(auto_now_add=True)  # When the request was made
@@ -483,8 +478,6 @@ class CompOffRequest(models.Model):
 
     def __str__(self):
         return f"CompOff Request - {self.employee.first_name} on {self.from_date}"
-
-
 
 
 class LeaveBalance(models.Model):
@@ -543,10 +536,6 @@ class LeaveBalance(models.Model):
     
     def __str__(self):
         return f"{self.employee.first_name} - Balance: {self.leave_balance}"
-
-
-
-
 
 
 class LeaveBalanceHistory(models.Model):
@@ -626,9 +615,9 @@ class LeaveCreditPolicy(models.Model):
 #     paid_on = models.DateField(blank=True, null=True)
 #     remarks = models.TextField(blank=True, null=True)
 
-#     def __str__(self):
-#         status = "Paid" if self.is_paid else ("Skipped" if self.is_skipped else "Pending")
-#         return f"{self.advance.employee.first_name} - {self.month} ({status})"
+    def __str__(self):
+        status = "Paid" if self.is_paid else ("Skipped" if self.is_skipped else "Pending")
+        return f"{self.advance.employee.first_name} - {self.month} ({status})"
 
 
 
@@ -676,8 +665,6 @@ class PayrollSettings(models.Model):
         return f"Payroll Settings for {self.company.name}"
 
 
-
-
 # class SalaryIncrement(models.Model):
 #     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
 #     new_gross_ctc_pm = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="New Gross CTC (P.M)")
@@ -688,8 +675,6 @@ class PayrollSettings(models.Model):
 
 #     def __str__(self):
 #         return f"{self.employee} - ₹{self.new_gross_ctc_pm} from {self.effective_date}"
-
-
 
 class SalaryIncrement(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
@@ -704,7 +689,6 @@ class SalaryIncrement(models.Model):
 
     def __str__(self):
         return f"Increment for {self.employee} effective {self.effective_date}"
-
 
 
 class SalaryHistory(models.Model):

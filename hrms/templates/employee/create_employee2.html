@@ -30,7 +30,7 @@
       </div>
       <hr />
       <!-- Lower Control Row: Entries Info on Left and Search Bar on Right -->
-      <div class="row mb-3">
+      {% comment %} <div class="row mb-3">
         <div class="col-md-6 d-flex align-items-center">
           <!-- Example entries info; you can update this as needed -->
           <div>Showing 1 to 10 of 50 entries</div>
@@ -58,10 +58,10 @@
             <option value="Pending">Pending</option>
           </select>
         </div>
-      </div>
+      </div> {% endcomment %}
       <!-- Table -->
       <div class="table-responsive text-nowrap">
-        <table class="table">
+        <table class="datatable table">
           <thead>
             <tr>
               <th>Employee Code</th>
@@ -1299,4 +1299,18 @@ document.addEventListener("click", function (e) {
   }
 </script>
 
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    let table = $('.datatable').DataTable({
+        pageLength: 10,
+        responsive: true,
+        dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
+    });
+ 
+    // Convert DataTables elements into Bootstrap style
+    $('.dataTables_filter input').addClass('form-control');
+    $('.dataTables_length select').addClass('form-select');
+});
+</script>
 {% endblock %}

@@ -294,6 +294,7 @@
                   </div>
                 </td>
               </tr>
+              
               {% endfor %} {% else %}
               <tr>
                 <td colspan="9" class="text-center">No data available</td>
@@ -968,4 +969,18 @@ function confirmDelete(companyId) {
 }
 </script>
 
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    let table = $('.datatable').DataTable({
+        pageLength: 10,
+        responsive: true,
+        dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
+    });
+ 
+    // Convert DataTables elements into Bootstrap style
+    $('.dataTables_filter input').addClass('form-control');
+    $('.dataTables_length select').addClass('form-select');
+});
+</script>
 {% endblock %}

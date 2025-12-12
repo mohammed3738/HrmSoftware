@@ -362,10 +362,11 @@ class Attendance(models.Model):
 class AttendanceCorrectionRequest(models.Model):
     attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE, related_name="correction_requests")
     # requested_by = models.ForeignKey(Employee, on_delete=models.CASCADE)  # The employee requesting the change
-    old_in_time = models.TimeField()
-    old_out_time = models.TimeField()
-    new_in_time = models.TimeField()
-    new_out_time = models.TimeField()
+    old_in_time = models.TimeField(null=True, blank=True)
+    old_out_time = models.TimeField(null=True, blank=True)
+    new_in_time = models.TimeField(null=True, blank=True)
+    new_out_time = models.TimeField(null=True, blank=True)
+
     reason = models.TextField()
     rejection_reason = models.TextField(null=True, blank=True)
     status = models.CharField(

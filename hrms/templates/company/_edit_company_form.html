@@ -67,22 +67,11 @@
             {{ form.esic_number }}
         </div>
 
-        {% comment %} <!-- Status -->
+        <!-- Status -->
         <div class="col-md-6">
             <label class="form-label">Status</label>
             {{ form.status }}
-        </div> {% endcomment %}
-        <!-- Status -->
-        <div class="col-md-6">
-        <label class="form-label">Status</label>
-
-        <select name="status" class="form-control" required>
-            <option value="">-- Select Status --</option>
-            <option value="active" {% if company and company.status == 'active' %}selected{% endif %}>Active</option>
-            <option value="inactive" {% if company and company.status == 'inactive' %}selected{% endif %}>Inactive</option>
-        </select>
         </div>
-
 
     </div>
 

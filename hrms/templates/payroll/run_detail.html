@@ -1,0 +1,292 @@
+{% extends 'base2.html' %}
+{% load static %}
+{% block title %}Payroll - {{ run.month|date:"F Y" }}{% endblock %}
+
+{% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h3 class="fw-bold">Payroll: {{ run.month|date:"F Y" }}</h3>
+      <small class="text-muted">Company: {{ run.company.name }}</small>
+    </div>
+    <div class="d-flex gap-2">
+    <a href="{% url 'payroll-export-pdf' run.id %}" class="btn btn-danger">
+        <i class="ti ti-file-text"></i> Export PDF
+    </a>
+    <a href="{% url 'payroll-export-excel' run.id %}" class="btn btn-success">
+    <i class="ti ti-file-spreadsheet"></i> Export Excel
+    </a>
+
+
+      <button id="btnFinalize" class="btn btn-danger">Finalize Payroll</button>
+      <a href="{% url 'payroll-run-list' %}" class="btn btn-outline-secondary">Back</a>
+      
+    </div>
+  </div>
+
+  <div class="card shadow-sm">
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered align-middle mb-0">
+          <thead class="table-dark small">
+            <tr>
+              <!-- 1..7 -->
+              <th>#</th><th>Code</th><th>Employee Name</th><th>Company</th><th>Designation</th><th>Branch</th><th>DOJ</th><th>Month</th>
+              <!-- 8..18 salary -->
+              <th>Gross CTC</th><th>Opted PF</th><th>Basic</th><th>HRA</th><th>Sp Allow</th><th>Stat Bonus</th><th>Allow1</th><th>Allow2</th>
+              <th>PF(er)</th><th>ESIC(er)</th><th>Total Gross</th>
+              <!-- attendance 19..23 -->
+              <th>Total Days</th><th>Present Days</th><th>Leave</th><th>Leave Adj</th><th>% Adjusted</th>
+              <!-- processed 24..30 -->
+              <th>Basic Proc</th><th>HRA Proc</th><th>Sp Allow Proc</th><th>Stat Bonus Proc</th>
+              <th>Allow1 Proc</th><th>Allow2 Proc</th><th>Gross Proc</th>
+              <!-- deductions 31..37 -->
+              <th>PF(emp)</th><th>Prof Tax</th><th>Advance</th><th>ESIC(emp)</th><th>TDS</th><th>Other Ded</th><th>Total Ded</th>
+              <!-- net & employer cont -->
+              <th>Net Pay</th><th>PF(er)</th><th>ESIC(er)</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+   
+          <tbody id="payrollRows">
+            {% for r in records %}
+            <tr class="payrow" data-record-id="{{ r.id }}"
+                data-basic-pm="{{ r.basic_pm|floatformat:2 }}"
+                data-hra-pm="{{ r.hra_pm|floatformat:2 }}"
+                data-spallow-pm="{{ r.sp_allowance_pm|floatformat:2 }}"
+                data-statbonus-pm="{{ r.stat_bonus_pm|floatformat:2 }}"
+                data-allow1-pm="{{ r.allowance1_pm|floatformat:2 }}"
+                data-allow2-pm="{{ r.allowance2_pm|floatformat:2 }}"
+                data-pf-employer="{{ r.pf_employer|floatformat:2 }}"
+                data-esic-employer="{{ r.esic_employer|floatformat:2 }}"
+                data-opted-pf="{{ r.opted_for_pf|yesno:'true,false' }}"
+                data-total-days="{{ r.total_days }}"
+                >
+              <td>{{ forloop.counter }}</td>
+              <td>{{ r.employee_code }}</td>
+              <td>{{ r.employee_name }}</td>
+              <td>{{ r.company_name }}</td>
+              <td>{{ r.designation }}</td>
+              <td>{{ r.branch_name }}</td>
+              <td>{{ r.date_of_joining }}</td>
+              <td>{{ r.month_display }}</td>
+
+              <td class="text-end">₹{{ r.gross_ctc|floatformat:2 }}</td>
+              <td class="text-center">{% if r.opted_for_pf %}Yes{% else %}No{% endif %}</td>
+              <td class="text-end">₹{{ r.basic_pm|floatformat:2 }}</td>
+              <td class="text-end">₹{{ r.hra_pm|floatformat:2 }}</td>
+              <td class="text-end">₹{{ r.sp_allowance_pm|floatformat:2 }}</td>
+              <td class="text-end">₹{{ r.stat_bonus_pm|floatformat:2 }}</td>
+              <td class="text-end">₹{{ r.allowance1_pm|floatformat:2 }}</td>
+              <td class="text-end">₹{{ r.allowance2_pm|floatformat:2 }}</td>
+
+              <td class="text-end">₹{{ r.pf_employer|floatformat:2 }}</td>
+              <td class="text-end">₹{{ r.esic_employer|floatformat:2 }}</td>
+              <td class="text-end">₹{{ r.total_gross_salary|floatformat:2 }}</td>
+
+              <td class="text-center">{{ r.total_days }}</td>
+
+              <td class="text-center">
+                <input class="form-control form-control-sm text-end present-days" value="{{ r.present_days|floatformat:2 }}" style="width:80px" />
+              </td>
+
+              <td class="text-center">{{ r.leave_taken|floatformat:2 }}</td>
+
+              <td class="text-center">
+                <input class="form-control form-control-sm text-end leave-adjust" value="{{ r.leave_adjust|floatformat:2 }}" style="width:80px" />
+              </td>
+
+              <td class="text-center percent-adjusted"> {{ r.percent_adjusted|floatformat:2 }}% </td>
+
+              <!-- processed -->
+              <td class="text-end basic-proc">₹{{ r.basic_processed|floatformat:2 }}</td>
+              <td class="text-end hra-proc">₹{{ r.hra_processed|floatformat:2 }}</td>
+              <td class="text-end sp-proc">₹{{ r.sp_allowance_processed|floatformat:2 }}</td>
+              <td class="text-end stat-proc">₹{{ r.stat_bonus_processed|floatformat:2 }}</td>
+              <td class="text-end a1-proc">₹{{ r.allowance1_processed|floatformat:2 }}</td>
+              <td class="text-end a2-proc">₹{{ r.allowance2_processed|floatformat:2 }}</td>
+              <td class="text-end gross-proc">₹{{ r.gross_processed|floatformat:2 }}</td>
+
+              <!-- deductions (editable) -->
+              <td><input class="form-control form-control-sm text-end pf-emp" value="{{ r.pf_employee|floatformat:2 }}" style="width:90px" /></td>
+              <td><input class="form-control form-control-sm text-end prof-tax" value="{{ r.professional_tax|floatformat:2 }}" style="width:90px" /></td>
+              <td><input class="form-control form-control-sm text-end advance" value="{{ r.advance|floatformat:2 }}" style="width:90px" /></td>
+              <td><input class="form-control form-control-sm text-end esic-emp" value="{{ r.esic_employee|floatformat:2 }}" style="width:90px" /></td>
+              <td><input class="form-control form-control-sm text-end tds" value="{{ r.tds|floatformat:2 }}" style="width:90px" /></td>
+              <td><input class="form-control form-control-sm text-end other-ded" value="{{ r.other_deductions|floatformat:2 }}" style="width:90px" /></td>
+
+              <td class="text-end total-ded">₹{{ r.total_deductions|floatformat:2 }}</td>
+
+              <td class="text-end net-pay">₹{{ r.net_salary|floatformat:2 }}</td>
+
+              <td class="text-end">₹{{ r.pf_employer|floatformat:2 }}</td>
+              <td class="text-end">₹{{ r.esic_employer|floatformat:2 }}</td>
+
+              <td class="text-center">
+                <button class="btn btn-sm btn-primary save-btn">Save</button>
+                {% if run.status == "draft" %}
+                <button class="btn btn-sm btn-secondary recalc-btn">Recalc</button>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-3">
+    <small class="text-muted">Edit any right-side fields (Leave Adj, PF, TDS, Advance, Prof Tax, Other) and click Save to store authoritative values.</small>
+  </div>
+</div>
+<script>
+const CSRF = "{{ csrf_token }}";
+
+const payrollSettings = {
+  pf_percentage: {{ settings.pf_percentage|default:"12.00" }},
+  esic_percentage: {{ settings.esic_percentage|default:"0.00" }},
+  esic_threshold: {{ settings.esic_threshold|default:"21000" }},
+  professional_tax: {{ settings.professional_tax|default:"0.00" }},
+  basic_cap: {{ settings.basic_cap|default:"999999" }},
+  gratuity_percentage: {{ settings.gratuity_percentage|default:"0.00" }}
+};
+
+function money(n){ n = Number(n) || 0; return Math.round((n + Number.EPSILON) * 100) / 100; }
+function moneyStr(n){ return "₹" + money(n).toFixed(2); }
+
+function getAttr(tr, name){
+    return parseFloat(tr.getAttribute(name)) || 0;
+}
+
+function computeRowFromTR(tr){
+    const basic_pm = getAttr(tr, "data-basic-pm");
+    const hra_pm = getAttr(tr, "data-hra-pm");
+    const sp_pm = getAttr(tr, "data-spallow-pm");
+    const stat_pm = getAttr(tr, "data-statbonus-pm");
+    const a1_pm = getAttr(tr, "data-allow1-pm");
+    const a2_pm = getAttr(tr, "data-allow2-pm");
+
+    const td = parseInt(tr.getAttribute("data-total-days")) || 30;
+    const present = parseFloat(tr.querySelector(".present-days").value) || 0;
+    let leave_adj = parseFloat(tr.querySelector(".leave-adjust").value) || 0;
+
+    const leave_taken = parseFloat(tr.getAttribute("data-leave")) || 0;
+    leave_adj = Math.max(0, Math.min(leave_adj, leave_taken, td - present));
+
+    tr.querySelector(".leave-adjust").value = leave_adj.toFixed(2);
+
+    const present_adj = present + leave_adj;
+    const percent_adj = td > 0 ? (present_adj / td) * 100 : 0;
+
+    // Processed salary
+    const basic_proc = money(basic_pm * present_adj / td);
+    const hra_proc = money(hra_pm * present_adj / td);
+    const sp_proc = money(sp_pm * present_adj / td);
+    const stat_proc = money(stat_pm * present_adj / td);
+    const a1_proc = money(a1_pm * present_adj / td);
+    const a2_proc = money(a2_pm * present_adj / td);
+
+    const gross_proc = money(basic_proc + hra_proc + sp_proc + stat_proc + a1_proc + a2_proc);
+
+    // Deductions
+    const pf_field = tr.querySelector(".pf-emp");
+    let pf_emp = parseFloat(pf_field.value) || 0;
+
+    if(!pf_emp && tr.getAttribute("data-opted-pf") === "true"){
+        const pf_base = Math.min(basic_proc, payrollSettings.basic_cap);
+        pf_emp = money(pf_base * payrollSettings.pf_percentage / 100);
+        pf_field.value = pf_emp.toFixed(2);
+    }
+
+    let prof_tax = parseFloat(tr.querySelector(".prof-tax").value) || payrollSettings.professional_tax;
+    let advance = parseFloat(tr.querySelector(".advance").value) || 0;
+
+    const esic_field = tr.querySelector(".esic-emp");
+    let esic_emp = parseFloat(esic_field.value) || 0;
+
+    if(!esic_emp && gross_proc <= payrollSettings.esic_threshold){
+        esic_emp = money(gross_proc * payrollSettings.esic_percentage / 100);
+        esic_field.value = esic_emp.toFixed(2);
+    }
+
+    let tds = parseFloat(tr.querySelector(".tds").value) || 0;
+    let other = parseFloat(tr.querySelector(".other-ded").value) || 0;
+
+    const total_ded = money(pf_emp + prof_tax + advance + esic_emp + tds + other);
+    const net_pay = money(gross_proc - total_ded);
+
+    // Update HTML
+    tr.querySelector(".basic-proc").innerText = moneyStr(basic_proc);
+    tr.querySelector(".hra-proc").innerText = moneyStr(hra_proc);
+    tr.querySelector(".sp-proc").innerText = moneyStr(sp_proc);
+    tr.querySelector(".stat-proc").innerText = moneyStr(stat_proc);
+    tr.querySelector(".a1-proc").innerText = moneyStr(a1_proc);
+    tr.querySelector(".a2-proc").innerText = moneyStr(a2_proc);
+    tr.querySelector(".gross-proc").innerText = moneyStr(gross_proc);
+
+    tr.querySelector(".percent-adjusted").innerText = percent_adj.toFixed(2) + "%";
+    tr.querySelector(".total-ded").innerText = moneyStr(total_ded);
+    tr.querySelector(".net-pay").innerText = moneyStr(net_pay);
+
+    return {present_adj, leave_adj, total_ded, net_pay};
+}
+
+// 🟦 Bind Recalc on input
+document.addEventListener("input", function(e){
+    const tr = e.target.closest("tr.payrow");
+    if(tr) computeRowFromTR(tr);
+});
+
+// 🟦 SAVE BUTTON FIXED
+async function saveRow(tr){
+    const id = tr.getAttribute("data-record-id");
+    const url = "{% url 'payroll-record-update' 0 %}".replace("0", id);
+
+    const payload = {
+        present_days: tr.querySelector(".present-days").value,
+        leave_adjust: tr.querySelector(".leave-adjust").value,
+        pf_employee: tr.querySelector(".pf-emp").value,
+        professional_tax: tr.querySelector(".prof-tax").value,
+        advance: tr.querySelector(".advance").value,
+        esic_employee: tr.querySelector(".esic-emp").value,
+        tds: tr.querySelector(".tds").value,
+        other_deductions: tr.querySelector(".other-ded").value,
+    };
+
+    const res = await fetch(url, {
+        method: "POST",
+        headers: {"Content-Type":"application/json", "X-CSRFToken":CSRF},
+        body: JSON.stringify(payload)
+    });
+
+    const json = await res.json();
+
+    if(json.success){
+        computeRowFromTR(tr);
+        alert("Saved!");
+    } else {
+        alert("Save Failed");
+    }
+}
+
+document.addEventListener("click", function(e){
+    if(e.target.closest(".save-btn")){
+        saveRow(e.target.closest("tr.payrow"));
+    }
+    if(e.target.closest(".recalc-btn")){
+        computeRowFromTR(e.target.closest("tr.payrow"));
+    }
+});
+
+// Finalize payroll
+document.getElementById("btnFinalize").addEventListener("click", async function(){
+    if(!confirm("Finalize payroll?")) return;
+
+    const url = "{% url 'payroll-run-finalize' run.id %}";
+    await fetch(url, {method:"POST", headers:{"X-CSRFToken":CSRF}});
+    alert("Payroll Finalized!");
+    location.reload();
+});
+</script>
+{% endblock %}

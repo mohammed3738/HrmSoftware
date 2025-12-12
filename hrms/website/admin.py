@@ -88,6 +88,8 @@ admin.site.register(LeaveBalanceHistory)
 admin.site.register(AttendanceCorrectionRequest)
 admin.site.register(SalaryHistory)
 admin.site.register(PreviousEmploymentAttachment)
+admin.site.register(PayrollRecord)
+admin.site.register(PayrollRun)
 
 
 
@@ -112,7 +114,7 @@ class PayrollSettingsAdmin(admin.ModelAdmin):
 
 
 admin.site.register(AdvanceMaster)
-admin.site.register(AdvanceInstallment)
+# admin.site.register(AdvanceInstallment)
 
 
 

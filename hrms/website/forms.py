@@ -374,3 +374,22 @@ class LeaveApplicationForm(forms.ModelForm):
             'reason': forms.Textarea(attrs={'class':'form-control','rows':3}),
         }
 
+
+
+
+
+class AdvanceCreateForm(forms.ModelForm):
+    class Meta:
+        model = AdvanceMaster
+        fields = ['employee', 'advance_amount', 'default_months', 'start_date']
+        widgets = {
+            'start_date': forms.DateInput(attrs={'type': 'date'}),
+        }
+
+class PaymentForm(forms.Form):
+    amount = forms.IntegerField(min_value=1, label="Amount (₹)")
+    note = forms.CharField(widget=forms.Textarea(attrs={'rows':2}), required=False)
+
+class SkipMonthForm(forms.Form):
+    # expects due_month in YYYY-MM-DD (first of month)
+    due_month = forms.DateField(widget=forms.HiddenInput())

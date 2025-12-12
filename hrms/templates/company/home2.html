@@ -250,9 +250,8 @@
 
                 <td>
                   <span class="badge 
-                    {% if company.status == 'Active' %} bg-success 
-                    {% else %} bg-danger 
-                    {% endif %}">
+                    {% if company.status == 'active' or company.status == 'Active' %} bg-success 
+                    {% else %} bg-danger {% endif %}">
                     {{ company.status|title }}
                   </span>
                 </td>

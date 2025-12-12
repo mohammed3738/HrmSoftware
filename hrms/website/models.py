@@ -27,7 +27,7 @@ class Company(models.Model):
     ptrc_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="PTRC Number")  # PTRC
     ptec_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="PTEC Number")  # PTEC
     esic_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="ESIC Number")  # ESIC No
-    status = models.CharField(max_length=50, choices=status)
+    status = models.CharField(max_length=50, choices=status, default='active')
     def __str__(self):
         return f"{self.short_name} - {self.name}"
 

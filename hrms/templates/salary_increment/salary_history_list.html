@@ -38,7 +38,7 @@
 
     <!-- Table -->
     <div class="table-responsive">
-        <table class="table table-bordered">
+        <table class="datatable table table-bordered">
             <thead class="table-light">
                 <tr>
                     <th>Employee</th>
@@ -75,11 +75,27 @@
                 </tr>
                 {% endwith %}
                 {% empty %}
-                <tr><td colspan="7" class="text-center">No data</td></tr>
+                <tr><td colspan="7" class="text-center">No data</td></tr> 
+                {% comment %} <tr>
+                <td class="text-center" colspan="1">No data</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                </tr> {% endcomment %}
+
                 {% endfor %}
             </tbody>
 
         </table>
+        <style>
+        .no-data-row {
+            display: none !important;
+        }
+        </style>
+
     </div>
 </div>
 
@@ -137,6 +153,23 @@ function openCompareModal(historyId, empId) {
         })
         .catch(err => console.log("COMPARE ERROR:", err));
 }
+</script>
+
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    let table = $('.datatable').DataTable({
+        pageLength: 10,
+        responsive: true,
+        dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
+        
+    });
+ 
+    // Convert DataTables elements into Bootstrap style
+    $('.dataTables_filter input').addClass('form-control');
+    $('.dataTables_length select').addClass('form-select');
+});
 </script>
 
 {% endblock %}

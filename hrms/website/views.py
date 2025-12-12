@@ -10,7 +10,7 @@ import pandas as pd
 from django.http import HttpResponse
 from .models import *  # Import your Employee model
 from datetime import datetime,timedelta
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseBadRequest
 from django.utils.timezone import now
 import json
 from datetime import date, timedelta
@@ -27,6 +27,7 @@ import io
 import os
 from django.http import FileResponse, Http404
 import openpyxl
+from .services import *  # from previous services.py
 
 # def parse_time(time_value):
 #     """Convert time string or float to a proper datetime.time object."""
@@ -888,6 +889,7 @@ def download_employees_excel(request):
 
     return response
 
+
 def download_leave_excel(request):
     # Fetch active leave balances along with related employee info
     leave_balances = LeaveBalance.objects.select_related("employee").filter(employee__status="Active")
@@ -1542,7 +1544,7 @@ def create_company(request):
 
         if not short_name or not name or not address:
             messages.error(request, "Short Name, Company Name, and Address are required.")
-            return redirect("add_company")  # Redirect back if validation fails
+            return redirect("create-company")  # Redirect back if validation fails
 
         # Save company to database
         company = Company.objects.create(
@@ -1763,12 +1765,10 @@ def update_leave_credit_policy(request):
     return JsonResponse({"status": "error", "message": "Invalid request."})
 
 
-
 # def recalc_leave_balances_view(request):
 #     recalculate_all_leave_balances()
 #     messages.success(request, "Leave balances recalculated successfully!")
 #     return redirect("leave_balance")
-
 
 
 
@@ -1846,7 +1846,7 @@ def reject_leave(request, leave_id):
         return JsonResponse({"message": "Error while rejecting"}, status=404)
 
 
-def leave_credit_policy_view(request):
+def leave_credit_policy_view(request):                           
     # Assume HR selects the company or logged-in user company
     company = Company.objects.first()  # You can customise this
 
@@ -1867,12 +1867,6 @@ def leave_credit_policy_view(request):
         "form": form,
         "company": company
     })
-
-
-
-
-
-
 
 
 # def leave_balance_view(request):
@@ -2330,100 +2324,100 @@ def salary_details(request, pk):
 
 
 
-def advances_list(request):
-    advances = AdvanceMaster.objects.all().order_by('-created_on')
-    employees = Employee.objects.all()
-    return render(request, 'advance/advance_list.html', {'advances': advances, 'employees': employees})
+# def advances_list(request):
+#     advances = AdvanceMaster.objects.all().order_by('-created_on')
+#     employees = Employee.objects.all()
+#     return render(request, 'advance/advance_list.html', {'advances': advances, 'employees': employees})
 
 
-@csrf_exempt
-def create_advance(request):
-    if request.method == "POST":
-        emp_id = request.POST.get("employee")
-        total_amount = request.POST.get("total_amount")
-        start_month = request.POST.get("start_month")
-        remarks = request.POST.get("remarks", "")
+# @csrf_exempt
+# def create_advance(request):
+#     if request.method == "POST":
+#         emp_id = request.POST.get("employee")
+#         total_amount = request.POST.get("total_amount")
+#         start_month = request.POST.get("start_month")
+#         remarks = request.POST.get("remarks", "")
 
-        employee = get_object_or_404(Employee, id=emp_id)
-        adv = AdvanceMaster.objects.create(
-            employee=employee,
-            total_amount=total_amount,
-            start_month=start_month + "-01",  # convert YYYY-MM to full date
-            remarks=remarks
-        )
-        return JsonResponse({"status": "success", "message": "Advance created successfully!"})
-
-
-@csrf_exempt
-def add_installment(request, advance_id):
-    advance = get_object_or_404(AdvanceMaster, id=advance_id)
-
-    month = request.POST.get("month")
-    amount = float(request.POST.get("amount"))
-    remarks = request.POST.get("remarks", "")
-    is_paid = request.POST.get("is_paid") == "on"
-
-    AdvanceInstallment.objects.create(
-        advance=advance,
-        month=month + "-01",
-        amount=amount,
-        is_paid=is_paid,
-        paid_on=timezone.now().date() if is_paid else None,
-        remarks=remarks
-    )
-
-    if advance.remaining_amount_db <= 0:
-        advance.is_closed = True
-        advance.save()
-
-    return JsonResponse({"status": "success", "message": "Installment recorded successfully!"})
+#         employee = get_object_or_404(Employee, id=emp_id)
+#         adv = AdvanceMaster.objects.create(
+#             employee=employee,
+#             total_amount=total_amount,
+#             start_month=start_month + "-01",  # convert YYYY-MM to full date
+#             remarks=remarks
+#         )
+#         return JsonResponse({"status": "success", "message": "Advance created successfully!"})
 
 
-def view_installments(request, advance_id):
-    advance = get_object_or_404(AdvanceMaster, id=advance_id)
-    installments = advance.installments.order_by('month')
-    html = render_to_string("partials/installments_table.html", {"installments": installments})
-    return JsonResponse({"html": html})
+# @csrf_exempt
+# def add_installment(request, advance_id):
+#     advance = get_object_or_404(AdvanceMaster, id=advance_id)
+
+#     month = request.POST.get("month")
+#     amount = float(request.POST.get("amount"))
+#     remarks = request.POST.get("remarks", "")
+#     is_paid = request.POST.get("is_paid") == "on"
+
+#     AdvanceInstallment.objects.create(
+#         advance=advance,
+#         month=month + "-01",
+#         amount=amount,
+#         is_paid=is_paid,
+#         paid_on=timezone.now().date() if is_paid else None,
+#         remarks=remarks
+#     )
+
+#     if advance.remaining_amount_db <= 0:
+#         advance.is_closed = True
+#         advance.save()
+
+#     return JsonResponse({"status": "success", "message": "Installment recorded successfully!"})
 
 
-@csrf_exempt
-def mark_paid(request, installment_id):
-    inst = get_object_or_404(AdvanceInstallment, id=installment_id)
-    inst.is_paid = True
-    inst.is_skipped = False
-    inst.paid_on = timezone.now().date()
-    inst.save()
-
-    advance = inst.advance
-    if advance.remaining_amount_db <= 0:
-        advance.is_closed = True
-        advance.save()
-
-    return JsonResponse({"message": "Installment marked as paid!"})
+# def view_installments(request, advance_id):
+#     advance = get_object_or_404(AdvanceMaster, id=advance_id)
+#     installments = advance.installments.order_by('month')
+#     html = render_to_string("partials/installments_table.html", {"installments": installments})
+#     return JsonResponse({"html": html})
 
 
-@csrf_exempt
-def undo_paid(request, installment_id):
-    inst = get_object_or_404(AdvanceInstallment, id=installment_id)
-    inst.is_paid = False
-    inst.paid_on = None
-    inst.save()
+# @csrf_exempt
+# def mark_paid(request, installment_id):
+#     inst = get_object_or_404(AdvanceInstallment, id=installment_id)
+#     inst.is_paid = True
+#     inst.is_skipped = False
+#     inst.paid_on = timezone.now().date()
+#     inst.save()
 
-    inst.advance.is_closed = False
-    inst.advance.save()
+#     advance = inst.advance
+#     if advance.remaining_amount_db <= 0:
+#         advance.is_closed = True
+#         advance.save()
 
-    return JsonResponse({"message": "Installment reverted to pending!"})
+#     return JsonResponse({"message": "Installment marked as paid!"})
 
 
-@csrf_exempt
-def skip_installment(request, installment_id):
-    """✅ Mark this month's installment as skipped."""
-    inst = get_object_or_404(AdvanceInstallment, id=installment_id)
-    inst.is_skipped = True
-    inst.is_paid = False
-    inst.paid_on = None
-    inst.save()
-    return JsonResponse({"message": "Installment skipped for this month!"})
+# @csrf_exempt
+# def undo_paid(request, installment_id):
+#     inst = get_object_or_404(AdvanceInstallment, id=installment_id)
+#     inst.is_paid = False
+#     inst.paid_on = None
+#     inst.save()
+
+#     inst.advance.is_closed = False
+#     inst.advance.save()
+
+#     return JsonResponse({"message": "Installment reverted to pending!"})
+
+
+# @csrf_exempt
+# def skip_installment(request, installment_id):
+#     """✅ Mark this month's installment as skipped."""
+#     inst = get_object_or_404(AdvanceInstallment, id=installment_id)
+#     inst.is_skipped = True
+#     inst.is_paid = False
+#     inst.paid_on = None
+#     inst.save()
+#     return JsonResponse({"message": "Installment skipped for this month!"})
 
 
 
@@ -2948,3 +2942,317 @@ def save_leave_settings(request):
         settings.save()
         return JsonResponse({"success": True, "message": "Leave settings saved successfully!"})
     return JsonResponse({"success": False, "message": "Invalid request"})
+
+
+
+
+def advance_list(request):
+    advances = AdvanceMaster.objects.all()
+
+    for adv in advances:
+        try:
+            paid = adv.advance_amount - adv.outstanding_amount
+            adv.progress = (paid / adv.advance_amount) * 100
+        except:
+            adv.progress = 0
+
+    return render(request, 'advances/advance_list.html', {
+        'advances': advances
+    })
+
+
+def advance_create(request):
+    """Admin/HR creates an advance."""
+    # if not request.user.is_staff:
+    #     return HttpResponseBadRequest("Not allowed")
+
+    if request.method == 'POST':
+        form = AdvanceCreateForm(request.POST)
+        if form.is_valid():
+            # Use service create_advance so schedules auto-created
+            data = form.cleaned_data
+            employee = data['employee']
+            amount = data['advance_amount']
+            months = data['default_months']
+            start_date = data.get('start_date') or None
+            adv = create_advance(employee, amount, months, start_date=start_date)
+            messages.success(request, f"Advance created for {employee} - ₹{amount}")
+            return redirect('advances-list')
+    else:
+        form = AdvanceCreateForm(initial={'start_date': date.today().replace(day=1)})
+    return render(request, 'advances/advance_create.html', {'form': form})
+
+
+
+def advance_detail(request, pk):
+    """Show schedule, payments, actions (pay/skip)."""
+    adv = get_object_or_404(AdvanceMaster, pk=pk)
+    # security: if non-staff, ensure this belongs to user
+    # if not request.user.is_staff:
+    #     try:
+    #         if request.user.employee != adv.employee:
+    #             return HttpResponseBadRequest("Not allowed")
+    #     except:
+    #         return HttpResponseBadRequest("Not allowed")
+
+    schedules = adv.schedules.order_by('due_month')
+    payments = adv.payments.order_by('-date')
+    payment_form = PaymentForm()
+    skip_form = SkipMonthForm()
+    return render(request, 'advances/advance_detail.html', {
+        'advance': adv,
+        'schedules': schedules,
+        'payments': payments,
+        'payment_form': payment_form,
+        'skip_form': skip_form
+    })
+
+@require_POST
+@transaction.atomic
+def pay_advance(request, pk):
+    """AJAX / form POST to apply payment."""
+    adv = get_object_or_404(AdvanceMaster, pk=pk)
+    # authorization check
+    # if not request.user.is_staff:
+    #     try:
+    #         if request.user.employee != adv.employee:
+    #             return JsonResponse({'error': 'Not allowed'}, status=403)
+    #     except:
+    #         return JsonResponse({'error': 'Not allowed'}, status=403)
+
+    form = PaymentForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({'error': 'Invalid data', 'errors': form.errors}, status=400)
+    amount = form.cleaned_data['amount']
+    note = form.cleaned_data.get('note', '')
+
+    # Use service to apply payment
+    try:
+        apply_payment(adv, amount, note=note)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+    # return updated schedule + outstanding
+    schedules = []
+    for s in adv.schedules.order_by('due_month'):
+        schedules.append({
+            'due_month': s.due_month.strftime('%Y-%m'),
+            'scheduled_amount': s.scheduled_amount,
+            'paid_amount': s.paid_amount,
+            'status': s.status
+        })
+    return JsonResponse({
+        'success': True,
+        'outstanding': adv.outstanding_amount,
+        'schedules': schedules
+    })
+
+@require_POST
+@transaction.atomic
+def skip_advance_month(request, pk):
+    """Mark a schedule month as skipped (AJAX). Expects due_month in POST (YYYY-MM-DD)."""
+    adv = get_object_or_404(AdvanceMaster, pk=pk)
+    # if not request.user.is_staff:
+    #     try:
+    #         if request.user.employee != adv.employee:
+    #             return JsonResponse({'error': 'Not allowed'}, status=403)
+    #     except:
+    #         return JsonResponse({'error': 'Not allowed'}, status=403)
+
+    form = SkipMonthForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({'error': 'Invalid data', 'errors': form.errors}, status=400)
+
+    due_month = form.cleaned_data['due_month']
+    try:
+        skip_month(adv, due_month)
+    except ValueError as e:
+        return JsonResponse({'error': str(e)}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+    schedules = []
+    for s in adv.schedules.order_by('due_month'):
+        schedules.append({
+            'due_month': s.due_month.strftime('%Y-%m'),
+            'scheduled_amount': s.scheduled_amount,
+            'paid_amount': s.paid_amount,
+            'status': s.status
+        })
+    return JsonResponse({
+        'success': True,
+        'outstanding': adv.outstanding_amount,
+        'schedules': schedules
+    })
+
+
+@require_POST
+def revert_skip_view(request, pk):
+    adv = get_object_or_404(AdvanceMaster, pk=pk)
+    due_month = request.POST.get("due_month")
+
+    try:
+        due_month = date.fromisoformat(due_month)
+        revert_skip(adv, due_month)
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=400)
+
+    updated = [{
+        "due_month": s.due_month.strftime("%Y-%m"),
+        "scheduled_amount": s.scheduled_amount,
+        "paid_amount": s.paid_amount,
+        "status": s.status
+    } for s in adv.schedules.order_by("due_month")]
+
+    return JsonResponse({"success": True, "schedules": updated})
+
+
+
+
+def payroll_run_list(request):
+    runs = PayrollRun.objects.order_by("-month")
+    return render(request, "payroll/run_list.html", {"runs": runs})
+
+def payroll_run_create(request):
+    companies = Company.objects.all()
+    if request.method == "POST":
+        company_id = request.POST.get("company")
+        month = request.POST.get("month")  # expected "YYYY-MM"
+        if not company_id or not month:
+            return redirect("payroll-run-create")
+        company = get_object_or_404(Company, id=company_id)
+        year, m = map(int, month.split("-"))
+        month_start = date(year, m, 1)
+        next_month = month_start.replace(day=28) + timedelta(days=4)
+        month_end = next_month - timedelta(days=next_month.day)
+        run = create_payroll_run(company, month_start, month_end)
+        return redirect("payroll-run-detail", run_id=run.id)
+    return render(request, "payroll/run_create.html", {"companies": companies})
+
+def payroll_run_detail(request, run_id):
+    run = get_object_or_404(PayrollRun, id=run_id)
+    records = run.records.select_related("employee").all()
+    settings = PayrollSettings.objects.filter(company=run.company).first()
+    return render(request, "payroll/run_detail.html", {"run": run, "records": records, "settings": settings})
+
+@require_POST
+def payroll_record_update(request, record_id):
+    record = get_object_or_404(PayrollRecord, id=record_id)
+    if record.payroll.status == PayrollRun.STATUS_FINALIZED:
+        return JsonResponse({"success": False, "error": "Payroll finalized"}, status=400)
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    # apply edits to record fields (present_days, leave_adjust, pf_employee, professional_tax, advance, tds, other_deductions)
+    editable = ["present_days", "leave_adjust", "pf_employee", "professional_tax", "advance", "tds", "other_deductions", "esic_employee"]
+    manual = {}
+    for k in editable:
+        if k in payload:
+            try:
+                val = Decimal(payload[k])
+            except Exception:
+                val = Decimal(0)
+            setattr(record, k, val)
+            manual[k] = float(val)
+
+    # save then recalc authoritative
+    record.save()
+    recalc_and_save_record(record, manual_overrides=manual)
+
+    return JsonResponse({
+        "success": True,
+        "record": {
+            "id": record.id,
+            "net_salary": float(record.net_salary),
+            "total_deductions": float(record.total_deductions),
+            "calculation_breakdown": record.calculation_breakdown
+        }
+    })
+
+@require_POST
+def payroll_run_finalize(request, run_id):
+    run = get_object_or_404(PayrollRun, id=run_id)
+    # recalc all and set finalized
+    for rec in run.records.all():
+        recalc_and_save_record(rec, manual_overrides=rec.manual_override or {})
+    run.status = PayrollRun.STATUS_FINALIZED
+    run.save()
+    return JsonResponse({"success": True})
+
+
+
+
+from openpyxl import Workbook
+from django.http import HttpResponse
+from .models import PayrollRun, PayrollRecord
+
+def payroll_export_excel(request, run_id):
+    run = PayrollRun.objects.get(id=run_id)
+    records = PayrollRecord.objects.filter(payroll=run)   # ✅ FIXED FIELD NAME
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"Payroll {run.month.strftime('%b %Y')}"
+
+    headers = [
+        "Employee Code", "Name", "Designation", "Branch",
+        "Gross CTC", "Basic", "HRA", "Sp Allow", "Stat Bonus",
+        "Allowance1", "Allowance2",
+        "Total Days", "Present Days", "Leave",
+        "Basic Proc", "HRA Proc", "Sp Proc", "Stat Proc",
+        "Allowance1 Proc", "Allowance2 Proc", "Gross Proc",
+        "PF Employee", "Professional Tax", "Advance", "ESIC Employee", "TDS", "Other Deductions",
+        "Total Deductions", "Net Salary"
+    ]
+
+    ws.append(headers)
+
+    for r in records:
+        ws.append([
+            r.employee_code, r.employee_name, r.designation, r.branch_name,
+            r.gross_ctc, r.basic_pm, r.hra_pm, r.sp_allowance_pm, r.stat_bonus_pm,
+            r.allowance1_pm, r.allowance2_pm,
+            r.total_days, r.present_days, r.leave_taken,
+            r.basic_processed, r.hra_processed, r.sp_allowance_processed,
+            r.stat_bonus_processed, r.allowance1_processed, r.allowance2_processed, r.gross_processed,
+            r.pf_employee, r.professional_tax, r.advance,
+            r.esic_employee, r.tds, r.other_deductions,
+            r.total_deductions, r.net_salary
+        ])
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    filename = f"Payroll_{run.month.strftime('%b_%Y')}.xlsx"
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    wb.save(response)
+    return response
+
+
+
+
+from django.template.loader import get_template
+from xhtml2pdf import pisa
+from django.http import HttpResponse
+from io import BytesIO
+
+def payroll_export_pdf(request, run_id):
+    run = PayrollRun.objects.get(id=run_id)
+    records = PayrollRecord.objects.filter(payroll=run)   # ✅ FIXED FIELD NAME
+
+    template = get_template("payroll/payroll_pdf_template.html")
+    html = template.render({"run": run, "records": records})
+
+    pdf_file = BytesIO()
+    pisa_status = pisa.CreatePDF(html, dest=pdf_file)
+
+    if pisa_status.err:
+        return HttpResponse("PDF generation failed", status=500)
+
+    response = HttpResponse(pdf_file.getvalue(), content_type="application/pdf")
+    response['Content-Disposition'] = f'attachment; filename="Payroll_{run.month.strftime("%b_%Y")}.pdf"'
+
+    return response

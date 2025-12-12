@@ -8,6 +8,7 @@ import datetime
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
 from django.db.models import JSONField  # for PostgreSQL
+from decimal import Decimal
 
 # Create your models here.
 status = {
@@ -29,7 +30,6 @@ class Company(models.Model):
     status = models.CharField(max_length=50, choices=status)
     def __str__(self):
         return f"{self.short_name} - {self.name}"
-
 
 
 class Branch(models.Model):
@@ -208,6 +208,7 @@ class AssetHandover(models.Model):
     #     verbose_name="Employee Status"
     # )
 
+
 class SalaryMaster(models.Model):
     # Dropdowns
     employee = models.ForeignKey(Employee,null=True,blank=True,on_delete=models.CASCADE)
@@ -263,9 +264,6 @@ class SalaryMaster(models.Model):
     net_salary_pa = models.DecimalField(max_digits=10, decimal_places=2,null=True, blank=True, verbose_name="Net Salary (P.A)")
     def __str__(self):
         return f"Offboarding for {self.employee} - {self.gross_ctc_pm}"
-    
-
-
 
 
 class Attendance(models.Model):
@@ -432,7 +430,6 @@ class LeaveRecord(models.Model):
         return f"{self.employee.name} - Leave Record"
 
 
-
 class LeaveSettings(models.Model):
     carry_forward = models.BooleanField(default=True)
     reset_month = models.PositiveIntegerField(
@@ -458,7 +455,6 @@ class CompOff(models.Model):
         return f"{self.employee.name} ({self.employee.code}) - {self.from_date} to {self.to_date}"
 
 
-
 class CompOffRequest(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
     # applied_date = models.DateField(auto_now_add=True)  # When the request was made
@@ -482,8 +478,6 @@ class CompOffRequest(models.Model):
 
     def __str__(self):
         return f"CompOff Request - {self.employee.first_name} on {self.from_date}"
-
-
 
 
 class LeaveBalance(models.Model):
@@ -544,10 +538,6 @@ class LeaveBalance(models.Model):
         return f"{self.employee.first_name} - Balance: {self.leave_balance}"
 
 
-
-
-
-
 class LeaveBalanceHistory(models.Model):
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
     month = models.CharField(max_length=20)  # e.g. 'November 2025'
@@ -595,35 +585,35 @@ class LeaveCreditPolicy(models.Model):
 
 
 
-class AdvanceMaster(models.Model):
-    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="advances")
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
-    start_month = models.DateField(blank=True, null=True)
-    remarks = models.TextField(blank=True, null=True)
-    created_on = models.DateTimeField(auto_now_add=True)
-    is_closed = models.BooleanField(default=False)
+# class AdvanceMaster(models.Model):
+#     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="advances")
+#     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+#     start_month = models.DateField(blank=True, null=True)
+#     remarks = models.TextField(blank=True, null=True)
+#     created_on = models.DateTimeField(auto_now_add=True)
+#     is_closed = models.BooleanField(default=False)
 
-    def __str__(self):
-        return f"{self.employee} - ₹{self.total_amount}"
+#     def __str__(self):
+#         return f"{self.employee} - ₹{self.total_amount}"
 
-    @property
-    def paid_amount_db(self):
-        return sum(i.amount for i in self.installments.filter(is_paid=True))
+#     @property
+#     def paid_amount_db(self):
+#         return sum(i.amount for i in self.installments.filter(is_paid=True))
 
-    @property
-    def remaining_amount_db(self):
-        remaining = self.total_amount - self.paid_amount_db
-        return remaining if remaining > 0 else 0
+#     @property
+#     def remaining_amount_db(self):
+#         remaining = self.total_amount - self.paid_amount_db
+#         return remaining if remaining > 0 else 0
 
 
-class AdvanceInstallment(models.Model):
-    advance = models.ForeignKey(AdvanceMaster, on_delete=models.CASCADE, related_name='installments')
-    month = models.DateField()
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
-    is_paid = models.BooleanField(default=False)
-    is_skipped = models.BooleanField(default=False)  # ✅ NEW FIELD
-    paid_on = models.DateField(blank=True, null=True)
-    remarks = models.TextField(blank=True, null=True)
+# class AdvanceInstallment(models.Model):
+#     advance = models.ForeignKey(AdvanceMaster, on_delete=models.CASCADE, related_name='installments')
+#     month = models.DateField()
+#     amount = models.DecimalField(max_digits=10, decimal_places=2)
+#     is_paid = models.BooleanField(default=False)
+#     is_skipped = models.BooleanField(default=False)  # ✅ NEW FIELD
+#     paid_on = models.DateField(blank=True, null=True)
+#     remarks = models.TextField(blank=True, null=True)
 
     def __str__(self):
         status = "Paid" if self.is_paid else ("Skipped" if self.is_skipped else "Pending")
@@ -675,8 +665,6 @@ class PayrollSettings(models.Model):
         return f"Payroll Settings for {self.company.name}"
 
 
-
-
 # class SalaryIncrement(models.Model):
 #     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
 #     new_gross_ctc_pm = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="New Gross CTC (P.M)")
@@ -687,8 +675,6 @@ class PayrollSettings(models.Model):
 
 #     def __str__(self):
 #         return f"{self.employee} - ₹{self.new_gross_ctc_pm} from {self.effective_date}"
-
-
 
 class SalaryIncrement(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
@@ -705,7 +691,6 @@ class SalaryIncrement(models.Model):
         return f"Increment for {self.employee} effective {self.effective_date}"
 
 
-
 class SalaryHistory(models.Model):
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE,null=True, blank=True)
     data = models.JSONField(null=True, blank=True)   # store all salary fields here
@@ -714,3 +699,158 @@ class SalaryHistory(models.Model):
 
     def __str__(self):
         return f"{self.employee} - {self.start_date} to {self.end_date}"
+
+
+
+
+
+class AdvanceMaster(models.Model):
+    STATUS_ACTIVE = 'active'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_COMPLETED, 'Completed')]
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='advances')
+    advance_amount = models.PositiveIntegerField()  # store in rupees (int)
+    start_date = models.DateField(default=timezone.now)
+    default_months = models.PositiveIntegerField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    outstanding_amount = models.IntegerField()  # updated as payments happen
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Advance {self.id} - {self.employee} - ₹{self.advance_amount}"
+
+class AdvanceSchedule(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_PAID = 'paid'
+    STATUS_SKIPPED = 'skipped'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_PAID, 'Paid'),
+        (STATUS_SKIPPED, 'Skipped'),
+    ]
+
+    advance = models.ForeignKey(AdvanceMaster, on_delete=models.CASCADE, related_name='schedules')
+    due_month = models.DateField()  # use first day of month for the EMI month
+    scheduled_amount = models.PositiveIntegerField()  # rupees
+    paid_amount = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+
+    class Meta:
+        ordering = ['due_month']
+
+    def remaining(self):
+        return max(0, self.scheduled_amount - self.paid_amount)
+
+    def __str__(self):
+        return f"{self.advance} | {self.due_month:%Y-%m} - ₹{self.scheduled_amount} ({self.status})"
+
+class AdvancePayment(models.Model):
+    advance = models.ForeignKey(AdvanceMaster, on_delete=models.CASCADE, related_name='payments')
+    amount = models.PositiveIntegerField()
+    date = models.DateTimeField(default=timezone.now)
+    note = models.TextField(blank=True, null=True)
+
+    def __str__(self):
+        return f"Payment {self.amount} on {self.date.date()} for {self.advance}"
+
+
+
+
+
+
+# models.py (append)
+from decimal import Decimal
+from django.db import models
+from django.utils import timezone
+
+class PayrollRun(models.Model):
+    STATUS_DRAFT = "draft"
+    STATUS_FINALIZED = "finalized"
+    STATUS_CHOICES = [(STATUS_DRAFT, "Draft"), (STATUS_FINALIZED, "Finalized")]
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, null=True, blank=True)
+    month = models.DateField(help_text="First day of month representing payroll month")
+    start_date = models.DateField()
+    end_date = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+
+    class Meta:
+        ordering = ["-month"]
+
+    def __str__(self):
+        return f"{self.company.short_name if self.company else 'Company'} - Payroll {self.month:%b %Y} [{self.status}]"
+
+
+class PayrollRecord(models.Model):
+    payroll = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name="records")
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
+
+    # SECTION 1 - employee master snapshot
+    employee_code = models.CharField(max_length=50, blank=True)
+    employee_name = models.CharField(max_length=255, blank=True)
+    company_name = models.CharField(max_length=255, blank=True)
+    designation = models.CharField(max_length=255, blank=True)
+    branch_name = models.CharField(max_length=255, blank=True)
+    date_of_joining = models.DateField(null=True, blank=True)
+    month_display = models.CharField(max_length=20, blank=True)
+
+    # SECTION 2 - salary breakup (monthly)
+    gross_ctc = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    opted_for_pf = models.BooleanField(default=False)
+    basic_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    hra_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    sp_allowance_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    stat_bonus_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    allowance1_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    allowance2_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    pf_er_cont = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    esic_er_cont = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    total_gross_salary = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
+    # SECTION 3 - attendance & leave
+    total_days = models.IntegerField(default=0)
+    present_days = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal("0.00"))
+    leave_taken = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal("0.00"))
+    leave_adjust = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal("0.00"))
+    percent_adjusted = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+
+    # SECTION 4 - processed salary (prorated)
+    basic_processed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    hra_processed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    sp_allowance_processed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    stat_bonus_processed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    allowance1_processed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    allowance2_processed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    gross_processed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
+    # SECTION 5 - deductions (employee-side editable)
+    pf_employee = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    professional_tax = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    advance = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    esic_employee = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    tds = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    other_deductions = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    total_deductions = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
+    # SECTION 6 - net pay
+    net_salary = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+
+    # SECTION 7 - employer contributions (for reports)
+    pf_employer = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    esic_employer = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
+    # audit/manual
+    manual_override = models.JSONField(default=dict, blank=True)
+    calculation_breakdown = models.JSONField(default=dict, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["employee__first_name"]
+
+    def __str__(self):
+        return f"{self.employee} - {self.payroll.month:%b %Y}"

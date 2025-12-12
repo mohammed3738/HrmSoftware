@@ -58,13 +58,13 @@ urlpatterns = [
     path("approve-correction/<int:request_id>/", views.approve_correction_request, name="approve_correction"),
     path("reject-correction/<int:request_id>/", views.reject_correction_request, name="reject_correction"),  
     # employee advances
-    path('advances/', views.advances_list, name='advances-list'),
-    path('advances/create/', views.create_advance, name='create-advance'),
-    path('advances/<int:advance_id>/add-installment/', views.add_installment, name='add-installment'),
-    path('advances/<int:advance_id>/installments/', views.view_installments, name='view-installments'),
-    path('advances/mark-paid/<int:installment_id>/', views.mark_paid, name='mark-paid'),
-    path('advances/undo-paid/<int:installment_id>/', views.undo_paid, name='undo-paid'),
-    path('advances/skip/<int:installment_id>/', views.skip_installment, name='skip-installment'),  # ✅ NEW
+    # path('advances/', views.advances_list, name='advances-list'),
+    # path('advances/create/', views.create_advance, name='create-advance'),
+    # path('advances/<int:advance_id>/add-installment/', views.add_installment, name='add-installment'),
+    # path('advances/<int:advance_id>/installments/', views.view_installments, name='view-installments'),
+    # path('advances/mark-paid/<int:installment_id>/', views.mark_paid, name='mark-paid'),
+    # path('advances/undo-paid/<int:installment_id>/', views.undo_paid, name='undo-paid'),
+    # path('advances/skip/<int:installment_id>/', views.skip_installment, name='skip-installment'),  # ✅ NEW
 
     path("leave-balance/", views.leave_balance_view, name="leave_balance"),
     path("employees/<int:employee_id>/compoffs/", views.employee_compoff_details, name="employee-compoff-details"),
@@ -119,6 +119,29 @@ urlpatterns = [
 
     path('comp-off-requests/', views.comp_off_requests_list, name='comp_off_requests_list'),
     path("comp-off/<int:pk>/month/", views.comp_off_requests, name="comp_off_requests"),
+
+
+
+
+
+    path('advances/', views.advance_list, name='advances-list'),
+    path('advances/create/', views.advance_create, name='create-advance'),
+    path('advances/<int:pk>/', views.advance_detail, name='advance-detail'),
+    path('advances/<int:pk>/pay/', views.pay_advance, name='advances-pay'),
+    path('advances/<int:pk>/skip/', views.skip_advance_month, name='advances-skip'),
+    path("advances/<int:pk>/revert-skip/", views.revert_skip_view, name="revert-skip"),
+
+
+
+    path("payroll/", views.payroll_run_list, name="payroll-run-list"),
+    path("payroll/run/create/", views.payroll_run_create, name="payroll-run-create"),
+    path("payroll/run/<int:run_id>/", views.payroll_run_detail, name="payroll-run-detail"),
+    path("payroll/record/<int:record_id>/update/", views.payroll_record_update, name="payroll-record-update"),
+    path("payroll/run/<int:run_id>/finalize/", views.payroll_run_finalize, name="payroll-run-finalize"),
+
+
+    path("payroll/<int:run_id>/export/excel/", views.payroll_export_excel, name="payroll-export-excel"),
+    path("payroll/<int:run_id>/export/pdf/", views.payroll_export_pdf, name="payroll-export-pdf"),
 
 ]
 

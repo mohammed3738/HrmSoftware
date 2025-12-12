@@ -55,7 +55,7 @@
       </div>
 
       <div class="table-responsive">
-        <table class="table table-bordered text-center" id="incrementTable">
+        <table class="datatable table">
 
           <thead class="table-light">
             <tr>
@@ -403,10 +403,12 @@ async function loadPayrollSettings() {
 }
 
 /* Utility helpers */
-const $ = id => document.getElementById(id);
-const val = id => parseFloat($(id)?.value || 0);
+{% comment %} const $ = id => document.getElementById(id); {% endcomment %}
+const getById = id => document.getElementById(id);
+
+const val = id => parseFloat(getById(id)?.value || 0);
 const round = v => Math.round(v);
-const setIfExists = (id, value) => { if ($(id)) $(id).value = round(value); };
+const setIfExists = (id, value) => { if (getById(id)) getById(id).value = round(value); };
 
 /* Mark manual override when user types */
 function markManual(e) {
@@ -415,7 +417,7 @@ function markManual(e) {
 
 /* Clear manual flag (used when system should control a field) */
 function clearManualFlag(id) {
-    const el = $(id);
+    const el = getById(id);
     if (el) {
         el.dataset.manual = "false";
         el.classList.remove('border-warning');
@@ -443,7 +445,7 @@ function calculateIncrementSalary(triggeredById) {
         ['basic','hra','statBonus','specialAllowance','pfEr','pfEe','esicEr','esicEe','gratuity','guaranteedCash','costToCompany','netSalary',
          'grossCTCAnn','basicAnn','hraAnn','statBonusAnn','allowance1Ann','allowance2Ann','specialAllowanceAnn','guaranteedCashAnn',
          'pfErAnn','pfEeAnn','esicErAnn','esicEeAnn','gratuityAnn','profTaxAnn','costToCompanyAnn','netSalaryAnn'].forEach(id => {
-            if ($(id)) $(id).value = '';
+            if (getById(id)) getById(id).value = '';
          });
         return;
     }
@@ -466,9 +468,9 @@ function calculateIncrementSalary(triggeredById) {
     if (!profTax) profTax = payrollSettings.professional_tax || 0;
 
     // toggles
-    const pfEnabled = $('pfSelect')?.value === 'yes';
-    const esicEnabled = $('esicSelect')?.value === 'yes';
-    const gratuityEnabled = $('gratuitySelect')?.value === 'yes';
+    const pfEnabled = getById('pfSelect')?.value === 'yes';
+    const esicEnabled = getById('esicSelect')?.value === 'yes';
+    const gratuityEnabled = getById('gratuitySelect')?.value === 'yes';
 
     /* ----------------------
        1) Basic: system default vs manual
@@ -476,7 +478,7 @@ function calculateIncrementSalary(triggeredById) {
        - Otherwise system compute defaultBasic = min(grossCTC*basicPerc, basicCap)
        However Option B: if user edits basic, HRA will be recalculated from basic.
        ---------------------- */
-    const basicEl = $('basic');
+    const basicEl = getById('basic');
     let basicSys = Math.min(grossCTC * basicPerc, basicCap);
     let basicVal = basicSys;
 
@@ -500,7 +502,7 @@ function calculateIncrementSalary(triggeredById) {
        - If HRA has been manually edited by user (data-manual === "true") and the trigger wasn't 'basic', keep manual.
        - If HRA not manual and trigger != 'basic', system compute from basicVal.
        ---------------------- */
-    const hraEl = $('hra');
+    const hraEl = getById('hra');
     let hraValSys = round(basicVal * hraPerc);
 
     if (triggeredById === 'basic') {
@@ -523,7 +525,7 @@ function calculateIncrementSalary(triggeredById) {
        3) Stat Bonus (system default or manual)
        Excel rule: if basic < 21000 then statBonus = ROUND(7000 * bonusPerc, 0) else 0
        ---------------------- */
-    const statEl = $('statBonus');
+    const statEl = getById('statBonus');
     let statSys = (basicVal < 21000) ? Math.round(7000 * bonusPerc) : 0;
     let statVal = statSys;
     if (statEl && statEl.dataset.manual === "true") {
@@ -538,7 +540,7 @@ function calculateIncrementSalary(triggeredById) {
        - PF EE = PF ER
        - PF fields are editable: if user manually changed pfEr, respect it (but ensure pfEe = pfEr)
        ---------------------- */
-    const pfErEl = $('pfEr');
+    const pfErEl = getById('pfEr');
     let pfErSys = pfEnabled ? Math.min(basicVal * pfPerc, 1800) : 0;
     let pfErVal = pfErSys;
     if (pfErEl && pfErEl.dataset.manual === "true") {
@@ -547,13 +549,13 @@ function calculateIncrementSalary(triggeredById) {
         if (pfErEl) pfErEl.value = round(pfErVal);
     }
     // PF Employee mirrors pfErVal
-    const pfEeEl = $('pfEe');
+    const pfEeEl = getById('pfEe');
     if (pfEeEl) pfEeEl.value = round(pfErVal);
 
     /* ----------------------
        5) Gratuity
        ---------------------- */
-    const gratuityEl = $('gratuity');
+    const gratuityEl = getById('gratuity');
     let gratuitySys = gratuityEnabled ? Math.round(basicVal * gratuityPerc) : 0;
     let gratuityVal = gratuitySys;
     if (gratuityEl && gratuityEl.dataset.manual === "true") {
@@ -572,7 +574,7 @@ function calculateIncrementSalary(triggeredById) {
     let guaranteedTemp = basicVal + hraVal + statVal + allowance1 + allowance2 + specialTemp;
 
     // ESIC calculation
-    const esicErEl = $('esicEr');
+    const esicErEl = getById('esicEr');
     let esicErVal = 0;
     if (esicEnabled && guaranteedTemp <= 21000) {
         esicErVal = Math.round(guaranteedTemp * esicPerc);
@@ -583,14 +585,14 @@ function calculateIncrementSalary(triggeredById) {
     } else {
         if (esicErEl) esicErEl.value = esicErVal;
     }
-    if ($('esicEe')) $('esicEe').value = esicErVal;
+    if (getById('esicEe')) getById('esicEe').value = esicErVal;
 
     /* ----------------------
        7) Final Special Allowance (balancing figure EXACT to Excel)
        SA = grossCTC - (basic + hra + statBonus + allowance1 + allowance2 + pfEr + esicEr + gratuity)
        If user manually edited SA, respect it; otherwise set this balancing figure.
        ---------------------- */
-    const specialEl = $('specialAllowance');
+    const specialEl = getById('specialAllowance');
     let specialSys = round(grossCTC - (basicVal + hraVal + statVal + allowance1 + allowance2 + pfErVal + esicErVal + gratuityVal));
     let specialVal = specialSys;
     if (specialEl && specialEl.dataset.manual === "true") {
@@ -609,7 +611,7 @@ function calculateIncrementSalary(triggeredById) {
        - net = guaranteedCash - PF Employee - ESIC Employee - profTax
        If user manually edited netSalary, respect it; otherwise compute.
        ---------------------- */
-    const netEl = $('netSalary');
+    const netEl = getById('netSalary');
     let netSys = guaranteedCash - pfErVal - esicErVal - profTax;
     let netVal = netSys;
     if (netEl && netEl.dataset.manual === "true") {
@@ -678,7 +680,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     watched.forEach(id => {
-        const el = $(id);
+        const el = getById(id);
         if (!el) return;
         // For selects and numbers use change + input
         el.addEventListener('input', (e) => {
@@ -705,7 +707,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // also attach calculation to any selects inside modal (pf, esic, gratuity)
     ['pfSelect','esicSelect','gratuitySelect'].forEach(id => {
-        const s = $(id);
+        const s = getById(id);
         if (!s) return;
         s.addEventListener('change', () => calculateIncrementSalary(id));
     });
@@ -724,22 +726,22 @@ async function viewIncrementDetails(id) {
     new bootstrap.Modal(document.getElementById("incrementDetailsModal")).show();
 
     try {
-        const res = await fetch(`/salary/increment/details/${id}/`);
+        const res = await fetch(`/salary/increment/details/getById{id}/`);
         const data = await res.json();
 
         modalBody.innerHTML = `
             <table class="table table-bordered table-sm">
-                <tr><th>Employee</th><td>${data.employee}</td></tr>
-                <tr><th>Effective Date</th><td>${data.effective_date}</td></tr>
-                <tr><th>Gross CTC (PM)</th><td>${data.gross_ctc_pm}</td></tr>
-                <tr><th>Net Salary (PM)</th><td>${data.net_salary_pm}</td></tr>
+                <tr><th>Employee</th><td>getById{data.employee}</td></tr>
+                <tr><th>Effective Date</th><td>getById{data.effective_date}</td></tr>
+                <tr><th>Gross CTC (PM)</th><td>getById{data.gross_ctc_pm}</td></tr>
+                <tr><th>Net Salary (PM)</th><td>getById{data.net_salary_pm}</td></tr>
 
-                <tr><th>PF</th><td>${data.flags.pf_deducted ? "Yes" : "No"}</td></tr>
-                <tr><th>ESIC</th><td>${data.flags.esic_applicable ? "Yes" : "No"}</td></tr>
-                <tr><th>Gratuity</th><td>${data.flags.gratuity_applicable ? "Yes" : "No"}</td></tr>
+                <tr><th>PF</th><td>getById{data.flags.pf_deducted ? "Yes" : "No"}</td></tr>
+                <tr><th>ESIC</th><td>getById{data.flags.esic_applicable ? "Yes" : "No"}</td></tr>
+                <tr><th>Gratuity</th><td>getById{data.flags.gratuity_applicable ? "Yes" : "No"}</td></tr>
 
                 <tr><th>Status</th>
-                    <td>${data.is_processed ?
+                    <td>getById{data.is_processed ?
                         "<span class='badge bg-success'>Applied</span>" :
                         "<span class='badge bg-warning text-dark'>Pending</span>"}
                     </td>
@@ -750,5 +752,19 @@ async function viewIncrementDetails(id) {
         modalBody.innerHTML = `<div class="alert alert-danger">Failed to load details.</div>`;
     }
 }
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    let table = $('.datatable').DataTable({
+        pageLength: 10,
+        responsive: true,
+        dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
+    });
+ 
+    // Convert DataTables elements into Bootstrap style
+    $('.dataTables_filter input').addClass('form-control');
+    $('.dataTables_length select').addClass('form-select');
+});
 </script>
 {% endblock %}

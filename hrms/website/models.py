@@ -152,6 +152,14 @@ class EmployeeAttachment(models.Model):
         related_name="attachments"
     )
     file = models.FileField(upload_to="employee_attachments/")
+    FILE_NAME_CHOICES = [
+        ('aadhaar', 'Aadhaar'),
+        ('pan', 'PAN'),
+        ('resume', 'Resume'),
+        ('offer_letter', 'Offer Letter'),
+        # add more
+    ]
+    file_name = models.CharField(max_length=50, choices=FILE_NAME_CHOICES, blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

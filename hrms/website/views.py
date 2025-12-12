@@ -242,9 +242,9 @@ def attendance_list(request):
 
     context = {
         "attendance_records": attendance_records,
-        "selected_date": selected_date,
-        "prev_date": prev_date,
-        "next_date": next_date,
+        "selected_date": selected_date.isoformat(),
+        "prev_date": prev_date.isoformat(),
+        "next_date": next_date.isoformat(),
     }
     return render(request, "attendance/today.html", context)
 
@@ -1119,6 +1119,8 @@ def create_employee(request):
 
         # Previous Employment records formset
         formset = PreviousEmploymentFormSet(request.POST)
+        # print("FIELDS:", AttachmentFormSet.form.base_fields.keys())
+
 
         if form.is_valid() and formset.is_valid() and attachment_formset.is_valid():
 
@@ -1163,6 +1165,7 @@ def create_employee(request):
             # -------------------------------
             attachment_formset.instance = employee
             attachment_formset.save()
+            
 
             messages.success(request, "Employee created successfully!")
             return redirect('home')

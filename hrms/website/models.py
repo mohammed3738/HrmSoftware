@@ -785,8 +785,8 @@ class PayrollRun(models.Model):
 
 
 class PayrollRecord(models.Model):
-    payroll = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name="records")
-    employee = models.ForeignKey(Employee, on_delete=models.CASCADE)
+    payroll = models.ForeignKey("PayrollRun", on_delete=models.CASCADE, related_name="records")
+    employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
 
     # SECTION 1 - employee master snapshot
     employee_code = models.CharField(max_length=50, blank=True)
@@ -806,18 +806,18 @@ class PayrollRecord(models.Model):
     stat_bonus_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     allowance1_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     allowance2_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    pf_er_cont = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    esic_er_cont = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
     total_gross_salary = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
 
     # SECTION 3 - attendance & leave
     total_days = models.IntegerField(default=0)
     present_days = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal("0.00"))
     leave_taken = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal("0.00"))
-    leave_adjust = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal("0.00"))
-    percent_adjusted = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
 
-    # SECTION 4 - processed salary (prorated)
+    # NEW: leave_without_pay from LeaveBalance (LWP)
+    leave_without_pay = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal("0.00"))
+
+    # SECTION 4 - processed salary (prorated using LWP)
     basic_processed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     hra_processed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     sp_allowance_processed = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
@@ -838,10 +838,6 @@ class PayrollRecord(models.Model):
     # SECTION 6 - net pay
     net_salary = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
 
-    # SECTION 7 - employer contributions (for reports)
-    pf_employer = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-    esic_employer = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
-
     # audit/manual
     manual_override = models.JSONField(default=dict, blank=True)
     calculation_breakdown = models.JSONField(default=dict, blank=True)
@@ -853,4 +849,6 @@ class PayrollRecord(models.Model):
         ordering = ["employee__first_name"]
 
     def __str__(self):
+        # avoid referencing removed fields
         return f"{self.employee} - {self.payroll.month:%b %Y}"
+    

@@ -232,11 +232,12 @@ def revert_skip(advance: AdvanceMaster, due_month: date):
 
 
 
-# services.py
+# services.py (relevant excerpts)
 from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
-from .models import PayrollRun, PayrollRecord, SalaryMaster, Attendance, AdvanceSchedule, PayrollSettings, Employee
 from django.db.models import Sum
+from .models import PayrollRun, PayrollRecord, SalaryMaster, Attendance, AdvanceSchedule, PayrollSettings, Employee, LeaveBalance
+from datetime import date
 
 def money_d(v):
     return Decimal(v or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -246,7 +247,11 @@ def get_attendance_summary(employee, start_date, end_date):
     qs = Attendance.objects.filter(employee=employee, date__range=[start_date, end_date])
     present_sum = qs.aggregate(total=Sum("count"))["total"] or Decimal("0.00")
     leave_taken = Decimal(total_days) - Decimal(present_sum)
-    return {"total_days": int(total_days), "present_days": money_d(present_sum), "leave_taken": money_d(max(Decimal(0), leave_taken))}
+    return {
+        "total_days": int(total_days),
+        "present_days": money_d(present_sum),
+        "leave_taken": money_d(max(Decimal(0), leave_taken))
+    }
 
 def get_advance_for_employee_month(employee, start_date, end_date):
     emi = AdvanceSchedule.objects.filter(
@@ -275,6 +280,10 @@ def generate_records_for_month(run: PayrollRun):
         att = get_attendance_summary(emp, run.start_date, run.end_date)
         advance_amt = get_advance_for_employee_month(emp, run.start_date, run.end_date)
 
+        # Get LeaveBalance for the run month, if exists (use leave_without_pay)
+        lb = LeaveBalance.objects.filter(employee=emp).first()
+        lwop = money_d(lb.leave_without_pay) if lb else money_d(0)
+
         rec = PayrollRecord.objects.create(
             payroll=run,
             employee=emp,
@@ -294,26 +303,29 @@ def generate_records_for_month(run: PayrollRun):
             stat_bonus_pm=money_d(salary.stat_bonus_pm),
             allowance1_pm=money_d(salary.allowance1_pm),
             allowance2_pm=money_d(salary.allowance2_pm),
-            pf_employer=money_d(salary.pf_er_cont_pm if hasattr(salary, "pf_er_cont_pm") else getattr(salary, "pf_er_cont_pa", 0)),
-            esic_employer=money_d(salary.esic_er_cont_pm if hasattr(salary, "esic_er_cont_pm") else getattr(salary, "esic_er_cont_pa", 0)),
             total_gross_salary=money_d(salary.gross_ctc_pm),
 
             total_days=att["total_days"],
             present_days=att["present_days"],
             leave_taken=att["leave_taken"],
-            leave_adjust=money_d(0),
-            percent_adjusted=money_d(0),
+            leave_without_pay=lwop,
 
             advance=advance_amt
         )
 
-        # do initial authoritative calc
+        # authoritative initial calculation
         recalc_and_save_record(rec, manual_overrides={})
 
-def calculate_pro_rata(component_pm, present_days, total_days):
+# NEW prorata function using LWP
+def calculate_pro_rata(component_pm, total_days, leave_without_pay):
+    total_days = Decimal(total_days or 0)
+    leave_without_pay = Decimal(leave_without_pay or 0)
     if total_days <= 0:
         return Decimal("0.00")
-    factor = Decimal(present_days) / Decimal(total_days)
+    payable_days = total_days - leave_without_pay
+    if payable_days <= 0:
+        return Decimal("0.00")
+    factor = (payable_days / total_days)
     return money_d(Decimal(component_pm) * factor)
 
 def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun, payroll_settings: PayrollSettings = None, manual_overrides: dict = None):
@@ -321,25 +333,18 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
         payroll_settings = PayrollSettings.objects.filter(company=payroll_run.company).first()
 
     TD = Decimal(record.total_days or 0)
-    PD = Decimal(record.present_days or 0)
-    # Option B: leave_adjust increases present_days and decreases leave_taken
-    LA = Decimal(record.leave_adjust or 0)
-    # Bound leave_adjust: cannot exceed existing leave_taken, cannot make present > total
-    LA = max(Decimal(0), min(LA, Decimal(record.leave_taken or 0), TD - PD))
-    PD_adj = PD + LA
-    leave_taken_adj = max(Decimal(0), Decimal(record.leave_taken or 0) - LA)
-    percent_adjusted = (PD_adj / TD * 100) if TD > 0 else Decimal(0)
+    LWP = Decimal(record.leave_without_pay or 0)
 
-    basic_proc = calculate_pro_rata(record.basic_pm, PD_adj, TD)
-    hra_proc = calculate_pro_rata(record.hra_pm, PD_adj, TD)
-    sp_proc = calculate_pro_rata(record.sp_allowance_pm, PD_adj, TD)
-    stat_proc = calculate_pro_rata(record.stat_bonus_pm, PD_adj, TD)
-    a1_proc = calculate_pro_rata(record.allowance1_pm, PD_adj, TD)
-    a2_proc = calculate_pro_rata(record.allowance2_pm, PD_adj, TD)
+    basic_proc = calculate_pro_rata(record.basic_pm, TD, LWP)
+    hra_proc = calculate_pro_rata(record.hra_pm, TD, LWP)
+    sp_proc = calculate_pro_rata(record.sp_allowance_pm, TD, LWP)
+    stat_proc = calculate_pro_rata(record.stat_bonus_pm, TD, LWP)
+    a1_proc = calculate_pro_rata(record.allowance1_pm, TD, LWP)
+    a2_proc = calculate_pro_rata(record.allowance2_pm, TD, LWP)
 
     gross_proc = money_d(basic_proc + hra_proc + sp_proc + stat_proc + a1_proc + a2_proc)
 
-    # PF calc (employee side) - prefer manual override if passed, else compute
+    # PF calc (employee side) - prefer manual override if provided
     pf_emp = Decimal(0)
     if record.opted_for_pf:
         pf_percentage = Decimal(getattr(payroll_settings, "pf_percentage", 12) or 12)
@@ -351,17 +356,14 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
     esic_emp = Decimal(0)
     esic_percentage = Decimal(getattr(payroll_settings, "esic_percentage", 0) or 0)
     esic_threshold = Decimal(getattr(payroll_settings, "esic_threshold", 21000))
-    guaranteed_cash = gross_proc
-    if record.esic_employer and guaranteed_cash <= esic_threshold:
-        esic_emp = money_d(guaranteed_cash * (esic_percentage / Decimal(100)))
+    if gross_proc <= esic_threshold:
+        esic_emp = money_d(gross_proc * (esic_percentage / Decimal(100)))
 
-    # Gratuity (if required)
     gratuity = Decimal(0)
     gratuity_percentage = Decimal(getattr(payroll_settings, "gratuity_percentage", 0) or 0)
-    # if needed, compute gratuity on basic_proc
-    gratuity = money_d(basic_proc * (gratuity_percentage / Decimal(100))) if getattr(record, "gratuity_applicable", False) else Decimal(0)
+    # compute gratuity if required — example on basic_proc
+    # gratuity = money_d(basic_proc * (gratuity_percentage / Decimal(100))) if need else Decimal(0)
 
-    # professional tax default
     prof_tax = Decimal(getattr(payroll_settings, "professional_tax", 0) or 0)
 
     # apply manual overrides if provided
@@ -381,7 +383,7 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
     net_pay = money_d(gross_proc - total_ded)
 
     breakdown = {
-        "attendance": {"TD": int(TD), "PD_adj": float(PD_adj), "LA": float(LA), "leave_taken_adj": float(leave_taken_adj)},
+        "attendance": {"TD": int(TD), "LWP": float(LWP)},
         "components": {
             "basic_processed": float(basic_proc),
             "hra_processed": float(hra_proc),
@@ -400,8 +402,7 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
             "other": float(other_ded),
             "total": float(total_ded)
         },
-        "net_pay": float(net_pay),
-        "gratuity": float(gratuity)
+        "net_pay": float(net_pay)
     }
 
     return {
@@ -420,11 +421,9 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
         "other_deductions": other_ded,
         "total_deductions": total_ded,
         "net_salary": net_pay,
-        "pf_employer": record.pf_employer,
-        "esic_employer": record.esic_employer,
-        "percent_adjusted": money_d(percent_adjusted),
-        "present_days_adj": money_d(PD_adj),
-        "leave_taken_adj": money_d(leave_taken_adj),
+        "percent_adjusted": money_d((TD - LWP) / TD * 100) if TD > 0 else money_d(0),
+        "present_days_adj": record.present_days,
+        "leave_taken_adj": record.leave_taken,
         "breakdown": breakdown
     }
 
@@ -432,23 +431,20 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
 def recalc_and_save_record(record: PayrollRecord, manual_overrides: dict = None):
     run = record.payroll
     settings = PayrollSettings.objects.filter(company=run.company).first()
-    # Bound leave_adjust value in record before calculation (Option B)
-    record.leave_adjust = money_d(max(Decimal(0), min(record.leave_adjust, record.leave_taken)))
+    # ensure LWP bounded
+    record.leave_without_pay = money_d(max(Decimal(0), record.leave_without_pay))
     result = calculate_and_populate_record(record, run, settings, manual_overrides)
     # apply to record and save
-    for field in ["basic_processed","hra_processed","sp_allowance_processed","stat_bonus_processed",
-                  "allowance1_processed","allowance2_processed","gross_processed",
-                  "pf_employee","esic_employee","professional_tax","tds","advance","other_deductions",
-                  "total_deductions","net_salary","pf_employer","esic_employer","percent_adjusted"]:
+    for field in [
+        "basic_processed","hra_processed","sp_allowance_processed","stat_bonus_processed",
+        "allowance1_processed","allowance2_processed","gross_processed",
+        "pf_employee","esic_employee","professional_tax","tds","advance","other_deductions",
+        "total_deductions","net_salary","percent_adjusted"
+    ]:
         if field in result:
             setattr(record, field, result[field])
-    # update present/leave adjusted values
-    record.present_days = result.get("present_days_adj", record.present_days)
-    record.leave_taken = result.get("leave_taken_adj", record.leave_taken)
-    record.percent_adjusted = result.get("percent_adjusted", record.percent_adjusted)
-    # store breakdown
+    # update present/leave fields (we do not alter present_days or leave_taken here)
     record.calculation_breakdown = result.get("breakdown", {})
-    # store manual overrides
     if manual_overrides:
         record.manual_override.update(manual_overrides)
     record.save()

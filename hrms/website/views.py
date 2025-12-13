@@ -3196,13 +3196,13 @@ def payroll_export_excel(request, run_id):
 
     headers = [
         "Employee Code", "Name", "Designation", "Branch",
-        "Gross CTC", "Basic", "HRA", "Sp Allow", "Stat Bonus",
+        "Gross CTC", "Basic (PM)", "HRA (PM)", "Sp Allow (PM)", "Stat Bonus (PM)",
         "Allowance1", "Allowance2",
-        "Total Days", "Present Days", "Leave",
-        "Basic Proc", "HRA Proc", "Sp Proc", "Stat Proc",
-        "Allowance1 Proc", "Allowance2 Proc", "Gross Proc",
-        "PF Employee", "Professional Tax", "Advance", "ESIC Employee", "TDS", "Other Deductions",
-        "Total Deductions", "Net Salary"
+        "Total Days", "Present Days", "Leave Taken", "Leave Without Pay",  # LWP included
+        "Basic Processed", "HRA Processed", "Sp Allow Processed", "Stat Bonus Processed",
+        "Allowance1 Processed", "Allowance2 Processed", "Gross Processed",
+        "PF (EE)", "Professional Tax", "Advance", "ESIC (EE)", "TDS", "Other Deductions",
+        "Total Deductions", "Net Pay"
     ]
 
     ws.append(headers)
@@ -3210,14 +3210,13 @@ def payroll_export_excel(request, run_id):
     for r in records:
         ws.append([
             r.employee_code, r.employee_name, r.designation, r.branch_name,
-            r.gross_ctc, r.basic_pm, r.hra_pm, r.sp_allowance_pm, r.stat_bonus_pm,
-            r.allowance1_pm, r.allowance2_pm,
-            r.total_days, r.present_days, r.leave_taken,
-            r.basic_processed, r.hra_processed, r.sp_allowance_processed,
-            r.stat_bonus_processed, r.allowance1_processed, r.allowance2_processed, r.gross_processed,
-            r.pf_employee, r.professional_tax, r.advance,
-            r.esic_employee, r.tds, r.other_deductions,
-            r.total_deductions, r.net_salary
+            float(r.gross_ctc), float(r.basic_pm), float(r.hra_pm), float(r.sp_allowance_pm), float(r.stat_bonus_pm),
+            float(r.allowance1_pm), float(r.allowance2_pm),
+            r.total_days, float(r.present_days), float(r.leave_taken), float(r.leave_without_pay),
+            float(r.basic_processed), float(r.hra_processed), float(r.sp_allowance_processed), float(r.stat_bonus_processed),
+            float(r.allowance1_processed), float(r.allowance2_processed), float(r.gross_processed),
+            float(r.pf_employee), float(r.professional_tax), float(r.advance), float(r.esic_employee), float(r.tds), float(r.other_deductions),
+            float(r.total_deductions), float(r.net_salary)
         ])
 
     response = HttpResponse(

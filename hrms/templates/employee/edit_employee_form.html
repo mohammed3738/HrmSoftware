@@ -197,6 +197,7 @@
             <table class="table table-bordered" id="attachmentTable">
                 <thead class="table-light">
                     <tr>
+                        <th>File Name</th>
                         <th>File</th>
                         <th>Actions</th>
                     </tr>
@@ -205,6 +206,9 @@
                 <tbody>
                 {% for f in attachment_formset %}
                     <tr>
+                        <td>
+                            {{ f.file_name }}
+                        </td>
                         <td>
                             {{ f.file }}
                             {% if f.instance.pk %}

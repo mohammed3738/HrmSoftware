@@ -27,7 +27,7 @@ class Company(models.Model):
     ptrc_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="PTRC Number")  # PTRC
     ptec_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="PTEC Number")  # PTEC
     esic_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="ESIC Number")  # ESIC No
-    status = models.CharField(max_length=50, choices=status)
+    status = models.CharField(max_length=50, choices=status, default='active')
     def __str__(self):
         return f"{self.short_name} - {self.name}"
 
@@ -153,6 +153,14 @@ class EmployeeAttachment(models.Model):
         related_name="attachments"
     )
     file = models.FileField(upload_to="employee_attachments/")
+    FILE_NAME_CHOICES = [
+        ('aadhaar', 'Aadhaar'),
+        ('pan', 'PAN'),
+        ('resume', 'Resume'),
+        ('offer_letter', 'Offer Letter'),
+        # add more
+    ]
+    file_name = models.CharField(max_length=50, choices=FILE_NAME_CHOICES, blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -362,10 +370,11 @@ class Attendance(models.Model):
 class AttendanceCorrectionRequest(models.Model):
     attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE, related_name="correction_requests")
     # requested_by = models.ForeignKey(Employee, on_delete=models.CASCADE)  # The employee requesting the change
-    old_in_time = models.TimeField()
-    old_out_time = models.TimeField()
-    new_in_time = models.TimeField()
-    new_out_time = models.TimeField()
+    old_in_time = models.TimeField(null=True, blank=True)
+    old_out_time = models.TimeField(null=True, blank=True)
+    new_in_time = models.TimeField(null=True, blank=True)
+    new_out_time = models.TimeField(null=True, blank=True)
+
     reason = models.TextField()
     rejection_reason = models.TextField(null=True, blank=True)
     status = models.CharField(

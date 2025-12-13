@@ -93,7 +93,13 @@ class EmployeeAttachmentForm(forms.ModelForm):
 
     class Meta:
         model = EmployeeAttachment
-        fields = ['id','file']
+        fields = ['id','file','file_name']
+        widgets = {
+            'file_name': forms.Select(attrs={
+                'class': 'form-select form-select-sm',   # bootstrap select look
+                'style': 'min-width:160px;',             # adjust width
+            }),
+        }
 
 
 EmployeeAttachmentFormSet = inlineformset_factory(
@@ -105,9 +111,17 @@ EmployeeAttachmentFormSet = inlineformset_factory(
 )
 
 AttachmentFormSet = inlineformset_factory(
-    Employee, EmployeeAttachment,
-    fields=['file'], extra=1, can_delete=True
+    parent_model=Employee,
+    model=EmployeeAttachment,
+    form=EmployeeAttachmentForm,   # <- important: use the form with file_name
+    extra=1,
+    can_delete=True
 )
+
+# AttachmentFormSet = inlineformset_factory(
+#     Employee, EmployeeAttachment,
+#     fields=['file'], extra=1, can_delete=True
+# )
 
 
 # class PreviousEmploymentAttachmentForm(forms.ModelForm):

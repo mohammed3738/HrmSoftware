@@ -66,8 +66,8 @@
             <tr>
               <th>Employee Code</th>
               <th>Company</th>
-              <th>Branch</th>
-              <th>Salutation</th>
+              {% comment %} <th>Branch</th> {% endcomment %}
+              {% comment %} <th>Salutation</th> {% endcomment %}
               <th>First Name</th>
               <th>Middle Name</th>
               <th>Last Name</th>
@@ -119,16 +119,16 @@
               <td>
                 <a href="{% url 'create-company' %}">{{employee.company}}</a>
               </td>
-              <td>
+              {% comment %} <td>
                     <p class="text-dark mb-0">
                       <a
                         href="{% url 'create-branch' %}"
                         >{{employee.branch}}</a
                       >
                     </p>
-              </td>
-
-              <td>{{employee.salutation}}</td>
+              </td> {% endcomment %}
+ 
+              {% comment %} <td>{{employee.salutation}}</td> {% endcomment %}
               <td>{{employee.first_name}}</td>
               <td>{{employee.middle_name}}</td>
               <td>{{employee.last_name}}</td>
@@ -168,7 +168,7 @@
                 {% if employee.status == "Active" %}
                 <p style="color: red">{{employee.status}}</p>
                 {% elif employee.status == "Pending" %}
-                <p style="color: yellow">{{employee.status}}</p>
+                <p style="color: orange">{{employee.status}}</p>
 
                 {% endif %}
               </td>
@@ -852,6 +852,7 @@
                   <table class="table table-bordered" id="attachmentTable">
                     <thead class="table-light">
                       <tr>
+                        <th>File Name</th>
                         <th>File</th>
                         <th>Actions</th>
                       </tr>
@@ -860,7 +861,8 @@
                     <tbody>
                       {% for f in attachment_formset %}
                       <tr>
-                        <td>{{ f.id }}</td>
+                        <td>{{ f.file_name }}                 
+                        </td>
 
                         <td>
                           {{ f.file }} {% if f.instance.pk and f.instance.file %}
@@ -907,7 +909,7 @@
                 <table style="display: none">
                   <tbody id="attach-empty-row">
                     <tr>
-                      <td>{{ attachment_formset.empty_form.id }}</td>
+                      <td>{{ attachment_formset.empty_form.file_name }}</td>
                       <td>{{ attachment_formset.empty_form.file }}</td>
                       <td>
                         <button

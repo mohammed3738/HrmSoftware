@@ -359,6 +359,7 @@
 
 <script>
   function formatTimeForDisplay(time) {
+    if (!time) return "";
     let [h, m] = time.split(":");
     h = parseInt(h);
     let ampm = h >= 12 ? "PM" : "AM";
@@ -368,7 +369,8 @@
   }
 
   function convertTo24Hour(time) {
-    if (!time) return "";
+        if (!time || time === "—") return "";  
+
 
     time = time.trim();
 
@@ -407,12 +409,12 @@
     document.getElementById("attendance_id").value = attendanceId;
     document.getElementById("date").value = date;
     // Current Time (readonly with AM/PM)
-    document.getElementById("old_in_time").value = dispIn;
-    document.getElementById("old_out_time").value = dispOut;
+    document.getElementById("old_in_time").value = dispIn || "";
+    document.getElementById("old_out_time").value = dispOut || "";
 
     // Prefill new values editable (24HR format)
-    document.getElementById("new_in_time").value = newIn;
-    document.getElementById("new_out_time").value = newOut;
+    document.getElementById("new_in_time").value = newIn || "";
+    document.getElementById("new_out_time").value = newOut || "";
     document.getElementById("correctionModal").style.display = "block";
   }
 

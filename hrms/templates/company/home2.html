@@ -196,11 +196,11 @@
                 <th>Name</th>
                 <th>Phone</th>
                 <th>Email</th>
-                <th>Address</th>
+                {% comment %} <th>Address</th>
 
                 <th>Tan No</th>
                 <th>Pan No</th>
-                <th>Employer PF</th>
+                <th>Employer PF</th> {% endcomment %}
              
                 <th>Status</th>
                 <th>Action</th>
@@ -215,17 +215,10 @@
 												<input class="form-check-input" type="checkbox">
 											</div>
 										</td> -->
-                <td>
-                  <div class="d-flex align-items-center file-name-icon">
-                    <!-- <a href="#" class="avatar avatar-md border rounded-circle">
-													<img src="https://smarthr.dreamstechnologies.com/html/template/assets/img/company/company-01.svg" class="img-fluid" alt="img">
-												</a> -->
-                    <div class="ms-2">
-                      <h6 class="fw-medium">
-                        <a href="#">{{company.short_name}}</a>
-                      </h6>
+                <td>  
+                    <div class="d-flex align-items-center fw-bold text-primary">                   
+                        {{company.short_name}}
                     </div>
-                  </div>
                 </td>
                 {% comment %}
                 <td>
@@ -240,7 +233,7 @@
                 <td>{{company.name}}</td>
                 <td>{{company.phone}}</td>
                 <td>{{company.email}}</td>
-                <td>
+                {% comment %} <td>
                   <div
                     class="d-flex align-items-center justify-content-between"
                   >
@@ -251,9 +244,18 @@
                 </td>
                 <td id="company_">{{company.tan_number}}</td>
                 <td>{{company.pan_number}}</td>
-                <td>{{company.employer_pf}}</td>
+                <td>{{company.employer_pf}}</td> {% endcomment %}
             
-                <td>{{company.status}}</td>
+                {% comment %} <td>{{company.status}}</td> {% endcomment %}
+
+                <td>
+                  <span class="badge 
+                    {% if company.status == 'active' or company.status == 'Active' %} bg-success 
+                    {% else %} bg-danger {% endif %}">
+                    {{ company.status|title }}
+                  </span>
+                </td>
+
                 <td>
                   <div class="dropdown">
                     <a class="text-muted" href="#" data-bs-toggle="dropdown">
@@ -296,9 +298,9 @@
               </tr>
               
               {% endfor %} {% else %}
-              <tr>
-                <td colspan="9" class="text-center">No data available</td>
-              </tr>
+              {% comment %} <tr>
+                <td colspan="10" class="text-center">No data available</td>
+              </tr> {% endcomment %}
               {% endif %}
             </tbody>
           </table>
@@ -450,6 +452,17 @@
                 <input type="text" class="form-control" name="esic_number" />
               </div>
             </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Status<span class="text-danger"> *</span></label>
+                <select class="form-control" name="status" required>
+                  <option value="">-- Select Status --</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+            </div>
+
           </div>
         </div>
         <div class="modal-footer">
@@ -975,6 +988,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let table = $('.datatable').DataTable({
         pageLength: 10,
         responsive: true,
+        language: { emptyTable: "No data available" },
         dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
     });
  
@@ -983,4 +997,19 @@ document.addEventListener("DOMContentLoaded", function () {
     $('.dataTables_length select').addClass('form-select');
 });
 </script>
+
+{% comment %} <script>
+document.addEventListener("DOMContentLoaded", function () {
+    let table = $('.datatable').DataTable({
+        pageLength: 10,
+        responsive: true,
+        language: { emptyTable: "No data available" },
+        dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
+    });
+ 
+    // Convert DataTables elements into Bootstrap style
+    $('.dataTables_filter input').addClass('form-control');
+    $('.dataTables_length select').addClass('form-select');
+});
+</script> {% endcomment %}
 {% endblock %}

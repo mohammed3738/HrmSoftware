@@ -354,9 +354,9 @@
                 </td>
               </tr>
               {% endfor %} {% else %}
-              <tr>
+              {% comment %} <tr>
                 <td colspan="9" class="text-center">No data available</td> 
-              </tr>
+              </tr> {% endcomment %}
               {% endif %}
             </tbody>
           </table>
@@ -768,6 +768,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let table = $('.datatable').DataTable({
         pageLength: 10,
         responsive: true,
+        language: { emptyTable: "No data available" },
         dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
     });
  

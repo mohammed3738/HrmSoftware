@@ -1173,7 +1173,7 @@ def create_employee(request):
 
         else:
             messages.error(request, "Some fields are missing or invalid. Please check again.")
-
+  
     else:
         form = EmployeeForm()
         formset = PreviousEmploymentFormSet(instance=Employee())
@@ -1293,9 +1293,11 @@ def download_attachment(request, pk):
 
 def edit_employee(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
-
+    print("Editing Employee:", employee)
     if request.method == "POST":
         form = EmployeeForm(request.POST, request.FILES, instance=employee)
+        print("FORM ERRORS:", form.errors)
+        
 
         # Main attachment formset
         attachment_formset = AttachmentFormSet(
@@ -1306,7 +1308,7 @@ def edit_employee(request, employee_id):
         formset = PreviousEmploymentFormSet(
             request.POST, request.FILES, instance=employee
         )
-
+        print("FORMSET ERRORS:", formset.errors)
         if form.is_valid() and formset.is_valid() and attachment_formset.is_valid():
 
             form.save()   # Update employee

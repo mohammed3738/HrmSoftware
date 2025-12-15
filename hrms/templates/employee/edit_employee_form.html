@@ -1,6 +1,13 @@
 {% load widget_tweaks %}
 
-<form method="POST" enctype="multipart/form-data" id="employeeEditForm">
+{% comment %} <form method="POST" enctype="multipart/form-data" id="employeeEditForm"> {% endcomment %}
+<form
+  method="POST"
+  action="{% url 'edit_employee' employee.id %}"
+  enctype="multipart/form-data"
+  id="employeeEditForm"
+>
+
     {% csrf_token %}
 
     <div id="hidden-nested-files"></div>
@@ -131,12 +138,16 @@
                                            class="form-control attachment-file">
                                 </div>
 
-                                <div class="col-4">
+                                {% comment %} <div class="col-4">
                                     <input type="text"
                                            name="attach-{{ idx }}-__prefix__-document_name"
                                            class="form-control attachment-name"
                                            placeholder="Document Name">
-                                </div>
+                                </div> {% endcomment %}
+                                <input type="text"
+                                name="attach-__prefix__-document_name"
+                                class="form-control"
+                                placeholder="Document Name">
 
                                 <div class="col-2">
                                     <button type="button" class="btn btn-danger btn-sm nested-remove-attachment">
@@ -209,14 +220,22 @@
                         <td>
                             {{ f.file_name }}
                         </td>
-                        <td>
+                        {% comment %} <td>
                             {{ f.file }}
                             {% if f.instance.pk %}
                                 <br>
                                 <a href="{{ f.instance.file.url }}" target="_blank">{{ f.instance.file.name }}</a>
                             {% endif %}
+                        </td> {% endcomment %}
+                        <td>
+                            {{ f.file }}
+                        {% if f.instance.file %}
+                            <br>
+                            <a href="{{ f.instance.file.url }}" target="_blank">
+                                {{ f.instance.file.name }}
+                            </a>
+                        {% endif %}
                         </td>
-
                         <td>
                             {% if f.instance.pk %}
                                 {{ f.DELETE }} Delete

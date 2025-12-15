@@ -59,6 +59,7 @@
           </select>
         </div>
       </div> {% endcomment %}
+
       <!-- Table -->
       <div class="table-responsive text-nowrap">
         <table class="datatable table">
@@ -69,9 +70,7 @@
               {% comment %} <th>Branch</th> {% endcomment %}
               {% comment %} <th>Salutation</th> {% endcomment %}
               <th>First Name</th>
-              <th>Middle Name</th>
               <th>Last Name</th>
-              <th>Father's Name</th>
               <th>Gender</th>
               <!-- <th>Blood Group</th>
               <th>Date of Birth</th>
@@ -130,48 +129,17 @@
  
               {% comment %} <td>{{employee.salutation}}</td> {% endcomment %}
               <td>{{employee.first_name}}</td>
-              <td>{{employee.middle_name}}</td>
               <td>{{employee.last_name}}</td>
-              <td>{{employee.father_name}}</td>
               <td>{{employee.gender}}</td>
-              <!-- <td>{{employee.blood_group}}</td>
-              <td>{{employee.date_of_birth}}</td>
-              <td>{{employee.place_of_birth}}</td>
-              <td>{{employee.personal_email}}</td>
-              <td>{{employee.present_address}}</td>
-              <td>{{employee.permanent_address}}</td>
-              <td>{{employee.personal_mobile}}</td>
-              <td>{{employee.date_of_marriage}}</td>
-              <td>{{employee.designation}}</td>
-              <td>{{employee.department}}</td>
-              <td>{{employee.date_of_joining}}</td>
-              <td>{{employee.date_of_confirmation}}</td>
-              <td>{{employee.location}}</td>
-              <td>{{employee.shift}}</td>
-              <td>{{employee.pan_no}}</td>
-              <td>{{employee.aadhar_no}}</td>
-              <td>{{employee.voter_id}}</td>
-              <td>{{employee.passport}}</td>
-              <td>{{employee.uan_no}}</td>
-              <td>{{employee.pf_no}}</td>
-              <td>{{employee.esic_no}}</td>
-              <td>{{employee.name_as_per_bank}}</td>
-              <td>{{employee.salary_account_number}}</td>
-              <td>{{employee.ifsc_code}}</td>
-              <td>{{employee.emergency_contact_name1}}</td>
-              <td>{{employee.emergency_contact_relation1}}</td>
-              <td>{{employee.emergency_contact_mobile1}}</td>
-              <td>{{employee.emergency_contact_name2}}</td> 
-              <td>{{employee.emergency_contact_relation2}}</td>
-              <td>{{employee.emergency_contact_mobile2}}</td> -->
               <td>
                 {% if employee.status == "Active" %}
-                <p style="color: red">{{employee.status}}</p>
+                <p class="mt-4" style="color: #4CBB17"><b>{{employee.status}}</b></p>
                 {% elif employee.status == "Pending" %}
-                <p style="color: orange">{{employee.status}}</p>
-
+                <p class="mt-6" style="color: orange"><b>{{employee.status}}</b></p>
+                {% else %}
+                <p class="mt-6" style="color: red"><b>{{employee.status}}</b></p>
                 {% endif %}
-              </td>
+              </td> 
 
               <td>
                 <div class="dropdown">
@@ -294,6 +262,7 @@
               </li>
             </ul>
 
+<!-- Add Employee Form -->
             <div class="tab-content">
               <!-- BASIC INFO TAB -->
               <div class="tab-pane fade show active" id="basic-info">
@@ -998,6 +967,7 @@
   </div>
 </div>
 <!-- /Delete Modal -->
+
 <form id="deleteEmployeeForm" method="POST" style="display: none">
   {% csrf_token %}
 </form>
@@ -1046,236 +1016,238 @@
 </div>
 <!--/ Responsive Datatable -->
 
+<!-- Edit Employee -->
 <!-- JavaScript: add/remove rows using empty_form template and update TOTAL_FORMS -->
+
 <script>
-/* Consolidated initializer (safe to call on document or on injected modal root) */
-function initEmployeeFormScripts(root = document) {
-  if (!root || root._hrmsInit) return;
-  root._hrmsInit = true;
+  /* Consolidated initializer (safe to call on document or on injected modal root) */
+  function initEmployeeFormScripts(root = document) {
+    if (!root || root._hrmsInit) return;
+    root._hrmsInit = true;
 
-  const $ = sel => root.querySelector(sel);
-  const $$ = sel => Array.from(root.querySelectorAll(sel));
+    const $ = sel => root.querySelector(sel);
+    const $$ = sel => Array.from(root.querySelectorAll(sel));
 
-  /* ---------- PREVIOUS EMPLOYMENT add/remove ---------- */
-  const prevTableBody = $(" #prevEmploymentTable tbody") || $("#prevEmploymentTable tbody");
-  const prevEmptyRow = $("#prev-empty-row");
-  const prevAddBtn = $("#addPrevRow");
-  const prevTotalForms = $("#id_previous_employments-TOTAL_FORMS");
+    /* ---------- PREVIOUS EMPLOYMENT add/remove ---------- */
+    const prevTableBody = $(" #prevEmploymentTable tbody") || $("#prevEmploymentTable tbody");
+    const prevEmptyRow = $("#prev-empty-row");
+    const prevAddBtn = $("#addPrevRow");
+    const prevTotalForms = $("#id_previous_employments-TOTAL_FORMS");
 
-  if (prevAddBtn && prevTableBody && prevEmptyRow && prevTotalForms) {
-    prevAddBtn.addEventListener("click", () => {
-      const newIndex = parseInt(prevTotalForms.value || "0", 10);
-      const html = prevEmptyRow.innerHTML.replace(/__prefix__/g, newIndex);
-      const tmp = document.createElement("tbody");
-      tmp.innerHTML = html;
-      const tr = tmp.querySelector("tr");
-      // set data-index on manage-doc button
-      const mdBtn = tr.querySelector(".manage-documents, .open-attachment-modal, .manage-documents");
-      if (mdBtn) mdBtn.setAttribute("data-index", newIndex);
-      prevTableBody.appendChild(tr);
-      prevTotalForms.value = newIndex + 1;
+    if (prevAddBtn && prevTableBody && prevEmptyRow && prevTotalForms) {
+      prevAddBtn.addEventListener("click", () => {
+        const newIndex = parseInt(prevTotalForms.value || "0", 10);
+        const html = prevEmptyRow.innerHTML.replace(/__prefix__/g, newIndex);
+        const tmp = document.createElement("tbody");
+        tmp.innerHTML = html;
+        const tr = tmp.querySelector("tr");
+        // set data-index on manage-doc button
+        const mdBtn = tr.querySelector(".manage-documents, .open-attachment-modal, .manage-documents");
+        if (mdBtn) mdBtn.setAttribute("data-index", newIndex);
+        prevTableBody.appendChild(tr);
+        prevTotalForms.value = newIndex + 1;
 
-      // ensure placeholders for nested attachments exist (so add-doc works for new row)
-      ensureAttachmentPlaceholders(newIndex);
-    });
-    prevTableBody.addEventListener("click", (ev) => {
-      const rem = ev.target.closest && ev.target.closest(".remove-prev-row");
-      if (!rem) return;
-      const tr = rem.closest("tr");
-      if (tr) tr.remove();
-      prevTotalForms.value = Math.max(0, parseInt(prevTotalForms.value || "0", 10) - 1);
-    });
-  }
-
-  /* ---------- OUTER ATTACHMENTS add/remove ---------- */
-  const attachTableBody = $("#attachmentTable tbody");
-  const attachAddBtn = $("#addAttachmentRow");
-  const attachEmptyRow = $("#attach-empty-row");
-  const attachTotalForms = $("#id_attachments-TOTAL_FORMS");
-
-  if (attachAddBtn && attachTableBody && attachEmptyRow && attachTotalForms) {
-    attachAddBtn.addEventListener("click", () => {
-      const index = parseInt(attachTotalForms.value || "0", 10);
-      const newRowHtml = attachEmptyRow.innerHTML.replace(/__prefix__/g, index);
-      const tmp = document.createElement("tbody");
-      tmp.innerHTML = newRowHtml;
-      attachTableBody.appendChild(tmp.querySelector("tr"));
-      attachTotalForms.value = index + 1;
-    });
-    attachTableBody.addEventListener("click", (ev) => {
-      const rem = ev.target.closest && ev.target.closest(".remove-attachment-row");
-      if (!rem) return;
-      const tr = rem.closest("tr");
-      if (tr) tr.remove();
-      attachTotalForms.value = Math.max(0, parseInt(attachTotalForms.value || "0", 10) - 1);
-    });
-  }
-
-  /* ---------- NESTED ATTACHMENTS (global modal) ---------- */
-  const nestedModal = document.getElementById("attachments_modal");
-  const nestedContainer = document.getElementById("attachments_container");
-  const nestedEmptyTpl = document.getElementById("attachment-empty-template");
-  const nestedAddBtn = document.getElementById("add_attachment_btn");
-  const nestedSaveBtn = document.getElementById("save_attachments_btn");
-  const hiddenStorage = document.getElementById("hidden-nested-files");
-
-  function ensureAttachmentPlaceholders(index) {
-    // create attachment-template-<index> and empty-prevattach-<index> if not present
-    if (!document.getElementById(`attachment-template-${index}`)) {
-      const div = document.createElement("div");
-      div.style.display = "none";
-      div.id = `attachment-template-${index}`;
-      div.innerHTML = `<div class="attachments-placeholder" id="attachments-wrapper-${index}"></div>`;
-      (document.body || document.querySelector("form") || document.documentElement).appendChild(div);
+        // ensure placeholders for nested attachments exist (so add-doc works for new row)
+        ensureAttachmentPlaceholders(newIndex);
+      });
+      prevTableBody.addEventListener("click", (ev) => {
+        const rem = ev.target.closest && ev.target.closest(".remove-prev-row");
+        if (!rem) return;
+        const tr = rem.closest("tr");
+        if (tr) tr.remove();
+        prevTotalForms.value = Math.max(0, parseInt(prevTotalForms.value || "0", 10) - 1);
+      });
     }
-    if (!document.getElementById(`empty-prevattach-${index}`)) {
-      const sample = document.querySelector("[id^='empty-prevattach-']");
-      if (sample) {
-        const clone = sample.cloneNode(true);
-        clone.id = `empty-prevattach-${index}`;
-        // replace name placeholders inside clone HTML (if any)
-        clone.innerHTML = clone.innerHTML.replace(/attach-\d+-__prefix__/g, `attach-${index}-__prefix__`);
-        (document.body || document.querySelector("form") || document.documentElement).appendChild(clone);
-      } else {
-        const fallback = document.createElement("div");
-        fallback.style.display = "none";
-        fallback.id = `empty-prevattach-${index}`;
-        fallback.innerHTML = `
-          <div class="row mb-2 attachment-row">
-            <div class="col-6"><input type="file" name="attach-${index}-__prefix__-file" class="form-control attachment-file" /></div>
-            <div class="col-4"><input type="text" name="attach-${index}-__prefix__-document_name" class="form-control attachment-name" placeholder="Document Name" /></div>
-            <div class="col-2"><button type="button" class="btn btn-danger btn-sm nested-remove-attachment">Remove</button></div>
-          </div>
-        `;
-        (document.body || document.querySelector("form") || document.documentElement).appendChild(fallback);
+
+    /* ---------- OUTER ATTACHMENTS add/remove ---------- */
+    const attachTableBody = $("#attachmentTable tbody");
+    const attachAddBtn = $("#addAttachmentRow");
+    const attachEmptyRow = $("#attach-empty-row");
+    const attachTotalForms = $("#id_attachments-TOTAL_FORMS");
+
+    if (attachAddBtn && attachTableBody && attachEmptyRow && attachTotalForms) {
+      attachAddBtn.addEventListener("click", () => {
+        const index = parseInt(attachTotalForms.value || "0", 10);
+        const newRowHtml = attachEmptyRow.innerHTML.replace(/__prefix__/g, index);
+        const tmp = document.createElement("tbody");
+        tmp.innerHTML = newRowHtml;
+        attachTableBody.appendChild(tmp.querySelector("tr"));
+        attachTotalForms.value = index + 1;
+      });
+      attachTableBody.addEventListener("click", (ev) => {
+        const rem = ev.target.closest && ev.target.closest(".remove-attachment-row");
+        if (!rem) return;
+        const tr = rem.closest("tr");
+        if (tr) tr.remove();
+        attachTotalForms.value = Math.max(0, parseInt(attachTotalForms.value || "0", 10) - 1);
+      });
+    }
+
+    /* ---------- NESTED ATTACHMENTS (global modal) ---------- */
+    const nestedModal = document.getElementById("attachments_modal");
+    const nestedContainer = document.getElementById("attachments_container");
+    const nestedEmptyTpl = document.getElementById("attachment-empty-template");
+    const nestedAddBtn = document.getElementById("add_attachment_btn");
+    const nestedSaveBtn = document.getElementById("save_attachments_btn");
+    const hiddenStorage = document.getElementById("hidden-nested-files");
+
+    function ensureAttachmentPlaceholders(index) {
+      // create attachment-template-<index> and empty-prevattach-<index> if not present
+      if (!document.getElementById(`attachment-template-${index}`)) {
+        const div = document.createElement("div");
+        div.style.display = "none";
+        div.id = `attachment-template-${index}`;
+        div.innerHTML = `<div class="attachments-placeholder" id="attachments-wrapper-${index}"></div>`;
+        (document.body || document.querySelector("form") || document.documentElement).appendChild(div);
+      }
+      if (!document.getElementById(`empty-prevattach-${index}`)) {
+        const sample = document.querySelector("[id^='empty-prevattach-']");
+        if (sample) {
+          const clone = sample.cloneNode(true);
+          clone.id = `empty-prevattach-${index}`;
+          // replace name placeholders inside clone HTML (if any)
+          clone.innerHTML = clone.innerHTML.replace(/attach-\d+-__prefix__/g, `attach-${index}-__prefix__`);
+          (document.body || document.querySelector("form") || document.documentElement).appendChild(clone);
+        } else {
+          const fallback = document.createElement("div");
+          fallback.style.display = "none";
+          fallback.id = `empty-prevattach-${index}`;
+          fallback.innerHTML = `
+            <div class="row mb-2 attachment-row">
+              <div class="col-6"><input type="file" name="attach-${index}-__prefix__-file" class="form-control attachment-file" /></div>
+              <div class="col-4"><input type="text" name="attach-${index}-__prefix__-document_name" class="form-control attachment-name" placeholder="Document Name" /></div>
+              <div class="col-2"><button type="button" class="btn btn-danger btn-sm nested-remove-attachment">Remove</button></div>
+            </div>
+          `;
+          (document.body || document.querySelector("form") || document.documentElement).appendChild(fallback);
+        }
       }
     }
-  }
 
-  // When Manage Documents clicked (works for create & edit since root can be modalBody)
-  root.addEventListener("click", (ev) => {
-    const btn = ev.target.closest && ev.target.closest(".manage-documents, .open-attachment-modal");
-    if (!btn) return;
-    const index = btn.dataset.index;
-    if (index === undefined) {
-      console.error("manage-documents clicked but data-index missing");
-      return;
-    }
-    // ensure placeholders exist
-    ensureAttachmentPlaceholders(index);
+    // When Manage Documents clicked (works for create & edit since root can be modalBody)
+    root.addEventListener("click", (ev) => {
+      const btn = ev.target.closest && ev.target.closest(".manage-documents, .open-attachment-modal");
+      if (!btn) return;
+      const index = btn.dataset.index;
+      if (index === undefined) {
+        console.error("manage-documents clicked but data-index missing");
+        return;
+      }
+      // ensure placeholders exist
+      ensureAttachmentPlaceholders(index);
 
-    // clear container and load server-rendered template if present
-    nestedContainer.innerHTML = "";
-    const template = document.getElementById(`attachment-template-${index}`);
-    if (template) {
-      // copy any server-rendered rows (attachment-template-<idx> should contain existing rows)
-      const existingRows = template.querySelectorAll(".attachment-row");
-      existingRows.forEach(r => nestedContainer.appendChild(r.cloneNode(true)));
-    }
+      // clear container and load server-rendered template if present
+      nestedContainer.innerHTML = "";
+      const template = document.getElementById(`attachment-template-${index}`);
+      if (template) {
+        // copy any server-rendered rows (attachment-template-<idx> should contain existing rows)
+        const existingRows = template.querySelectorAll(".attachment-row");
+        existingRows.forEach(r => nestedContainer.appendChild(r.cloneNode(true)));
+      }
 
-    // also load any previously saved hidden-nested-files blocks
-    if (hiddenStorage) {
-      document.querySelectorAll(`#hidden-nested-files [data-row="${index}"]`).forEach(b => nestedContainer.appendChild(b.cloneNode(true)));
-    }
+      // also load any previously saved hidden-nested-files blocks
+      if (hiddenStorage) {
+        document.querySelectorAll(`#hidden-nested-files [data-row="${index}"]`).forEach(b => nestedContainer.appendChild(b.cloneNode(true)));
+      }
 
-    // show modal and store index
-    nestedModal.dataset.currentIndex = index;
-    const m = new bootstrap.Modal(nestedModal);
-    m.show();
-  });
-
-  // add doc in modal
-  if (nestedAddBtn && nestedEmptyTpl) {
-    nestedAddBtn.addEventListener("click", () => {
-      nestedContainer.insertAdjacentHTML("beforeend", nestedEmptyTpl.innerHTML);
+      // show modal and store index
+      nestedModal.dataset.currentIndex = index;
+      const m = new bootstrap.Modal(nestedModal);
+      m.show();
     });
-  }
 
-  // remove nested row (delegated global)
-  document.addEventListener("click", (ev) => {
-    const rem = ev.target.closest && ev.target.closest(".nested-remove-attachment, .remove-attachment");
-    if (!rem) return;
-    const row = rem.closest(".attachment-row");
-    if (row) row.remove();
-  });
-
-  // save nested modal rows to hidden storage so server can pick them up
-  if (nestedSaveBtn && hiddenStorage) {
-    nestedSaveBtn.addEventListener("click", () => {
-      const idx = nestedModal.dataset.currentIndex ?? "0";
-      // remove existing for idx
-      hiddenStorage.querySelectorAll(`[data-row="${idx}"]`).forEach(x => x.remove());
-      // collect rows
-      const rows = Array.from(nestedContainer.querySelectorAll(".attachment-row"));
-      rows.forEach((row, i) => {
-        const wrapper = document.createElement("div");
-        wrapper.dataset.row = idx;
-        const fileInput = row.querySelector('input[type="file"]');
-        const nameInput = row.querySelector('input[type="text"], input.attachment-name');
-
-        if (fileInput) {
-          fileInput.name = `attach-${idx}-${i}-file`;
-          wrapper.appendChild(fileInput);
-        }
-        const hidden = document.createElement("input");
-        hidden.type = "hidden";
-        hidden.name = `attach-${idx}-${i}-document_name`;
-        hidden.value = nameInput ? (nameInput.value || "") : "";
-        wrapper.appendChild(hidden);
-
-        hiddenStorage.appendChild(wrapper);
+    // add doc in modal
+    if (nestedAddBtn && nestedEmptyTpl) {
+      nestedAddBtn.addEventListener("click", () => {
+        nestedContainer.insertAdjacentHTML("beforeend", nestedEmptyTpl.innerHTML);
       });
+    }
 
-      bootstrap.Modal.getInstance(nestedModal).hide();
+    // remove nested row (delegated global)
+    document.addEventListener("click", (ev) => {
+      const rem = ev.target.closest && ev.target.closest(".nested-remove-attachment, .remove-attachment");
+      if (!rem) return;
+      const row = rem.closest(".attachment-row");
+      if (row) row.remove();
     });
+
+    // save nested modal rows to hidden storage so server can pick them up
+    if (nestedSaveBtn && hiddenStorage) {
+      nestedSaveBtn.addEventListener("click", () => {
+        const idx = nestedModal.dataset.currentIndex ?? "0";
+        // remove existing for idx
+        hiddenStorage.querySelectorAll(`[data-row="${idx}"]`).forEach(x => x.remove());
+        // collect rows
+        const rows = Array.from(nestedContainer.querySelectorAll(".attachment-row"));
+        rows.forEach((row, i) => {
+          const wrapper = document.createElement("div");
+          wrapper.dataset.row = idx;
+          const fileInput = row.querySelector('input[type="file"]');
+          const nameInput = row.querySelector('input[type="text"], input.attachment-name');
+
+          if (fileInput) {
+            fileInput.name = `attach-${idx}-${i}-file`;
+            wrapper.appendChild(fileInput);
+          }
+          const hidden = document.createElement("input");
+          hidden.type = "hidden";
+          hidden.name = `attach-${idx}-${i}-document_name`;
+          hidden.value = nameInput ? (nameInput.value || "") : "";
+          wrapper.appendChild(hidden);
+
+          hiddenStorage.appendChild(wrapper);
+        });
+
+        bootstrap.Modal.getInstance(nestedModal).hide();
+      });
+    }
+
+    /* ensure placeholders exist for server rendered prev rows (edit mode) */
+    const serverTemplates = document.querySelectorAll("[id^='attachment-template-']");
+    serverTemplates.forEach(el => {
+      const id = el.id.replace("attachment-template-", "");
+      ensureAttachmentPlaceholders(id);
+    });
+
+    // done initialization
+    console.debug("[HRMS] Employee form scripts initialized for root", root);
   }
 
-  /* ensure placeholders exist for server rendered prev rows (edit mode) */
-  const serverTemplates = document.querySelectorAll("[id^='attachment-template-']");
-  serverTemplates.forEach(el => {
-    const id = el.id.replace("attachment-template-", "");
-    ensureAttachmentPlaceholders(id);
+  // auto-init main document
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => initEmployeeFormScripts(document));
+  } else {
+    initEmployeeFormScripts(document);
+  }
+
+  /* -------------------- AJAX loader for edit modal -------------------- */
+  document.addEventListener("click", function (e) {
+    const btn = e.target.closest && e.target.closest(".edit-employee-btn");
+    if (!btn) return;
+
+    const employeeId = btn.dataset.id;
+    const modalBody = document.getElementById("editEmployeeBody");
+    modalBody.innerHTML = "<div class='text-center p-3 text-muted'>Loading...</div>";
+
+    fetch(`/employee/${employeeId}/edit/`)
+      .then(resp => {
+        if (!resp.ok) throw new Error("Failed to load edit form");
+        return resp.text();
+      })
+      .then(html => {
+        modalBody.innerHTML = html;
+        // show modal (Version 1)
+        const modalEl = document.getElementById("editEmployeeModal");
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+        // initialize scripts scoped to modal body
+        initEmployeeFormScripts(modalBody);
+      })
+      .catch(err => {
+        console.error("Edit load error:", err);
+        modalBody.innerHTML = "<div class='alert alert-danger'>Failed to load form.</div>";
+      });
   });
-
-  // done initialization
-  console.debug("[HRMS] Employee form scripts initialized for root", root);
-}
-
-// auto-init main document
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => initEmployeeFormScripts(document));
-} else {
-  initEmployeeFormScripts(document);
-}
-
-/* -------------------- AJAX loader for edit modal -------------------- */
-document.addEventListener("click", function (e) {
-  const btn = e.target.closest && e.target.closest(".edit-employee-btn");
-  if (!btn) return;
-
-  const employeeId = btn.dataset.id;
-  const modalBody = document.getElementById("editEmployeeBody");
-  modalBody.innerHTML = "<div class='text-center p-3 text-muted'>Loading...</div>";
-
-  fetch(`/employee/${employeeId}/edit/`)
-    .then(resp => {
-      if (!resp.ok) throw new Error("Failed to load edit form");
-      return resp.text();
-    })
-    .then(html => {
-      modalBody.innerHTML = html;
-      // show modal (Version 1)
-      const modalEl = document.getElementById("editEmployeeModal");
-      const modal = new bootstrap.Modal(modalEl);
-      modal.show();
-      // initialize scripts scoped to modal body
-      initEmployeeFormScripts(modalBody);
-    })
-    .catch(err => {
-      console.error("Edit load error:", err);
-      modalBody.innerHTML = "<div class='alert alert-danger'>Failed to load form.</div>";
-    });
-});
 </script>
 
 

@@ -76,11 +76,11 @@
     <!-- /Breadcrumb -->
 
     <div class="card">
-      <div
+      {% comment %} <div
         class="card-header d-flex align-items-center justify-content-between flex-wrap row-gap-3"
-      >
-        <h5>Companies List</h5>
-        <div
+      > {% endcomment %}
+        {% comment %} <h5>Companies List</h5> {% endcomment %}
+        {% comment %} <div
           class="d-flex my-xl-auto right-content align-items-center flex-wrap row-gap-3"
         >
           <div class="me-3">
@@ -89,12 +89,7 @@
                 type="text"
                 class="form-control date-range bookingrange"
                 placeholder="dd/mm/yyyy - dd/mm/yyyy"
-              />
-              {% comment %}
-              <span class="input-icon-addon">
-                <i class="ti ti-chevron-down"></i>
-              </span>
-              {% endcomment %}
+              />             
             </div>
           </div>
           <div class="dropdown me-3">
@@ -180,8 +175,8 @@
               </li>
             </ul>
           </div>
-        </div>
-      </div>
+        </div> {% endcomment %}
+      {% comment %} </div> {% endcomment %}
       <div class="card-body p-0">
         <div class="custom-datatable-filter table-responsive">
           <table class="table datatable">

@@ -143,6 +143,10 @@ def upload_attendance_excel(request):
                 in_time = parse_time(in_time_raw)
                 out_time = parse_time(out_time_raw)
 
+                if pd.isna(attendance_date):
+                    print(f"⚠️ Date missing for row {index}, skipping row")
+                    continue
+
                 attendance_date = pd.to_datetime(attendance_date).date()
 
                 print(f"Row {index}: {row.to_dict()}")
@@ -159,10 +163,10 @@ def upload_attendance_excel(request):
                     employee=employee,
                     date=attendance_date,
                     defaults={
-                        "count": 0,
+                        "count": 0.0,
                         "late": 0,
-                        "in_time": in_time,
-                        "out_time": out_time,
+                        "in_time": in_time if in_time else None,
+                        "out_time": out_time if out_time else None,
                     },
                 )
 

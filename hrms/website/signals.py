@@ -9,6 +9,9 @@ from django.db.models import Q
 
 from decimal import Decimal
 
+def D(val):
+    return Decimal(str(val or "0"))
+
 
 @receiver(post_save, sender=Offboarding)
 def update_status_in_model_a(sender, instance, created, **kwargs):
@@ -121,23 +124,26 @@ def update_leave_balance_on_attendance(sender, instance, created, **kwargs):
     period_start, period_end = _payroll_period_for(employee, today)
 
     # Aggregate attendance and late
-    total_present = Attendance.objects.filter(
-        employee=employee,
-        date__gte=period_start,
-        date__lte=today
-    ).aggregate(total_present=Sum("count"))["total_present"] or 0
+    total_present = D(
+        Attendance.objects.filter(
+            employee=employee,
+            date__gte=period_start,
+            date__lte=today
+        ).aggregate(total_present=Sum("count"))["total_present"]
+    )
 
-    total_late = Attendance.objects.filter(
-        employee=employee,
-        date__gte=period_start,
-        date__lte=today
-    ).aggregate(total_late=Sum("late"))["total_late"] or 0
-
-    total_present = Decimal(total_present)
-    total_late = Decimal(total_late)
+    total_late = D(
+        Attendance.objects.filter(
+            employee=employee,
+            date__gte=period_start,
+            date__lte=today
+        ).aggregate(total_late=Sum("late"))["total_late"]
+    )
+    # total_present = Decimal(str(total_present or "0"))
+    # total_late = D(total_late)
 
     # total days in current payroll period up to today (inclusive)
-    total_days_till_now = Decimal((today - period_start).days + 1)
+    total_days_till_now = D((today - period_start).days + 1)
 
     # leaves taken in this period (days not present)
     leave_taken_till_now = total_days_till_now - total_present
@@ -147,7 +153,7 @@ def update_leave_balance_on_attendance(sender, instance, created, **kwargs):
     if today == period_start:
         opening_balance = Decimal("0.00")
     else:
-        opening_balance = Decimal(leave_record.leave_balance or Decimal("0.00"))
+        opening_balance = D(leave_record.leave_balance)
 
     # -------------------------
     # Compute approved comp-off days that overlap WITHIN the current payroll period (up to 'today')
@@ -203,9 +209,9 @@ def update_leave_balance_on_attendance(sender, instance, created, **kwargs):
         if policy:
             credit_1_limit = int(policy.credit_1_limit)
             credit_2_limit = int(policy.credit_2_limit)
-            credit_low = Decimal(policy.credit_low)
-            credit_mid = Decimal(policy.credit_mid)
-            credit_high = Decimal(policy.credit_high)
+            credit_low = D(policy.credit_low)
+            credit_mid = D(policy.credit_mid)
+            credit_high = D(policy.credit_high)
     except Exception:
         # if LeaveCreditPolicy model missing or broken, keep defaults
         pass
@@ -353,16 +359,14 @@ def reset_monthly_leave_balances():
 
         # save history
         LeaveBalanceHistory.objects.create(
-            employee=emp,
-            month=current_month_str,
-            opening_balance=Decimal(rec.opening_balance or 0),
-            days_present=Decimal(rec.number_of_days_present or 0),
-            leave_taken=Decimal(rec.leave_taken or 0),
+            opening_balance=D(rec.opening_balance),
+            days_present=D(rec.number_of_days_present),
+            leave_taken=D(rec.leave_taken),
             late=int(rec.late or 0),
-            compoff=Decimal(rec.compoff or 0),
-            leave_without_pay=Decimal(rec.leave_without_pay or 0),
-            closing_balance=Decimal(rec.closing_balance or 0),
-            final_leave_balance=Decimal(rec.final_leave_balance or rec.leave_balance or 0),
+            compoff=D(rec.compoff),
+            leave_without_pay=D(rec.leave_without_pay),
+            closing_balance=D(rec.closing_balance),
+            final_leave_balance=D(rec.final_leave_balance or rec.leave_balance),
         )
 
         # carry forward closing -> opening; reset monthly fields
@@ -421,9 +425,9 @@ def recalculate_leave_balance_for_employee(employee):
         employee=employee, date__gte=period_start, date__lte=today
     ).aggregate(total_late=Sum("late"))["total_late"] or 0
 
-    total_present = Decimal(total_present)
-    total_late = Decimal(total_late)
-    total_days = Decimal((today - period_start).days + 1)
+    total_present = Decimal(str(total_present or "0"))
+    total_late = D(total_late)
+    total_days = D((today - period_start).days + 1)
     leave_taken = total_days - total_present
 
     # Opening balance
@@ -461,9 +465,9 @@ def recalculate_leave_balance_for_employee(employee):
     if policy:
         credit_1_limit = policy.credit_1_limit
         credit_2_limit = policy.credit_2_limit
-        credit_low = Decimal(policy.credit_low)
-        credit_mid = Decimal(policy.credit_mid)
-        credit_high = Decimal(policy.credit_high)
+        credit_low = D(policy.credit_low)
+        credit_mid = D(policy.credit_mid)
+        credit_high = D(policy.credit_high)
 
     if total_present <= credit_1_limit:
         monthly_credit = credit_low
@@ -485,6 +489,7 @@ def recalculate_leave_balance_for_employee(employee):
     leave_record.leave_balance = leave_balance_val
     leave_record.final_leave_balance = final
     leave_record.compoff = float(compoff_days)
+    
     leave_record.save()
 
     print(f"[MANUAL RECALC] {employee.first_name}: Final = {final}")

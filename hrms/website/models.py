@@ -289,7 +289,10 @@ class Attendance(models.Model):
         ],
         default="Absent"
     )
-    count = models.DecimalField(max_digits=5, decimal_places=2, default=0)  # 1.0, 0.5, 0
+    # count = models.DecimalField(max_digits=5, decimal_places=2, default=0)  # 1.0, 0.5, 0
+    count = models.DecimalField( max_digits=5, decimal_places=2, default=Decimal("0.00")
+)
+
     late = models.IntegerField(default=0)  # Minutes late
 
     class Meta:
@@ -315,7 +318,6 @@ class Attendance(models.Model):
         return 0
 
     def calculate_status(self):
-        """Determine status and count based on working hours and lateness."""
         if not self.in_time or not self.out_time:
             self.status = "Absent"
             self.count = Decimal("0.00")
@@ -324,23 +326,27 @@ class Attendance(models.Model):
         in_dt = datetime.datetime.combine(self.date, self.in_time)
         out_dt = datetime.datetime.combine(self.date, self.out_time)
 
-        # Handle overnight shift
         if out_dt <= in_dt:
             out_dt += datetime.timedelta(days=1)
 
-        worked_hours = (out_dt - in_dt).total_seconds() / 3600
+        worked_hours = Decimal(
+            (out_dt - in_dt).total_seconds()
+        ) / Decimal("3600")
 
-        self.late = self.calculate_lateness()
+        self.late = int(self.calculate_lateness())
 
-        if worked_hours >= 9:
+        if worked_hours >= Decimal("9"):
             self.status = "Present" if self.late == 0 else "Late Present"
             self.count = Decimal("1.00")
-        elif 6 <= worked_hours < 9:
+
+        elif Decimal("6") <= worked_hours < Decimal("9"):
             self.status = "Late Present"
             self.count = Decimal("1.00")
-        elif 4 <= worked_hours < 6:
+
+        elif Decimal("4") <= worked_hours < Decimal("6"):
             self.status = "Half Day"
             self.count = Decimal("0.50")
+
         else:
             self.status = "Absent"
             self.count = Decimal("0.00")

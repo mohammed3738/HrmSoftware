@@ -3264,3 +3264,30 @@ def payroll_export_pdf(request, run_id):
     response['Content-Disposition'] = f'attachment; filename="Payroll_{run.month.strftime("%b_%Y")}.pdf"'
 
     return response
+
+
+
+def download_empty_excel(request):
+    # Create a new Excel workbook
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "attendance_file"
+
+    # (Optional) Add headers only
+    headers = [
+        "Employee Code",
+        "Date",
+        "In Time",
+        "Out Time",
+    ]
+
+    ws.append(headers)  # comment this line if you want 100% empty
+
+    # Prepare HTTP response
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="attendance_file.xlsx"'
+
+    wb.save(response)
+    return response

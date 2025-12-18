@@ -143,5 +143,8 @@ urlpatterns = [
     path("payroll/<int:run_id>/export/excel/", views.payroll_export_excel, name="payroll-export-excel"),
     path("payroll/<int:run_id>/export/pdf/", views.payroll_export_pdf, name="payroll-export-pdf"),
 
+
+    path("download-empty-excel/", views.download_empty_excel, name="download-empty-excel"),
+
 ]
 

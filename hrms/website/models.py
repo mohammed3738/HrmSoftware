@@ -318,35 +318,32 @@ class Attendance(models.Model):
         """Determine status and count based on working hours and lateness."""
         if not self.in_time or not self.out_time:
             self.status = "Absent"
-            self.count = 0
+            self.count = Decimal("0.00")
             return
 
         in_dt = datetime.datetime.combine(self.date, self.in_time)
         out_dt = datetime.datetime.combine(self.date, self.out_time)
 
-        # Handle overnight shift (out_time next day)
+        # Handle overnight shift
         if out_dt <= in_dt:
             out_dt += datetime.timedelta(days=1)
 
-        # Total working hours
         worked_hours = (out_dt - in_dt).total_seconds() / 3600
 
-        # Calculate lateness
         self.late = self.calculate_lateness()
 
-        # Apply rules
         if worked_hours >= 9:
             self.status = "Present" if self.late == 0 else "Late Present"
-            self.count = 1.0
+            self.count = Decimal("1.00")
         elif 6 <= worked_hours < 9:
             self.status = "Late Present"
-            self.count = 1.0
+            self.count = Decimal("1.00")
         elif 4 <= worked_hours < 6:
             self.status = "Half Day"
-            self.count = 0.5
+            self.count = Decimal("0.50")
         else:
             self.status = "Absent"
-            self.count = 0
+            self.count = Decimal("0.00")
 
     def save(self, *args, **kwargs):
         # Always calculate before saving

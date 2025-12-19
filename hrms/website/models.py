@@ -494,21 +494,20 @@ class CompOffRequest(models.Model):
 
 class LeaveBalance(models.Model):
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
-    opening_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    leave_taken = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    number_of_days_present = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    opening_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    leave_taken = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    number_of_days_present = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
     total_number_of_days = models.IntegerField(default=0)
     late = models.IntegerField(default=0)
     # compoff = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    compoff = models.FloatField(default=0.0)
-
+    compoff = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
     # compoff = models.ForeignKey("CompOffRequest", on_delete=models.CASCADE, null=True, blank=True)
-    leave_without_pay = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    closing_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    final_leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    leave_without_pay = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    closing_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    final_leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
     def __str__(self):
-        return f"{self.employee.first_name} {self.employee.employee_code} - {self.date}"
+        return f"{self.employee.first_name} {self.employee.employee_code} - Leave Balance"
 
 
     # def calculate_leave_data(self, from_date, to_date):

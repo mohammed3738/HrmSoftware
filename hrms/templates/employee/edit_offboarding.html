@@ -1,0 +1,74 @@
+{% extends "base2.html" %}
+{% block body %}
+
+<div class="container-xxl py-4">
+  <div class="card">
+    <div class="card-header">
+      <h5>Edit Offboarding – {{ off.employee }}</h5>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data">
+      {% csrf_token %}
+
+      <div class="card-body">
+
+        <!-- OFFBOARDING DETAILS -->
+        <h6 class="mb-3">Offboarding Details</h6>
+        <div class="row g-3">
+          <div class="col-md-6">{{ form.employee }}</div>
+          <div class="col-md-6">{{ form.date_of_resignation }}</div>
+          <div class="col-md-6">{{ form.date_of_relieving }}</div>
+          <div class="col-md-6">{{ form.experience_certificate }}</div>
+          <div class="col-md-6">{{ form.relieving_letter }}</div>
+          <div class="col-md-6">{{ form.other_documents }}</div>
+          <div class="col-md-6">{{ form.fnf_documents }}</div>
+        </div>
+
+        <hr class="my-4">
+
+        <!-- ASSET HANDOVER -->
+        <h6 class="mb-3">Asset Handover</h6>
+
+        {{ formset.management_form }}
+
+        <table class="table table-bordered">
+          <thead>
+            <tr>
+              <th>Asset</th>
+              <th>Qty</th>
+              <th>Condition</th>
+              <th>Remarks</th>
+              <th>Returned</th>
+              <th>Delete</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in formset %}
+            <tr>
+              <td>{{ f.asset_type }}</td>
+              <td>{{ f.quantity }}</td>
+              <td>{{ f.condition_on_return }}</td>
+              <td>{{ f.remarks }}</td>
+              <td>{{ f.returned }}</td>
+              <td>{{ f.DELETE }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+      </div>
+
+      <div class="card-footer text-end">
+        <!-- <a href="{% url 'create-offboarding' %}" class="btn btn-secondary">
+          Cancel
+        </a> -->
+        <button type="submit" class="btn btn-primary">
+          Update Offboarding
+        </button>
+      </div>
+
+    </form>
+  </div>
+</div>
+
+{% endblock %}

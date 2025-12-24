@@ -90,6 +90,7 @@ admin.site.register(SalaryHistory)
 admin.site.register(PreviousEmploymentAttachment)
 admin.site.register(PayrollRecord)
 admin.site.register(PayrollRun)
+admin.site.register(AssetHandover)
 
 
 

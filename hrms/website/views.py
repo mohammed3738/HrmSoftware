@@ -28,7 +28,7 @@ import os
 from django.http import FileResponse, Http404
 import openpyxl
 from .services import *  # from previous services.py
-
+from django.forms.models import model_to_dict
 # def parse_time(time_value):
 #     """Convert time string or float to a proper datetime.time object."""
 #     if pd.isna(time_value) or time_value is None:
@@ -1370,64 +1370,210 @@ def download_attachment(request, pk):
 #     }
 #     return render(request, 'employee/offboarding2.html', context)
 
-def create_offboarding(request):
+
+
+# Formset definition
+
+
+# Formset definition
+
+# Formset definition - Remove custom prefix, use Django default
+# Create the formset
+AssetHandoverFormSet = inlineformset_factory(
+    Offboarding,
+    AssetHandover,
+    form=AssetHandoverForm,
+    extra=0,
+    can_delete=True
+)
+
+def offboarding_list(request):
+    """Main page - List, Create, Edit, View, Delete all in one"""
     if request.method == 'POST':
-        form = OffboardingForm(request.POST, request.FILES)
-        formset = AssetHandoverFormSet(request.POST, request.FILES)
-        # print('formset',formset)
-        print('form',form)                                  
-        # must bind formset to the parent only after parent is saved,
-        # but to validate all at once we can pass prefix-less data and call is_valid() afterwards
-        if form.is_valid():
-            off = form.save(commit=False)
-            # If you want to set any fields before saving, do here
-            off.save()
-
-            # bind formset to saved parent and passed POST/FILES
-            formset = AssetHandoverFormSet(request.POST, request.FILES, instance=off)
-            if formset.is_valid():
-                formset.save()
-                messages.success(request, "Offboarding saved successfully.")
-                return redirect('create-offboarding')  # change to your url
+        off_id = request.POST.get("offboarding_id")
+        
+        # Debug: Print all POST data
+        print("=" * 50)
+        print("POST Data:")
+        for key, value in request.POST.items():
+            print(f"{key} = {value}")
+        print("=" * 50)
+        
+        if off_id:
+            # EDIT MODE
+            print(f"🔥 EDIT MODE - Offboarding ID: {off_id}")
+            offboarding = get_object_or_404(Offboarding, id=off_id)
+            form = OffboardingForm(request.POST, request.FILES, instance=offboarding)
+            formset = AssetHandoverFormSet(request.POST, request.FILES, instance=offboarding)
+        else:
+            # CREATE MODE
+            print("🆕 CREATE MODE")
+            form = OffboardingForm(request.POST, request.FILES)
+            # 🔥 CRITICAL: Use queryset=none() for new records
+            if off_id:
+                # EDIT MODE
+                offboarding = get_object_or_404(Offboarding, id=off_id)
+                form = OffboardingForm(request.POST, request.FILES, instance=offboarding)
+                formset = AssetHandoverFormSet(
+                    request.POST,
+                    request.FILES,
+                    instance=offboarding
+                )
             else:
-                # formset invalid: delete saved off to prevent incomplete parent?
-                # Usually better to leave parent and show errors (but you may delete)
-                # off.delete()  # uncomment if you want to rollback
-                messages.error(request, "Please fix asset handover errors.")
-        else:
-            messages.error(request, "Please fix the offboarding form errors.")
+                # CREATE MODE
+                form = OffboardingForm(request.POST, request.FILES)
+                formset = AssetHandoverFormSet(
+                    request.POST,
+                    request.FILES,
+                    instance=None    # 🔥 THIS IS CORRECT
+                )
 
-        # If errors, fall through and re-render template with both form & formset (form already bound)
-        # Note: if the parent was saved and we didn't delete, re-render with bound formset we made
-        # Ensure formset is bound to instance for rendering errors
-        # If off was saved above, instance variable is `off`. If not saved, instance should be None
-        if 'off' in locals():
-            formset = AssetHandoverFormSet(request.POST, request.FILES, instance=off)
+        
+        # Debug formset data
+        print(f"\nFormset Prefix: {formset.prefix}")
+        print(f"TOTAL_FORMS: {request.POST.get(formset.prefix + '-TOTAL_FORMS')}")
+        print(f"INITIAL_FORMS: {request.POST.get(formset.prefix + '-INITIAL_FORMS')}")
+        
+        # Debug: Print form errors
+        print("\n📋 Form Valid:", form.is_valid())
+        if not form.is_valid():
+            print("Form Errors:", form.errors)
+        
+        print("📦 Formset Valid:", formset.is_valid())
+        if not formset.is_valid():
+            print("Formset Errors:", formset.errors)
+            for i, form_err in enumerate(formset):
+                if form_err.errors:
+                    print(f"Form {i} Errors:", form_err.errors)
+        
+        if form.is_valid() and formset.is_valid():
+            offboarding = form.save()
+            formset.instance = offboarding
+            formset.save()
+            
+            if off_id:
+                messages.success(request, "Offboarding updated successfully!")
+            else:
+                messages.success(request, "Offboarding created successfully!")
+            
+            return redirect('offboarding-list')
         else:
-            formset = AssetHandoverFormSet(request.POST, request.FILES)
+            messages.error(request, "Please fix the errors below.")
     else:
         form = OffboardingForm()
-        formset = AssetHandoverFormSet()
-
+        formset = AssetHandoverFormSet(queryset=AssetHandover.objects.none())
+    
+    offboardings = Offboarding.objects.all().select_related('employee')
     employees = Employee.objects.filter(status='Active')
-    offboarding = Offboarding.objects.all()
-
+    
     return render(request, 'employee/offboarding2.html', {
         'form': form,
         'formset': formset,
+        'offboardings': offboardings,
         'employees': employees,
-        'offboarding': offboarding,
-
     })
 
+def offboarding_detail(request, off_id):
+    """Return JSON data for view modal"""
+    off = get_object_or_404(Offboarding, id=off_id)
+    emp = off.employee
+    assets = off.asset_handovers.all()
 
-def delete_offboarding(request, pk):
+    asset_data = []
+    for a in assets:
+        asset_data.append({
+            "asset_type": a.asset_type,
+            "quantity": a.quantity,
+            "condition": a.condition_on_return,
+            "remarks": a.remarks or "-",
+            "returned": "Yes" if a.returned else "No",
+            "asset_photo": a.asset_photo.url if a.asset_photo else None,
+            "receipt": a.receipt.url if a.receipt else None,
+        })
+
+    data = {
+        # Employee
+        "employee_code": emp.employee_code,
+        "employee_name": str(emp),
+        "email": getattr(emp, "email", "-"),
+        "phone": getattr(emp, "phone_number", "-"),
+
+        # Offboarding
+        "resignation_date": off.date_of_resignation.strftime("%b %d, %Y") if off.date_of_resignation else "-",
+        "relieving_date": off.date_of_relieving.strftime("%b %d, %Y") if off.date_of_relieving else "-",
+
+        # Documents
+        "experience_certificate": off.experience_certificate.url if off.experience_certificate else None,
+        "relieving_letter": off.relieving_letter.url if off.relieving_letter else None,
+        "other_documents": off.other_documents.url if off.other_documents else None,
+        "fnf_documents": off.fnf_documents.url if off.fnf_documents else None,
+
+        # Assets
+        "assets": asset_data
+    }
+
+    return JsonResponse(data)
+
+def offboarding_edit_data(request, id):
+    """Return JSON data for edit modal"""
+    off = get_object_or_404(Offboarding, id=id)
+    assets = AssetHandover.objects.filter(offboarding=off)
+
+    return JsonResponse({
+        "offboarding": {
+            "employee": off.employee_id,
+            "date_of_resignation": off.date_of_resignation.strftime("%Y-%m-%d") if off.date_of_resignation else "",
+            "date_of_relieving": off.date_of_relieving.strftime("%Y-%m-%d") if off.date_of_relieving else "",
+
+            # File info (name + url)
+            "experience_certificate": {
+                "name": off.experience_certificate.name.split("/")[-1] if off.experience_certificate else "",
+                "url": off.experience_certificate.url if off.experience_certificate else ""
+            },
+            "relieving_letter": {
+                "name": off.relieving_letter.name.split("/")[-1] if off.relieving_letter else "",
+                "url": off.relieving_letter.url if off.relieving_letter else ""
+            },
+            "other_documents": {
+                "name": off.other_documents.name.split("/")[-1] if off.other_documents else "",
+                "url": off.other_documents.url if off.other_documents else ""
+            },
+            "fnf_documents": {
+                "name": off.fnf_documents.name.split("/")[-1] if off.fnf_documents else "",
+                "url": off.fnf_documents.url if off.fnf_documents else ""
+            },
+        },
+
+        "assets": [
+            {
+                "id": a.id,
+                "asset_type": a.asset_type,
+                "quantity": a.quantity,
+                "condition": a.condition_on_return,
+                "remarks": a.remarks or "",
+                "returned": a.returned,
+
+                # Asset files
+                "asset_photo": {
+                    "name": a.asset_photo.name.split("/")[-1] if a.asset_photo else "",
+                    "url": a.asset_photo.url if a.asset_photo else ""
+                },
+                "receipt": {
+                    "name": a.receipt.name.split("/")[-1] if a.receipt else "",
+                    "url": a.receipt.url if a.receipt else ""
+                },
+            }
+            for a in assets
+        ]
+    })
+
+def offboarding_delete(request, pk):
+    """Delete offboarding via AJAX"""
     if request.method == 'POST':
         offboarding = get_object_or_404(Offboarding, pk=pk)
         offboarding.delete()
         return JsonResponse({'success': True, 'message': 'Offboarding deleted successfully!'})
     return JsonResponse({'success': False, 'message': 'Invalid request.'})
-
 
 # def create_branch(request):
 #     if request.method == 'POST':

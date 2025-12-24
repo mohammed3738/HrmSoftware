@@ -17,8 +17,22 @@ urlpatterns = [
     # urls.py
     # path('employee/<int:pk>/edit/', views.employee_edit, name='employee_edit'),
 
-    path('create-offboarding',views.create_offboarding,name="create-offboarding"),
-    path('delete-offboarding/<int:pk>/', views.delete_offboarding, name='delete-offboarding'),
+    # path('create-offboarding',views.create_offboarding,name="create-offboarding"),
+    # path("offboarding/<int:off_id>/details/",views.offboarding_detail,name="offboarding_detail"),
+    # path("offboarding/<int:id>/edit-data/", views.offboarding_edit_data, name="offboarding_edit_data"),
+
+
+
+
+
+    # path('delete-offboarding/<int:pk>/', views.delete_offboarding, name='delete-offboarding'),
+        # Main page (list + create + edit in modals)
+    path('offboarding/', views.offboarding_list, name='offboarding-list'),
+    
+    # AJAX endpoints for modals
+    path('offboarding/<int:off_id>/details/', views.offboarding_detail, name='offboarding-detail'),
+    path('offboarding/<int:id>/edit-data/', views.offboarding_edit_data, name='offboarding-edit-data'),
+    path('delete-offboarding/<int:pk>/', views.offboarding_delete, name='offboarding-delete'),
     # path('create-branch',views.create_branch,name="create-branch"),
     path('create-branch',views.create_branchs,name="create-branch"),
     path('create-company/',views.create_company,name="create-company"),

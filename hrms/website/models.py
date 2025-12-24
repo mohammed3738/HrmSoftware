@@ -175,8 +175,8 @@ class Offboarding(models.Model):
     employee = models.ForeignKey(Employee, related_name="offboarding", on_delete=models.CASCADE)
     date_of_resignation = models.DateField(verbose_name="Date of Resignation")
     date_of_relieving = models.DateField(verbose_name="Date of Relieving")
-    experience_certificate = models.FileField(upload_to="offboarding/certificates/", verbose_name="Experience Certificate")
-    relieving_letter = models.FileField(upload_to="offboarding/relieving_letters/", verbose_name="Relieving Letter")
+    experience_certificate = models.FileField(upload_to="offboarding/certificates/", verbose_name="Experience Certificate", blank=True , null=True)
+    relieving_letter = models.FileField(upload_to="offboarding/relieving_letters/", verbose_name="Relieving Letter", blank=True , null=True)
     other_documents = models.FileField(upload_to="offboarding/other_documents/", blank=True, verbose_name="Other Documents")
     fnf_documents = models.FileField(upload_to="offboarding/fnf/", blank=True, verbose_name="FNF Document")
 

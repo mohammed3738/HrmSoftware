@@ -289,7 +289,10 @@ class Attendance(models.Model):
         ],
         default="Absent"
     )
-    count = models.DecimalField(max_digits=5, decimal_places=2, default=0)  # 1.0, 0.5, 0
+    # count = models.DecimalField(max_digits=5, decimal_places=2, default=0)  # 1.0, 0.5, 0
+    count = models.DecimalField( max_digits=5, decimal_places=2, default=Decimal("0.00")
+)
+
     late = models.IntegerField(default=0)  # Minutes late
 
     class Meta:
@@ -315,38 +318,38 @@ class Attendance(models.Model):
         return 0
 
     def calculate_status(self):
-        """Determine status and count based on working hours and lateness."""
         if not self.in_time or not self.out_time:
             self.status = "Absent"
-            self.count = 0
+            self.count = Decimal("0.00")
             return
 
         in_dt = datetime.datetime.combine(self.date, self.in_time)
         out_dt = datetime.datetime.combine(self.date, self.out_time)
 
-        # Handle overnight shift (out_time next day)
         if out_dt <= in_dt:
             out_dt += datetime.timedelta(days=1)
 
-        # Total working hours
-        worked_hours = (out_dt - in_dt).total_seconds() / 3600
+        worked_hours = Decimal(
+            (out_dt - in_dt).total_seconds()
+        ) / Decimal("3600")
 
-        # Calculate lateness
-        self.late = self.calculate_lateness()
+        self.late = int(self.calculate_lateness())
 
-        # Apply rules
-        if worked_hours >= 9:
+        if worked_hours >= Decimal("9"):
             self.status = "Present" if self.late == 0 else "Late Present"
-            self.count = 1.0
-        elif 6 <= worked_hours < 9:
+            self.count = Decimal("1.00")
+
+        elif Decimal("6") <= worked_hours < Decimal("9"):
             self.status = "Late Present"
-            self.count = 1.0
-        elif 4 <= worked_hours < 6:
+            self.count = Decimal("1.00")
+
+        elif Decimal("4") <= worked_hours < Decimal("6"):
             self.status = "Half Day"
-            self.count = 0.5
+            self.count = Decimal("0.50")
+
         else:
             self.status = "Absent"
-            self.count = 0
+            self.count = Decimal("0.00")
 
     def save(self, *args, **kwargs):
         # Always calculate before saving
@@ -491,21 +494,20 @@ class CompOffRequest(models.Model):
 
 class LeaveBalance(models.Model):
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
-    opening_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    leave_taken = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    number_of_days_present = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    opening_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    leave_taken = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    number_of_days_present = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
     total_number_of_days = models.IntegerField(default=0)
     late = models.IntegerField(default=0)
     # compoff = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    compoff = models.FloatField(default=0.0)
-
+    compoff = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
     # compoff = models.ForeignKey("CompOffRequest", on_delete=models.CASCADE, null=True, blank=True)
-    leave_without_pay = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    closing_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    final_leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    leave_without_pay = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    closing_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    final_leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
     def __str__(self):
-        return f"{self.employee.first_name} {self.employee.employee_code} - {self.date}"
+        return f"{self.employee.first_name} {self.employee.employee_code} - Leave Balance"
 
 
     # def calculate_leave_data(self, from_date, to_date):

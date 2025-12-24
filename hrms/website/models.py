@@ -166,11 +166,7 @@ class EmployeeAttachment(models.Model):
     def __str__(self):
         return f"Attachment for {self.employee}"
 
-# class Asset(models.Model):
-#     assigned_to = models.ForeignKey(Employee, related_name='assigned_assets', null=True,blank=True, on_delete=models.CASCADE)
-#     asset_name = models.CharField(max_length=100, verbose_name="Asset Name")
-#     handed_over_to = models.CharField(max_length=100, blank=True, verbose_name="Handed Over To")
-
+ 
 #     def __str__(self):
 #         return f"{self.asset_name} ({self.assigned_to})"
 

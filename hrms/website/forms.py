@@ -110,10 +110,12 @@ EmployeeAttachmentFormSet = inlineformset_factory(
     can_delete=True
 )
 
+
+
 AttachmentFormSet = inlineformset_factory(
-    parent_model=Employee,
-    model=EmployeeAttachment,
-    form=EmployeeAttachmentForm,   # <- important: use the form with file_name
+    Employee,
+    EmployeeAttachment,
+    fields=("file_name", "file"),
     extra=1,
     can_delete=True
 )

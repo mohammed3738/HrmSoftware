@@ -8,11 +8,14 @@ urlpatterns = [
     path("", views.admin_dashboard, name="admin-dashboard"),
 
     path('home',views.home,name="home"),
-    path('create-employee',views.create_employee,name="create-employee"),
-    path('employee/<int:pk>/', views.employee_detail, name='employee_detail'),
+    path('employees/', views.employee_list, name='employee_list'),
+
+    path('employee/', views.create_or_edit_employee, name='employee_create'),
+    path('employee/<int:employee_id>/', views.create_or_edit_employee, name='employee_edit'),
+    path('employee-detail/<int:pk>/', views.employee_detail, name='employee_detail'),
     path('attachments/<int:pk>/download/', views.download_attachment, name='download_attachment'),
     # urls.py
-    path("employee/<int:employee_id>/edit/", views.edit_employee, name="edit_employee"),
+    # path('employee/<int:pk>/edit/', views.employee_edit, name='employee_edit'),
 
     path('create-offboarding',views.create_offboarding,name="create-offboarding"),
     path('delete-offboarding/<int:pk>/', views.delete_offboarding, name='delete-offboarding'),

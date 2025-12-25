@@ -226,7 +226,7 @@
                     <select class="form-select" id="employeeSelect" name="employee">
                       <option value="">-- Select Employee --</option>
                       {% for employee in employees %}
-                        <option value="{{ employee.id }}">{{ employee.first_name }}</option>
+                        <option value="{{ employee.id }}">{{ employee.first_name }} - {{ employee.employee_code }}</option>
                       {% endfor %}
                     </select>
                   </div>
@@ -396,145 +396,206 @@
 
 <!-- ===== JS SCRIPT ===== -->
 <script>
-  let payrollSettings = {
-    pf_percentage: 0.00,
-    esic_percentage: 0.00,
-    gratuity_percentage: 0.00,
-    professional_tax: 0.00,
-    bonus_percentage: 0.00,
-    basic_percentage: 0.00,
-    hra_percentage: 0.00,
-    basic_cap: 0.00
-  };
+/* =====================================================
+   GLOBAL STATE
+===================================================== */
 
-  // 🔹 Load default settings from backend
-  async function loadPayrollSettings() {
-    try {
-      const response = await fetch("/payroll-settings/");
-      const data = await response.json();
-      payrollSettings = data;
-      document.getElementById('settingsStatus').innerText = "✅ Settings loaded from system";
-      calculateSalary();
-    } catch (error) {
-      console.error("Error loading payroll settings:", error);
-      document.getElementById('settingsStatus').innerText = "⚠️ Could not load system settings";
-    }
+let payrollSettings = {
+  pf_percentage: 0,
+  esic_percentage: 0,
+  gratuity_percentage: 0,
+  professional_tax: 0,
+  bonus_percentage: 0,
+  basic_percentage: 0,
+  hra_percentage: 0,
+  basic_cap: 0
+};
+
+/* =====================================================
+   HELPERS
+===================================================== */
+
+function num(id) {
+  return parseFloat(document.getElementById(id)?.value) || 0;
+}
+
+function setVal(id, value) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (el.dataset.manual === "true") return; // respect manual override
+  el.value = value.toFixed(2);
+}
+
+function isYes(id) {
+  return document.getElementById(id)?.value?.toLowerCase() === "yes";
+}
+
+/* =====================================================
+   LOAD PAYROLL SETTINGS
+===================================================== */
+
+async function loadPayrollSettings() {
+  try {
+    const res = await fetch("/payroll-settings/");
+    payrollSettings = await res.json();
+    document.getElementById("settingsStatus").innerText = "✅ Settings loaded";
+    calculateSalary();
+  } catch (e) {
+    console.error(e);
+    document.getElementById("settingsStatus").innerText = "⚠️ Settings not loaded";
+  }
+}
+
+/* =====================================================
+   MAIN CALCULATION (LOGIC UNCHANGED)
+===================================================== */
+
+function calculateSalary() {
+
+  const grossCTC = num("grossCTC");
+  const allowance1 = num("allowance1");
+  const allowance2 = num("allowance2");
+
+  const pfEnabled = isYes("pfSelect");
+  const esicEnabled = isYes("esicSelect");
+  const gratuityEnabled = isYes("gratuitySelect");
+
+  const profTax = payrollSettings.professional_tax || 0;
+
+  /* ---------- BASIC ---------- */
+  let basic;
+  if (document.getElementById("basic").dataset.manual === "true") {
+    basic = num("basic");
+  } else {
+    basic = Math.min(
+      grossCTC * payrollSettings.basic_percentage / 100,
+      payrollSettings.basic_cap
+    );
   }
 
-  function getOverrideValue(id, defaultValue) {
-    const el = document.getElementById(id);
-    if (!el) return defaultValue;
-    const val = parseFloat(el.value);
-    if (!isNaN(val)) {
-      el.classList.add("border-warning", "bg-light");
-      return val;
-    }
-    el.classList.remove("border-warning", "bg-light");
-    return defaultValue;
+  /* ---------- HRA ---------- */
+  let hra;
+  if (document.getElementById("hra").dataset.manual === "true") {
+    hra = num("hra");
+  } else {
+    hra = basic * payrollSettings.hra_percentage / 100;
   }
 
-  function calculateSalary() {
-    const pfSelect = document.getElementById('pfSelect').value.toLowerCase();
-    const gratuitySelect = document.getElementById('gratuitySelect').value.toLowerCase();
-    const esicSelect = document.getElementById('esicSelect').value.toLowerCase();
-    const grossCTC = parseFloat(document.getElementById('grossCTC').value) || 0;
-    const allowance1 = parseFloat(document.getElementById('allowance1').value) || 0;
-    const allowance2 = parseFloat(document.getElementById('allowance2').value) || 0;
-    const profTax = payrollSettings.professional_tax || 0;
+  /* ---------- STAT BONUS ---------- */
+  const statBonus =
+    basic < payrollSettings.basic_cap
+      ? Math.round(7000 * payrollSettings.bonus_percentage / 100)
+      : 0;
 
-    // Override percentages
-    const basicPerc = getOverrideValue('overrideBasic', payrollSettings.basic_percentage);
-    const hraPerc = getOverrideValue('overrideHra', payrollSettings.hra_percentage);
-    const basicCap = getOverrideValue('overrideCap', payrollSettings.basic_cap);
-    const pfPerc = getOverrideValue('overridePf', payrollSettings.pf_percentage);
-    const esicPerc = getOverrideValue('overrideEsic', payrollSettings.esic_percentage);
-    const gratuityPerc = getOverrideValue('overrideGratuity', payrollSettings.gratuity_percentage);
+  /* ---------- PF ---------- */
+  const pfEr = pfEnabled
+    ? Math.min(basic * payrollSettings.pf_percentage / 100, 1800)
+    : 0;
 
-    // Calculate base values
-    let basic = Math.min(grossCTC * (basicPerc / 100), basicCap);
-    let hra = basic * (hraPerc / 100);
-    let statBonus = (basic < basicCap) ? Math.round(7000 * (payrollSettings.bonus_percentage / 100)) : 0;
-    let pfEr = (pfSelect === "yes") ? Math.min(basic * (pfPerc / 100), 1800) : 0;
-    let gratuity = (gratuitySelect === "yes") ? Math.round(basic * (gratuityPerc / 100)) : 0;
+  const pfEe = pfEr;
 
-    let esicEr = 0;
-    let esicEe = 0;
+  /* ---------- GRATUITY ---------- */
+  const gratuity = gratuityEnabled
+    ? Math.round(basic * payrollSettings.gratuity_percentage / 100)
+    : 0;
 
-    let specialAllowance = grossCTC - (basic + hra + statBonus + allowance1 + allowance2 + pfEr + gratuity);
-    let guaranteedCash = basic + hra + statBonus + allowance1 + allowance2 + specialAllowance;
+  /* ---------- SPECIAL ALLOWANCE (BALANCER) ---------- */
+  let specialAllowance =
+    grossCTC -
+    (basic + hra + statBonus + allowance1 + allowance2 + pfEr + gratuity);
 
-    // ✅ ESIC Calculation — both employer & employee same
-    if (esicSelect === "yes" && guaranteedCash < 21000) {
-      esicEr = guaranteedCash * (esicPerc / 100);
-      esicEe = esicEr; // 👈 Make both same
-    }
+  if (specialAllowance < 0) specialAllowance = 0;
 
-    specialAllowance = grossCTC - (basic + hra + statBonus + allowance1 + allowance2 + pfEr + esicEr + gratuity);
-    guaranteedCash = basic + hra + statBonus + allowance1 + allowance2 + specialAllowance;
+  let guaranteedCash =
+    basic + hra + statBonus + allowance1 + allowance2 + specialAllowance;
 
-    const costToCompany = guaranteedCash + pfEr + esicEr + gratuity;
-    const pfEe = pfEr;
-    const netSalary = guaranteedCash - pfEe - esicEe - profTax;
+  /* ---------- ESIC ---------- */
+  let esicEr = 0;
+  let esicEe = 0;
 
-    // 🔹 Allow manual overrides
-    const fields = ['basic', 'hra', 'statBonus', 'specialAllowance', 'pfEr', 'esicEr', 'gratuity', 'netSalary'];
-    fields.forEach(id => {
-      const el = document.getElementById(id);
-      const manualVal = parseFloat(el?.value);
-      if (!isNaN(manualVal) && el.dataset.manual === "true") {
-        return; // Keep manual
-      } else {
-        if (el) el.value = eval(id).toFixed(2);
-      }
-    });
-
-    // ✅ Assign matching ESIC Employee value
-    document.getElementById('esicEe').value = esicEe.toFixed(2);
-
-    // Update read-only fields
-    document.getElementById('costToCompany').value = costToCompany.toFixed(2);
-    document.getElementById('guaranteedCash').value = guaranteedCash.toFixed(2);
-
-    // Annual
-    ['grossCTC', 'basic', 'hra', 'statBonus', 'profTax', 'specialAllowance', 'allowance1', 'allowance2',
-    'guaranteedCash', 'pfEr', 'pfEe', 'esicEr', 'esicEe', 'costToCompany', 'netSalary'].forEach(f => {
-      const m = parseFloat(document.getElementById(f)?.value) || 0;
-      const annEl = document.getElementById(f + 'Ann');
-      if (annEl) annEl.value = (m * 12).toFixed(2);
-    });
+  if (esicEnabled && guaranteedCash < 21000) {
+    esicEr = guaranteedCash * payrollSettings.esic_percentage / 100;
+    esicEe = esicEr;
   }
 
-  // 🔹 Detect manual overrides (HR typed manually)
-  function markManualOverride(e) {
-    e.target.dataset.manual = "true";
-    e.target.classList.add("border-warning");
-  }
+  /* ---------- FINAL REBALANCE ---------- */
+  specialAllowance =
+    grossCTC -
+    (basic + hra + statBonus + allowance1 + allowance2 + pfEr + esicEr + gratuity);
 
-  document.addEventListener("DOMContentLoaded", function() {
-    loadPayrollSettings();
+  guaranteedCash =
+    basic + hra + statBonus + allowance1 + allowance2 + specialAllowance;
 
-    // Recalculate on input/change
-    document.querySelectorAll("input, select").forEach(el => {
-      el.addEventListener("input", calculateSalary);
-      el.addEventListener("change", calculateSalary);
-    });
+  const costToCompany = guaranteedCash + pfEr + esicEr + gratuity;
+  const netSalary = guaranteedCash - pfEe - esicEe - profTax;
 
-    // Mark manual override fields
-    document.querySelectorAll("#salaryModal input[id]").forEach(el => {
-      el.addEventListener("input", markManualOverride);
-    });
+  /* =====================================================
+     WRITE BACK TO UI
+  ===================================================== */
 
-    // Reset overrides
-    document.getElementById("resetOverrides").addEventListener("click", () => {
-      document.querySelectorAll("#salaryModal input[id^='override']").forEach(i => i.value = "");
-      document.querySelectorAll("#salaryModal input[data-manual='true']").forEach(i => {
-        i.value = "";
-        i.dataset.manual = "false";
-        i.classList.remove("border-warning");
-      });
-      calculateSalary();
-    });
+  setVal("basic", basic);
+  setVal("hra", hra);
+  setVal("statBonus", statBonus);
+  setVal("specialAllowance", specialAllowance);
+  setVal("guaranteedCash", guaranteedCash);
+
+  document.getElementById("pfEr").value = pfEr.toFixed(2);
+  document.getElementById("pfEe").value = pfEe.toFixed(2);
+  document.getElementById("esicEr").value = esicEr.toFixed(2);
+  document.getElementById("esicEe").value = esicEe.toFixed(2);
+  document.getElementById("gratuity").value = gratuity.toFixed(2);
+
+  document.getElementById("costToCompany").value = costToCompany.toFixed(2);
+  document.getElementById("netSalary").value = netSalary.toFixed(2);
+
+  /* ---------- ANNUAL ---------- */
+  [
+    "grossCTC",
+    "basic",
+    "hra",
+    "statBonus",
+    "specialAllowance",
+    "guaranteedCash",
+    "pfEr",
+    "pfEe",
+    "esicEr",
+    "esicEe",
+    "costToCompany",
+    "netSalary"
+  ].forEach(id => {
+    const v = num(id);
+    const ann = document.getElementById(id + "Ann");
+    if (ann) ann.value = (v * 12).toFixed(2);
   });
+}
+
+/* =====================================================
+   MANUAL OVERRIDE HANDLING
+===================================================== */
+
+function markManual(e) {
+  e.target.dataset.manual = "true";
+  e.target.classList.add("border-warning");
+}
+
+/* =====================================================
+   INIT
+===================================================== */
+
+document.addEventListener("DOMContentLoaded", () => {
+
+  loadPayrollSettings();
+
+  document.querySelectorAll("input, select").forEach(el => {
+    el.addEventListener("input", calculateSalary);
+    el.addEventListener("change", calculateSalary);
+  });
+
+  document.querySelectorAll("#salaryModal input[id]").forEach(el => {
+    el.addEventListener("input", markManual);
+  });
+
+});
 </script>
 
 

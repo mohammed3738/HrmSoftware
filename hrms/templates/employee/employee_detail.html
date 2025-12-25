@@ -225,30 +225,6 @@
       </div>
       <!--/ About User -->
       <!-- Profile Overview -->
-      <div class="card mb-6">
-        <div class="card-body">
-          <small class="card-text text-uppercase text-muted small"
-            >Overview</small
-          >
-          <ul class="list-unstyled mb-0 mt-3 pt-1">
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-check-line ri-24px"></i
-              ><span class="fw-medium mx-2">Task Compiled:</span>
-              <span>13.5k</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-user-3-line ri-24px"></i
-              ><span class="fw-medium mx-2">Projects Compiled:</span>
-              <span>146</span>
-            </li>
-            <li class="d-flex align-items-center">
-              <i class="ri-star-smile-line ri-24px"></i
-              ><span class="fw-medium mx-2">Connections:</span>
-              <span>897</span>
-            </li>
-          </ul>
-        </div>
-      </div>
       <!--/ Profile Overview -->
     </div>
     <div class="col-xl-8 col-lg-7 col-md-7">
@@ -406,135 +382,178 @@
     </div>
   </div>
   <!--/ User Profile Content -->
-        <div class="row" style="padding: 14px">
-          <!-- Projects table -->
-            <div class="card mb-4">
-              <h5 class="card-header">Previous Employment</h5>
-              <div class="card-datatable table-responsive pb-0">
-                <table class="table datatable-project table-border-bottom-0">
-                  <thead>
-                    <tr>
-                      <th>Employer Name</th>
-                      <th>From Date</th>
-                      <th>To Date</th>
-                      <th>Last CTC</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-              {% if previous_employments %} {% for pre_emp in previous_employments %}
+<div class="row" style="padding: 14px">
 
-              <tr>                              
-                <td>{{pre_emp.employer_name}}</td>
-                <td>{{pre_emp.from_date}}</td>
-                <td>{{pre_emp.to_date}}</td>
-                <td>{{pre_emp.last_ctc}}</td>
-                {% comment %} <td>
-                  <div class="dropdown">
-                    <a class="text-muted" href="#" data-bs-toggle="dropdown">
-                      <i class="ti ti-dots-vertical"></i>
-                    </a>
-                    <div class="dropdown-menu dropdown-menu-end">
-                      <a
-                        class="dropdown-item view-branch-btn"
-                        href="#"
-                        data-id="{{ branch.id }}"
-                      >
-                        <i class="ti ti-eye me-2"></i> View
-                      </a>
-                      <a
-                        class="dropdown-item edit-branch-btn"
-                        href="#"
-                        data-id="{{ branch.id }}"
-                      >
-                        <i class="ti ti-edit me-2"></i> Edit
-                      </a>
-                      <a
-                        class="dropdown-item text-danger"
-                        href="javascript:void(0)"
-                        onclick="confirmDelete({{ branch.id }})"
-                      >
-                        <i class="ti ti-trash me-2"></i> Delete
-                      </a>
-                    </div>
-                  </div>
-                </td> {% endcomment %}
-              </tr>
-              {% endfor %} {% else %}
-              <tr>
-                <td colspan="9" class="text-center">No data available</td>
-              </tr>
-              {% endif %}
-            </tbody>
-                </table>
-              </div>
-            </div> 
-          <!--/ Projects table -->
-          <!-- Projects table -->
-            <div class="card mb-4">
-              <h5 class="card-header">Attachments</h5>
-              <div class="card-datatable table-responsive pb-0">
-                <table class="table datatable-project table-border-bottom-0">
-                  <thead>
-                    <tr>
-                      <th>File Name</th>
-                      <th>Uploaded At</th>
-                      {% comment %} <th>To Date</th>
-                      <th>Last CTC</th> {% endcomment %}
-                    </tr>
-                  </thead>
-                  <tbody>
-              {% if attachments %} {% for attachment in attachments %}
+  <div class="card mb-4">
+    <div class="card-body">
 
-              <tr>                              
-                {% comment %} <td>{{attachment.file}}</td> {% endcomment %}
-                <td>
-                  <a href="{% url 'download_attachment' attachment.pk %}">
-                    {{ attachment.file.name|cut:"uploads/"|default:attachment.file.name }}
-                  </a>
-                </td>
-                <td>{{attachment.uploaded_at}}</td>
-                {% comment %} <td>{{attachment.to_date}}</td> {% endcomment %}
-                {% comment %} <td>{{attachment.last_ctc}}</td> {% endcomment %}
-                {% comment %} <td>
-                  <div class="dropdown">
-                    <a class="text-muted" href="#" data-bs-toggle="dropdown">
-                      <i class="ti ti-dots-vertical"></i>
-                    </a>
-                    <div class="dropdown-menu dropdown-menu-end">
-                      <a
-                        class="dropdown-item view-branch-btn"
-                        href="#"
-                        data-id="{{ branch.id }}"
-                      >
-                        <i class="ti ti-eye me-2"></i> View
-                      </a>
-                      <a
-                        class="dropdown-item edit-branch-btn"
-                        href="#"
-                        data-id="{{ branch.id }}"
-                      >
-                        <i class="ti ti-edit me-2"></i> Edit
-                      </a>
-                      <a
-                        class="dropdown-item text-danger"
-                        href="javascript:void(0)"
-                        onclick="confirmDelete({{ branch.id }})"
-                      >
-                        <i class="ti ti-trash me-2"></i> Delete
-                      </a>
-                    </div>
-                  </div>
-                </td> {% endcomment %}
-              </tr>
-              {% endfor %} {% else %}
-              <tr>
-                <td colspan="9" class="text-center">No data available</td>
-              </tr>
-              {% endif %}
-            </tbody>
-                </table>
-              </div>
-            </div> 
+      <!-- ================= TABS HEADER ================= -->
+      <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link active"
+            data-bs-toggle="tab"
+            data-bs-target="#tab-prev-employment"
+            type="button"
+            role="tab">
+            Previous Employment
+          </button>
+        </li>
+
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            data-bs-toggle="tab"
+            data-bs-target="#tab-attachments"
+            type="button"
+            role="tab">
+            Attachments
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            data-bs-toggle="tab"
+            data-bs-target="#tab-prev-attachments"
+            type="button"
+            role="tab">
+            Previous Employeement Attachments
+          </button>
+        </li>
+      </ul>
+
+      <!-- ================= TAB CONTENT ================= -->
+      <div class="tab-content">
+
+        <!-- ===== PREVIOUS EMPLOYMENT TAB ===== -->
+        <div
+          class="tab-pane fade show active"
+          id="tab-prev-employment"
+          role="tabpanel">
+
+          <div class="card mb-0">
+            <h5 class="card-header">Previous Employment</h5>
+            <div class="card-datatable table-responsive pb-0">
+              <table class="table datatable-project table-border-bottom-0">
+                <thead>
+                  <tr>
+                    <th>Employer Name</th>
+                    <th>From Date</th>
+                    <th>To Date</th>
+                    <th>Last CTC</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if previous_employments %}
+                    {% for pre_emp in previous_employments %}
+                      <tr>
+                        <td>{{ pre_emp.employer_name }}</td>
+                        <td>{{ pre_emp.from_date }}</td>
+                        <td>{{ pre_emp.to_date }}</td>
+                        <td>{{ pre_emp.last_ctc }}</td>
+                      </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="4" class="text-center">No data available</td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ===== ATTACHMENTS TAB ===== -->
+        <div
+          class="tab-pane fade"
+          id="tab-attachments"
+          role="tabpanel">
+
+          <div class="card mb-0">
+            <h5 class="card-header">Attachments</h5>
+            <div class="card-datatable table-responsive pb-0">
+              <table class="table datatable-project table-border-bottom-0">
+                <thead>
+                  <tr>
+                    <th>File Name</th>
+                    <th>Uploaded At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if attachments %}
+                    {% for attachment in attachments %}
+                      <tr>
+                        <td>
+                          <a href="{% url 'download_attachment' attachment.pk %}">
+                            {{ attachment.file.name|cut:"uploads/"|default:attachment.file.name }}
+                          </a>
+                        </td>
+                        <td>{{ attachment.uploaded_at }}</td>
+                      </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="2" class="text-center">No data available</td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ===== PREVIOUS EMPLOYEEMENT ATTACHMENTS TAB ===== -->
+        <div
+          class="tab-pane fade"
+          id="tab-prev-attachments"
+          role="tabpanel">
+
+          <div class="card mb-0">
+            <h5 class="card-header">Previous Employeement Attachments</h5>
+            <div class="card-datatable table-responsive pb-0">
+              <table class="table datatable-project table-border-bottom-0">
+                <thead>
+                  <tr>
+                    <th>File Name</th>
+                    <th>Document Name</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if previous_employments_attachment %}
+                    {% for attachment in previous_employments_attachment %}
+                      <tr>
+                        <td>
+                          <a href="{% url 'download_attachment' attachment.pk %}">
+                            {{ attachment.file.name|cut:"uploads/"|default:attachment.file.name }}
+                          </a>
+                        </td>
+                        <td>
+                          {{ attachment.document_name }}
+                        </td>
+                        <td>{{ attachment.uploaded_at }}</td>
+                      </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="2" class="text-center">No data available</td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+</div>
           <!--/ Projects table -->
 
 
@@ -879,5 +898,69 @@
       </div>
 
 </div>
+
+
+<!-- ================= SALARY DETAILS ================= -->
+<div class="row mt-6">
+  <div class="col-12">
+
+    <div class="card">
+      <div class="card-header">
+        <h5 class="mb-0">
+          <i class="ri-money-rupee-circle-line ri-24px me-2"></i>
+          Salary Details
+        </h5>
+      </div>
+
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-bordered table-striped mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Effective From</th>
+                <th>Basic</th>
+                <th>HRA</th>
+                <th>Allowances</th>
+                <th>Gross Salary</th>
+                <th>Deductions</th>
+                <th>Net Salary</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {% if salary %}
+              <tr>
+                <td>{{ salary.effective_from }}</td>
+                <td>₹ {{ salary.basic }}</td>
+                <td>₹ {{ salary.hra }}</td>
+                <td>₹ {{ salary.allowances }}</td>
+                <td class="fw-medium text-primary">
+                  ₹ {{ salary.gross_salary }}
+                </td>
+                <td class="text-danger">
+                  ₹ {{ salary.total_deductions }}
+                </td>
+                <td class="fw-bold text-success">
+                  ₹ {{ salary.net_salary }}
+                </td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="7" class="text-center text-muted">
+                  Salary not configured for this employee
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
 <!--/ Content -->
 {% endblock %}

@@ -156,7 +156,7 @@
                   data-bs-target="#attachment"
                   type="button"
                 >
-                  Attachment
+                  KYC
                 </button>
               </li>
             </ul>
@@ -191,6 +191,19 @@
                       {% endfor %}
                     </div>
                   </div>
+
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label class="form-label"
+                        >Employee Code <span class="text-danger">*</span></label
+                      >
+                      {{ form.employee_code|add_class:"form-control" }}
+                      {% for error in form.employee_code.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                      {% endfor %}
+                    </div>
+                  </div>
+
 
                   <!-- SALUTATION -->
                   <div class="col-md-4">
@@ -356,17 +369,6 @@
                       <label class="form-label">Date of Marriage</label>
                       {{ form.date_of_marriage|add_class:"form-control" }}
                       {% for error in form.date_of_marriage.errors %}
-                      <div class="text-danger small">{{ error }}</div>
-                      {% endfor %}
-                    </div>
-                  </div>
-                  <div class="col-md-4">
-                    <div class="mb-3">
-                      <label class="form-label"
-                        >Employee Code <span class="text-danger">*</span></label
-                      >
-                      {{ form.employee_code|add_class:"form-control" }}
-                      {% for error in form.employee_code.errors %}
                       <div class="text-danger small">{{ error }}</div>
                       {% endfor %}
                     </div>

@@ -1259,9 +1259,10 @@ def employee_detail(request, pk):
     # employeement = PreviousEmployment.objects.filter(employee=employee)
     # previous_employments = employee.previous_employments.all().order_by('-to_date')
     previous_employments = PreviousEmployment.objects.filter(employee=employee).order_by('-to_date')
+    previous_employments_attachment = PreviousEmploymentAttachment.objects.filter(previous_employment__employee=employee)
     # attachments = employee.attachments.all().order_by('-uploaded_at')
     attachments = EmployeeAttachment.objects.filter(employee=employee).order_by('-uploaded_at')
-
+    salary = SalaryMaster.objects.filter(employee=employee, is_active=True).first()
     # safe related user (if Employee has a user FK/OneToOne)
     user = getattr(employee, "user", None)
 
@@ -1286,14 +1287,14 @@ def employee_detail(request, pk):
         'employee': employee,
         'previous_employments': previous_employments,
         'attachments': attachments,
+        'previous_employments_attachment': previous_employments_attachment,
+        'salary': salary,
         'display': {
             'first_name': first_name,
             'last_name': last_name,
             'full_name': full_name,
             'email': email,
             'phone': phone,
-            \
-
             'photo_url': photo_url,
         }
     }

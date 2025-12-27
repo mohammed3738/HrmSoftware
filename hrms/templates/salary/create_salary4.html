@@ -52,6 +52,7 @@
     <thead class="table-light">
       <tr>
         <th>Emp Code</th>
+        <th>Employee Name</th>
         <th>Basic (Monthly)</th>
         <th>Basic (Yearly)</th>
         <th>HRA (Monthly)</th>
@@ -88,8 +89,9 @@
     <tbody>
       {% for employee in salary %}
       <tr>
-        <td><a href="{% url 'employee_detail' employee.pk %}">{{ employee.employee.employee_code }}</a></td>
+        <td><a href="{% url 'employee_detail' employee.employee.pk %}">{{ employee.employee.employee_code }}</a></td>
 
+        <td>{{ employee.employee.first_name }} {{ employee.employee.last_name }}</td>
         <td>{{ employee.basic_pm|floatformat:2 }}</td>
         <td>{{ employee.basic_pa|floatformat:2 }}</td>
 
@@ -549,24 +551,33 @@ function calculateSalary() {
   document.getElementById("netSalary").value = netSalary.toFixed(2);
 
   /* ---------- ANNUAL ---------- */
-  [
-    "grossCTC",
-    "basic",
-    "hra",
-    "statBonus",
-    "specialAllowance",
-    "guaranteedCash",
-    "pfEr",
-    "pfEe",
-    "esicEr",
-    "esicEe",
-    "costToCompany",
-    "netSalary"
-  ].forEach(id => {
-    const v = num(id);
-    const ann = document.getElementById(id + "Ann");
-    if (ann) ann.value = (v * 12).toFixed(2);
-  });
+/* ---------- ANNUAL ---------- */
+[
+  ["grossCTC", "grossCTCAnn"],
+  ["basic", "basicAnn"],
+  ["hra", "hraAnn"],
+  ["statBonus", "statBonusAnn"],
+  ["specialAllowance", "specialAllowanceAnn"],
+  ["guaranteedCash", "guaranteedCashAnn"],
+
+  // ✅ FIXED
+  ["allowance1", "allowance1Ann"],
+  ["allowance2", "allowance2Ann"],
+  ["profTax", "profTaxAnn"],
+
+  ["pfEr", "pfErAnn"],
+  ["pfEe", "pfEeAnn"],
+  ["esicEr", "esicErAnn"],
+  ["esicEe", "esicEeAnn"],
+  ["costToCompany", "costToCompanyAnn"],
+  ["netSalary", "netSalaryAnn"]
+].forEach(([monthlyId, annualId]) => {
+  const monthlyValue = num(monthlyId);
+  const annualInput = document.getElementById(annualId);
+  if (annualInput) {
+    annualInput.value = (monthlyValue * 12).toFixed(2);
+  }
+});
 }
 
 /* =====================================================

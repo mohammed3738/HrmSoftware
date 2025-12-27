@@ -930,12 +930,12 @@
             <tbody>
               {% if salary %}
               <tr>
-                <td>{{ salary.effective_from }}</td>
-                <td>₹ {{ salary.basic }}</td>
-                <td>₹ {{ salary.hra }}</td>
-                <td>₹ {{ salary.allowances }}</td>
+                <td>₹ {{ salary.gross_ctc_pm }}</td>
+                <td>₹ {{ salary.basic_pm }}</td>
+                <td>₹ {{ salary.hra_pm }}</td>
+                <td>₹ {{ salary.sp_allowance_pm }}</td>
                 <td class="fw-medium text-primary">
-                  ₹ {{ salary.gross_salary }}
+                  ₹ {{ salary.allowance1_pm }}
                 </td>
                 <td class="text-danger">
                   ₹ {{ salary.total_deductions }}

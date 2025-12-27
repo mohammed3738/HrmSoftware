@@ -2668,6 +2668,50 @@ def increment_details(request, pk):
     return JsonResponse(data)
 
 
+def employee_salary_ajax(request):
+    employee_id = request.GET.get("employee_id")
+
+    if not employee_id:
+        return JsonResponse({"error": "Employee ID required"}, status=400)
+
+    employee = get_object_or_404(Employee, pk=employee_id)
+
+    salary = (
+        SalaryMaster.objects
+        .filter(employee=employee, is_active=True)
+        .order_by("-effective_date")
+        .first()
+    )
+
+    if not salary:
+        return JsonResponse({"salary_exists": False})
+
+    return JsonResponse({
+        "salary_exists": True,
+
+        # Flags
+        "pf_deducted": salary.pf_deducted,
+        "esic_applicable": salary.esic_applicable,
+        "gratuity_applicable": salary.gratuity_applicable,
+
+        # Monthly values
+        "grossCTC": salary.gross_ctc_pm,
+        "basic": salary.basic_pm,
+        "hra": salary.hra_pm,
+        "statBonus": salary.stat_bonus_pm,
+        "specialAllowance": salary.sp_allowance_pm,
+        "allowance1": salary.allowance1_pm,
+        "allowance2": salary.allowance2_pm,
+        "guaranteedCash": salary.guaranteed_cash_pm,
+        "pfEr": salary.pf_er_cont_pm,
+        "pfEe": salary.pf_ee_cont_pm,
+        "esicEr": salary.esic_er_cont_pm,
+        "esicEe": salary.esic_ee_cont_pm,
+        "gratuity": salary.gratuity_pm,
+        "professionTax": salary.profession_tax_pm,
+        "ctc": salary.ctc_pm,
+        "netSalary": salary.net_salary_pm,
+    })
 
 
 

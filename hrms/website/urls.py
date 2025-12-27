@@ -92,6 +92,7 @@ urlpatterns = [
     path("salary-increment/", views.create_salary_increment, name="salary_increment"),
     path("salary-history/", views.salary_history, name="salary_history"),
     path("salary/increment/details/<int:pk>/", views.increment_details, name="increment_details"),
+    path("ajax/employee-details/", views.employee_salary_ajax, name="employee_details_ajax"),
 
     # DETAIL MODAL
     path("salary-history/detail/<int:pk>/", 

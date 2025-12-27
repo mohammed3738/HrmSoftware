@@ -720,39 +720,183 @@ document.addEventListener('DOMContentLoaded', () => {
  * INCREMENT DETAILS MODAL LOADER
  * -------------------------------------------------------- */
 async function viewIncrementDetails(id) {
+
     const modalBody = document.getElementById("incrementDetailsBody");
 
-    modalBody.innerHTML = `<div class="text-center py-3"><i class="ri-loader-4-line ri-spin"></i> Loading...</div>`;
-    new bootstrap.Modal(document.getElementById("incrementDetailsModal")).show();
+    modalBody.innerHTML = `
+        <div class="text-center py-3">
+            <i class="ri-loader-4-line ri-spin"></i> Loading...
+        </div>
+    `;
+
+    new bootstrap.Modal(
+        document.getElementById("incrementDetailsModal")
+    ).show();
 
     try {
-        const res = await fetch(`/salary/increment/details/getById{id}/`);
+        // ✅ CORRECT URL
+        const res = await fetch(`/salary/increment/details/${id}/`);
+        if (!res.ok) throw new Error("Failed to fetch");
+
         const data = await res.json();
 
         modalBody.innerHTML = `
-            <table class="table table-bordered table-sm">
-                <tr><th>Employee</th><td>getById{data.employee}</td></tr>
-                <tr><th>Effective Date</th><td>getById{data.effective_date}</td></tr>
-                <tr><th>Gross CTC (PM)</th><td>getById{data.gross_ctc_pm}</td></tr>
-                <tr><th>Net Salary (PM)</th><td>getById{data.net_salary_pm}</td></tr>
+            <table class="table table-bordered table-sm mb-0">
+                <tbody>
+                    <tr>
+                        <th>Employee</th>
+                        <td>${data.employee}</td>
+                    </tr>
+                    <tr>
+                        <th>Effective Date</th>
+                        <td>${data.effective_date}</td>
+                    </tr>
+                    <tr>
+                        <th>Gross CTC (PM)</th>
+                        <td>${data.gross_ctc_pm}</td>
+                    </tr>
+                    <tr>
+                        <th>Net Salary (PM)</th>
+                        <td>${data.net_salary_pm}</td>
+                    </tr>
 
-                <tr><th>PF</th><td>getById{data.flags.pf_deducted ? "Yes" : "No"}</td></tr>
-                <tr><th>ESIC</th><td>getById{data.flags.esic_applicable ? "Yes" : "No"}</td></tr>
-                <tr><th>Gratuity</th><td>getById{data.flags.gratuity_applicable ? "Yes" : "No"}</td></tr>
+                    <tr>
+                        <th>PF</th>
+                        <td>${data.flags.pf_deducted ? "Yes" : "No"}</td>
+                    </tr>
+                    <tr>
+                        <th>ESIC</th>
+                        <td>${data.flags.esic_applicable ? "Yes" : "No"}</td>
+                    </tr>
+                    <tr>
+                        <th>Gratuity</th>
+                        <td>${data.flags.gratuity_applicable ? "Yes" : "No"}</td>
+                    </tr>
 
-                <tr><th>Status</th>
-                    <td>getById{data.is_processed ?
-                        "<span class='badge bg-success'>Applied</span>" :
-                        "<span class='badge bg-warning text-dark'>Pending</span>"}
-                    </td>
-                </tr>
+                    <tr>
+                        <th>Status</th>
+                        <td>
+                            ${
+                                data.is_processed
+                                ? "<span class='badge bg-success'>Applied</span>"
+                                : "<span class='badge bg-warning text-dark'>Pending</span>"
+                            }
+                        </td>
+                    </tr>
+                </tbody>
             </table>
         `;
+
     } catch (err) {
-        modalBody.innerHTML = `<div class="alert alert-danger">Failed to load details.</div>`;
+        console.error(err);
+        modalBody.innerHTML = `
+            <div class="alert alert-danger">
+                Failed to load details.
+            </div>
+        `;
     }
 }
+
 </script>
+
+
+
+
+<script>
+document.getElementById("employeeSelect").addEventListener("change", function () {
+
+    const employeeId = this.value;
+    if (!employeeId) return;
+
+    fetch(`/ajax/employee-details/?employee_id=${employeeId}`)
+        .then(res => res.json())
+        .then(data => {
+
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+
+            if (!data.salary_exists) {
+                alert("No active salary found for this employee");
+                return;
+            }
+
+            /* ===============================
+               PREPOPULATE VALUES (PM)
+            =============================== */
+
+            const set = (id, val) => {
+                const el = document.getElementById(id);
+                if (el && val !== null && val !== undefined) {
+                    el.value = parseFloat(val).toFixed(2);
+                    el.dataset.manual = "false"; // IMPORTANT
+                    el.classList.remove("border-warning");
+                }
+            };
+
+            set("grossCTC", data.grossCTC);
+            set("basic", data.basic);
+            set("hra", data.hra);
+            set("statBonus", data.statBonus);
+            set("specialAllowance", data.specialAllowance);
+            set("allowance1", data.allowance1);
+            set("allowance2", data.allowance2);
+            set("guaranteedCash", data.guaranteedCash);
+            set("pfEr", data.pfEr);
+            set("pfEe", data.pfEe);
+            set("esicEr", data.esicEr);
+            set("esicEe", data.esicEe);
+            set("gratuity", data.gratuity);
+            set("profession_tax_pm", data.professionTax);
+            set("costToCompany", data.ctc);
+            set("netSalary", data.netSalary);
+
+            //Annual fields
+            set("grossCTCAnn", data.grossCTC * 12);
+            set("basicAnn", data.basic * 12);
+            set("hraAnn", data.hra * 12);
+            set("statBonusAnn", data.statBonus * 12);
+            set("specialAllowanceAnn", data.specialAllowance * 12);
+            set("allowance1Ann", data.allowance1 * 12);
+            set("allowance2Ann", data.allowance2 * 12);
+            set("guaranteedCashAnn", data.guaranteedCash * 12);
+            set("pfErAnn", data.pfEr * 12);
+            set("pfEeAnn", data.pfEe * 12);
+            set("esicErAnn", data.esicEr * 12);
+            set("esicEeAnn", data.esicEe * 12);
+            set("gratuityAnn", data.gratuity * 12);
+            set("profTaxAnn", data.professionTax * 12);
+            set("costToCompanyAnn", data.ctc * 12);
+            set("netSalaryAnn", data.netSalary * 12);
+            
+
+            /* ===============================
+               DROPDOWNS
+            =============================== */
+            document.getElementById("pfSelect").value =
+                data.pf_deducted ? "yes" : "no";
+
+            document.getElementById("esicSelect").value =
+                data.esic_applicable ? "yes" : "no";
+
+            document.getElementById("gratuitySelect").value =
+                data.gratuity_applicable ? "yes" : "no";
+
+            /* ===============================
+               RECALCULATE (SAFE)
+            =============================== */
+            if (typeof calculateSalary === "function") {
+                calculateSalary();
+            }
+        })
+        .catch(err => {
+            console.error("AJAX error:", err);
+            alert("Failed to load salary details");
+        });
+});
+</script>
+
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {

@@ -2600,99 +2600,211 @@ def to_float(v):
     except:
         return 0.0
 
+# Add these to your views.py
 def create_salary_increment(request):
-
     if request.method == "POST":
+        try:
+            employee = Employee.objects.get(id=request.POST.get("employee"))
+            effective_date = datetime.strptime(
+                request.POST.get("effective_date"), "%Y-%m-%d"
+            ).date()
 
-        employee = Employee.objects.get(id=request.POST.get("employee"))
-        effective_date = datetime.strptime(request.POST.get("effective_date"), "%Y-%m-%d").date()
+            # Flags
+            pf = request.POST.get("pf_deducted") == "yes"
+            esic = request.POST.get("esic_applicable") == "yes"
+            gratuity = request.POST.get("gratuity_applicable") == "yes"
 
-        # Flags
-        pf = request.POST.get("pf_deducted") == "yes"
-        esic = request.POST.get("esic_applicable") == "yes"
-        gratuity = request.POST.get("gratuity_applicable") == "yes"
+            # Monthly values
+            m = {
+                "gross_ctc": to_float(D(request, "gross_ctc_pm")),
+                "basic": to_float(D(request, "basic_pm")),
+                "hra": to_float(D(request, "hra_pm")),
+                "stat_bonus": to_float(D(request, "stat_bonus_pm")),
+                "allowance1": to_float(D(request, "allowance1_pm")),
+                "allowance2": to_float(D(request, "allowance2_pm")),
+                "special_allowance": to_float(D(request, "sp_allowance_pm")),
+                "guaranteed_cash": to_float(D(request, "guaranteed_cash_pm")),
+                "professional_tax": to_float(D(request, "profession_tax_pm")),
+                "pf_er": to_float(D(request, "pf_er_cont_pm")),
+                "pf_ee": to_float(D(request, "pf_ee_cont_pm")),
+                "esic_er": to_float(D(request, "esic_er_cont_pm")),
+                "esic_ee": to_float(D(request, "esic_ee_cont_pm")),
+                "gratuity": to_float(D(request, "gratuity_pm")),
+                "net_salary": to_float(D(request, "net_salary_pm")),
+                "ctc": to_float(D(request, "ctc_pm")),
+            }
 
-        # Monthly Values
-        m = {
-            "gross_ctc": to_float(D(request, "gross_ctc_pm")),
-            "basic": to_float(D(request, "basic_pm")),
-            "hra": to_float(D(request, "hra_pm")),
-            "stat_bonus": to_float(D(request, "stat_bonus_pm")),
-            "allowance1": to_float(D(request, "allowance1_pm")),
-            "allowance2": to_float(D(request, "allowance2_pm")),
-            "special_allowance": to_float(D(request, "sp_allowance_pm")),
-            "guaranteed_cash": to_float(D(request, "guaranteed_cash_pm")),
-            "professional_tax": to_float(D(request, "profession_tax_pm")),
+            # Annual
+            a = {k: float(v * 12) for k, v in m.items()}
 
-            "pf_er": to_float(D(request, "pf_er_cont_pm")),
-            "pf_ee": to_float(D(request, "pf_ee_cont_pm")),
-            "esic_er": to_float(D(request, "esic_er_cont_pm")),
-            "esic_ee": to_float(D(request, "esic_ee_cont_pm")),
+            SalaryIncrement.objects.create(
+                employee=employee,
+                effective_date=effective_date,
+                change_set={
+                    "reason": request.POST.get("reason", ""),
+                    "flags": {
+                        "pf_deducted": pf,
+                        "esic_applicable": esic,
+                        "gratuity_applicable": gratuity,
+                    },
+                    "monthly": m,
+                    "annual": a,
+                }
+            )
 
-            "gratuity": to_float(D(request, "gratuity_pm")),
-            "net_salary": to_float(D(request, "net_salary_pm")),
-            "ctc": to_float(D(request, "ctc_pm")),
-        }
+            messages.success(request, "Increment created successfully.")
+            return redirect("salary_increment")  # ✅ redirect to list
 
-        # Annual Values
-        a = {k: float(v * 12) for k, v in m.items()}
-
-        # Final JSON
-        change_set = {
-            "flags": {
-                "pf_deducted": pf,
-                "esic_applicable": esic,
-                "gratuity_applicable": gratuity,
-            },
-            "monthly": m,
-            "annual": a,
-        }
-
-        SalaryIncrement.objects.create(
-            employee=employee,
-            effective_date=effective_date,
-            change_set=change_set,
-            is_processed=False
-        )
-
-        messages.success(request, "Increment created successfully.")
-        return redirect("salary_increment")
+        except Exception as e:
+            print("CREATE ERROR:", e)
+            messages.error(request, "Failed to create increment.")
 
     return render(request, "salary_increment/create_increment.html", {
         "employees": Employee.objects.all(),
         "increments": SalaryIncrement.objects.all(),
     })
+def edit_increment(request, pk):
+    """Return increment data as JSON for editing"""
+    try:
+        inc = SalaryIncrement.objects.get(id=pk)
+        
+        monthly = inc.change_set.get("monthly", {})
+        flags = inc.change_set.get("flags", {})
+        
+        data = {
+            "id": inc.id,
+            "employee_id": inc.employee.id,
+            "effective_date": inc.effective_date.strftime("%Y-%m-%d"),
+            "reason": inc.change_set.get("reason", ""),
+            
+            # Flags
+            "pf_deducted": flags.get("pf_deducted", False),
+            "esic_applicable": flags.get("esic_applicable", False),
+            "gratuity_applicable": flags.get("gratuity_applicable", False),
+            
+            # Monthly values
+            "gross_ctc": monthly.get("gross_ctc", 0),
+            "basic": monthly.get("basic", 0),
+            "hra": monthly.get("hra", 0),
+            "stat_bonus": monthly.get("stat_bonus", 0),
+            "allowance1": monthly.get("allowance1", 0),
+            "allowance2": monthly.get("allowance2", 0),
+            "special_allowance": monthly.get("special_allowance", 0),
+            "guaranteed_cash": monthly.get("guaranteed_cash", 0),
+            "professional_tax": monthly.get("professional_tax", 0),
+            "pf_er": monthly.get("pf_er", 0),
+            "pf_ee": monthly.get("pf_ee", 0),
+            "esic_er": monthly.get("esic_er", 0),
+            "esic_ee": monthly.get("esic_ee", 0),
+            "gratuity": monthly.get("gratuity", 0),
+            "net_salary": monthly.get("net_salary", 0),
+            "ctc": monthly.get("ctc", 0),
+        }
+        
+        return JsonResponse(data)
+        
+    except SalaryIncrement.DoesNotExist:
+        return JsonResponse({"error": "Increment not found"}, status=404)
 
 
-
-
-
-
+def update_salary_increment(request, pk):
+    """Update existing increment"""
+    if request.method == "POST":
+        try:
+            inc = SalaryIncrement.objects.get(id=pk)
+            
+            # Update employee and date
+            inc.employee = Employee.objects.get(id=request.POST.get("employee"))
+            inc.effective_date = datetime.strptime(request.POST.get("effective_date"), "%Y-%m-%d").date()
+            
+            # Flags
+            pf = request.POST.get("pf_deducted") == "yes"
+            esic = request.POST.get("esic_applicable") == "yes"
+            gratuity = request.POST.get("gratuity_applicable") == "yes"
+            
+            # Monthly Values
+            m = {
+                "gross_ctc": to_float(D(request, "gross_ctc_pm")),
+                "basic": to_float(D(request, "basic_pm")),
+                "hra": to_float(D(request, "hra_pm")),
+                "stat_bonus": to_float(D(request, "stat_bonus_pm")),
+                "allowance1": to_float(D(request, "allowance1_pm")),
+                "allowance2": to_float(D(request, "allowance2_pm")),
+                "special_allowance": to_float(D(request, "sp_allowance_pm")),
+                "guaranteed_cash": to_float(D(request, "guaranteed_cash_pm")),
+                "professional_tax": to_float(D(request, "profession_tax_pm")),
+                "pf_er": to_float(D(request, "pf_er_cont_pm")),
+                "pf_ee": to_float(D(request, "pf_ee_cont_pm")),
+                "esic_er": to_float(D(request, "esic_er_cont_pm")),
+                "esic_ee": to_float(D(request, "esic_ee_cont_pm")),
+                "gratuity": to_float(D(request, "gratuity_pm")),
+                "net_salary": to_float(D(request, "net_salary_pm")),
+                "ctc": to_float(D(request, "ctc_pm")),
+            }
+            
+            # Annual Values
+            a = {k: float(v * 12) for k, v in m.items()}
+            
+            # Update change_set
+            inc.change_set = {
+                "reason": request.POST.get("reason", ""),
+                "flags": {
+                    "pf_deducted": pf,
+                    "esic_applicable": esic,
+                    "gratuity_applicable": gratuity,
+                },
+                "monthly": m,
+                "annual": a,
+            }
+            
+            inc.save()
+            messages.success(request, "Increment updated successfully.")
+            return redirect("salary_increment")
+            
+        except SalaryIncrement.DoesNotExist:
+            return JsonResponse({"error": "Increment not found"}, status=404)
+    
+    return JsonResponse({"error": "Invalid request"}, status=400)
 
 
 def increment_details(request, pk):
-    inc = SalaryIncrement.objects.get(id=pk)
+    inc = get_object_or_404(SalaryIncrement, id=pk)
 
-    monthly = inc.change_set.get("monthly", {})
-    flags = inc.change_set.get("flags", {})
+    return JsonResponse({
+        "employee_code": inc.employee.employee_code,
+        "employee_name": str(inc.employee),
+        "effective_date": inc.effective_date.strftime("%d %b, %Y"),
+        "reason": inc.change_set.get("reason", "-"),
 
-    data = {
-        "employee": str(inc.employee),
-        "effective_date": inc.effective_date.strftime("%Y-%m-%d"),
+        "monthly": inc.change_set.get("monthly", {}),
+        "flags": inc.change_set.get("flags", {}),
 
-        # monthly
-        "gross_ctc_pm": monthly.get("gross_ctc"),
-        "net_salary_pm": monthly.get("net_salary"),
+        "status": "Applied" if inc.is_processed else "Pending"
+    })
 
-        # extras
-        "reason": inc.change_set.get("reason", ""),
-        "is_processed": inc.is_processed,
-        "flags": flags,
-        "all_data": inc.change_set,
-    }
 
-    return JsonResponse(data)
 
+
+def delete_salary_increment(request, pk):
+    """Delete increment"""
+    if request.method == "POST":
+        try:
+            inc = SalaryIncrement.objects.get(id=pk)
+            
+            # Check if already processed
+            if inc.is_processed:
+                return JsonResponse({
+                    "error": "Cannot delete processed increment"
+                }, status=400)
+            
+            inc.delete()
+            messages.success(request, "Increment deleted successfully.")
+            return JsonResponse({"success": True})
+            
+        except SalaryIncrement.DoesNotExist:
+            return JsonResponse({"error": "Increment not found"}, status=404)
+    
+    return JsonResponse({"error": "Invalid request"}, status=400)
 
 def employee_salary_ajax(request):
     employee_id = request.GET.get("employee_id")

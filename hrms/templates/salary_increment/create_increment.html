@@ -9,11 +9,12 @@
       <div class="d-flex justify-content-between mb-3">
         <h5 class="card-header">Salary Increments</h5>
 
-<button type="button" class="btn btn-primary"
-        data-bs-toggle="modal"
-        data-bs-target="#incrementModal">
-  ➕ New Increment
-</button>
+        <button type="button" class="btn btn-primary"
+                data-bs-toggle="modal"
+                data-bs-target="#incrementModal"
+                onclick="resetFormForNew()">
+          ➕ New Increment
+        </button>
       </div>
 
       <!-- TABS -->
@@ -74,13 +75,9 @@
           <tr>
               <td>{{ inc.employee.first_name }} ({{ inc.employee.employee_code }})</td>
               <td>{{ inc.effective_date }}</td>
-
-              <!-- Correct JSON keys -->
               <td>{{ inc.change_set.monthly.gross_ctc }}</td>
               <td>{{ inc.change_set.monthly.net_salary }}</td>
-
               <td>{{ inc.change_set.reason|default:"-" }}</td>
-
               <td>
                   {% if inc.is_processed %}
                       <span class="badge bg-success">Applied</span>
@@ -88,12 +85,48 @@
                       <span class="badge bg-warning text-dark">Pending</span>
                   {% endif %}
               </td>
-
               <td>
-                  <button type="button" class="btn btn-sm btn-secondary"
-                          onclick="viewIncrementDetails({{ inc.id }})">
-                      <i class="ri-eye-line"></i>
-                  </button>
+                  <!-- 3-Dot Dropdown -->
+                  <div class="dropdown">
+  <span
+    data-bs-toggle="dropdown"
+    aria-expanded="false"
+    style="
+      cursor:pointer;
+      font-size:18px;
+      padding:4px 8px;
+      display:inline-block;
+      border-radius:6px;
+      line-height:1;
+    "
+    onmouseover="this.style.background='rgba(0,0,0,0.05)'"
+    onmouseout="this.style.background='transparent'"
+  >
+    &#8942;
+  </span>
+
+  <ul class="dropdown-menu dropdown-menu-end">
+    <li>
+      <a class="dropdown-item" href="javascript:void(0)"
+         onclick="viewIncrementDetails({{ inc.id }})">
+        <i class="ri-eye-line me-2"></i> View
+      </a>
+    </li>
+    <li>
+      <a class="dropdown-item" href="javascript:void(0)"
+         onclick="editIncrement({{ inc.id }})">
+        <i class="ri-edit-line me-2"></i> Edit
+      </a>
+    </li>
+    <li>
+      <a class="dropdown-item text-danger" href="javascript:void(0)"
+         onclick="deleteIncrement({{ inc.id }})">
+        <i class="ri-delete-bin-line me-2"></i> Delete
+      </a>
+    </li>
+  </ul>
+</div>
+
               </td>
           </tr>
           {% endfor %}
@@ -104,13 +137,11 @@
 
     </div>
   </div>
-
-
-
+</div>
 
 
 <!-- ========================================================= -->
-<!--                    INCREMENT MODAL                       -->
+<!--                    INCREMENT MODAL (CREATE/EDIT)         -->
 <!-- ========================================================= -->
 
 <div class="modal fade" id="incrementModal" tabindex="-1" aria-hidden="true">
@@ -118,12 +149,13 @@
     <div class="modal-content salary-modal">
 
       <div class="modal-header salary-header">
-        <h5 class="modal-title">Apply Salary Increment</h5>
+        <h5 class="modal-title" id="incrementModalTitle">Apply Salary Increment</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
 
       <form id="incrementForm" method="POST" action="{% url 'salary_increment' %}">
         {% csrf_token %}
+        <input type="hidden" id="incrementId" name="increment_id" value="">
 
         <div class="modal-body">
           <div class="row g-4">
@@ -147,12 +179,12 @@
 
                   <div class="mb-3">
                     <label class="form-label">Effective Date <span class="text-danger">*</span></label>
-                    <input type="date" class="form-control" name="effective_date" required>
+                    <input type="date" class="form-control" id="effectiveDate" name="effective_date" required>
                   </div>
 
                   <div class="mb-3">
                     <label class="form-label">Reason (Optional)</label>
-                    <textarea class="form-control" name="reason" rows="2"></textarea>
+                    <textarea class="form-control" id="reasonText" name="reason" rows="2"></textarea>
                   </div>
 
                   <hr>
@@ -211,8 +243,6 @@
                 </div>
               </div>
             </div>
-
-
 
             <!-- RIGHT SIDE (Breakdown) -->
             <div class="col-md-6">
@@ -288,13 +318,12 @@
               </div>
             </div>
 
-
-            <!-- ANNUAL SECTION (same as SalaryMaster) -->
+            <!-- ANNUAL SECTION -->
             <div class="col-12 mt-3">
               <div class="card shadow-none">
                 <div class="card-header bg-light d-flex justify-content-between">
                   <h6 class="fw-bold text-primary mb-0">Annual Figures</h6>
-                  <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#annualCollapse">
+                  <button class="btn btn-sm btn-outline-primary" type="button" data-bs-toggle="collapse" data-bs-target="#annualCollapse">
                     <i class="ri-arrow-down-s-line"></i> Toggle
                   </button>
                 </div>
@@ -302,7 +331,6 @@
                 <div id="annualCollapse" class="collapse">
                   <div class="card-body">
                     <div class="row g-3 mt-4">
-
                       <div class="col-md-3"><label>Gross CTC</label><input type="number" id="grossCTCAnn" name="gross_ctc_pa" class="form-control" readonly></div>
                       <div class="col-md-3"><label>Basic</label><input type="number" id="basicAnn" name="basic_pa" class="form-control" readonly></div>
                       <div class="col-md-3"><label>HRA</label><input type="number" id="hraAnn" name="hra_pa" class="form-control" readonly></div>
@@ -318,20 +346,18 @@
                       <div class="col-md-3"><label>ESIC Employee</label><input type="number" id="esicEeAnn" name="esic_ee_cont_pa" class="form-control" readonly></div>
                       <div class="col-md-3"><label>CTC</label><input type="number" id="costToCompanyAnn" name="ctc_pa" class="form-control" readonly></div>
                       <div class="col-md-3"><label>Net Salary</label><input type="number" id="netSalaryAnn" name="net_salary_pa" class="form-control fw-bold text-success" readonly></div>
-
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-
-          </div> <!-- row -->
-        </div> <!-- modal body -->
+          </div>
+        </div>
 
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-success">Save Increment</button>
+          <button type="submit" class="btn btn-success" id="saveIncrementBtn">Save Increment</button>
         </div>
 
       </form>
@@ -341,16 +367,16 @@
 </div>
 
 
-
-
-
-
+<!-- VIEW DETAILS MODAL -->
 <div class="modal fade" id="incrementDetailsModal" tabindex="-1">
   <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       
-      <div class="modal-header bg-primary text-white">
-        <h5 class="modal-title">Increment Details</h5>
+      <div class="modal-header bg-primary text-white p-3">
+        <!-- <h5 class="modal-title">Increment Details</h5> -->
+        <h5 class="modal-title d-flex align-items-center text-white fw-bold">
+          <i class="ri-user-unfollow-line me-2"></i>Increment Details
+        </h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
 
@@ -368,18 +394,32 @@
 </div>
 
 
+<!-- DELETE CONFIRMATION MODAL -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">Confirm Delete</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p>Are you sure you want to delete this increment?</p>
+        <p class="text-muted small">This action cannot be undone.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
 
-<!-- =========================== -->
-<!--  USE SAME JS FROM SalaryMaster  -->
-<!-- =========================== -->
 
-<!-- ===== JS SCRIPT ===== -->
+<!-- ===== JAVASCRIPT ===== -->
 <script>
-/* -------------------------------
-   Final JS — Option B (Basic edits recalc HRA)
-   Paste/replace your previous calculator script with this
-   ------------------------------- */
-
+/* ============================================
+   SALARY CALCULATOR
+   ============================================ */
 let payrollSettings = {
     pf_percentage: 0,
     esic_percentage: 0,
@@ -395,27 +435,21 @@ async function loadPayrollSettings() {
     try {
         const res = await fetch('/payroll-settings/');
         payrollSettings = await res.json();
-        // Init calculation if modal is open/fields present
         calculateIncrementSalary();
     } catch (err) {
         console.error('Failed to load payroll settings', err);
     }
 }
 
-/* Utility helpers */
-{% comment %} const $ = id => document.getElementById(id); {% endcomment %}
 const getById = id => document.getElementById(id);
-
 const val = id => parseFloat(getById(id)?.value || 0);
 const round = v => Math.round(v);
 const setIfExists = (id, value) => { if (getById(id)) getById(id).value = round(value); };
 
-/* Mark manual override when user types */
 function markManual(e) {
     e.target.dataset.manual = "true";
 }
 
-/* Clear manual flag (used when system should control a field) */
 function clearManualFlag(id) {
     const el = getById(id);
     if (el) {
@@ -424,24 +458,15 @@ function clearManualFlag(id) {
     }
 }
 
-/* Apply 'manual style' for UX when user manually edits */
 function applyManualStyle(el) {
     if (!el) return;
     el.dataset.manual = "true";
     el.classList.add('border-warning');
 }
 
-/* ----------------------------------------------------
-   Main calculator — respects manual overrides.
-   Option B behaviour:
-     - When Basic is edited: HRA recalculated = basic * hraPerc (overwrites HRA unless user already manually edited HRA afterwards)
-     - Other fields can be manually edited.
-   ---------------------------------------------------- */
 function calculateIncrementSalary(triggeredById) {
-    // Basic validation
     const grossCTC = val('grossCTC');
     if (!grossCTC || grossCTC <= 0) {
-        // clear outputs
         ['basic','hra','statBonus','specialAllowance','pfEr','pfEe','esicEr','esicEe','gratuity','guaranteedCash','costToCompany','netSalary',
          'grossCTCAnn','basicAnn','hraAnn','statBonusAnn','allowance1Ann','allowance2Ann','specialAllowanceAnn','guaranteedCashAnn',
          'pfErAnn','pfEeAnn','esicErAnn','esicEeAnn','gratuityAnn','profTaxAnn','costToCompanyAnn','netSalaryAnn'].forEach(id => {
@@ -450,11 +475,9 @@ function calculateIncrementSalary(triggeredById) {
         return;
     }
 
-    // Inputs
     const allowance1 = val('allowance1');
     const allowance2 = val('allowance2');
 
-    // Payroll settings (with safe defaults)
     const basicPerc = (payrollSettings.basic_percentage || 0) / 100;
     const hraPerc = (payrollSettings.hra_percentage || 0) / 100;
     const pfPerc = (payrollSettings.pf_percentage || 0) / 100;
@@ -463,50 +486,32 @@ function calculateIncrementSalary(triggeredById) {
     const bonusPerc = (payrollSettings.bonus_percentage || 0) / 100;
     const basicCap = payrollSettings.basic_cap || 0;
 
-    // Professional tax: prefer manual override input (profTax field), otherwise payroll setting
     let profTax = val('profTax');
     if (!profTax) profTax = payrollSettings.professional_tax || 0;
 
-    // toggles
     const pfEnabled = getById('pfSelect')?.value === 'yes';
     const esicEnabled = getById('esicSelect')?.value === 'yes';
     const gratuityEnabled = getById('gratuitySelect')?.value === 'yes';
 
-    /* ----------------------
-       1) Basic: system default vs manual
-       - If user edited 'basic' (data-manual === "true") we use that.
-       - Otherwise system compute defaultBasic = min(grossCTC*basicPerc, basicCap)
-       However Option B: if user edits basic, HRA will be recalculated from basic.
-       ---------------------- */
     const basicEl = getById('basic');
     let basicSys = Math.min(grossCTC * basicPerc, basicCap);
     let basicVal = basicSys;
 
     if (basicEl && basicEl.dataset.manual === "true") {
-        // user entered basic manually -> use it (still respect rounding)
         basicVal = round(parseFloat(basicEl.value) || basicSys);
     } else {
-        // system value (rounded)
         basicVal = round(basicSys);
     }
 
-    // If the trigger was manual typing into 'basic', ensure basicEl reflects rounded value and mark it manual
     if (triggeredById === 'basic' && basicEl) {
         basicEl.value = basicVal;
-        applyManualStyle(basicEl); // keep manual flag
+        applyManualStyle(basicEl);
     }
 
-    /* ----------------------
-       2) HRA: Option B rules
-       - If Basic changed (triggeredById === 'basic'), HRA recalculated as basicVal * hraPerc and system-controlled (overwrite unless user manually changed HRA after).
-       - If HRA has been manually edited by user (data-manual === "true") and the trigger wasn't 'basic', keep manual.
-       - If HRA not manual and trigger != 'basic', system compute from basicVal.
-       ---------------------- */
     const hraEl = getById('hra');
     let hraValSys = round(basicVal * hraPerc);
 
     if (triggeredById === 'basic') {
-        // force recalc and clear manual flag on HRA (system-controlled now)
         if (hraEl) {
             hraEl.value = hraValSys;
             clearManualFlag('hra');
@@ -521,10 +526,6 @@ function calculateIncrementSalary(triggeredById) {
         if (hraEl) hraEl.value = hraVal;
     }
 
-    /* ----------------------
-       3) Stat Bonus (system default or manual)
-       Excel rule: if basic < 21000 then statBonus = ROUND(7000 * bonusPerc, 0) else 0
-       ---------------------- */
     const statEl = getById('statBonus');
     let statSys = (basicVal < 21000) ? Math.round(7000 * bonusPerc) : 0;
     let statVal = statSys;
@@ -534,12 +535,6 @@ function calculateIncrementSalary(triggeredById) {
         if (statEl) statEl.value = statVal;
     }
 
-    /* ----------------------
-       4) PF Employer / Employee
-       - PF ER = min(basic * pfPerc, 1800) if enabled
-       - PF EE = PF ER
-       - PF fields are editable: if user manually changed pfEr, respect it (but ensure pfEe = pfEr)
-       ---------------------- */
     const pfErEl = getById('pfEr');
     let pfErSys = pfEnabled ? Math.min(basicVal * pfPerc, 1800) : 0;
     let pfErVal = pfErSys;
@@ -548,13 +543,9 @@ function calculateIncrementSalary(triggeredById) {
     } else {
         if (pfErEl) pfErEl.value = round(pfErVal);
     }
-    // PF Employee mirrors pfErVal
     const pfEeEl = getById('pfEe');
     if (pfEeEl) pfEeEl.value = round(pfErVal);
 
-    /* ----------------------
-       5) Gratuity
-       ---------------------- */
     const gratuityEl = getById('gratuity');
     let gratuitySys = gratuityEnabled ? Math.round(basicVal * gratuityPerc) : 0;
     let gratuityVal = gratuitySys;
@@ -564,22 +555,14 @@ function calculateIncrementSalary(triggeredById) {
         if (gratuityEl) gratuityEl.value = gratuityVal;
     }
 
-    /* ----------------------
-       6) TEMP guaranteed to decide ESIC:
-       Excel behaviour: compute guaranteed cash *before* ESIC, then if <=21000 compute ESIC on that GC.
-       We'll replicate: calculate temporary specialAllowance (assuming ESIC=0) to compute temp guaranteed, then ESIC uses that temp guaranteed.
-       ---------------------- */
-    // Determine temporary special allowance (assuming ESIC 0)
     let specialTemp = grossCTC - (basicVal + hraVal + statVal + allowance1 + allowance2 + pfErVal + 0 + gratuityVal);
     let guaranteedTemp = basicVal + hraVal + statVal + allowance1 + allowance2 + specialTemp;
 
-    // ESIC calculation
     const esicErEl = getById('esicEr');
     let esicErVal = 0;
     if (esicEnabled && guaranteedTemp <= 21000) {
         esicErVal = Math.round(guaranteedTemp * esicPerc);
     }
-    // If user manually edited esicEr, respect that (but ensure esicEe = esicEr)
     if (esicErEl && esicErEl.dataset.manual === "true") {
         esicErVal = round(parseFloat(esicErEl.value) || esicErVal);
     } else {
@@ -587,11 +570,6 @@ function calculateIncrementSalary(triggeredById) {
     }
     if (getById('esicEe')) getById('esicEe').value = esicErVal;
 
-    /* ----------------------
-       7) Final Special Allowance (balancing figure EXACT to Excel)
-       SA = grossCTC - (basic + hra + statBonus + allowance1 + allowance2 + pfEr + esicEr + gratuity)
-       If user manually edited SA, respect it; otherwise set this balancing figure.
-       ---------------------- */
     const specialEl = getById('specialAllowance');
     let specialSys = round(grossCTC - (basicVal + hraVal + statVal + allowance1 + allowance2 + pfErVal + esicErVal + gratuityVal));
     let specialVal = specialSys;
@@ -601,16 +579,8 @@ function calculateIncrementSalary(triggeredById) {
         if (specialEl) specialEl.value = specialVal;
     }
 
-    /* ----------------------
-       8) Guaranteed Cash final
-       ---------------------- */
     let guaranteedCash = basicVal + hraVal + statVal + allowance1 + allowance2 + specialVal;
 
-    /* ----------------------
-       9) Net Salary
-       - net = guaranteedCash - PF Employee - ESIC Employee - profTax
-       If user manually edited netSalary, respect it; otherwise compute.
-       ---------------------- */
     const netEl = getById('netSalary');
     let netSys = guaranteedCash - pfErVal - esicErVal - profTax;
     let netVal = netSys;
@@ -620,14 +590,8 @@ function calculateIncrementSalary(triggeredById) {
         if (netEl) netEl.value = round(netVal);
     }
 
-    /* ----------------------
-       10) CTC final
-       ---------------------- */
     let ctc = guaranteedCash + pfErVal + esicErVal + gratuityVal;
 
-    /* ----------------------
-       Write-back rounded monthly values (for fields not manually edited we've already written above; ensure all exist)
-       ---------------------- */
     setIfExists('basic', basicVal);
     setIfExists('hra', hraVal);
     setIfExists('statBonus', statVal);
@@ -641,9 +605,6 @@ function calculateIncrementSalary(triggeredById) {
     setIfExists('costToCompany', ctc);
     setIfExists('netSalary', netVal);
 
-    /* ----------------------
-       Annual fields (rounded)
-       ---------------------- */
     setIfExists('grossCTCAnn', grossCTC * 12);
     setIfExists('basicAnn', basicVal * 12);
     setIfExists('hraAnn', hraVal * 12);
@@ -662,16 +623,9 @@ function calculateIncrementSalary(triggeredById) {
     setIfExists('netSalaryAnn', netVal * 12);
 }
 
-/* --------------------------------------------------------
-   Attach events: inputs become manual on user edit.
-   Special behaviour:
-     - basic input will trigger calculateIncrementSalary('basic') so HRA recalculates per option B.
-     - other inputs mark manual and trigger recalculation.
-   -------------------------------------------------------- */
 document.addEventListener('DOMContentLoaded', () => {
     loadPayrollSettings();
 
-    // fields inside increment modal we care about
     const watched = [
         'grossCTC','allowance1','allowance2','profTax',
         'basic','hra','statBonus','specialAllowance',
@@ -682,14 +636,11 @@ document.addEventListener('DOMContentLoaded', () => {
     watched.forEach(id => {
         const el = getById(id);
         if (!el) return;
-        // For selects and numbers use change + input
         el.addEventListener('input', (e) => {
-            // For basic: mark manual but indicate it triggered by basic
             if (id === 'basic') {
-                applyManualStyle(el); // basic is user-entered
+                applyManualStyle(el);
                 calculateIncrementSalary('basic');
             } else {
-                // mark manual override for all other direct user edits (so JS will respect them)
                 applyManualStyle(el);
                 calculateIncrementSalary(id);
             }
@@ -705,113 +656,277 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // also attach calculation to any selects inside modal (pf, esic, gratuity)
-    ['pfSelect','esicSelect','gratuitySelect'].forEach(id => {
-        const s = getById(id);
-        if (!s) return;
-        s.addEventListener('change', () => calculateIncrementSalary(id));
-    });
-
-    // initial run
     calculateIncrementSalary();
 });
 
-/* --------------------------------------------------------
- * INCREMENT DETAILS MODAL LOADER
- * -------------------------------------------------------- */
+
+/* ============================================
+   EDIT INCREMENT
+   ============================================ */
+async function editIncrement(id) {
+    try {
+        const res = await fetch(`/salary/increment/edit/${id}/`);
+        const data = await res.json();
+        
+        if (data.error) {
+            alert(data.error);
+            return;
+        }
+        
+        // Change modal title
+        document.getElementById('incrementModalTitle').textContent = 'Edit Salary Increment';
+        document.getElementById('saveIncrementBtn').textContent = 'Update Increment';
+        
+        // Store increment ID
+        document.getElementById('incrementId').value = data.id;
+        
+        // Change form action to update URL
+        document.getElementById('incrementForm').action = `/salary/increment/update/${id}/`;
+        
+        // Populate form fields
+        document.getElementById('employeeSelect').value = data.employee_id;
+        document.getElementById('effectiveDate').value = data.effective_date;
+        document.getElementById('reasonText').value = data.reason || '';
+        
+        // Set flags
+        document.getElementById('pfSelect').value = data.pf_deducted ? 'yes' : 'no';
+        document.getElementById('esicSelect').value = data.esic_applicable ? 'yes' : 'no';
+        document.getElementById('gratuitySelect').value = data.gratuity_applicable ? 'yes' : 'no';
+        
+        // Set monthly values
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.value = val || 0;
+                el.dataset.manual = "false";
+                el.classList.remove('border-warning');
+            }
+        };
+        
+        setVal('grossCTC', data.gross_ctc);
+        setVal('basic', data.basic);
+        setVal('hra', data.hra);
+        setVal('statBonus', data.stat_bonus);
+        setVal('allowance1', data.allowance1);
+        setVal('allowance2', data.allowance2);
+        setVal('specialAllowance', data.special_allowance);
+        setVal('profTax', data.professional_tax);
+        setVal('pfEr', data.pf_er);
+        setVal('pfEe', data.pf_ee);
+        setVal('esicEr', data.esic_er);
+        setVal('esicEe', data.esic_ee);
+        setVal('gratuity', data.gratuity);
+        setVal('guaranteedCash', data.guaranteed_cash);
+        setVal('costToCompany', data.ctc);
+        setVal('netSalary', data.net_salary);
+        
+        // Recalculate to populate annual fields
+        // calculateIncrementSalary();
+        
+        // Show modal
+        new bootstrap.Modal(document.getElementById('incrementModal')).show();
+        
+    } catch (err) {
+        console.error('Failed to load increment:', err);
+        alert('Failed to load increment details');
+    }
+}
+
+
+/* ============================================
+   DELETE INCREMENT
+   ============================================ */
+let deleteIncrementId = null;
+
+function deleteIncrement(id) {
+    deleteIncrementId = id;
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', async function() {
+    if (!deleteIncrementId) return;
+    
+    try {
+        const res = await fetch(`/salary/increment/delete/${deleteIncrementId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+            // Close modal
+            bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+            // Reload page
+            window.location.href = "{% url 'salary_increment' %}";
+        } else {
+            alert(data.error || 'Failed to delete increment');
+        }
+        
+    } catch (err) {
+        console.error('Delete failed:', err);
+        alert('Failed to delete increment');
+    }
+});
+
+
+/* ============================================
+   VIEW INCREMENT DETAILS
+   ============================================ */
 async function viewIncrementDetails(id) {
 
+    const modalEl = document.getElementById("incrementDetailsModal");
     const modalBody = document.getElementById("incrementDetailsBody");
 
+    // 1️⃣ Show modal immediately
+    new bootstrap.Modal(modalEl).show();
+
+    // 2️⃣ Loader
     modalBody.innerHTML = `
-        <div class="text-center py-3">
-            <i class="ri-loader-4-line ri-spin"></i> Loading...
+        <div class="text-center py-4">
+            <i class="ri-loader-4-line ri-spin fs-3 text-primary"></i>
+            <div class="mt-2 text-muted">Loading details...</div>
         </div>
     `;
 
-    new bootstrap.Modal(
-        document.getElementById("incrementDetailsModal")
-    ).show();
-
     try {
-        // ✅ CORRECT URL
+        // 3️⃣ Fetch data
         const res = await fetch(`/salary/increment/details/${id}/`);
-        if (!res.ok) throw new Error("Failed to fetch");
+        if (!res.ok) throw new Error("Fetch failed");
 
         const data = await res.json();
 
+        // 4️⃣ Render PREMIUM UI
         modalBody.innerHTML = `
-            <table class="table table-bordered table-sm mb-0">
-                <tbody>
-                    <tr>
-                        <th>Employee</th>
-                        <td>${data.employee}</td>
-                    </tr>
-                    <tr>
-                        <th>Effective Date</th>
-                        <td>${data.effective_date}</td>
-                    </tr>
-                    <tr>
-                        <th>Gross CTC (PM)</th>
-                        <td>${data.gross_ctc_pm}</td>
-                    </tr>
-                    <tr>
-                        <th>Net Salary (PM)</th>
-                        <td>${data.net_salary_pm}</td>
-                    </tr>
+<div class="container-fluid">
 
-                    <tr>
-                        <th>PF</th>
-                        <td>${data.flags.pf_deducted ? "Yes" : "No"}</td>
-                    </tr>
-                    <tr>
-                        <th>ESIC</th>
-                        <td>${data.flags.esic_applicable ? "Yes" : "No"}</td>
-                    </tr>
-                    <tr>
-                        <th>Gratuity</th>
-                        <td>${data.flags.gratuity_applicable ? "Yes" : "No"}</td>
-                    </tr>
+  <!-- Employee Info -->
+  <div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body">
+      <h6 class="text-primary fw-bold mb-3">
+        <i class="ri-user-line me-1"></i> Employee Information
+      </h6>
+      <div class="row">
+        <div class="col-md-6">
+          <small class="text-muted">Employee Code</small>
+          <div class="fw-semibold">${data.employee_code}</div>
+        </div>
+        <div class="col-md-6">
+          <small class="text-muted">Employee Name</small>
+          <div class="fw-semibold">${data.employee_name}</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-                    <tr>
-                        <th>Status</th>
-                        <td>
-                            ${
-                                data.is_processed
-                                ? "<span class='badge bg-success'>Applied</span>"
-                                : "<span class='badge bg-warning text-dark'>Pending</span>"
-                            }
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+  <!-- Increment Info -->
+  <div class="card mb-3 border-0 shadow-sm">
+    <div class="card-body">
+      <h6 class="text-primary fw-bold mb-3">
+        <i class="ri-calendar-line me-1"></i> Increment Details
+      </h6>
+      <div class="row">
+        <div class="col-md-6">
+          <small class="text-muted">Effective Date</small>
+          <div class="fw-semibold">${data.effective_date}</div>
+        </div>
+        <div class="col-md-6">
+          <small class="text-muted">Status</small><br>
+          <span class="badge ${data.status === "Applied" ? "bg-success" : "bg-warning text-dark"}">
+            ${data.status}
+          </span>
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <small class="text-muted">Reason</small>
+        <div class="fw-semibold">${data.reason || "-"}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Salary Breakdown -->
+  <div class="card border-0 shadow-sm">
+    <div class="card-body">
+      <h6 class="text-primary fw-bold mb-3">
+        <i class="ri-money-rupee-circle-line me-1"></i> Monthly Salary Breakdown
+      </h6>
+
+      <table class="table table-sm table-borderless">
+        <tbody>
+          <tr><td>Gross CTC</td><td class="fw-semibold">₹ ${data.monthly.gross_ctc}</td></tr>
+          <tr><td>Basic</td><td>₹ ${data.monthly.basic}</td></tr>
+          <tr><td>HRA</td><td>₹ ${data.monthly.hra}</td></tr>
+          <tr><td>Special Allowance</td><td>₹ ${data.monthly.special_allowance}</td></tr>
+          <tr><td>Professional Tax</td><td>₹ ${data.monthly.professional_tax}</td></tr>
+          <tr><td>PF (Employer)</td><td>₹ ${data.monthly.pf_er}</td></tr>
+          <tr>
+            <td class="fw-bold">Net Salary</td>
+            <td class="fw-bold text-success">₹ ${data.monthly.net_salary}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
         `;
 
     } catch (err) {
         console.error(err);
         modalBody.innerHTML = `
             <div class="alert alert-danger">
-                Failed to load details.
+                Failed to load increment details.
             </div>
         `;
     }
 }
 
-</script>
+/* ============================================
+   RESET FORM FOR NEW INCREMENT
+   ============================================ */
+function resetFormForNew() {
+    // Reset form
+    document.getElementById('incrementForm').reset();
+    document.getElementById('incrementId').value = '';
+    
+    // Reset modal title and button
+    document.getElementById('incrementModalTitle').textContent = 'Apply Salary Increment';
+    document.getElementById('saveIncrementBtn').textContent = 'Save Increment';
+    
+    // Reset form action
+    document.getElementById('incrementForm').action = "{% url 'salary_increment' %}";
+    
+    // Clear all manual flags
+    document.querySelectorAll('.editable-calc').forEach(el => {
+        el.dataset.manual = "false";
+        el.classList.remove('border-warning');
+    });
+    
+    // Clear all calculated fields
+    ['basic','hra','statBonus','specialAllowance','pfEr','pfEe','esicEr','esicEe','gratuity',
+     'guaranteedCash','costToCompany','netSalary','grossCTCAnn','basicAnn','hraAnn','statBonusAnn',
+     'allowance1Ann','allowance2Ann','specialAllowanceAnn','guaranteedCashAnn','pfErAnn','pfEeAnn',
+     'esicErAnn','esicEeAnn','gratuityAnn','profTaxAnn','costToCompanyAnn','netSalaryAnn'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+}
 
 
-
-
-<script>
+/* ============================================
+   EMPLOYEE SELECT - LOAD SALARY DATA
+   ============================================ */
 document.getElementById("employeeSelect").addEventListener("change", function () {
-
     const employeeId = this.value;
     if (!employeeId) return;
 
     fetch(`/ajax/employee-details/?employee_id=${employeeId}`)
         .then(res => res.json())
         .then(data => {
-
             if (data.error) {
                 alert(data.error);
                 return;
@@ -822,15 +937,11 @@ document.getElementById("employeeSelect").addEventListener("change", function ()
                 return;
             }
 
-            /* ===============================
-               PREPOPULATE VALUES (PM)
-            =============================== */
-
             const set = (id, val) => {
                 const el = document.getElementById(id);
                 if (el && val !== null && val !== undefined) {
                     el.value = parseFloat(val).toFixed(2);
-                    el.dataset.manual = "false"; // IMPORTANT
+                    el.dataset.manual = "false";
                     el.classList.remove("border-warning");
                 }
             };
@@ -848,46 +959,16 @@ document.getElementById("employeeSelect").addEventListener("change", function ()
             set("esicEr", data.esicEr);
             set("esicEe", data.esicEe);
             set("gratuity", data.gratuity);
-            set("profession_tax_pm", data.professionTax);
+            set("profTax", data.professionTax);
             set("costToCompany", data.ctc);
             set("netSalary", data.netSalary);
 
-            //Annual fields
-            set("grossCTCAnn", data.grossCTC * 12);
-            set("basicAnn", data.basic * 12);
-            set("hraAnn", data.hra * 12);
-            set("statBonusAnn", data.statBonus * 12);
-            set("specialAllowanceAnn", data.specialAllowance * 12);
-            set("allowance1Ann", data.allowance1 * 12);
-            set("allowance2Ann", data.allowance2 * 12);
-            set("guaranteedCashAnn", data.guaranteedCash * 12);
-            set("pfErAnn", data.pfEr * 12);
-            set("pfEeAnn", data.pfEe * 12);
-            set("esicErAnn", data.esicEr * 12);
-            set("esicEeAnn", data.esicEe * 12);
-            set("gratuityAnn", data.gratuity * 12);
-            set("profTaxAnn", data.professionTax * 12);
-            set("costToCompanyAnn", data.ctc * 12);
-            set("netSalaryAnn", data.netSalary * 12);
-            
+            document.getElementById("pfSelect").value = data.pf_deducted ? "yes" : "no";
+            document.getElementById("esicSelect").value = data.esic_applicable ? "yes" : "no";
+            document.getElementById("gratuitySelect").value = data.gratuity_applicable ? "yes" : "no";
 
-            /* ===============================
-               DROPDOWNS
-            =============================== */
-            document.getElementById("pfSelect").value =
-                data.pf_deducted ? "yes" : "no";
-
-            document.getElementById("esicSelect").value =
-                data.esic_applicable ? "yes" : "no";
-
-            document.getElementById("gratuitySelect").value =
-                data.gratuity_applicable ? "yes" : "no";
-
-            /* ===============================
-               RECALCULATE (SAFE)
-            =============================== */
-            if (typeof calculateSalary === "function") {
-                calculateSalary();
+            if (typeof calculateIncrementSalary === "function") {
+                calculateIncrementSalary();
             }
         })
         .catch(err => {
@@ -895,10 +976,11 @@ document.getElementById("employeeSelect").addEventListener("change", function ()
             alert("Failed to load salary details");
         });
 });
-</script>
 
 
-<script>
+/* ============================================
+   DATATABLES INITIALIZATION
+   ============================================ */
 document.addEventListener("DOMContentLoaded", function () {
     let table = $('.datatable').DataTable({
         pageLength: 10,
@@ -906,9 +988,9 @@ document.addEventListener("DOMContentLoaded", function () {
         dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
     });
  
-    // Convert DataTables elements into Bootstrap style
     $('.dataTables_filter input').addClass('form-control');
     $('.dataTables_length select').addClass('form-select');
 });
 </script>
+
 {% endblock %}

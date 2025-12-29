@@ -618,13 +618,13 @@ class LeaveCreditPolicy(models.Model):
 #     month = models.DateField()
 #     amount = models.DecimalField(max_digits=10, decimal_places=2)
 #     is_paid = models.BooleanField(default=False)
-#     is_skipped = models.BooleanField(default=False)  # ✅ NEW FIELD
+#     is_skipped = models.BooleanField(default=False)  #  NEW FIELD
 #     paid_on = models.DateField(blank=True, null=True)
 #     remarks = models.TextField(blank=True, null=True)
 
-    def __str__(self):
-        status = "Paid" if self.is_paid else ("Skipped" if self.is_skipped else "Pending")
-        return f"{self.advance.employee.first_name} - {self.month} ({status})"
+    # def __str__(self):
+    #     status = "Paid" if self.is_paid else ("Skipped" if self.is_skipped else "Pending")
+    #     return f"{self.advance.employee.first_name} - {self.month} ({status})"
 
 
 

@@ -89,9 +89,27 @@ urlpatterns = [
     path('approve-compoff/<int:compoff_id>/', views.approve_compoff, name='approve_compoff'),
     path('reject-compoff/<int:compoff_id>/', views.reject_compoff, name='reject_compoff'),
     path("submit-comp-off-request/", views.submit_comp_off_request, name="submit_comp_off_request"),
-    path("salary-increment/", views.create_salary_increment, name="salary_increment"),
+    # path("salary-increment/", views.create_salary_increment, name="salary_increment"),
+    # path("salary/increment/details/<int:pk>/", views.increment_details, name="increment_details"),
+    
+    
+     # Main page - list and create (no pk needed)
+    path('salary-increment/', views.create_salary_increment, name='salary_increment'),
+    
+    # Specific actions (pk required)
+    path('salary/increment/edit/<int:pk>/', views.edit_increment, name='edit_increment'),
+    path('salary/increment/update/<int:pk>/', views.update_salary_increment, name='update_increment'),
+    path('salary/increment/delete/<int:pk>/', views.delete_salary_increment, name='delete_increment'),
+    path('salary/increment/details/<int:pk>/', views.increment_details, name='increment_details'),
+
+    
+    
+    
+    
+    
+    
+    
     path("salary-history/", views.salary_history, name="salary_history"),
-    path("salary/increment/details/<int:pk>/", views.increment_details, name="increment_details"),
     path("ajax/employee-details/", views.employee_salary_ajax, name="employee_details_ajax"),
 
     # DETAIL MODAL

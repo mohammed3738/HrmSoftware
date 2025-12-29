@@ -27,6 +27,25 @@
           Next <i class="ri-arrow-right-line"></i>
         </button>
       </div>
+
+      <!-- 🔍 Name Filter -->
+      <div class="d-flex align-items-center gap-2">
+        <div class="position-relative" style="width: 300px;">
+          <input
+            type="text"
+            id="employeeSearch"
+            class="form-control"
+            placeholder="Search employee (name / code)"
+            autocomplete="off"
+          />
+
+          <ul
+            id="employeeDropdown"
+            class="list-group position-absolute w-100 shadow"
+            style="z-index: 1000; display: none; max-height: 250px; overflow-y: auto; background-color: white; cursor: pointer;"
+          </ul>
+        </div>
+      </div>
     </div>
 
     <!-- 🔹 Attendance Table -->
@@ -473,7 +492,7 @@
 </script>
 
 
-<script>
+{% comment %} <script>
 document.addEventListener("DOMContentLoaded", function () {
     let table = $('.datatable').DataTable({
         pageLength: 10,
@@ -484,6 +503,98 @@ document.addEventListener("DOMContentLoaded", function () {
     // Convert DataTables elements into Bootstrap style
     $('.dataTables_filter input').addClass('form-control');
     $('.dataTables_length select').addClass('form-select');
+});
+</script> {% endcomment %}
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+  const table = $('.datatable').DataTable({
+    pageLength: 10,
+    responsive: true,
+  });
+
+  // 🔍 Filter by employee name (column index = 1)
+  document.getElementById("nameFilter").addEventListener("input", function () {
+    table.column(1).search(this.value).draw();
+  });
+
+      $('.dataTables_filter input').addClass('form-control');
+    $('.dataTables_length select').addClass('form-select');
+
+
+});
+</script>
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+  const input = document.getElementById("employeeSearch");
+  const dropdown = document.getElementById("employeeDropdown");
+
+  let controller = null;
+
+  input.addEventListener("input", async function () {
+    const query = this.value.trim();
+
+    if (query.length < 1) {
+      dropdown.style.display = "none";
+      dropdown.innerHTML = "";
+      return;
+    }
+
+    // Abort previous request
+    if (controller) controller.abort();
+    controller = new AbortController();
+
+    try {
+      const res = await fetch(
+        `/ajax/employees/search/?q=${encodeURIComponent(query)}`,
+        { signal: controller.signal }
+      );
+
+      const data = await res.json();
+
+      dropdown.innerHTML = "";
+
+      if (data.length === 0) {
+        dropdown.innerHTML = `
+          <li class="list-group-item text-muted">
+            No employees found
+          </li>`;
+      } else {
+        data.forEach(emp => {
+          const li = document.createElement("li");
+          li.className = "list-group-item list-group-item-action";
+          li.innerHTML = `
+            <strong>${emp.name}</strong>
+            <small class="text-muted ms-1">(${emp.code})</small>
+          `;
+          li.onclick = () => {
+            window.location.href = `/attendance/${emp.id}/`;
+          };
+          dropdown.appendChild(li);
+        });
+      }
+
+      dropdown.style.display = "block";
+
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        console.error("Search failed", err);
+      }
+    }
+  });
+
+  // Hide dropdown when clicking outside
+  document.addEventListener("click", function (e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = "none";
+    }
+  });
+
 });
 </script>
 

@@ -131,7 +131,7 @@ def upload_attendance_excel(request):
             # Clean column names
             df.columns = df.columns.str.strip()
 
-            print(f"Columns in the file: {df.columns}")
+            print(f"📄 Columns found: {df.columns.tolist()}")
 
             for index, row in df.iterrows():
                 employee_code = row.get("Employee Code")
@@ -143,40 +143,42 @@ def upload_attendance_excel(request):
                 in_time = parse_time(in_time_raw)
                 out_time = parse_time(out_time_raw)
 
+                # Validate date
                 if pd.isna(attendance_date):
-                    print(f"⚠️ Date missing for row {index}, skipping row")
+                    print(f"⚠️ Date missing for row {index}, skipping")
                     continue
 
                 attendance_date = pd.to_datetime(attendance_date).date()
 
-                print(f"Row {index}: {row.to_dict()}")
-                print(f"✅ Parsed In: {in_time}, Parsed Out: {out_time}")
-
                 # Get employee
                 employee = Employee.objects.filter(employee_code=employee_code).first()
                 if not employee:
-                    print(f"⚠️ Employee with code {employee_code} not found!")
+                    print(f"⚠️ Employee not found: {employee_code}")
                     continue
 
-                # Create or update attendance
-                attendance, created = Attendance.objects.get_or_create(
+                # 🔐 IMPORTANT: DO NOT UPDATE EXISTING ATTENDANCE
+                existing_attendance = Attendance.objects.filter(
+                    employee=employee,
+                    date=attendance_date
+                ).first()
+
+                if existing_attendance:
+                    print(
+                        f"🔒 Attendance already exists for {employee_code} on {attendance_date}, skipping"
+                    )
+                    continue
+
+                # ✅ Create new attendance ONLY
+                attendance = Attendance(
                     employee=employee,
                     date=attendance_date,
-                    defaults={
-                        "count": 0.0,
-                        "late": 0,
-                        "in_time": in_time if in_time else None,
-                        "out_time": out_time if out_time else None,
-                    },
+                    count=0.0,
+                    late=0,
+                    in_time=in_time if in_time else None,
+                    out_time=out_time if out_time else None,
                 )
 
-                if not created:
-                    if in_time:
-                        attendance.in_time = in_time
-                    if out_time:
-                        attendance.out_time = out_time
-
-                # Calculate working hours if possible
+                # Calculate working hours
                 if attendance.in_time and attendance.out_time:
                     in_dt = datetime.combine(attendance_date, attendance.in_time)
                     out_dt = datetime.combine(attendance_date, attendance.out_time)
@@ -197,20 +199,19 @@ def upload_attendance_excel(request):
                         attendance.late = 0
 
                     print(
-                        f"✅ Working Hours: {working_hours:.2f}, Count: {attendance.count}, Late: {attendance.late}"
+                        f"⏱ {employee_code} | {attendance_date} | Hours: {working_hours:.2f}"
                     )
 
-                # Safe save with debug
+                # Save attendance
                 try:
                     attendance.save()
                     print(
-                        f"✅ Saved: {employee_code} | {attendance_date} | In: {attendance.in_time} | Out: {attendance.out_time} | Count: {attendance.count} | Late: {attendance.late}"
+                        f"✅ Saved attendance: {employee_code} | {attendance_date}"
                     )
                 except Exception as e:
                     print(
-                        f"❌ Error while saving attendance for {employee_code} on {attendance_date}: {str(e)}"
+                        f"❌ Error saving attendance for {employee_code} on {attendance_date}: {str(e)}"
                     )
-                    # Don’t stop loop; skip this record
                     continue
 
             messages.success(request, "Attendance uploaded successfully!")
@@ -219,13 +220,16 @@ def upload_attendance_excel(request):
             )
 
         except Exception as e:
-            print(f"❌ Error processing file: {str(e)}")
+            print(f"❌ File processing error: {str(e)}")
             messages.error(request, f"Error processing file: {str(e)}")
             return JsonResponse(
-                {"success": False, "message": f"Error processing file: {str(e)}"}
+                {"success": False, "message": str(e)}
             )
 
-    return JsonResponse({"success": False, "message": "No file uploaded!"}, status=400)
+    return JsonResponse(
+        {"success": False, "message": "No file uploaded!"},
+        status=400
+    )
 
 
 def attendance_list(request):
@@ -288,6 +292,28 @@ def employee_attendance_detail(request, employee_id):
         "selected_month": selected_month,
     }
     return render(request, "attendance/employee_attendance_detail.html", context)
+
+
+
+def employee_search(request):
+    q = request.GET.get("q", "").strip()
+
+    employees = Employee.objects.filter(
+        Q(first_name__icontains=q) |
+        Q(last_name__icontains=q) |
+        Q(employee_code__icontains=q)
+    )[:10]
+
+    data = [
+        {
+            "id": emp.id,
+            "name": f"{emp.first_name} {emp.last_name}",
+            "code": emp.employee_code
+        }
+        for emp in employees
+    ]
+
+    return JsonResponse(data, safe=False)
 
 
 def submit_correction_request(request):

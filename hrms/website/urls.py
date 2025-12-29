@@ -70,7 +70,8 @@ urlpatterns = [
     path("upload-attendance/", views.upload_attendance_excel, name="upload_attendance"),
     path("attendance/", views.attendance_list, name="attendance"),
     path("attendance/<int:employee_id>/", views.employee_attendance_detail, name="employee_attendance_detail"),
-    
+    path("ajax/employees/search/", views.employee_search, name="employee_search"),
+
     path("submit-correction-request/", views.submit_correction_request, name="submit_correction_request"),
     path("approve-correction/<int:request_id>/", views.approve_correction_request, name="approve_correction"),
     path("reject-correction/<int:request_id>/", views.reject_correction_request, name="reject_correction"),  

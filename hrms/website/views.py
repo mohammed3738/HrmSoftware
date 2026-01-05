@@ -122,114 +122,84 @@ def parse_time(time_value):
     
     
 def upload_attendance_excel(request):
-    if request.method == "POST" and request.FILES.get("attendance_file"):
-        file = request.FILES["attendance_file"]
+    if request.method != "POST" or not request.FILES.get("attendance_file"):
+        return JsonResponse(
+            {"success": False, "message": "No file uploaded!"},
+            status=400
+        )
 
-        try:
-            df = pd.read_excel(file)
+    file = request.FILES["attendance_file"]
 
-            # Clean column names
-            df.columns = df.columns.str.strip()
+    try:
+        df = pd.read_excel(file)
 
-            print(f"📄 Columns found: {df.columns.tolist()}")
+        # Clean column names
+        df.columns = df.columns.str.strip()
 
-            for index, row in df.iterrows():
-                employee_code = row.get("Employee Code")
-                attendance_date = row.get("Date")
+        print(f"📄 Columns found: {df.columns.tolist()}")
 
-                in_time_raw = row.get("In Time")
-                out_time_raw = row.get("Out Time")
+        for index, row in df.iterrows():
+            employee_code = row.get("Employee Code")
+            attendance_date = row.get("Date")
+            in_time_raw = row.get("In Time")
+            out_time_raw = row.get("Out Time")
 
-                in_time = parse_time(in_time_raw)
-                out_time = parse_time(out_time_raw)
+            # Validate mandatory fields
+            if not employee_code or pd.isna(attendance_date):
+                print(f"⚠️ Invalid row {index}, skipping")
+                continue
 
-                # Validate date
-                if pd.isna(attendance_date):
-                    print(f"⚠️ Date missing for row {index}, skipping")
-                    continue
+            # Parse date & time
+            attendance_date = pd.to_datetime(attendance_date).date()
+            in_time = parse_time(in_time_raw)
+            out_time = parse_time(out_time_raw)
 
-                attendance_date = pd.to_datetime(attendance_date).date()
+            # Fetch employee
+            employee = Employee.objects.filter(employee_code=employee_code).first()
+            if not employee:
+                print(f"⚠️ Employee not found: {employee_code}")
+                continue
 
-                # Get employee
-                employee = Employee.objects.filter(employee_code=employee_code).first()
-                if not employee:
-                    print(f"⚠️ Employee not found: {employee_code}")
-                    continue
-
-                # 🔐 IMPORTANT: DO NOT UPDATE EXISTING ATTENDANCE
-                existing_attendance = Attendance.objects.filter(
-                    employee=employee,
-                    date=attendance_date
-                ).first()
-
-                if existing_attendance:
-                    print(
-                        f"🔒 Attendance already exists for {employee_code} on {attendance_date}, skipping"
-                    )
-                    continue
-
-                # ✅ Create new attendance ONLY
-                attendance = Attendance(
-                    employee=employee,
-                    date=attendance_date,
-                    count=0.0,
-                    late=0,
-                    in_time=in_time if in_time else None,
-                    out_time=out_time if out_time else None,
+            # 🔐 Prevent overwrite (ANTI-CHEAT)
+            if Attendance.objects.filter(employee=employee, date=attendance_date).exists():
+                print(
+                    f"🔒 Attendance already exists for {employee_code} on {attendance_date}, skipped"
                 )
+                continue
 
-                # Calculate working hours
-                if attendance.in_time and attendance.out_time:
-                    in_dt = datetime.combine(attendance_date, attendance.in_time)
-                    out_dt = datetime.combine(attendance_date, attendance.out_time)
-
-                    working_hours = (out_dt - in_dt).total_seconds() / 3600
-
-                    if working_hours >= 9:
-                        attendance.count = 1.0
-                        attendance.late = 0
-                    elif working_hours >= 6:
-                        attendance.count = 1.0
-                        attendance.late = 1
-                    elif working_hours >= 4:
-                        attendance.count = 0.5
-                        attendance.late = 0
-                    else:
-                        attendance.count = 0.0
-                        attendance.late = 0
-
-                    print(
-                        f"⏱ {employee_code} | {attendance_date} | Hours: {working_hours:.2f}"
-                    )
-
-                # Save attendance
-                try:
-                    attendance.save()
-                    print(
-                        f"✅ Saved attendance: {employee_code} | {attendance_date}"
-                    )
-                except Exception as e:
-                    print(
-                        f"❌ Error saving attendance for {employee_code} on {attendance_date}: {str(e)}"
-                    )
-                    continue
-
-            messages.success(request, "Attendance uploaded successfully!")
-            return JsonResponse(
-                {"success": True, "message": "Attendance uploaded successfully!"}
+            # ✅ Create attendance (NO calculation here)
+            attendance = Attendance(
+                employee=employee,
+                date=attendance_date,
+                in_time=in_time if in_time else None,
+                out_time=out_time if out_time else None,
             )
 
-        except Exception as e:
-            print(f"❌ File processing error: {str(e)}")
-            messages.error(request, f"Error processing file: {str(e)}")
-            return JsonResponse(
-                {"success": False, "message": str(e)}
-            )
+            try:
+                attendance.save()  # 🔥 shift-based calculation happens here
+                print(
+                    f"✅ Saved: {employee_code} | {attendance_date} | "
+                    f"In: {attendance.in_time} | Out: {attendance.out_time} | "
+                    f"Status: {attendance.status} | Count: {attendance.count}"
+                )
+            except Exception as e:
+                print(
+                    f"❌ Error saving attendance for {employee_code} "
+                    f"on {attendance_date}: {str(e)}"
+                )
+                continue
 
-    return JsonResponse(
-        {"success": False, "message": "No file uploaded!"},
-        status=400
-    )
+        messages.success(request, "Attendance uploaded successfully!")
+        return JsonResponse(
+            {"success": True, "message": "Attendance uploaded successfully!"}
+        )
+
+    except Exception as e:
+        print(f"❌ File processing error: {str(e)}")
+        messages.error(request, f"Error processing file: {str(e)}")
+        return JsonResponse(
+            {"success": False, "message": str(e)}
+        )
 
 
 def attendance_list(request):

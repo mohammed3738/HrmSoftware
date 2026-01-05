@@ -52,7 +52,7 @@ class EmployeeForm(forms.ModelForm):
             'father_name', 'gender', 'blood_group', 'date_of_birth', 'place_of_birth',
             'personal_email', 'present_address', 'permanent_address', 'personal_mobile',
             'date_of_marriage', 'employee_code', 'designation', 'department',
-            'date_of_joining', 'date_of_confirmation', 'location', 'payroll_of', 'shift',
+            'date_of_joining', 'date_of_confirmation', 'location', 'payroll_of','shift_start_time','shift_end_time',
             'pan_no', 'aadhar_no', 'voter_id', 'passport', 'uan_no', 'pf_no', 'esic_no',
             'name_as_per_bank', 'salary_account_number', 'ifsc_code',
             'emergency_contact_name1', 'emergency_contact_relation1', 'emergency_contact_mobile1',
@@ -66,6 +66,8 @@ class EmployeeForm(forms.ModelForm):
             "date_of_joining": forms.DateInput(attrs={"type": "date"}),
             "date_of_confirmation": forms.DateInput(attrs={"type": "date"}),
             "date_of_marriage": forms.DateInput(attrs={"type": "date"}),  # ✅ date picker
+            'shift_start_time': forms.TimeInput(attrs={'type': 'time'}),
+            'shift_end_time': forms.TimeInput(attrs={'type': 'time'}),
         }
         
     def __init__(self, *args, **kwargs):
@@ -93,12 +95,15 @@ class EmployeeAttachmentForm(forms.ModelForm):
 
     class Meta:
         model = EmployeeAttachment
-        fields = ['id','file','file_name']
+        fields = ['id', 'file_name', 'other_file_name', 'file']
         widgets = {
             'file_name': forms.Select(attrs={
-                'class': 'form-select form-select-sm',   # bootstrap select look
-                'style': 'min-width:160px;',             # adjust width
+                'class': 'form-control attachment-type',
             }),
+            'other_file_name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter document name'
+            })
         }
 
 

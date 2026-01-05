@@ -78,7 +78,16 @@ class Employee(models.Model):
     date_of_confirmation = models.DateField(blank=True, null=True, verbose_name="Date of Confirmation")
     location = models.CharField(max_length=255, verbose_name="Location")
     payroll_of = models.CharField(max_length=50, verbose_name="On Payroll Of", null=True, blank=True)
-    shift = models.CharField(max_length=50, verbose_name="Shift")
+    shift_start_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Shift Start Time"
+    )
+    shift_end_time = models.TimeField(
+        null=True,
+        blank=True,
+        verbose_name="Shift End Time"
+    )
 
     # Statutory Details
     pan_no = models.CharField(max_length=10, verbose_name="PAN No")
@@ -158,13 +167,26 @@ class EmployeeAttachment(models.Model):
         ('pan', 'PAN'),
         ('resume', 'Resume'),
         ('offer_letter', 'Offer Letter'),
+        ('other', 'Other'),
+
         # add more
     ]
+    other_file_name = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True
+    )
+
     file_name = models.CharField(max_length=50, choices=FILE_NAME_CHOICES, blank=True, null=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
+    def get_display_name(self):
+        if self.file_name == "other" and self.other_file_name:
+            return self.other_file_name
+        return dict(self.FILE_NAME_CHOICES).get(self.file_name, "Document")
+
     def __str__(self):
-        return f"Attachment for {self.employee}"
+        return f"{self.get_display_name()} - {self.employee}"
 
  
 #     def __str__(self):
@@ -300,18 +322,21 @@ class Attendance(models.Model):
     def __str__(self):
         return f"{self.employee.first_name} {self.employee.employee_code} - {self.date}"
 
-    def calculate_lateness(self, threshold_time="09:00:00"):
-        """Calculate lateness in minutes with grace period."""
-        if self.in_time:
-            threshold = datetime.datetime.strptime(threshold_time, "%H:%M:%S").time()
-            in_dt = datetime.datetime.combine(datetime.date.today(), self.in_time)
-            threshold_dt = datetime.datetime.combine(datetime.date.today(), threshold)
+    def calculate_lateness(self):
+        if not self.in_time:
+            return 0
 
-            lateness = (in_dt - threshold_dt).total_seconds() // 60
-            grace_period = getattr(settings, "GRACE_PERIOD_MINUTES", 15)  # default = 15 mins
-            if lateness > grace_period:
-                return lateness
-        return 0
+        shift_start = self.employee.shift_start_time
+        if not shift_start:
+            return 0
+
+        in_dt = datetime.datetime.combine(self.date, self.in_time)
+        shift_dt = datetime.datetime.combine(self.date, shift_start)
+
+        lateness = (in_dt - shift_dt).total_seconds() // 60
+        grace = getattr(settings, "GRACE_PERIOD_MINUTES", 15)
+
+        return int(lateness) if lateness > grace else 0
 
     def calculate_status(self):
         if not self.in_time or not self.out_time:
@@ -319,9 +344,24 @@ class Attendance(models.Model):
             self.count = Decimal("0.00")
             return
 
+        shift_start = self.employee.shift_start_time
+        shift_end = self.employee.shift_end_time
+
+        if not shift_start or not shift_end:
+            self.status = "Absent"
+            self.count = Decimal("0.00")
+            return
+
+        # Build datetime
         in_dt = datetime.datetime.combine(self.date, self.in_time)
         out_dt = datetime.datetime.combine(self.date, self.out_time)
 
+        shift_start_dt = datetime.datetime.combine(self.date, shift_start)
+        shift_end_dt = datetime.datetime.combine(self.date, shift_end)
+
+        # Night shift handling
+        if shift_end_dt <= shift_start_dt:
+            shift_end_dt += datetime.timedelta(days=1)
         if out_dt <= in_dt:
             out_dt += datetime.timedelta(days=1)
 
@@ -329,24 +369,29 @@ class Attendance(models.Model):
             (out_dt - in_dt).total_seconds()
         ) / Decimal("3600")
 
-        self.late = int(self.calculate_lateness())
+        expected_hours = Decimal(
+            (shift_end_dt - shift_start_dt).total_seconds()
+        ) / Decimal("3600")
 
-        if worked_hours >= Decimal("9"):
+        self.late = self.calculate_lateness()
+
+        # Dynamic rules
+        if worked_hours >= expected_hours:
             self.status = "Present" if self.late == 0 else "Late Present"
             self.count = Decimal("1.00")
 
-        elif Decimal("6") <= worked_hours < Decimal("9"):
+        elif worked_hours >= expected_hours * Decimal("0.7"):
             self.status = "Late Present"
             self.count = Decimal("1.00")
 
-        elif Decimal("4") <= worked_hours < Decimal("6"):
+        elif worked_hours >= expected_hours * Decimal("0.5"):
             self.status = "Half Day"
             self.count = Decimal("0.50")
 
         else:
             self.status = "Absent"
             self.count = Decimal("0.00")
-
+            
     def save(self, *args, **kwargs):
         # Always calculate before saving
         self.calculate_status()

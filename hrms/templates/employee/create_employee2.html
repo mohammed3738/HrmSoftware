@@ -420,13 +420,14 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Shift <span class="text-danger">*</span></label
-                      >
-                      {{ form.shift|add_class:"form-control" }}
-                       {% for error in form.shift.errors %}
-                      <div class="text-danger small">{{ error }}</div>
-                      {% endfor %}
+                      <label class="form-label">
+                        Shift <span class="text-danger">*</span>
+                      </label>
+                      <div class="input-group">
+                        {{ form.shift_start_time|add_class:"form-control" }}
+                        <span class="input-group-text">to</span>
+                        {{ form.shift_end_time|add_class:"form-control" }}
+                      </div>
                     </div>
                   </div>
                   <div class="col-md-4">
@@ -722,68 +723,89 @@
                   <table class="table table-bordered" id="attachmentTable">
                     <thead class="table-light">
                       <tr>
-                        <th>File Name</th>
-                        <th>File</th>
-                        <th>Actions</th>
+                        <th style="width: 30%">File Name</th>
+                        <th style="width: 45%">File</th>
+                        <th style="width: 25%">Actions</th>
                       </tr>
                     </thead>
 
                     <tbody>
-                    {% for f in attachment_formset %}
-                    <tr>
-                      <td>
-                        {{ f.id }}   <!-- 🔴 REQUIRED -->
-                        {{ f.file_name|add_class:"form-control" }}
-                      </td>
+                      {% for f in attachment_formset %}
+                      <tr>
+                        <!-- 🔴 REQUIRED hidden ID -->
+                        {{ f.id }}
 
-                      <td>
-                        {{ f.file }}
-                        {% if f.instance.pk and f.instance.file %}
-                          <small class="d-block mt-1">
-                            Existing:
-                            <a href="{{ f.instance.file.url }}" target="_blank">
-                              {{ f.instance.file.name }}
-                            </a>
-                          </small>
-                        {% endif %}
-                      </td>
+                        <!-- FILE NAME -->
+                        <td>
+                          {{ f.file_name }}
 
-                      <td>
-                        {% if f.instance.pk %}
-                          <div class="form-check">
-                            {{ f.DELETE }}
-                            <label class="form-check-label ms-1">Delete</label>
+                          <div class="mt-2 other-file-wrapper"
+                              {% if f.instance.file_name != "other" %}style="display:none;"{% endif %}>
+                            {{ f.other_file_name }}
                           </div>
-                        {% else %}
-                          <button type="button" class="btn btn-danger btn-sm remove-attachment-row">
-                            Remove
-                          </button>
-                        {% endif %}
-                      </td>
-                    </tr>
-                    {% endfor %}
+                        </td>
+
+                        <!-- FILE -->
+                        <td>
+                          {{ f.file }}
+
+                          {% if f.instance.pk and f.instance.file %}
+                            <small class="d-block mt-1">
+                              Existing:
+                              <a href="{{ f.instance.file.url }}" target="_blank">
+                                {{ f.instance.file.name }}
+                              </a>
+                            </small>
+                          {% endif %}
+                        </td>
+
+                        <!-- ACTIONS -->
+                        <td>
+                          {% if f.instance.pk %}
+                            <div class="form-check">
+                              {{ f.DELETE }}
+                              <label class="form-check-label ms-1">Delete</label>
+                            </div>
+                          {% else %}
+                            <button type="button"
+                                    class="btn btn-danger btn-sm remove-attachment-row">
+                              Remove
+                            </button>
+                          {% endif %}
+                        </td>
+                      </tr>
+                      {% endfor %}
                     </tbody>
                   </table>
                 </div>
 
-                <button
-                  type="button"
-                  id="addAttachmentRow"
-                  class="btn btn-secondary btn-sm mt-2"
-                >
+                <button type="button"
+                        id="addAttachmentRow"
+                        class="btn btn-secondary btn-sm mt-2">
                   Add More Files
                 </button>
 
-                <table style="display: none">
+                <!-- 🔹 EMPTY FORM TEMPLATE (IMPORTANT) -->
+                <table style="display:none">
                   <tbody id="attach-empty-row">
                     <tr>
-                      <td>{{ attachment_formset.empty_form.file_name }}</td>
-                      <td>{{ attachment_formset.empty_form.file }}</td>
+                      {{ attachment_formset.empty_form.id }}
+
+                    <td>
+                      {{ attachment_formset.empty_form.file_name }}
+
+                      <div class="mt-2 other-file-wrapper" style="display:none;">
+                        {{ attachment_formset.empty_form.other_file_name }}
+                      </div>
+                    </td>
+
                       <td>
-                        <button
-                          type="button"
-                          class="btn btn-danger btn-sm remove-attachment-row"
-                        >
+                        {{ attachment_formset.empty_form.file }}
+                      </td>
+
+                      <td>
+                        <button type="button"
+                                class="btn btn-danger btn-sm remove-attachment-row">
                           Remove
                         </button>
                       </td>
@@ -999,10 +1021,17 @@
       attachAddBtn.addEventListener("click", () => {
         const index = parseInt(attachTotalForms.value || "0", 10);
         const newRowHtml = attachEmptyRow.innerHTML.replace(/__prefix__/g, index);
+
         const tmp = document.createElement("tbody");
         tmp.innerHTML = newRowHtml;
-        attachTableBody.appendChild(tmp.querySelector("tr"));
+        const tr = tmp.querySelector("tr");
+
+        attachTableBody.appendChild(tr);
         attachTotalForms.value = index + 1;
+
+        // ✅ IMPORTANT: initialize toggle for new row
+        const select = tr.querySelector(".attachment-type");
+        if (select) toggleOtherField(select);
       });
       attachTableBody.addEventListener("click", (ev) => {
         const rem = ev.target.closest && ev.target.closest(".remove-attachment-row");
@@ -1155,6 +1184,49 @@
 
 
 
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+
+function toggleOtherField(selectEl) {
+  const row = selectEl.closest("tr");
+  if (!row) return;
+
+  const otherWrapper = row.querySelector(".other-file-wrapper");
+  if (!otherWrapper) return;
+
+  const otherInput = otherWrapper.querySelector("input");
+
+  if (selectEl.value === "other") {
+    otherWrapper.style.display = "block";
+    if (otherInput) {
+      otherInput.required = true;
+    }
+  } else {
+    otherWrapper.style.display = "none";
+    if (otherInput) {
+      otherInput.value = "";
+      otherInput.required = false;
+    }
+  }
+}
+
+  /* 🔁 Run once for EXISTING rows (EDIT MODE FIX) */
+  document.querySelectorAll(".attachment-type").forEach(select => {
+    toggleOtherField(select);
+  });
+
+  /* 🔄 Handle change */
+  document.addEventListener("change", function (e) {
+    if (!e.target.classList.contains("attachment-type")) return;
+    toggleOtherField(e.target);
+  });
+
+});
+</script>
+
+
+
 <script>
   function confirmEmployeeDelete(employeeId) {
     Swal.fire({
@@ -1204,5 +1276,7 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 });
 </script>
+
+
 
 {% endblock %}

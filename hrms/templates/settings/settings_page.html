@@ -77,34 +77,44 @@
                      value="{{ payroll_settings.basic_cap }}">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">PF %</label>
               <input class="form-control" type="number" step="0.01" name="pf_percentage" id="pf_percentage"
                      value="{{ payroll_settings.pf_percentage }}">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">ESIC %</label>
               <input class="form-control" type="number" step="0.01" name="esic_percentage" id="esic_percentage"
                      value="{{ payroll_settings.esic_percentage }}">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Gratuity %</label>
               <input class="form-control" type="number" step="0.01" name="gratuity_percentage" id="gratuity_percentage"
                      value="{{ payroll_settings.gratuity_percentage }}">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Bonus % (annual)</label>
               <input class="form-control" type="number" step="0.01" name="bonus_percentage" id="bonus_percentage"
                      value="{{ payroll_settings.bonus_percentage }}">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-md-3">
               <label class="form-label">Professional Tax (₹)</label>
               <input class="form-control" type="number" step="0.01" name="professional_tax" id="professional_tax"
                      value="{{ payroll_settings.professional_tax }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Max leave balance</label>
+              <input class="form-control" type="number" step="0.01" name="max_leave_balance" id="max_leave_balance"
+                     value="{{ payroll_settings.max_leave_balance }}">
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Earned leaves per year</label>
+              <input class="form-control" type="number" step="0.01" name="earned_leaves_per_year" id="earned_leaves_per_year"
+                     value="{{ payroll_settings.earned_leaves_per_year }}">
             </div>
 
             <div class="col-12 text-end">

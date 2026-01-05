@@ -901,66 +901,177 @@
 
 
 <!-- ================= SALARY DETAILS ================= -->
-<div class="row mt-6">
-  <div class="col-12">
+<div class="row mt-4">
 
-    <div class="card">
-      <div class="card-header">
-        <h5 class="mb-0">
-          <i class="ri-money-rupee-circle-line ri-24px me-2"></i>
-          Salary Details
-        </h5>
-      </div>
+  <!-- LEFT : SALARY SUMMARY -->
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
 
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-bordered table-striped mb-0">
-            <thead class="table-light">
-              <tr>
-                <th>Effective From</th>
-                <th>Basic</th>
-                <th>HRA</th>
-                <th>Allowances</th>
-                <th>Gross Salary</th>
-                <th>Deductions</th>
-                <th>Net Salary</th>
-              </tr>
-            </thead>
+        <h6 class="fw-semibold mb-3">
+          <i class="ri-money-rupee-circle-line me-1"></i>
+          Salary Summary
+        </h6>
 
-            <tbody>
-              {% if salary %}
-              <tr>
-                <td>₹ {{ salary.gross_ctc_pm }}</td>
-                <td>₹ {{ salary.basic_pm }}</td>
-                <td>₹ {{ salary.hra_pm }}</td>
-                <td>₹ {{ salary.sp_allowance_pm }}</td>
-                <td class="fw-medium text-primary">
-                  ₹ {{ salary.allowance1_pm }}
-                </td>
-                <td class="text-danger">
-                  ₹ {{ salary.total_deductions }}
-                </td>
-                <td class="fw-bold text-success">
-                  ₹ {{ salary.net_salary }}
-                </td>
-              </tr>
-              {% else %}
-              <tr>
-                <td colspan="7" class="text-center text-muted">
-                  Salary not configured for this employee
-                </td>
-              </tr>
-              {% endif %}
-            </tbody>
-
-          </table>
+        <div class="d-flex justify-content-between mb-2">
+          <span class="fw-medium me-2">Effective From</span>
+          <span >{{ salary.effective_date }}</span>
         </div>
+
+        <div class="d-flex justify-content-between mb-2">
+          <span class="fw-medium me-2">Gross CTC (Monthly)</span>
+          <span >₹ {{ salary.gross_ctc_pm }}</span>
+        </div>
+
+        <div class="d-flex justify-content-between mb-2">
+          <span class="fw-medium me-2">Gross CTC (Annual)</span>
+          <span >₹ {{ salary.gross_ctc_pa }}</span>
+        </div>
+
+        <div class="d-flex justify-content-between">
+          <span class="fw-medium me-2">CTC (Annual)</span>
+          <span >₹ {{ salary.ctc_pa }}</span>
+        </div>
+
+        <hr class="my-3">
+
+        <div class="d-flex justify-content-between">
+          <span class="fw-medium me-2">Net Salary (Monthly)</span>
+          <span class="fw-semibold " style="color: #666cff;">
+            ₹ {{ salary.net_salary_pm }}
+          </span>
+        </div>
+        
+
       </div>
-
     </div>
-
   </div>
+
+  <!-- RIGHT : DETAILS -->
+  <div class="col-md-8">
+    <div class="card h-100">
+      <div class="card-body">
+
+        <h6 class="fw-semibold mb-3">
+          <i class="ri-add-circle-line me-1"></i>
+          Earnings (Monthly)
+        </h6>
+
+        <div class="row">
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">Basic:</span>
+    <span>₹ {{ salary.basic_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">HRA:</span>
+    <span>₹ {{ salary.hra_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">Special Allowance:</span>
+    <span>₹ {{ salary.sp_allowance_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">Stat Bonus:</span>
+    <span>₹ {{ salary.stat_bonus_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">Allowance 1:</span>
+    <span>₹ {{ salary.allowance1_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">Allowance 2:</span>
+    <span>₹ {{ salary.allowance2_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">Guaranteed Cash:</span>
+    <span>₹ {{ salary.guaranteed_cash_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">Gratuity:</span>
+    <span>₹ {{ salary.gratuity_pm }}</span>
+  </div>
+
 </div>
+
+
+        <hr class="my-3">
+
+        <h6 class="fw-semibold mb-3">
+          <i class="ri-subtract-line me-1"></i>
+          Deductions (Monthly)
+        </h6>
+
+        <div class="row">
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">PF (Employer):</span>
+    <span>₹ {{ salary.pf_er_cont_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">PF (Employee):</span>
+    <span>₹ {{ salary.pf_ee_cont_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">ESIC (Employer):</span>
+    <span>₹ {{ salary.esic_er_cont_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">ESIC (Employee):</span>
+    <span>₹ {{ salary.esic_ee_cont_pm }}</span>
+  </div>
+
+  <div class="col-md-6 mb-3 d-flex align-items-center">
+    <span class="fw-medium me-2">Professional Tax:</span>
+    <span>₹ {{ salary.profession_tax_pm }}</span>
+  </div>
+
+</div>
+
+
+        <hr class="my-3">
+
+        <div class="d-flex gap-2">
+
+  <span class="badge text-white px-3 py-1"
+        style="background-color: {{ salary.pf_deducted|yesno:'#666CFF,#e5e7eb' }};
+               color: {{ salary.pf_deducted|yesno:'#fff,#6c757d' }};">
+    PF {{ salary.pf_deducted|yesno:'Yes,No' }}
+  </span>
+
+  <span class="badge text-white px-3 py-1"
+        style="background-color: {{ salary.esic_applicable|yesno:'#666CFF,#e5e7eb' }};
+               color: {{ salary.esic_applicable|yesno:'#fff,#6c757d' }};">
+    ESIC {{ salary.esic_applicable|yesno:'Yes,No' }}
+  </span>
+
+  <span class="badge text-white px-3 py-1"
+        style="background-color: {{ salary.gratuity_applicable|yesno:'#666CFF,#e5e7eb' }};
+               color: {{ salary.gratuity_applicable|yesno:'#fff,#6c757d' }};">
+    Gratuity {{ salary.gratuity_applicable|yesno:'Yes,No' }}
+  </span>
+
+</div>
+
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+
+
 
 <!--/ Content -->
 {% endblock %}

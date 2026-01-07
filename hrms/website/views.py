@@ -828,7 +828,7 @@ def download_employees_excel(request):
         "gender", "blood_group", "date_of_birth", "place_of_birth",
         "personal_email", "personal_mobile", "present_address", "permanent_address",
         "date_of_marriage", "designation", "department", "date_of_joining",
-        "date_of_confirmation", "location", "payroll_of", "shift",
+        "date_of_confirmation", "location", "payroll_of", "shift_start_time", "shift_end_time",
         "pan_no", "aadhar_no", "voter_id", "passport", "uan_no", "pf_no", "esic_no",
         "name_as_per_bank", "salary_account_number", "ifsc_code",
         "emergency_contact_name1", "emergency_contact_relation1", "emergency_contact_mobile1",
@@ -860,7 +860,9 @@ def download_employees_excel(request):
         "date_of_confirmation": "Date of Confirmation",
         "location": "Location",
         "payroll_of": "On Payroll Of",
-        "shift": "Shift",
+        # "shift": "Shift",
+        "shift_start_time": "Shift Start Time",
+        "shift_end_time": "Shift End Time",
         "pan_no": "PAN Number",
         "aadhar_no": "Aadhar Number",
         "voter_id": "Voter ID",
@@ -1187,7 +1189,26 @@ def create_or_edit_employee(request, employee_id=None):
                 #     obj.delete()
 
                 # ✅ SAVE EMPLOYEE ATTACHMENTS (AADHAAR / PAN / ETC)
-                attachment_formset.save()
+                # attachment_formset.save()
+                attachments = attachment_formset.save(commit=False)
+
+                for attachment in attachments:
+                    # ensure employee is set
+                    attachment.employee = emp_obj
+
+                    # 🔥 IMPORTANT LOGIC
+                    if attachment.file_name == "other":
+                        if not attachment.other_file_name:
+                            # safety check (optional)
+                            raise ValueError("Other file name is required when file type is Other")
+
+                    attachment.save()
+
+                # handle deletes
+                for obj in attachment_formset.deleted_objects:
+                    obj.delete()
+
+
 
                 messages.success(
                     request,

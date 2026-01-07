@@ -102,6 +102,7 @@ class EmployeeAttachmentForm(forms.ModelForm):
             }),
             'other_file_name': forms.TextInput(attrs={
                 'class': 'form-control',
+                'style': 'min-width:260px;',
                 'placeholder': 'Enter document name'
             })
         }
@@ -120,7 +121,7 @@ EmployeeAttachmentFormSet = inlineformset_factory(
 AttachmentFormSet = inlineformset_factory(
     Employee,
     EmployeeAttachment,
-    fields=("file_name", "file"),
+    form=EmployeeAttachmentForm,
     extra=1,
     can_delete=True
 )

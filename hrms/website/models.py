@@ -48,6 +48,7 @@ BLOOD_GROUP_CHOICES = [
     ("AB-", "AB-"),
     ("O+", "O+"),
     ("O-", "O-"),
+    ("Others", "Others"),
 ]
 
 
@@ -61,7 +62,7 @@ class Employee(models.Model):
     last_name = models.CharField(max_length=100, verbose_name="Last Name")
     father_name = models.CharField(max_length=100, verbose_name="Father's Name")
     gender = models.CharField(max_length=10, choices=[("Male", "Male"), ("Female", "Female")], verbose_name="Gender")
-    blood_group = models.CharField(max_length=3, verbose_name="Blood Group", choices=BLOOD_GROUP_CHOICES)
+    blood_group = models.CharField(max_length=10, verbose_name="Blood Group", choices=BLOOD_GROUP_CHOICES)
     date_of_birth = models.DateField(verbose_name="Date of Birth")
     place_of_birth = models.CharField(max_length=255, verbose_name="Place of Birth")
     personal_email = models.EmailField(verbose_name="Personal Email ID")

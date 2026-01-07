@@ -34,11 +34,11 @@
             <th>Opening</th>
             <th>Leave Taken</th>
             <th>Days Present</th>
-            <th>Late</th>
+            {% comment %} <th>Late</th> {% endcomment %}
             <th>Comp-Off</th>
             <th>LWP</th>
-            <th>Closing</th>
-            <th>Leave Balance</th>
+            {% comment %} <th>Closing</th>
+            <th>Leave Balance</th> {% endcomment %}
             <th>Final Leave Balance</th>
             <th>Actions</th>
           </tr>
@@ -51,7 +51,7 @@
             <td>{{ record.opening_balance|floatformat:2 }}</td>
             <td>{{ record.leave_taken|floatformat:2 }}</td>
             <td>{{ record.number_of_days_present|floatformat:0 }}</td>
-            <td>{{ record.late }}</td>
+            {% comment %} <td>{{ record.late }}</td> {% endcomment %}
 
             <td>
               {% if record.compoff %}
@@ -65,7 +65,7 @@
 
             <td>{{ record.leave_without_pay|floatformat:2 }}</td>
 
-            <td>
+            {% comment %} <td>
               {% if record.closing_balance < 0 %}
                 <span class="text-danger">{{ record.closing_balance|floatformat:2 }}</span>
               {% else %}
@@ -73,7 +73,7 @@
               {% endif %}
             </td>
 
-            <td>{{ record.leave_balance|floatformat:2 }}</td>
+            <td>{{ record.leave_balance|floatformat:2 }}</td> {% endcomment %}
             <td><strong>{{ record.final_leave_balance|floatformat:2 }}</strong></td>
 
             <td>

@@ -55,7 +55,7 @@
         <th>Employee Name</th>
         <th>Basic (Monthly)</th>
         <th>Basic (Yearly)</th>
-        <th>HRA (Monthly)</th>
+        {% comment %} <th>HRA (Monthly)</th>
         <th>HRA (Yearly)</th>
         <th>Stat. Bonus (Monthly)</th>
         <th>Stat. Bonus (Yearly)</th>
@@ -80,7 +80,7 @@
         <th>Cost to Company (Monthly)</th>
         <th>Cost to Company (Yearly)</th>
         <th>Net Salary (Monthly)</th>
-        <th>Net Salary (Yearly)</th>
+        <th>Net Salary (Yearly)</th> {% endcomment %}
         <th>Status</th>
         <th class="sticky-actions">Actions</th>
       </tr>
@@ -95,7 +95,7 @@
         <td>{{ employee.basic_pm|floatformat:2 }}</td>
         <td>{{ employee.basic_pa|floatformat:2 }}</td>
 
-        <td>{{ employee.hra_pm|floatformat:2 }}</td>
+        {% comment %} <td>{{ employee.hra_pm|floatformat:2 }}</td>
         <td>{{ employee.hra_pa|floatformat:2 }}</td>
 
         <td>{{ employee.stat_bonus_pm|floatformat:2 }}</td>
@@ -132,7 +132,7 @@
         <td>{{ employee.ctc_pa|floatformat:2 }}</td>
 
         <td>{{ employee.net_salary_pm|floatformat:2 }}</td>
-        <td>{{ employee.net_salary_pa|floatformat:2 }}</td>
+        <td>{{ employee.net_salary_pa|floatformat:2 }}</td> {% endcomment %}
 
         <td>
           {% if employee.employee.status == "Active" %}
@@ -146,7 +146,7 @@
 
         <td>
           <div class="dropdown">
-            <button class="btn p-0 dropdown-toggle" data-bs-toggle="dropdown">
+            <button class="btn p-0 " data-bs-toggle="dropdown">
               <i class="ri-more-2-line"></i>
             </button>
             <div class="dropdown-menu">

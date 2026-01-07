@@ -736,14 +736,42 @@
                         {{ f.id }}
 
                         <!-- FILE NAME -->
-                        <td>
-                          {{ f.file_name }}
+                        <td style="overflow: visible !important;">
+                          <div class="d-flex align-items-center gap-2 flex-wrap">
 
-                          <div class="mt-2 other-file-wrapper"
-                              {% if f.instance.file_name != "other" %}style="display:none;"{% endif %}>
-                            {{ f.other_file_name }}
+                            {{ f.file_name|add_class:"attachment-type form-select w-50" }}
+
+                            <div class="other-file-wrapper"
+                                {% if f.instance.file_name != "other" %}
+                                  style="display:none;"
+                                {% endif %}
+                                style="min-width:220px; position:relative; z-index:9999;">
+                                <label class="text-muted small mb-1">
+                                  Other document name
+                                </label>
+                              {{ f.other_file_name|add_class:"form-control" }}
+                            </div>
+
                           </div>
-                        </td>
+                        </td> 
+
+                        {% comment %} <td style="overflow: visible !important;">
+                          <div class="d-flex flex-column gap-2">
+
+                            {{ f.file_name|add_class:"attachment-type form-select w-50" }}
+
+                            <div class="other-file-wrapper {% if f.instance.file_name != 'other' %}d-none{% endif %}">
+                              <label class="text-muted small mb-1">
+                                Other document name
+                              </label>
+                              {{ f.other_file_name|add_class:"form-control" }}
+                            </div>
+
+                          </div>
+                        </td>  {% endcomment %}
+
+
+
 
                         <!-- FILE -->
                         <td>
@@ -791,13 +819,28 @@
                     <tr>
                       {{ attachment_formset.empty_form.id }}
 
-                    <td>
+                    {% comment %} <td>
                       {{ attachment_formset.empty_form.file_name }}
 
                       <div class="mt-2 other-file-wrapper" style="display:none;">
                         {{ attachment_formset.empty_form.other_file_name }}
                       </div>
+                    </td> {% endcomment %}
+
+                    <td>
+                      <div class="d-flex align-items-center gap-2 flex-wrap">
+                        {{ attachment_formset.empty_form.file_name|add_class:"attachment-type form-select w-50" }}
+
+                        <div class="other-file-wrapper" style="display:none; width:200px;">
+                          <label class="text-muted small mb-1">
+                                  Other document name
+                            </label>
+                          {{ attachment_formset.empty_form.other_file_name }}
+                        </div>
+                      </div>
                     </td>
+
+
 
                       <td>
                         {{ attachment_formset.empty_form.file }}
@@ -971,6 +1014,47 @@
 <!-- Edit Employee -->
 <!-- JavaScript: add/remove rows using empty_form template and update TOTAL_FORMS -->
 
+
+<script>
+  console.log("✅ toggleOtherField script LOADED");
+
+  function toggleOtherField(selectEl) {
+    console.log("🟡 toggleOtherField CALLED", selectEl.value);
+
+    const row = selectEl.closest("tr");
+    if (!row) {
+      console.log("❌ No TR found");
+      return;
+    }
+
+    const wrapper = row.querySelector(".other-file-wrapper");
+    if (!wrapper) {
+      console.log("❌ other-file-wrapper NOT FOUND");
+      return;
+    }
+
+    const input = wrapper.querySelector("input");
+
+    if (selectEl.value === "other") {
+      console.log("🟢 OTHER selected → showing input");
+      wrapper.style.display = "block";
+      if (input) input.required = true;
+    } else {
+      console.log("🔵 NOT other → hiding input");
+      wrapper.style.display = "none";
+      if (input) {
+        input.value = "";
+        input.required = false;
+      }
+    }
+  }
+</script>
+
+
+
+
+
+
 <script>
   /* Consolidated initializer (safe to call on document or on injected modal root) */
   function initEmployeeFormScripts(root = document) {
@@ -1031,7 +1115,7 @@
 
         // ✅ IMPORTANT: initialize toggle for new row
         const select = tr.querySelector(".attachment-type");
-        if (select) toggleOtherField(select);
+        //if (select) toggleOtherField(select);
       });
       attachTableBody.addEventListener("click", (ev) => {
         const rem = ev.target.closest && ev.target.closest(".remove-attachment-row");
@@ -1170,6 +1254,11 @@
 
     // done initialization
     console.debug("[HRMS] Employee form scripts initialized for root", root);
+
+    root.addEventListener("change", function (e) {
+      if (!e.target.classList.contains("attachment-type")) return;
+      toggleOtherField(e.target);
+    });
   }
 
   // auto-init main document
@@ -1185,7 +1274,7 @@
 
 
 
-<script>
+{% comment %} <script>
 document.addEventListener("DOMContentLoaded", function () {
 
 function toggleOtherField(selectEl) {
@@ -1223,7 +1312,9 @@ function toggleOtherField(selectEl) {
   });
 
 });
-</script>
+</script> {% endcomment %}
+
+
 
 
 

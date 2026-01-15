@@ -9,6 +9,7 @@ from dateutil.relativedelta import relativedelta
 from django.utils import timezone
 from django.db.models import JSONField  # for PostgreSQL
 from decimal import Decimal
+from django.contrib.auth.models import User
 
 # Create your models here.
 status = {
@@ -53,6 +54,16 @@ BLOOD_GROUP_CHOICES = [
 
 
 class Employee(models.Model):
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="employee_profile"
+    )
+    force_password_change = models.BooleanField(default=True)
+
     # Personal Details
     company = models.ForeignKey("Company",null=True, blank=True, on_delete=models.CASCADE)
     branch = models.ForeignKey("Branch",null=True, blank=True, on_delete=models.CASCADE)
@@ -126,7 +137,7 @@ class Employee(models.Model):
         verbose_name="Emergency Contact Relation 2"
     )
     emergency_contact_mobile2 = models.CharField(max_length=15, blank=True, verbose_name="Emergency Contact Mobile No 2")
-    status = models.CharField(max_length=50, choices=[("Active", "Active"), ("Pending", "Pending"), ("Left", "Left")],
+    status = models.CharField(max_length=50, choices=[("Active", "Active"), ("Pending", "Pending"), ("Left", "Left")] , default='Active'
 )
     def __str__(self):
         return f"{self.first_name} {self.last_name}"

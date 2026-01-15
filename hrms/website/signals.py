@@ -493,3 +493,29 @@ def recalculate_leave_balance_for_employee(employee):
     leave_record.save()
 
     print(f"[MANUAL RECALC] {employee.first_name}: Final = {final}")
+
+
+
+# signals.py
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from django.contrib.auth.models import User
+from .models import Employee
+
+@receiver(post_save, sender=Employee)
+def sync_user(sender, instance, created, **kwargs):
+    if created and not instance.user:
+        user = User.objects.create_user(
+            username=instance.employee_code,
+            email=instance.personal_email,
+            first_name=instance.first_name,
+            last_name=instance.last_name,
+            password="Temp@123"
+        )
+        instance.user = user
+        instance.force_password_change = True
+        instance.save()
+
+    if instance.status == "Left" and instance.user:
+        instance.user.is_active = False
+        instance.user.save()

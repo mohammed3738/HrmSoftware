@@ -55,9 +55,12 @@ urlpatterns = [
     path("branch/delete/<int:branch_id>/", views.delete_branch, name="delete_branch"),
 
 
+    path("login/", views.login_view, name="login"),
 
 
-
+    path("create-user/", views.create_user_view, name="create-user"),
+    path("logout/", views.logout_view, name="logout"),
+    path("change-password/", views.change_password, name="change-password"),
 
 
 

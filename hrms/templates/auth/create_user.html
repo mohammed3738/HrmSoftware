@@ -1,0 +1,31 @@
+<div class="container mt-4">
+  <h4>Create Login Account</h4>
+
+  <form method="POST">
+    {% csrf_token %}
+
+    <div class="mb-3">
+      <label>Employee</label>
+      <select name="employee_id" class="form-select" required>
+        <option value="">-- Select Employee --</option>
+        {% for emp in employees %}
+          <option value="{{ emp.id }}">
+            {{ emp.first_name }} ({{ emp.employee_code }})
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label>Role</label>
+      <select name="role" class="form-select" required>
+        <option value="Admin">Admin</option>
+        <option value="HR">HR</option>
+        <option value="Manager">Manager</option>
+        <option value="Employee">Employee</option>
+      </select>
+    </div>
+
+    <button class="btn btn-success">Create User</button>
+  </form>
+</div>

@@ -55,32 +55,6 @@
         <th>Employee Name</th>
         <th>Basic (Monthly)</th>
         <th>Basic (Yearly)</th>
-        {% comment %} <th>HRA (Monthly)</th>
-        <th>HRA (Yearly)</th>
-        <th>Stat. Bonus (Monthly)</th>
-        <th>Stat. Bonus (Yearly)</th>
-        <th>Allowance 1 (Monthly)</th>
-        <th>Allowance 1 (Yearly)</th>
-        <th>Allowance 2 (Monthly)</th>
-        <th>Allowance 2 (Yearly)</th>
-        <th>Special Allowance (Monthly)</th>
-        <th>Special Allowance (Yearly)</th>
-        <th>Guaranteed Cash (Monthly)</th>
-        <th>Guaranteed Cash (Yearly)</th>
-        <th>PF Employer (Monthly)</th>
-        <th>PF Employer (Yearly)</th>
-        <th>PF Employee (Monthly)</th>
-        <th>PF Employee (Yearly)</th>
-        <th>ESIC Employer (Monthly)</th>
-        <th>ESIC Employer (Yearly)</th>
-        <th>ESIC Employee (Monthly)</th>
-        <th>ESIC Employee (Yearly)</th>
-        <th>Gratuity (Monthly)</th>
-        <th>Gratuity (Yearly)</th>
-        <th>Cost to Company (Monthly)</th>
-        <th>Cost to Company (Yearly)</th>
-        <th>Net Salary (Monthly)</th>
-        <th>Net Salary (Yearly)</th> {% endcomment %}
         <th>Status</th>
         <th class="sticky-actions">Actions</th>
       </tr>
@@ -150,7 +124,10 @@
               <i class="ri-more-2-line"></i>
             </button>
             <div class="dropdown-menu">
-              <a class="dropdown-item" href="#"><i class="ri-pencil-line me-2"></i>Edit</a>
+<a href="{% url 'create-salary' %}?edit={{ employee.id }}"
+   class="dropdown-item">
+  Edit
+</a>
               <a class="dropdown-item" href="#"><i class="ri-delete-bin-7-line me-2"></i>Delete</a>
               <a class="dropdown-item"
                 onclick="viewSalaryDetails({{ employee.id }})">
@@ -208,12 +185,16 @@
   <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content salary-modal">
       <div class="modal-header salary-header">
-        <h5 class="modal-title">Salary Structure Calculator</h5>
+        <h5 class="modal-title">
+          {% if salary_obj %}Edit Salary Structure{% else %}Salary Structure Calculator{% endif %}
+        </h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
       <form id="salaryForm" method="POST">
         {% csrf_token %}
+        <input type="hidden" name="salary_id" id="salaryId" value="{{ salary_obj.id|default:'' }}">
+
         <div class="modal-body">
           <div class="row g-4">
 
@@ -228,30 +209,33 @@
                     <select class="form-select" id="employeeSelect" name="employee">
                       <option value="">-- Select Employee --</option>
                       {% for employee in employees %}
-                        <option value="{{ employee.id }}">{{ employee.first_name }} - {{ employee.employee_code }}</option>
+                        <option value="{{ employee.id }}"
+                          {% if salary_obj and salary_obj.employee_id == employee.id %}selected{% endif %}>
+                          {{ employee.first_name }} - {{ employee.employee_code }}
+                        </option>
                       {% endfor %}
                     </select>
                   </div>
 
                   <div class="mb-3">
                     <label class="form-label">Gross CTC (Monthly)</label>
-                    <input type="number" class="form-control" id="grossCTC" name="gross_ctc_pm" step="0.01">
+                    <input type="number" class="form-control" id="grossCTC" name="gross_ctc_pm" step="0.01" value="{{ salary_obj.gross_ctc_pm|default_if_none:'' }}">
                   </div>
 
                   <div class="row g-2">
                     <div class="col-md-6">
                       <label class="form-label">Allowance 1</label>
-                      <input type="number" class="form-control" id="allowance1" name="allowance1_pm">
+                      <input type="number" class="form-control" id="allowance1" name="allowance1_pm" value="{{ salary_obj.allowance1_pm|default_if_none:'' }}">
                     </div>
                     <div class="col-md-6">
                       <label class="form-label">Allowance 2</label>
-                      <input type="number" class="form-control" id="allowance2" name="allowance2_pm">
+                      <input type="number" class="form-control" id="allowance2" name="allowance2_pm" value="{{ salary_obj.allowance2_pm|default_if_none:'' }}">
                     </div>
                   </div>
 
                   <div class="mt-3">
                     <label class="form-label">Professional Tax (override if needed)</label>
-                    <input type="number" class="form-control" id="profTax" name="profession_tax_pm" placeholder="Auto from settings (can override)">
+                    <input type="number" class="form-control" id="profTax" name="profession_tax_pm" placeholder="Auto from settings (can override)" value="{{ salary_obj.profession_tax_pm|default_if_none:'' }}">
                   </div>
 
                   <hr>
@@ -259,23 +243,23 @@
                   <div class="row g-2">
                     <div class="col-md-4">
                       <label class="form-label">Include PF?</label>
-                      <select class="form-select" name="pf_deducted" id="pfSelect">
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
+                      <select name="pf_deducted" id="pfSelect" class="form-select">
+                        <option value="yes" {% if salary_obj and salary_obj.pf_deducted %}selected{% endif %}>Yes</option>
+                        <option value="no" {% if salary_obj and not salary_obj.pf_deducted %}selected{% endif %}>No</option>
                       </select>
                     </div>
                     <div class="col-md-4">
                       <label class="form-label">Include ESIC?</label>
                       <select class="form-select" id="esicSelect" name="esic_applicable">
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
+                        <option value="yes" {% if salary_obj and salary_obj.esic_applicable %}selected{% endif %}>Yes</option>
+                        <option value="no" {% if salary_obj and not salary_obj.esic_applicable %}selected{% endif %}>No</option>
                       </select>
                     </div>
                     <div class="col-md-4">
                       <label class="form-label">Include Gratuity?</label>
                       <select class="form-select" name="gratuity_applicable" id="gratuitySelect">
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
+                        <option value="yes" {% if salary_obj and salary_obj.gratuity_applicable %}selected{% endif %}>Yes</option>
+                        <option value="no" {% if salary_obj and not salary_obj.gratuity_applicable %}selected{% endif %}>No</option>
                       </select>
                     </div>
                   </div>
@@ -292,19 +276,19 @@
                   <div class="row g-2">
                     <div class="col-6">
                       <label class="form-label">Basic</label>
-                      <input type="number" id="basic" class="form-control editable-calc" name="basic_pm" step="0.01">
+                      <input type="number" id="basic" class="form-control editable-calc" name="basic_pm" step="0.01" value="{{ salary_obj.basic_pm|default_if_none:'' }}">
                     </div>
                     <div class="col-6">
                       <label class="form-label">HRA</label>
-                      <input type="number" id="hra" class="form-control editable-calc" name="hra_pm" step="0.01">
+                      <input type="number" id="hra" class="form-control editable-calc" name="hra_pm" step="0.01" value="{{ salary_obj.hra_pm|default_if_none:'' }}">
                     </div>
                     <div class="col-6">
                       <label class="form-label">Stat Bonus</label>
-                      <input type="number" id="statBonus" class="form-control editable-calc" name="stat_bonus_pm" step="0.01">
+                      <input type="number" id="statBonus" class="form-control editable-calc" name="stat_bonus_pm" step="0.01" value="{{ salary_obj.stat_bonus_pm|default_if_none:'' }}">
                     </div>
                     <div class="col-6">
                       <label class="form-label">Special Allowance</label>
-                      <input type="number" id="specialAllowance" class="form-control editable-calc" name="sp_allowance_pm" step="0.01">
+                      <input type="number" id="specialAllowance" class="form-control editable-calc" name="sp_allowance_pm" step="0.01" value="{{ salary_obj.sp_allowance_pm|default_if_none:'' }}">
                     </div>
                     <div class="col-6">
                       <label class="form-label">Guaranteed Cash</label>
@@ -312,23 +296,23 @@
                     </div>
                     <div class="col-6">
                       <label class="form-label">PF (Employer)</label>
-                      <input type="number" id="pfEr" class="form-control editable-calc" name="pf_er_cont_pm" step="0.01">
+                      <input type="number" id="pfEr" class="form-control editable-calc" name="pf_er_cont_pm" step="0.01" value="{{ salary_obj.pf_er_cont_pm|default_if_none:'' }}">
                     </div>
                     <div class="col-6">
                       <label class="form-label">PF (Employee)</label>
-                      <input type="number" id="pfEe" class="form-control" name="pf_ee_cont_pm" readonly>
+                      <input type="number" id="pfEe" class="form-control" name="pf_ee_cont_pm" readonly >
                     </div>
                     <div class="col-6">
                       <label class="form-label">ESIC (Employer)</label>
-                      <input type="number" id="esicEr" class="form-control editable-calc" name="esic_er_cont_pm" step="0.01">
+                      <input type="number" id="esicEr" class="form-control editable-calc" name="esic_er_cont_pm" step="0.01" value="{{ salary_obj.esic_er_cont_pm|default_if_none:'' }}">
                     </div>
                     <div class="col-6">
                       <label class="form-label">ESIC (Employee)</label>
-                      <input type="number" id="esicEe" class="form-control editable-calc" name="esic_ee_cont_pm" step="0.01">
+                      <input type="number" id="esicEe" class="form-control editable-calc" name="esic_ee_cont_pm" step="0.01" value="{{ salary_obj.esic_ee_cont_pm|default_if_none:'' }}">
                     </div>
                     <div class="col-6">
                       <label class="form-label">Gratuity</label>
-                      <input type="number" id="gratuity" class="form-control editable-calc" name="gratuity_pm" step="0.01">
+                      <input type="number" id="gratuity" class="form-control editable-calc" name="gratuity_pm" step="0.01" value="{{ salary_obj.gratuity_pm|default_if_none:'' }}">
                     </div>
                     <div class="col-6">
                       <label class="form-label">CTC</label>
@@ -336,7 +320,7 @@
                     </div>
                     <div class="col-6">
                       <label class="form-label">Net Salary</label>
-                      <input type="number" id="netSalary" class="form-control text-success fw-bold editable-calc" name="net_salary_pm" step="0.01">
+                      <input type="number" id="netSalary" class="form-control text-success fw-bold editable-calc" name="net_salary_pm" step="0.01" value="{{ salary_obj.net_salary_pm|default_if_none:'' }}">
                     </div>
                   </div>
                 </div>
@@ -394,6 +378,32 @@
 
 
 
+
+{% if salary_obj %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const modalEl = document.getElementById("salaryModal");
+  if (modalEl) {
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+  }
+});
+</script>
+{% endif %}
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const modalEl = document.getElementById("salaryModal");
+  if (!modalEl) return;
+
+  modalEl.addEventListener("hidden.bs.modal", function () {
+    // Remove ?edit= from URL
+    const cleanUrl = window.location.pathname;
+    window.history.replaceState({}, "", cleanUrl);
+  });
+});
+</script>
 
 
 <!-- ===== JS SCRIPT ===== -->

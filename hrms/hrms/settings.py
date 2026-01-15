@@ -49,9 +49,32 @@ MIDDLEWARE = [
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
+
+    # ✅ REQUIRED
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+
+    # ✅ MUST COME AFTER AuthenticationMiddleware
+    'website.middleware.ForcePasswordChangeMiddleware',
+
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+
+AUTHENTICATION_BACKENDS = [
+    'website.auth_backend.EmployeeStatusBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+
+
+
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
 ROOT_URLCONF = 'hrms.urls'

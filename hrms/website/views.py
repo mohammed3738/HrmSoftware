@@ -29,6 +29,8 @@ from django.http import FileResponse, Http404
 import openpyxl
 from .services import *  # from previous services.py
 from django.forms.models import model_to_dict
+from django.contrib.auth.decorators import login_required
+
 # def parse_time(time_value):
 #     """Convert time string or float to a proper datetime.time object."""
 #     if pd.isna(time_value) or time_value is None:
@@ -745,12 +747,12 @@ def comp_off_requests(request, pk):
     # Render a fragment suitable for modal body
     return render(request, "attendance/comp_off_request_table.html", context)
 
-
+@login_required
 def admin_dashboard(request):
     requests = AttendanceCorrectionRequest.objects.filter(status='Pending')  # Attendance approvals
     compoff_requests = CompOffRequest.objects.filter(status='Pending')  # CompOff approvals
     leave_requests = LeaveApplication.objects.select_related("employee").filter(status="Pending").order_by("-id")
-
+    user = request.user
     today = date.today()
     current_month = date.today().month
 
@@ -773,7 +775,8 @@ def admin_dashboard(request):
     return render(request, 'd/f.html', {
         "requests": requests,
         "compoff_requests": compoff_requests,
-        "leave_requests": leave_requests
+        "leave_requests": leave_requests,
+        "user": user,
     })
 
 
@@ -2342,95 +2345,67 @@ def extract_decimal(request, key):
 
 def create_salary(request):
     if request.method == "POST":
+        salary_id = request.POST.get("salary_id")
+        employee_id = request.POST.get("employee")
 
-        # --------------------------
-        # 🔹 1. BASIC FIELD EXTRACTION
-        # --------------------------
-        employee_id = request.POST.get('employee')
         employee = Employee.objects.get(pk=employee_id)
 
-        pf_deducted = request.POST.get('pf_deducted', '').lower() == 'yes'
-        gratuity_applicable = request.POST.get('gratuity_applicable', '').lower() == 'yes'
-        esic_applicable = request.POST.get('esic_applicable', '').lower() == 'yes'
+        pf_deducted = request.POST.get("pf_deducted", "").lower() == "yes"
+        gratuity_applicable = request.POST.get("gratuity_applicable", "").lower() == "yes"
+        esic_applicable = request.POST.get("esic_applicable", "").lower() == "yes"
 
-        # Extract all numbers
         data = {
-            'gross_ctc_pm': extract_decimal(request, 'gross_ctc_pm'),
-            'basic_pm': extract_decimal(request, 'basic_pm'),
-            'hra_pm': extract_decimal(request, 'hra_pm'),
-            'stat_bonus_pm': extract_decimal(request, 'stat_bonus_pm'),
-            'allowance1_pm': extract_decimal(request, 'allowance1_pm'),
-            'allowance2_pm': extract_decimal(request, 'allowance2_pm'),
-            'sp_allowance_pm': extract_decimal(request, 'sp_allowance_pm'),
-            'guaranteed_cash_pm': extract_decimal(request, 'guaranteed_cash_pm'),
-            'profession_tax_pm': extract_decimal(request, 'profession_tax_pm'),
-
-            'pf_er_cont_pm': extract_decimal(request, 'pf_er_cont_pm'),
-            'pf_ee_cont_pm': extract_decimal(request, 'pf_ee_cont_pm'),
-            'esic_er_cont_pm': extract_decimal(request, 'esic_er_cont_pm'),
-            'esic_ee_cont_pm': extract_decimal(request, 'esic_ee_cont_pm'),
-
-            'gratuity_pm': extract_decimal(request, 'gratuity_pm'),
-            'net_salary_pm': extract_decimal(request, 'net_salary_pm'),
-            'ctc_pm': extract_decimal(request, 'ctc_pm'),
+            "gross_ctc_pm": extract_decimal(request, "gross_ctc_pm"),
+            "basic_pm": extract_decimal(request, "basic_pm"),
+            "hra_pm": extract_decimal(request, "hra_pm"),
+            "stat_bonus_pm": extract_decimal(request, "stat_bonus_pm"),
+            "allowance1_pm": extract_decimal(request, "allowance1_pm"),
+            "allowance2_pm": extract_decimal(request, "allowance2_pm"),
+            "sp_allowance_pm": extract_decimal(request, "sp_allowance_pm"),
+            "guaranteed_cash_pm": extract_decimal(request, "guaranteed_cash_pm"),
+            "profession_tax_pm": extract_decimal(request, "profession_tax_pm"),
+            "pf_er_cont_pm": extract_decimal(request, "pf_er_cont_pm"),
+            "pf_ee_cont_pm": extract_decimal(request, "pf_ee_cont_pm"),
+            "esic_er_cont_pm": extract_decimal(request, "esic_er_cont_pm"),
+            "esic_ee_cont_pm": extract_decimal(request, "esic_ee_cont_pm"),
+            "gratuity_pm": extract_decimal(request, "gratuity_pm"),
+            "net_salary_pm": extract_decimal(request, "net_salary_pm"),
+            "ctc_pm": extract_decimal(request, "ctc_pm"),
         }
 
-        # --------------------------
-        # 🔹 2. SAVE SalaryMaster ENTRY
-        # --------------------------
+        if salary_id:
+            sm = SalaryMaster.objects.get(pk=salary_id)
+            message = "Salary updated successfully."
+        else:
+            sm = SalaryMaster(employee=employee)
+            message = "Salary created successfully."
 
-        sm = SalaryMaster.objects.create(
-            employee=employee,
-            pf_deducted=pf_deducted,
-            gratuity_applicable=gratuity_applicable,
-            esic_applicable=esic_applicable,
+        sm.employee = employee
+        sm.pf_deducted = pf_deducted
+        sm.gratuity_applicable = gratuity_applicable
+        sm.esic_applicable = esic_applicable
 
-            gross_ctc_pm=data['gross_ctc_pm'],
-            gross_ctc_pa=data['gross_ctc_pm'] * 12,
-            basic_pm=data['basic_pm'],
-            basic_pa=data['basic_pm'] * 12,
-            hra_pm=data['hra_pm'],
-            hra_pa=data['hra_pm'] * 12,
-            stat_bonus_pm=data['stat_bonus_pm'],
-            stat_bonus_pa=data['stat_bonus_pm'] * 12,
-            allowance1_pm=data['allowance1_pm'],
-            allowance1_pa=data['allowance1_pm'] * 12,
-            allowance2_pm=data['allowance2_pm'],
-            allowance2_pa=data['allowance2_pm'] * 12,
-            sp_allowance_pm=data['sp_allowance_pm'],
-            sp_allowance_pa=data['sp_allowance_pm'] * 12,
-            guaranteed_cash_pm=data['guaranteed_cash_pm'],
-            guaranteed_cash_pa=data['guaranteed_cash_pm'] * 12,
+        for field, value in data.items():
+            setattr(sm, field, value)
+            setattr(sm, field.replace("_pm", "_pa"), value * 12)
 
-            gratuity_pm=data['gratuity_pm'],
-            gratuity_pa=data['gratuity_pm'] * 12,
-            pf_er_cont_pm=data['pf_er_cont_pm'],
-            pf_er_cont_pa=data['pf_er_cont_pm'] * 12,
-            pf_ee_cont_pm=data['pf_ee_cont_pm'],
-            pf_ee_cont_pa=data['pf_ee_cont_pm'] * 12,
-            esic_er_cont_pm=data['esic_er_cont_pm'],
-            esic_er_cont_pa=data['esic_er_cont_pm'] * 12,
-            esic_ee_cont_pm=data['esic_ee_cont_pm'],
-            esic_ee_cont_pa=data['esic_ee_cont_pm'] * 12,
+        sm.save()
 
-            profession_tax_pm=data['profession_tax_pm'],
-            profession_tax_pa=data['profession_tax_pm'] * 12,
-            net_salary_pm=data['net_salary_pm'],
-            net_salary_pa=data['net_salary_pm'] * 12,
-            ctc_pm=data['ctc_pm'],
-            ctc_pa=data['ctc_pm'] * 12,
-        )
+        messages.success(request, message)
+        return redirect("create-salary")
 
-        messages.success(request, "Salary created successfully.")
-        return redirect('create-salary')
-
-    # GET Request
+    # 🔹 GET REQUEST
     employees = Employee.objects.all()
-    salary = SalaryMaster.objects.all()
+    salaries = SalaryMaster.objects.all()
 
-    return render(request, 'salary/create_salary4.html', {
-        'employees': employees,
-        'salary': salary
+    salary_id = request.GET.get("edit")
+    salary_obj = SalaryMaster.objects.filter(pk=salary_id).first() if salary_id else None
+
+    return render(request, "salary/create_salary4.html", {
+        "employees": employees,
+        "salary": salaries,
+        "salary_obj": salary_obj,   # 👈 IMPORTANT
+        "is_edit": bool(salary_obj)
     })
 
 
@@ -3591,3 +3566,109 @@ def download_empty_excel(request):
 
     wb.save(response)
     return response
+
+
+
+
+
+from django.contrib.auth import authenticate, login
+from django.shortcuts import render, redirect
+from django.contrib import messages
+
+def login_view(request):
+    if request.method == "POST":
+        username = request.POST.get("username")
+        password = request.POST.get("password")
+
+        user = authenticate(request, username=username, password=password)
+
+        if user:
+            login(request, user)
+            return redirect("admin-dashboard")
+        else:
+            messages.error(request, "Invalid username or password")
+
+    return render(request, "auth/login.html")
+
+
+
+from django.contrib.auth import logout
+
+def logout_view(request):
+    logout(request)
+    return redirect("login")
+
+
+
+from django.contrib.auth.models import User, Group
+
+@login_required
+def create_user_view(request):
+    if request.method == "POST":
+        employee_id = request.POST.get("employee_id")
+        role = request.POST.get("role")
+
+        employee = Employee.objects.get(id=employee_id)
+
+        if employee.user:
+            messages.error(request, "User already exists for this employee.")
+            return redirect("create-user")
+
+        user = User.objects.create_user(
+            username=employee.employee_code,
+            email=employee.personal_email,
+            password="Temp@123"
+        )
+
+        group = Group.objects.get(name=role)
+        user.groups.add(group)
+
+        employee.user = user
+        employee.force_password_change = True   # 🔥 REQUIRED
+        employee.save()
+
+        messages.success(
+            request,
+            f"User created. Username: {user.username}, Password: Temp@123"
+        )
+
+        return redirect("create-user")
+
+    employees = Employee.objects.filter(user__isnull=True)
+    return render(request, "auth/create_user.html", {"employees": employees})
+
+
+
+# views.py
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import PasswordChangeForm
+from django.contrib.auth import update_session_auth_hash
+from django.contrib import messages
+
+@login_required
+def change_password(request):
+    if request.method == "POST":
+        form = PasswordChangeForm(request.user, request.POST)
+
+        if form.is_valid():
+            user = form.save()
+            update_session_auth_hash(request, user)
+
+            employee = request.user.employee_profile
+            employee.force_password_change = False
+            employee.save()
+
+            messages.success(request, "✅ Password updated successfully.")
+            return redirect("admin-dashboard")
+
+        else:
+            # 🔴 IMPORTANT: show WHY it failed
+            messages.error(request, "❌ Password update failed. Please fix the errors below.")
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f"{field}: {error}")
+
+    else:
+        form = PasswordChangeForm(request.user)
+
+    return render(request, "auth/change_password.html", {"form": form})

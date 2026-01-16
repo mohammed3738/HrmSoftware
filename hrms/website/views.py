@@ -30,6 +30,8 @@ import openpyxl
 from .services import *  # from previous services.py
 from django.forms.models import model_to_dict
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import permission_required
+from .utils.decorators import group_required
 
 # def parse_time(time_value):
 #     """Convert time string or float to a proper datetime.time object."""
@@ -51,6 +53,9 @@ from django.contrib.auth.decorators import login_required
 #         return None  # Return None if parsing fails
 
 # atul
+@login_required
+@group_required("Admin", "HR")
+
 def company_details_api(request, pk):
     company = get_object_or_404(Company, pk=pk)
 
@@ -72,6 +77,8 @@ def company_details_api(request, pk):
     return JsonResponse(data)
 
 
+@login_required
+@group_required("Admin", "HR")
 def delete_employee(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
 
@@ -87,6 +94,8 @@ def delete_employee(request, employee_id):
 # atul
 
 # Vaishu
+@login_required
+@group_required("Admin", "HR")
 def branch_details_api(request, pk):
     branch = get_object_or_404(Branch, pk=pk)
 
@@ -122,7 +131,9 @@ def parse_time(time_value):
         print(f"⚠️ Invalid time format: {time_value}")
         return None  # Return None if parsing fails
     
-    
+
+# @login_required
+# @group_required("Admin", "HR")    
 def upload_attendance_excel(request):
     if request.method != "POST" or not request.FILES.get("attendance_file"):
         return JsonResponse(
@@ -203,8 +214,24 @@ def upload_attendance_excel(request):
             {"success": False, "message": str(e)}
         )
 
-
+@login_required
+# @group_required("Admin", "HR")
 def attendance_list(request):
+    user = request.user
+
+    # 🔁 If employee → redirect to own attendance page
+    if user.groups.filter(name="Employee").exists():
+        try:
+            employee = user.employee_profile  # OneToOne relation
+            return redirect(
+                "employee_attendance_detail",
+                employee_id=employee.id
+            )
+        except Exception:
+            # Safety fallback if employee profile missing
+            return redirect("dashboard")
+
+
     """View attendance by selected date (default: today)"""
     date_str = request.GET.get('date')
     if date_str:
@@ -1115,7 +1142,7 @@ def home(request):
 #     return render(request, 'employee/create_employee2.html', context)
 
 
-
+@login_required
 def create_or_edit_employee(request, employee_id=None):
     employee = None
     is_edit = False
@@ -1242,8 +1269,9 @@ def create_or_edit_employee(request, employee_id=None):
 
 
 
-
-
+# @permission_required("website.view_employee", raise_exception=True)
+@login_required
+@group_required("Admin", "HR")
 def employee_list(request):
     return render(request, "employee/create_employee2.html", {
         "form": EmployeeForm(),
@@ -1274,6 +1302,7 @@ def employee_list(request):
 
 from django.shortcuts import get_object_or_404, render
 
+@login_required
 def employee_detail(request, pk):
     employee = get_object_or_404(Employee, pk=pk)
     # employeement = PreviousEmployment.objects.filter(employee=employee)
@@ -1326,6 +1355,16 @@ def employee_detail(request, pk):
 
     return render(request, 'employee/employee_detail.html', context)
 
+
+
+
+@login_required
+def my_profile(request):
+    if not hasattr(request.user, 'employee_profile'):
+        return redirect('dashboard')  # or raise PermissionDenied
+
+    employee = request.user.employee_profile
+    return redirect('employee_detail', pk=employee.pk)
 
 def download_attachment(request, pk):
     attachment = get_object_or_404(EmployeeAttachment, pk=pk)
@@ -1683,6 +1722,9 @@ def delete_branch(request, branch_id):
 #         'form': form,
 #     }
 #     return render(request, 'company/home2.html', context)
+@login_required
+@group_required("Admin")
+
 def create_company(request):
     if request.method == "POST":
         short_name = request.POST.get("short_name")

@@ -9,24 +9,12 @@ urlpatterns = [
 
     path('home',views.home,name="home"),
     path('employees/', views.employee_list, name='employee_list'),
+    path('my-profile/', views.my_profile, name='my_profile'),
 
     path('employee/', views.create_or_edit_employee, name='employee_create'),
     path('employee/<int:employee_id>/', views.create_or_edit_employee, name='employee_edit'),
     path('employee-detail/<int:pk>/', views.employee_detail, name='employee_detail'),
     path('attachments/<int:pk>/download/', views.download_attachment, name='download_attachment'),
-    # urls.py
-    # path('employee/<int:pk>/edit/', views.employee_edit, name='employee_edit'),
-
-    # path('create-offboarding',views.create_offboarding,name="create-offboarding"),
-    # path("offboarding/<int:off_id>/details/",views.offboarding_detail,name="offboarding_detail"),
-    # path("offboarding/<int:id>/edit-data/", views.offboarding_edit_data, name="offboarding_edit_data"),
-
-
-
-
-
-    # path('delete-offboarding/<int:pk>/', views.delete_offboarding, name='delete-offboarding'),
-        # Main page (list + create + edit in modals)
     path('offboarding/', views.offboarding_list, name='offboarding-list'),
     
     # AJAX endpoints for modals
@@ -42,29 +30,17 @@ urlpatterns = [
     path("company/delete/<int:company_id>/", views.delete_company, name="delete_company"),
     path("employee/delete/<int:employee_id>/", views.delete_employee, name="delete_employee"),
 
-
-
-
-
-
-
     path("company/<int:pk>/details/", views.company_details_api, name="company_details_api"),
     path("branch/<int:pk>/details/", views.branch_details_api, name="branch_details_api"),
     path("branch/<int:branch_id>/edit/", views.edit_branch, name="edit_branch"),
     path("branch/<int:branch_id>/get/", views.get_branch, name="get_branch"),
     path("branch/delete/<int:branch_id>/", views.delete_branch, name="delete_branch"),
 
-
     path("login/", views.login_view, name="login"),
-
 
     path("create-user/", views.create_user_view, name="create-user"),
     path("logout/", views.logout_view, name="logout"),
     path("change-password/", views.change_password, name="change-password"),
-
-
-
-
 
     path('create-salary',views.create_salary,name="create-salary"),
     path("salary/details/<int:pk>/", views.salary_details, name="salary_details"),
@@ -78,14 +54,6 @@ urlpatterns = [
     path("submit-correction-request/", views.submit_correction_request, name="submit_correction_request"),
     path("approve-correction/<int:request_id>/", views.approve_correction_request, name="approve_correction"),
     path("reject-correction/<int:request_id>/", views.reject_correction_request, name="reject_correction"),  
-    # employee advances
-    # path('advances/', views.advances_list, name='advances-list'),
-    # path('advances/create/', views.create_advance, name='create-advance'),
-    # path('advances/<int:advance_id>/add-installment/', views.add_installment, name='add-installment'),
-    # path('advances/<int:advance_id>/installments/', views.view_installments, name='view-installments'),
-    # path('advances/mark-paid/<int:installment_id>/', views.mark_paid, name='mark-paid'),
-    # path('advances/undo-paid/<int:installment_id>/', views.undo_paid, name='undo-paid'),
-    # path('advances/skip/<int:installment_id>/', views.skip_installment, name='skip-installment'),  # ✅ NEW
 
     path("leave-balance/", views.leave_balance_view, name="leave_balance"),
     path("employees/<int:employee_id>/compoffs/", views.employee_compoff_details, name="employee-compoff-details"),
@@ -93,8 +61,6 @@ urlpatterns = [
     path('approve-compoff/<int:compoff_id>/', views.approve_compoff, name='approve_compoff'),
     path('reject-compoff/<int:compoff_id>/', views.reject_compoff, name='reject_compoff'),
     path("submit-comp-off-request/", views.submit_comp_off_request, name="submit_comp_off_request"),
-    # path("salary-increment/", views.create_salary_increment, name="salary_increment"),
-    # path("salary/increment/details/<int:pk>/", views.increment_details, name="increment_details"),
     
     
      # Main page - list and create (no pk needed)
@@ -106,12 +72,7 @@ urlpatterns = [
     path('salary/increment/delete/<int:pk>/', views.delete_salary_increment, name='delete_increment'),
     path('salary/increment/details/<int:pk>/', views.increment_details, name='increment_details'),
 
-    
-    
-    
-    
-    
-    
+        
     
     path("salary-history/", views.salary_history, name="salary_history"),
     path("ajax/employee-details/", views.employee_salary_ajax, name="employee_details_ajax"),
@@ -133,11 +94,6 @@ urlpatterns = [
          views.salary_history_export_excel,
          name='salary_history_export_excel'),
 
-    # path('salary-history/export/pdf/',
-    #      views.salary_history_export_pdf,
-    #      name='salary_history_export_pdf'),
-
-    # path("leave-balance/", leave_balance_view, name="leave_balance"),
 
     path('payroll-settings/', views.get_payroll_settings, name='get_payroll_settings'),
     path('settings/', views.settings_page, name='settings-page'),

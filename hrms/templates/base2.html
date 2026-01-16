@@ -597,9 +597,16 @@
                       <div class="dropdown-divider"></div>
                     </li>
                     <li>
-                      <a class="dropdown-item" href="pages-profile-user.html">
-                        <i class="ri-user-3-line ri-22px me-3"></i><span class="align-middle">My Profile</span>
-                      </a>
+                      {% if request.user.is_authenticated and request.user.employee_profile %}
+    <a class="dropdown-item" href="{% url 'my_profile' %}">
+        <i class="ri-user-3-line ri-22px me-3"></i>
+        <span class="align-middle">My Profile</span>
+    </a>
+{% endif %}
+
+                      {% comment %} <a class="dropdown-item" href="pages-profile-user.html">
+                        <i class="ri-user-3-line ri-22px me-3"></i><span class="align-middle">My Profile {{ user.id }}</span>
+                      </a> {% endcomment %}
                     </li>
                     <li>
                       <a class="dropdown-item" href="{% url 'settings-page' %}">

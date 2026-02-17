@@ -1,0 +1,529 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Add Holiday{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --light: #f9fafb;
+            --border: #e5e7eb;
+            --text: #374151;
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 2.5rem;
+            border-radius: 15px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-lg);
+            text-align: center;
+        }
+
+        .header h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 0.95rem;
+        }
+
+        .form-container {
+            background: white;
+            border-radius: 15px;
+            padding: 2.5rem;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .form-group {
+            margin-bottom: 1.75rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+            color: var(--text);
+            font-size: 0.95rem;
+        }
+
+        .form-group-required label::after {
+            content: ' *';
+            color: var(--danger);
+        }
+
+        input[type="text"],
+        input[type="date"],
+        input[type="number"],
+        input[type="email"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 0.875rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.95rem;
+            color: var(--text);
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="date"]:focus,
+        input[type="number"]:focus,
+        input[type="email"]:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+            background: #f0f7ff;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+            font-family: 'Poppins', sans-serif;
+        }
+
+        select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%232563eb' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.875rem center;
+            padding-right: 2.5rem;
+        }
+
+        .form-hint {
+            display: block;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            background: var(--light);
+            border-radius: 8px;
+            border: 2px solid var(--border);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .checkbox-group:hover {
+            border-color: var(--primary);
+            background: #f0f7ff;
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: var(--primary);
+        }
+
+        .checkbox-group label {
+            margin: 0;
+            cursor: pointer;
+            flex: 1;
+            font-weight: 500;
+        }
+
+        .form-section {
+            padding: 1.5rem;
+            background: var(--light);
+            border-radius: 10px;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid var(--primary);
+        }
+
+        .form-section h3 {
+            margin-bottom: 1rem;
+            color: var(--dark);
+            font-size: 1.1rem;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .form-row .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 2px solid var(--border);
+        }
+
+        .btn {
+            flex: 1;
+            padding: 1rem;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-secondary {
+            background: var(--border);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .alert {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            display: flex;
+            gap: 0.75rem;
+            align-items: flex-start;
+        }
+
+        .alert-icon {
+            flex-shrink: 0;
+            font-size: 1.25rem;
+        }
+
+        .alert-warning {
+            background: #fffbeb;
+            border: 2px solid var(--warning);
+            color: #92400e;
+        }
+
+        .alert-error {
+            background: #fef2f2;
+            border: 2px solid var(--danger);
+            color: #991b1b;
+        }
+
+        .alert-success {
+            background: #f0fdf4;
+            border: 2px solid var(--success);
+            color: #15803d;
+        }
+
+        .help-box {
+            background: #eff6ff;
+            border-left: 4px solid var(--primary);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+
+        .help-box h4 {
+            color: var(--primary-dark);
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }
+
+        .help-box p {
+            font-size: 0.9rem;
+            color: var(--text);
+            margin: 0.25rem 0;
+        }
+
+        .badge-example {
+            display: inline-block;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            margin-top: 0.5rem;
+        }
+
+        .badge-national {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-regional {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-company {
+            background: #e5e7eb;
+            color: #374151;
+        }
+
+        .badge-emergency {
+            background: #fecaca;
+            color: #991b1b;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                max-width: 100%;
+            }
+
+            .form-container {
+                padding: 1.5rem;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            .form-actions {
+                flex-direction: column;
+            }
+
+            .header h1 {
+                font-size: 1.5rem;
+            }
+        }
+
+        .success-animation {
+            animation: success-bounce 0.6s ease;
+        }
+
+        @keyframes success-bounce {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>{% block header_title %}🎉 Add Holiday{% endblock %}</h1>
+            <p>{% block header_subtitle %}Create a new holiday or closure date{% endblock %}</p>
+        </div>
+
+        <!-- Help Box -->
+        <div class="help-box">
+            <h4>📌 Quick Tips</h4>
+            <p>• <strong>National</strong>: Applies to all branches automatically</p>
+            <p>• <strong>Regional</strong>: Apply to specific branches only</p>
+            <p>• <strong>Emergency</strong>: Add same-day or next-day closures (e.g., rain, natural disasters)</p>
+        </div>
+
+        <!-- Form -->
+        <form method="POST" class="form-container">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+            <div class="alert alert-error">
+                <div class="alert-icon">⚠️</div>
+                <div>
+                    {% for error in form.non_field_errors %}
+                    <p>{{ error }}</p>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Basic Information Section -->
+            <div class="form-section">
+                <h3>📅 Holiday Details</h3>
+
+                <div class="form-group form-group-required">
+                    <label for="holiday_date">Holiday Date</label>
+                    <input type="date" id="holiday_date" name="holiday_date" required>
+                    <span class="form-hint">Select the date when this holiday or closure occurs</span>
+                </div>
+
+                <div class="form-group form-group-required">
+                    <label for="name">Holiday Name</label>
+                    <input type="text" id="name" name="name" placeholder="e.g., Republic Day, Heavy Rain Closure" required>
+                    <span class="form-hint">Enter a descriptive name for this holiday</span>
+                </div>
+
+                <div class="form-group form-group-required">
+                    <label for="id_holiday_type">Holiday Type</label>
+                    {{ form.holiday_type }}
+                    <span class="form-hint">Choose the category of this holiday</span>
+                </div>
+
+                    <div class="form-group form-group-required">
+                        <label for="status">Status</label>
+                        <select id="status" name="status" required>
+                            <option value="declared">Declared</option>
+                            <option value="optional">Optional</option>
+                            <option value="emergency">Emergency</option>
+                        </select>
+                        <span class="form-hint">Mark as declared, optional, or emergency</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Applicability Section -->
+            <div class="form-section">
+                <h3>🏢 Applicability</h3>
+
+                <div class="form-group">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="is_national" name="is_national" onchange="toggleBranchSelection()">
+                        <label for="is_national" style="margin: 0;">Apply to All Branches (National)</label>
+                    </label>
+                </div>
+
+                <div id="branch-selection" style="display: none;">
+                    <label style="display: block; margin-bottom: 0.75rem; font-weight: 600;">Or Select Specific Branches:</label>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                        <label class="checkbox-group">
+                            <input type="checkbox" name="branches" value="mumbai">
+                            <label style="margin: 0;">Mumbai</label>
+                        </label>
+                        <label class="checkbox-group">
+                            <input type="checkbox" name="branches" value="delhi">
+                            <label style="margin: 0;">Delhi</label>
+                        </label>
+                        <label class="checkbox-group">
+                            <input type="checkbox" name="branches" value="bangalore">
+                            <label style="margin: 0;">Bangalore</label>
+                        </label>
+                        <label class="checkbox-group">
+                            <input type="checkbox" name="branches" value="hyderabad">
+                            <label style="margin: 0;">Hyderabad</label>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Additional Details Section -->
+            <div class="form-section">
+                <h3>📝 Additional Information</h3>
+
+                <div class="form-group">
+                    <label for="description">Description (Optional)</label>
+                    <textarea id="description" name="description" placeholder="Add any additional details about this holiday..."></textarea>
+                    <span class="form-hint">Provide context or notes about this closure</span>
+                </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="form-actions">
+                <a href="{% url 'holiday-list' %}" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Holiday
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        function toggleBranchSelection() {
+            const isNational = document.getElementById('is_national').checked;
+            const branchSelection = document.getElementById('branch-selection');
+            branchSelection.style.display = isNational ? 'none' : 'block';
+        }
+
+        // Form validation
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const date = document.getElementById('holiday_date').value;
+            const name = document.getElementById('name').value;
+            const type = document.getElementById('holiday_type').value;
+
+            if (!date || !name || !type) {
+                e.preventDefault();
+                alert('Please fill in all required fields');
+                return false;
+            }
+
+            // Check if date is in the future
+            const selectedDate = new Date(date);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            if (selectedDate < today && !confirm('This date is in the past. Continue anyway?')) {
+                e.preventDefault();
+                return false;
+            }
+        });
+
+        // Prevent duplicate submissions
+        let isSubmitting = false;
+        document.querySelector('form').addEventListener('submit', function(e) {
+            if (isSubmitting) {
+                e.preventDefault();
+                return false;
+            }
+            isSubmitting = true;
+        });
+
+        // Auto-fill current date if empty
+        if (!document.getElementById('holiday_date').value) {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            document.getElementById('holiday_date').value = `${yyyy}-${mm}-${dd}`;
+        }
+    </script>
+</body>
+</html>

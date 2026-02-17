@@ -1,0 +1,443 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Earned Leaves Configuration</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --light: #f9fafb;
+            --border: #e5e7eb;
+            --text: #374151;
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 2.5rem;
+            border-radius: 15px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .header h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header-subtitle {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow-md);
+            border-left: 4px solid var(--primary);
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .stat-detail {
+            font-size: 0.85rem;
+            color: #9ca3af;
+            margin-top: 0.5rem;
+        }
+
+        .filters {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .filter-group label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        select {
+            padding: 0.75rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.9rem;
+            width: 180px;
+            background: white;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: var(--shadow-lg);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: var(--light);
+            border-bottom: 2px solid var(--border);
+        }
+
+        th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 700;
+            color: var(--text);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody tr:hover {
+            background: var(--light);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .badge-auto {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .badge-manual {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-secondary {
+            background: var(--light);
+            color: var(--text);
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .policy-info {
+            background: #eff6ff;
+            border: 2px solid #bfdbfe;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .policy-info h3 {
+            color: var(--primary-dark);
+            margin-bottom: 0.75rem;
+        }
+
+        .policy-detail {
+            font-size: 0.9rem;
+            margin: 0.5rem 0;
+            color: var(--text);
+        }
+
+        .highlight {
+            background: #fef3c7;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 1.5rem;
+            }
+
+            .header h1 {
+                font-size: 1.5rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            table {
+                font-size: 0.85rem;
+            }
+
+            th, td {
+                padding: 0.75rem 0.5rem;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>⭐ Earned Leaves Configuration</h1>
+            <div class="header-subtitle">Manage monthly earned leave allocations for financial year {{ year }}</div>
+        </div>
+
+        <!-- Policy Info -->
+        <div class="policy-info">
+            <h3>📋 Current Policy</h3>
+            <div class="policy-detail">
+                <strong>Annual Earned Leaves:</strong> 
+                <span class="highlight">{{ earnings_per_year|default:"24" }} days</span>
+            </div>
+            <div class="policy-detail">
+                <strong>Monthly Average:</strong> 
+                <span class="highlight">
+                    {% if earnings_per_year %}
+                        {% widthratio earnings_per_year 12 1 %} days/month
+                    {% else %}
+                        2.00 days/month
+                    {% endif %}
+                </span>
+            </div>
+            <div class="policy-detail">
+                <strong>Financial Year:</strong> 
+                <span class="highlight">April - March</span>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Months</div>
+                <div class="stat-value">{{ monthly_leaves|length }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Allocated</div>
+                <div class="stat-value">{{ total_earned|floatformat:1 }}</div>
+                <div class="stat-detail">days for {{ year }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Auto Generated</div>
+                <div class="stat-value">
+                    {% with count=monthly_leaves|length %}
+                        {{ count }}
+                    {% endwith %}
+                </div>
+                <div class="stat-detail">from policy</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Manually Adjusted</div>
+                <div class="stat-value">0</div>
+                <div class="stat-detail">months</div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters">
+            <div class="filter-group">
+                <label>Select Year</label>
+                <select onchange="filterYear(this.value)">
+                    <option value="2024">2024</option>
+                    <option value="2025" selected>2025</option>
+                    <option value="2026">2026</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-container">
+            {% if monthly_leaves %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>📅 Month</th>
+                            <th>Year</th>
+                            <th>Earned Leaves (Days)</th>
+                            <th>Generation Type</th>
+                            <th>Last Updated</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for leave in monthly_leaves %}
+                        <tr>
+                            <td><strong>{{ leave.get_month_display }}</strong></td>
+                            <td>{{ leave.year }}</td>
+                            <td>
+                                <span style="font-weight: 700; color: var(--primary); font-size: 1.1rem;">
+                                    {{ leave.earned_leaves|floatformat:2 }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if leave.is_auto_generated %}
+                                    <span class="badge badge-auto">
+                                        <i class="fas fa-robot"></i> Auto-Generated
+                                    </span>
+                                {% else %}
+                                    <span class="badge badge-manual">
+                                        <i class="fas fa-user"></i> Manual
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td>{{ leave.updated_at|date:"M d, Y" }}</td>
+                            <td>
+                                <div class="actions">
+                                    <a href="{% url 'edit-earned-leave' leave.id %}" class="btn btn-secondary">
+                                        <i class="fas fa-edit"></i> Edit
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                
+                <!-- Summary Footer -->
+                <div style="background: var(--light); padding: 1rem; margin-top: 1rem; border-radius: 8px; text-align: right;">
+                    <strong>Total for {{ year }}:</strong> 
+                    <span style="font-size: 1.2rem; color: var(--primary); font-weight: 700;">
+                        {{ total_earned|floatformat:2 }} days
+                    </span>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">📊</div>
+                    <h3>No Earned Leaves Configured</h3>
+                    <p>Monthly earned leaves will be auto-generated based on your payroll policy.</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        function filterYear(year) {
+            window.location.href = `{% url 'earned-leaves' %}?year=${year}`;
+        }
+    </script>
+</body>
+</html>

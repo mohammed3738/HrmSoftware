@@ -1,0 +1,842 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leave Balance Report - {{ display_month }}</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #1a3a52;
+            --primary-dark: #0f2435;
+            --accent: #ff6b35;
+            --accent-light: #ff8f66;
+            --success: #2ecc71;
+            --warning: #f39c12;
+            --danger: #e74c3c;
+            --neutral-50: #fafbfc;
+            --neutral-100: #f3f4f6;
+            --neutral-200: #e5e7eb;
+            --neutral-300: #d1d5db;
+            --neutral-400: #9ca3af;
+            --neutral-500: #6b7280;
+            --neutral-600: #4b5563;
+            --neutral-700: #374151;
+            --neutral-800: #1f2937;
+            --neutral-900: #111827;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, var(--neutral-50) 0%, var(--neutral-100) 100%);
+            color: var(--neutral-800);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Header Section */
+        .header {
+            background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+            color: white;
+            padding: 2.5rem 2rem;
+            border-radius: 16px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-xl);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -10%;
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+
+        .header-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .header h1 {
+            font-size: 2.25rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.5px;
+        }
+
+        .header-meta {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            margin-top: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .header-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.95rem;
+            opacity: 0.95;
+        }
+
+        .header-meta-item svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        /* Alert/Warning Messages */
+        .alert {
+            padding: 1rem 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            border-left: 4px solid;
+            background: white;
+            box-shadow: var(--shadow-md);
+        }
+
+        .alert-warning {
+            border-color: var(--warning);
+            background: #fff9f0;
+        }
+
+        .alert-error {
+            border-color: var(--danger);
+            background: #fef2f2;
+        }
+
+        .alert-warning .alert-icon,
+        .alert-error .alert-icon {
+            color: var(--warning);
+        }
+
+        .alert-error .alert-icon {
+            color: var(--danger);
+        }
+
+        .alert-content {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .alert-icon {
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .alert-text h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .alert-text p {
+            font-size: 0.9rem;
+            color: var(--neutral-600);
+        }
+
+        /* Controls Section */
+        .controls {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-md);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+        }
+
+        .controls-left {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .form-group label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--neutral-600);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        select {
+            padding: 0.75rem 1rem;
+            border: 2px solid var(--neutral-200);
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            color: var(--neutral-800);
+            background: white;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 220px;
+            max-width: 100%;
+        }
+
+        select:hover {
+            border-color: var(--primary);
+        }
+
+        select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(26, 58, 82, 0.1);
+        }
+
+        .btn {
+            padding: 0.75rem 1.75rem;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-primary:disabled {
+            background: var(--neutral-300);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-secondary {
+            background: var(--neutral-100);
+            color: var(--neutral-700);
+        }
+
+        .btn-secondary:hover {
+            background: var(--neutral-200);
+        }
+
+        /* Stats Cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: var(--shadow-md);
+            border-left: 4px solid;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .stat-card.primary {
+            border-color: var(--primary);
+        }
+
+        .stat-card.success {
+            border-color: var(--success);
+        }
+
+        .stat-card.warning {
+            border-color: var(--warning);
+        }
+
+        .stat-card.danger {
+            border-color: var(--danger);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--neutral-500);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--neutral-900);
+        }
+
+        /* Table Section */
+        .table-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
+        }
+
+        .table-header {
+            padding: 1.5rem;
+            background: linear-gradient(135deg, var(--neutral-50) 0%, white 100%);
+            border-bottom: 2px solid var(--neutral-100);
+        }
+
+        .table-header h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--neutral-900);
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: var(--primary);
+            color: white;
+        }
+
+        th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        th:first-child {
+            padding-left: 1.5rem;
+        }
+
+        th:last-child {
+            padding-right: 1.5rem;
+        }
+
+        tbody tr {
+            border-bottom: 1px solid var(--neutral-100);
+            transition: background-color 0.15s ease;
+        }
+
+        tbody tr:hover {
+            background: var(--neutral-50);
+        }
+
+        tbody tr:last-child {
+            border-bottom: none;
+        }
+
+        td {
+            padding: 1rem;
+            font-size: 0.95rem;
+        }
+
+        td:first-child {
+            padding-left: 1.5rem;
+            font-weight: 600;
+        }
+
+        td:last-child {
+            padding-right: 1.5rem;
+        }
+
+        .employee-info {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .employee-name {
+            font-weight: 600;
+            color: var(--neutral-900);
+        }
+
+        .employee-code {
+            font-size: 0.85rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--neutral-500);
+        }
+
+        .numeric-cell {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 600;
+            text-align: right;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-warning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-danger {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .badge-info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+        }
+
+        .empty-state-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1.5rem;
+            opacity: 0.3;
+        }
+
+        .empty-state h3 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--neutral-700);
+            margin-bottom: 0.5rem;
+        }
+
+        .empty-state p {
+            font-size: 1rem;
+            color: var(--neutral-500);
+            margin-bottom: 1rem;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 3rem;
+            padding: 2rem;
+            text-align: center;
+            color: var(--neutral-500);
+            font-size: 0.9rem;
+        }
+
+        /* Loading State */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+            color: var(--neutral-600);
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--neutral-200);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .header h1 {
+                font-size: 1.75rem;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .controls-left {
+                flex-direction: column;
+                width: 100%;
+                gap: 1rem;
+            }
+
+            .form-group {
+                width: 100%;
+            }
+
+            select {
+                width: 100%;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            th, td {
+                padding: 0.75rem 0.5rem;
+                font-size: 0.85rem;
+            }
+
+            .stat-value {
+                font-size: 1.5rem;
+            }
+        }
+
+        /* Loading Animation */
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .stagger-1 { animation-delay: 0.1s; }
+        .stagger-2 { animation-delay: 0.2s; }
+        .stagger-3 { animation-delay: 0.3s; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header fade-in">
+            <div class="header-content">
+                <h1>Leave Balance Report</h1>
+                <div class="header-meta">
+                    <div class="header-meta-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <span>{{ display_month }}</span>
+                    </div>
+                    {% if user_company_id %}
+                    <div class="header-meta-item">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
+                        <span>{{ user_company_name|default:"Your Company" }}</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </header>
+
+        <!-- Warning/Error Alerts -->
+        {% if not user_company_id %}
+        <div class="alert alert-warning fade-in stagger-1">
+            <div class="alert-content">
+                <div class="alert-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                </div>
+                <div class="alert-text">
+                    <h3>No Company Associated</h3>
+                    <p>Your account is not associated with any company. Please contact your administrator to set up your company profile.</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if error %}
+        <div class="alert alert-error fade-in stagger-1">
+            <div class="alert-content">
+                <div class="alert-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <div class="alert-text">
+                    <h3>Configuration Error</h3>
+                    <p>{{ error }}</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Controls -->
+        {% if user_company_id %}
+        <div class="controls fade-in stagger-1">
+            <div class="controls-left">
+                {% if available_periods %}
+                <div class="form-group">
+                    <label for="period-selector">Select Payroll Period</label>
+                    <form method="get" id="period-form" style="display: flex; gap: 0.5rem;">
+                        <select name="period" id="period-selector" onchange="this.form.submit()">
+                            <option value="">-- Current Period --</option>
+                            {% for period in available_periods %}
+                            <option value="{{ period.display_date|date:'Y-m-d' }}" {% if selected_period == period.display_date|date:'Y-m-d' %}selected{% endif %}>
+                                {{ period.label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </form>
+                </div>
+                {% else %}
+                <div class="form-group">
+                    <label>Payroll Period</label>
+                    <p style="color: var(--neutral-600); font-size: 0.9rem; margin: 0;">
+                        No period data available. Run recalculation to generate reports.
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+            
+            <div>
+                <button class="btn btn-primary" onclick="recalculateLeaveBalances()" id="recalc-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    <span id="recalc-text">Recalculate All</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Summary Statistics -->
+        {% if total_employees %}
+        <div class="stats-grid fade-in stagger-2">
+            <div class="stat-card primary">
+                <div class="stat-label">Total Employees</div>
+                <div class="stat-value">{{ total_employees }}</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-label">Average Balance</div>
+                <div class="stat-value">{{ avg_balance|floatformat:1 }}</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-label">Total LWP</div>
+                <div class="stat-value">{{ total_lwp|floatformat:1 }}</div>
+            </div>
+            <div class="stat-card danger">
+                <div class="stat-label">Total Leaves Taken</div>
+                <div class="stat-value">{{ total_leaves_taken|floatformat:1 }}</div>
+            </div>
+        </div>
+        {% endif %}
+        {% endif %}
+
+        <!-- Leave Balance Table -->
+        {% if leave_balances %}
+        <div class="table-container fade-in stagger-2">
+            <div class="table-header">
+                <h2>Employee Leave Balances</h2>
+            </div>
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Employee</th>
+                            <th>Opening Balance</th>
+                            <th>Leave Taken</th>
+                            <th>Late (Days)</th>
+                            <th>Comp Off</th>
+                            <th>LWP</th>
+                            <th>Days Present</th>
+                            <th>Total Days</th>
+                            <th>Balance</th>
+                            <th>Closing Balance</th>
+                            <th>Final Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for lb in leave_balances %}
+                        <tr>
+                            <td>
+                                <div class="employee-info">
+                                    <span class="employee-name">{{ lb.employee.first_name }} {{ lb.employee.last_name }}</span>
+                                    <span class="employee-code">{{ lb.employee.employee_code }}</span>
+                                </div>
+                            </td>
+                            <td class="numeric-cell">{{ lb.opening_balance|floatformat:2 }}</td>
+                            <td class="numeric-cell">{{ lb.leave_taken|floatformat:2 }}</td>
+                            <td class="numeric-cell">
+                                {% if lb.late > 0 %}
+                                    {{ lb.late|floatformat:0 }} min
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td class="numeric-cell">{{ lb.compoff|floatformat:2 }}</td>
+                            <td class="numeric-cell">
+                                {% if lb.leave_without_pay > 0 %}
+                                    <span class="badge badge-warning">{{ lb.leave_without_pay|floatformat:2 }}</span>
+                                {% else %}
+                                    {{ lb.leave_without_pay|floatformat:2 }}
+                                {% endif %}
+                            </td>
+                            <td class="numeric-cell">{{ lb.number_of_days_present|floatformat:2 }}</td>
+                            <td class="numeric-cell">{{ lb.total_number_of_days }}</td>
+                            <td class="numeric-cell">{{ lb.leave_balance|floatformat:2 }}</td>
+                            <td class="numeric-cell">{{ lb.closing_balance|floatformat:2 }}</td>
+                            <td class="numeric-cell">
+                                {% if lb.final_leave_balance >= 10 %}
+                                    <span class="badge badge-success">{{ lb.final_leave_balance|floatformat:2 }}</span>
+                                {% elif lb.final_leave_balance >= 5 %}
+                                    <span class="badge badge-info">{{ lb.final_leave_balance|floatformat:2 }}</span>
+                                {% else %}
+                                    <span class="badge badge-danger">{{ lb.final_leave_balance|floatformat:2 }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% else %}
+        <div class="table-container fade-in stagger-2">
+            <div class="empty-state">
+                <svg class="empty-state-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h3>No Leave Balance Records</h3>
+                <p>Click "Recalculate All" to generate leave balance records for your employees.</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Loading Indicator -->
+        <div class="loading" id="loading-indicator">
+            <div class="spinner"></div>
+            <p>Recalculating leave balances...</p>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2026 Leave Management System. Generated on {{ display_month }}</p>
+        </footer>
+    </div>
+
+    <script>
+        function recalculateLeaveBalances() {
+            const btn = document.getElementById('recalc-btn');
+            const loading = document.getElementById('loading-indicator');
+            
+            if (confirm('This will recalculate leave balances for ALL employees. Continue?')) {
+                btn.disabled = true;
+                loading.classList.add('active');
+                
+                fetch('{% url "recalculate_leave_balances" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    loading.classList.remove('active');
+                    btn.disabled = false;
+                    
+                    if (data.success) {
+                        alert(`✓ ${data.message}`);
+                        if (data.errors && data.errors.length > 0) {
+                            console.warn('Errors:', data.errors);
+                        }
+                        setTimeout(() => location.reload(), 500);
+                    } else {
+                        alert(`✗ Error: ${data.message}`);
+                    }
+                })
+                .catch(error => {
+                    loading.classList.remove('active');
+                    btn.disabled = false;
+                    console.error('Error:', error);
+                    alert('An error occurred during recalculation. Check console.');
+                });
+            }
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,454 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Half-Day Scenario</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --light: #f9fafb;
+            --border: #e5e7eb;
+            --text: #374151;
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 2.5rem;
+            border-radius: 15px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-lg);
+            text-align: center;
+        }
+
+        .header h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 0.95rem;
+        }
+
+        .help-box {
+            background: #eff6ff;
+            border-left: 4px solid var(--primary);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+        }
+
+        .help-box h4 {
+            color: var(--primary-dark);
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }
+
+        .help-box p {
+            font-size: 0.9rem;
+            color: var(--text);
+            margin: 0.25rem 0;
+        }
+
+        .form-container {
+            background: white;
+            border-radius: 15px;
+            padding: 2.5rem;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .form-group {
+            margin-bottom: 1.75rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+            color: var(--text);
+            font-size: 0.95rem;
+        }
+
+        .form-group-required label::after {
+            content: ' *';
+            color: var(--danger);
+        }
+
+        input[type="text"],
+        input[type="date"],
+        input[type="number"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 0.875rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.95rem;
+            color: var(--text);
+            background: white;
+            transition: all 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="date"]:focus,
+        input[type="number"]:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+            background: #f0f7ff;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+        }
+
+        select {
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%232563eb' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.875rem center;
+            padding-right: 2.5rem;
+        }
+
+        .form-hint {
+            display: block;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
+
+        .form-section {
+            padding: 1.5rem;
+            background: var(--light);
+            border-radius: 10px;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid var(--primary);
+        }
+
+        .form-section h3 {
+            margin-bottom: 1rem;
+            color: #1f2937;
+            font-size: 1.1rem;
+        }
+
+        .credit-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .credit-option {
+            display: flex;
+            align-items: center;
+            padding: 1rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .credit-option:hover {
+            border-color: var(--primary);
+            background: #f0f7ff;
+        }
+
+        .credit-option input[type="radio"] {
+            margin-right: 0.75rem;
+            cursor: pointer;
+            width: 20px;
+            height: 20px;
+            accent-color: var(--primary);
+        }
+
+        .credit-option label {
+            margin: 0;
+            cursor: pointer;
+            flex: 1;
+            font-weight: 600;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 2px solid var(--border);
+        }
+
+        .btn {
+            flex: 1;
+            padding: 1rem;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-secondary {
+            background: var(--border);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: #d1d5db;
+        }
+
+        .branch-info {
+            background: #eff6ff;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            border-left: 4px solid var(--primary);
+        }
+
+        .branch-info p {
+            font-size: 0.95rem;
+            margin: 0.25rem 0;
+        }
+
+        .branch-info strong {
+            color: var(--primary-dark);
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                max-width: 100%;
+            }
+
+            .form-container {
+                padding: 1.5rem;
+            }
+
+            .credit-selector {
+                grid-template-columns: 1fr;
+            }
+
+            .form-actions {
+                flex-direction: column;
+            }
+
+            .header h1 {
+                font-size: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🏥 Add Half-Day Scenario</h1>
+            <p>Create a branch-specific half-day closure or emergency scenario</p>
+        </div>
+
+        <!-- Help Box -->
+        <div class="help-box">
+            <h4>📌 What is a Half-Day Scenario?</h4>
+            <p>• <strong>Rain/Flood:</strong> Weather-related closures (e.g., heavy rain, floods)</p>
+            <p>• <strong>Election Day:</strong> Government-mandated voting periods</p>
+            <p>• <strong>Office Maintenance:</strong> Planned office maintenance or repairs</p>
+            <p>• <strong>Safety Emergency:</strong> Unforeseen safety issues or hazards</p>
+            <p>• <strong>Emergency Closure:</strong> Other urgent scenarios</p>
+        </div>
+
+        <!-- Branch Info -->
+        <div class="branch-info">
+            <p><strong>📍 Applicable Branch:</strong> {{ branch.branch_name }}</p>
+            <p style="font-size: 0.85rem; color: #6b7280;">This scenario will only apply to your branch</p>
+        </div>
+
+        <!-- Form -->
+        <form method="POST" class="form-container">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+            <div style="background: #fef2f2; border: 2px solid var(--danger); color: #991b1b; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                {% for error in form.non_field_errors %}
+                <p>{{ error }}</p>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Basic Information Section -->
+            <div class="form-section">
+                <h3>📅 Scenario Details</h3>
+
+                <div class="form-group form-group-required">
+                    <label for="scenario_date">Scenario Date</label>
+                    <input type="date" id="scenario_date" name="scenario_date" required>
+                    <span class="form-hint">Select the date for this half-day closure</span>
+                </div>
+
+                <div class="form-group form-group-required">
+                    <label for="scenario_type">Scenario Type</label>
+                    <select id="scenario_type" name="scenario_type" required>
+                        <option value="">-- Select Type --</option>
+                        <option value="rain_closure">🌧️ Rain/Flood Closure</option>
+                        <option value="election_day">🗳️ Election Day</option>
+                        <option value="office_maintenance">🏢 Office Maintenance</option>
+                        <option value="safety_emergency">⚠️ Safety Emergency</option>
+                        <option value="emergency_closure">🚨 Emergency Closure</option>
+                        <option value="other">📌 Other</option>
+                    </select>
+                    <span class="form-hint">Choose the category for this scenario</span>
+                </div>
+            </div>
+
+            <!-- Credit Section -->
+            <div class="form-section">
+                <h3>⭐ Leave Credit</h3>
+
+                <p style="margin-bottom: 1rem; font-size: 0.9rem; color: var(--text);">
+                    How many days should employees receive credit for this closure?
+                </p>
+
+                <div class="credit-selector">
+                    <label class="credit-option">
+                        <input type="radio" name="credit_count" value="0.5" checked>
+                        <label style="margin: 0; cursor: pointer;">
+                            <strong>Half Day</strong><br>
+                            <span style="font-size: 0.8rem; color: #6b7280;">0.5 days</span>
+                        </label>
+                    </label>
+                    <label class="credit-option">
+                        <input type="radio" name="credit_count" value="1.0">
+                        <label style="margin: 0; cursor: pointer;">
+                            <strong>Full Day</strong><br>
+                            <span style="font-size: 0.8rem; color: #6b7280;">1.0 days</span>
+                        </label>
+                    </label>
+                </div>
+
+                <span class="form-hint" style="display: block; margin-top: 1rem;">
+                    Select how much leave credit employees should receive
+                </span>
+            </div>
+
+            <!-- Description Section -->
+            <div class="form-section">
+                <h3>📝 Additional Information</h3>
+
+                <div class="form-group form-group-required">
+                    <label for="description">Scenario Description</label>
+                    <textarea id="description" name="description" placeholder="Provide details about this closure..." required></textarea>
+                    <span class="form-hint">
+                        Example: "Heavy rainfall expected throughout the day. Office will remain closed. Employees should work from home if possible."
+                    </span>
+                </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="form-actions">
+                <a href="{% url 'half-day-scenarios' %}" class="btn btn-secondary">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Create Scenario
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // Set today's date as default
+        if (!document.getElementById('scenario_date').value) {
+            const today = new Date();
+            const yyyy = today.getFullYear();
+            const mm = String(today.getMonth() + 1).padStart(2, '0');
+            const dd = String(today.getDate()).padStart(2, '0');
+            document.getElementById('scenario_date').value = `${yyyy}-${mm}-${dd}`;
+        }
+
+        // Form validation
+        document.querySelector('form').addEventListener('submit', function(e) {
+            const date = document.getElementById('scenario_date').value;
+            const type = document.getElementById('scenario_type').value;
+            const description = document.getElementById('description').value;
+
+            if (!date || !type || !description) {
+                e.preventDefault();
+                alert('Please fill in all required fields');
+                return false;
+            }
+
+            // Check if date is in the future (warn but allow past dates)
+            const selectedDate = new Date(date);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            if (selectedDate < today) {
+                if (!confirm('This date is in the past. Are you sure you want to continue?')) {
+                    e.preventDefault();
+                    return false;
+                }
+            }
+        });
+
+        // Prevent duplicate submissions
+        let isSubmitting = false;
+        document.querySelector('form').addEventListener('submit', function(e) {
+            if (isSubmitting) {
+                e.preventDefault();
+                return false;
+            }
+            isSubmitting = true;
+        });
+    </script>
+</body>
+</html>

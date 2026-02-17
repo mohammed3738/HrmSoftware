@@ -1,0 +1,569 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Half-Day Scenarios Management</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --light: #f9fafb;
+            --border: #e5e7eb;
+            --text: #374151;
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 2.5rem;
+            border-radius: 15px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .header h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .filters {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        select {
+            padding: 0.75rem 1rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.9rem;
+            background: white;
+            width: 180px;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow-md);
+            text-align: center;
+            border-top: 4px solid var(--primary);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .scenarios-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .scenario-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow-md);
+            border-left: 4px solid var(--warning);
+            transition: all 0.2s ease;
+        }
+
+        .scenario-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .scenario-card.approved {
+            border-left-color: var(--success);
+        }
+
+        .scenario-card.pending {
+            border-left-color: var(--warning);
+        }
+
+        .scenario-card.rejected {
+            border-left-color: var(--danger);
+        }
+
+        .scenario-date {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .scenario-type {
+            display: inline-block;
+            padding: 0.4rem 0.8rem;
+            background: var(--light);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 1rem;
+        }
+
+        .scenario-description {
+            color: var(--text);
+            font-size: 0.95rem;
+            margin-bottom: 1rem;
+            line-height: 1.5;
+        }
+
+        .scenario-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+            margin-top: 1rem;
+        }
+
+        .scenario-credit {
+            font-weight: 600;
+            color: var(--primary);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .status-approved {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: var(--shadow-lg);
+            margin-top: 2rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: var(--light);
+            border-bottom: 2px solid var(--border);
+        }
+
+        th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 700;
+            color: var(--text);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody tr:hover {
+            background: var(--light);
+        }
+
+        .action-btns {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+            background: var(--light);
+            color: var(--text);
+        }
+
+        .btn-sm:hover {
+            background: var(--border);
+        }
+
+        .btn-approve {
+            background: #d1fae5;
+            color: var(--success);
+        }
+
+        .btn-approve:hover {
+            background: #a7f3d0;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 1.5rem;
+            }
+
+            .header h1 {
+                font-size: 1.5rem;
+            }
+
+            .header-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .filters {
+                flex-direction: column;
+            }
+
+            select {
+                width: 100%;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .scenarios-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .table-container {
+                padding: 1rem;
+            }
+
+            table {
+                font-size: 0.85rem;
+            }
+
+            th, td {
+                padding: 0.75rem 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🏥 Half-Day Scenarios</h1>
+            <p>Manage branch-specific half-day closures and emergency scenarios</p>
+
+            <div class="header-controls">
+                <div class="filters">
+                    <select onchange="filterScenarios(this.value)">
+                        <option value="">All Status</option>
+                        <option value="approved">Approved</option>
+                        <option value="pending">Pending</option>
+                    </select>
+                </div>
+                <a href="{% url 'add-half-day-scenario' %}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Half-Day Scenario
+                </a>
+            </div>
+        </div>
+
+        <!-- Statistics -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Scenarios</div>
+                <div class="stat-value">{{ scenarios|length }}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Approved</div>
+                <div class="stat-value" style="color: var(--success);">
+                    {% with approved=scenarios|dictsort:"is_approved"|length %}
+                        {{ approved }}
+                    {% endwith %}
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Pending</div>
+                <div class="stat-value" style="color: var(--warning);">
+                    {% with pending=scenarios|dictsort:"is_approved"|length %}
+                        {{ pending }}
+                    {% endwith %}
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">This Month</div>
+                <div class="stat-value">0</div>
+            </div>
+        </div>
+
+        <!-- Scenarios Grid -->
+        {% if scenarios %}
+            <h2 style="margin-bottom: 1.5rem; font-size: 1.5rem; color: var(--dark);">📋 Scenario List</h2>
+            <div class="scenarios-grid">
+                {% for scenario in scenarios %}
+                <div class="scenario-card {% if scenario.is_approved %}approved{% else %}pending{% endif %}">
+                    <div class="scenario-date">
+                        {{ scenario.scenario_date|date:"M d" }}
+                    </div>
+
+                    <span class="scenario-type">
+                        <i class="fas fa-tag"></i> {{ scenario.get_scenario_type_display }}
+                    </span>
+
+                    <div class="scenario-description">
+                        {{ scenario.description }}
+                    </div>
+
+                    <div class="scenario-meta">
+                        <div class="scenario-credit">
+                            Credit: {{ scenario.credit_count }} day{% if scenario.credit_count != 1 %}s{% endif %}
+                        </div>
+                        <span class="status-badge {% if scenario.is_approved %}status-approved{% else %}status-pending{% endif %}">
+                            {% if scenario.is_approved %}✓ Approved{% else %}⏳ Pending{% endif %}
+                        </span>
+                    </div>
+
+                    <div class="action-btns" style="margin-top: 1rem;">
+                        {% if not scenario.is_approved %}
+                        <button class="btn btn-sm btn-approve" onclick="approveScenario({{ scenario.id }})">
+                            <i class="fas fa-check"></i> Approve
+                        </button>
+                        {% endif %}
+                        <button class="btn btn-sm" onclick="deleteScenario({{ scenario.id }})">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Table View -->
+            <div class="table-container">
+                <h3 style="margin-bottom: 1.5rem;">📊 Detailed View</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>📅 Date</th>
+                            <th>Scenario Type</th>
+                            <th>Description</th>
+                            <th>Credit</th>
+                            <th>Status</th>
+                            <th>Created By</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for scenario in scenarios %}
+                        <tr>
+                            <td><strong>{{ scenario.scenario_date|date:"M d, Y" }}</strong></td>
+                            <td>{{ scenario.get_scenario_type_display }}</td>
+                            <td>{{ scenario.description|truncatewords:5 }}</td>
+                            <td><strong>{{ scenario.credit_count }}</strong> day{% if scenario.credit_count != 1 %}s{% endif %}</td>
+                            <td>
+                                <span class="status-badge {% if scenario.is_approved %}status-approved{% else %}status-pending{% endif %}">
+                                    {% if scenario.is_approved %}Approved{% else %}Pending{% endif %}
+                                </span>
+                            </td>
+                            <td>{{ scenario.created_by.get_full_name }}</td>
+                            <td>
+                                <div class="action-btns">
+                                    {% if not scenario.is_approved %}
+                                    <button class="btn btn-sm btn-approve" onclick="approveScenario({{ scenario.id }})">Approve</button>
+                                    {% endif %}
+                                    <button class="btn btn-sm" onclick="deleteScenario({{ scenario.id }})">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="table-container">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🏥</div>
+                    <h3>No Half-Day Scenarios</h3>
+                    <p>There are no half-day scenarios for your branch. <a href="{% url 'add-half-day-scenario' %}" style="color: var(--primary); text-decoration: underline;">Add one now</a></p>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    <script>
+        function filterScenarios(status) {
+            const params = new URLSearchParams();
+            if (status) params.append('status', status);
+            window.location.href = `{% url 'half-day-scenarios' %}?${params.toString()}`;
+        }
+
+        function approveScenario(scenarioId) {
+            if (confirm('Approve this half-day scenario?')) {
+                // Make AJAX request to approve
+                fetch(`/holiday/api/half-day/${scenarioId}/approve/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred');
+                });
+            }
+        }
+
+        function deleteScenario(scenarioId) {
+            if (confirm('Are you sure you want to delete this scenario?')) {
+                // Make AJAX request to delete
+                fetch(`/holiday/api/half-day/${scenarioId}/delete/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    }
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred');
+                });
+            }
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+    </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect,get_object_or_404
 from .forms import *
 from django.http import HttpResponse, Http404
-from .tasks import *
+# from .tasks import *
 # Create your views here.
 from django.utils.timezone import make_aware
 import datetime
@@ -13,6 +13,8 @@ from datetime import datetime,timedelta
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.utils.timezone import now
 import json
+from django.views.decorators.http import require_http_methods
+from django.contrib.auth import authenticate, login, logout
 from datetime import date, timedelta
 from decimal import Decimal
 from django.core.paginator import Paginator
@@ -21,7 +23,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Sum
-from .signals import recalculate_leave_balance_for_employee
+# from .signals import recalculate_leave_balance_for_employee
 from django.db.models import Q
 import io
 import os
@@ -1850,47 +1852,68 @@ def delete_company(request, company_id):
 
 
 
-def leave_balance_view(request):
-    from datetime import date, timedelta
-    from dateutil.relativedelta import relativedelta
-    from django.db.models import Sum, F, OuterRef, Subquery, IntegerField
-
-    today = date.today()
-    start_of_month = today.replace(day=1)
-    end_of_month = (start_of_month + relativedelta(months=1)) - timedelta(days=1)
-
-    # ✅ Subquery to count approved comp-off days per employee
-    compoff_subquery = CompOffRequest.objects.filter(
-        employee=OuterRef('employee'),
-        status="Approved",
-        from_date__lte=end_of_month,
-        to_date__gte=start_of_month
-    ).annotate(
-        total_days=(F('to_date') - F('from_date') + timedelta(days=1))
-    ).values('total_days')[:1]
-
-    # ✅ Get leave balances and comp-off count
-    leave_balances = LeaveBalance.objects.select_related('employee').annotate(
-        compoff_days=Subquery(compoff_subquery, output_field=IntegerField())
-    )
-
-
-    month_filter = request.GET.get("month")
-
-    if month_filter:
-        # If a month is selected, load history for that month
-        leave_balances = LeaveBalanceHistory.objects.select_related("employee").filter(month=month_filter)
-    else:
-        # Default: show current month live balances
-        leave_balances = LeaveBalance.objects.select_related("employee").all()
-    months = LeaveBalanceHistory.objects.values_list("month", flat=True).distinct()
-
-    return render(request, "leave_balance/leave_balance3.html", {
-        "leave_balances": leave_balances,
-        # "month": today.strftime("%B %Y"),
-        "month": months,
-        "selected_month": month_filter or "Current Month"
-    })
+# def leave_balance_view(request):
+#     """
+#     Display leave balance with month filter
+#     Shows current month by default, with option to view history
+#     """
+#     # Get selected month from query params
+#     month_filter = request.GET.get("month")
+    
+#     # Get all unique months from history for the dropdown
+#     available_months = (
+#         LeaveBalanceHistory.objects
+#         .values_list("month", flat=True)
+#         .distinct()
+#         .order_by("-month")
+#     )
+    
+#     # Filter by company if user has company association
+#     company_filter = {}
+#     if hasattr(request.user, 'employee_profile'):
+#         company_filter['employee__company'] = request.user.employee_profile.company
+    
+#     if month_filter:
+#         # Show historical data for selected month
+#         try:
+#             selected_month = date.fromisoformat(month_filter)
+#             leave_balances = LeaveBalanceHistory.objects.filter(
+#                 month=selected_month,
+#                 **company_filter
+#             ).select_related('employee', 'employee__company', 'employee__branch')
+            
+#             display_month = selected_month.strftime("%B %Y")
+#             is_current = False
+            
+#         except (ValueError, TypeError):
+#             # Invalid date format, fallback to current
+#             leave_balances = LeaveBalance.objects.filter(
+#                 **company_filter
+#             ).select_related('employee', 'employee__company', 'employee__branch')
+            
+#             display_month = "Current Month"
+#             is_current = True
+#     else:
+#         # Show current leave balances
+#         leave_balances = LeaveBalance.objects.filter(
+#             **company_filter
+#         ).select_related('employee', 'employee__company', 'employee__branch')
+        
+#         display_month = "Current Month"
+#         is_current = True
+    
+#     # Order by employee code
+#     leave_balances = leave_balances.order_by('employee__employee_code')
+    
+#     context = {
+#         "leave_balances": leave_balances,
+#         "available_months": available_months,
+#         "selected_month": month_filter,
+#         "display_month": display_month,
+#         "is_current": is_current,
+#     }
+    
+#     return render(request, "leave_balance/leave_balance.html", context)
 
 
 
@@ -1901,28 +1924,28 @@ def employee_leave_history(request, employee_id):
     html = render_to_string("leave_balance/_leave_history_table.html", {"history": history})
     return JsonResponse({"html": html})
 
-from website.signals import update_leave_balance_on_attendance
+# from website.signals import update_leave_balance_on_attendance
 from django.views.decorators.http import require_POST
 
-@require_POST
-def recalculate_leave_balances(request):
-    """
-    Manually triggers recalculation of all leave balances.
-    Uses the SAME attendance-based logic as the signal.
-    """
-    from website.models import LeaveBalance, Attendance
+# @require_POST
+# def recalculate_leave_balances(request):
+#     """
+#     Manually triggers recalculation of all leave balances.
+#     Uses the SAME attendance-based logic as the signal.
+#     """
+#     from website.models import LeaveBalance, Attendance
 
-    records = LeaveBalance.objects.select_related("employee")
+#     records = LeaveBalance.objects.select_related("employee")
 
-    for record in records:
-        employee = record.employee
-        last_att = Attendance.objects.filter(employee=employee).order_by("-date").first()
+#     for record in records:
+#         employee = record.employee
+#         last_att = Attendance.objects.filter(employee=employee).order_by("-date").first()
 
-        if last_att:
-            # call your existing signal method
-            update_leave_balance_on_attendance(Attendance, last_att, created=False)
+#         if last_att:
+#             # call your existing signal method
+#             update_leave_balance_on_attendance(Attendance, last_att, created=False)
 
-    return JsonResponse({"status": "ok", "message": "Leave balances recalculated successfully!"})
+#     return JsonResponse({"status": "ok", "message": "Leave balances recalculated successfully!"})
 
 
 # def leave_credit_policy_view(request):
@@ -1938,6 +1961,538 @@ def recalculate_leave_balances(request):
 #         "policy": policy
 #     })
 
+
+
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.db.models import Sum, Min, Max
+from datetime import date, timedelta
+from decimal import Decimal
+from website.models import LeaveBalance, Employee, PayrollSettings, Attendance, CompOffRequest
+from django.db import transaction
+
+
+def get_user_company(user):
+    """Get company from user via employee relationship"""
+    try:
+        employee = Employee.objects.get(user=user)
+        return employee.company
+    except Employee.DoesNotExist:
+        return None
+
+
+def get_payroll_period_for_date(payroll_settings, target_date):
+    """Determine which payroll period a date falls into"""
+    if payroll_settings.is_auto:
+        first_day = target_date.replace(day=1)
+        if target_date.month == 12:
+            last_day = date(target_date.year + 1, 1, 1) - timedelta(days=1)
+        else:
+            last_day = date(target_date.year, target_date.month + 1, 1) - timedelta(days=1)
+        return first_day, last_day
+    else:
+        from_day = payroll_settings.from_date
+        to_day = payroll_settings.to_date
+        
+        if from_day < to_day:
+            if target_date.day >= from_day:
+                from_d = date(target_date.year, target_date.month, from_day)
+                to_d = date(target_date.year, target_date.month, to_day)
+            else:
+                prev_month = target_date.month - 1
+                prev_year = target_date.year
+                if prev_month == 0:
+                    prev_month = 12
+                    prev_year -= 1
+                from_d = date(prev_year, prev_month, from_day)
+                to_d = date(prev_year, prev_month, to_day)
+        else:
+            if target_date.day >= from_day:
+                from_d = date(target_date.year, target_date.month, from_day)
+                next_month = target_date.month + 1
+                next_year = target_date.year
+                if next_month > 12:
+                    next_month = 1
+                    next_year += 1
+                to_d = date(next_year, next_month, to_day)
+            else:
+                prev_month = target_date.month - 1
+                prev_year = target_date.year
+                if prev_month == 0:
+                    prev_month = 12
+                    prev_year -= 1
+                from_d = date(prev_year, prev_month, from_day)
+                to_d = date(target_date.year, target_date.month, to_day)
+        
+        return from_d, to_d
+
+
+def get_all_payroll_periods_from_attendance(company, payroll_settings):
+    """Get all unique payroll periods that have attendance data"""
+    periods = []
+    
+    attendance_stats = Attendance.objects.filter(
+        employee__company=company
+    ).aggregate(
+        min_date=Min('date'),
+        max_date=Max('date')
+    )
+    
+    min_date = attendance_stats.get('min_date')
+    max_date = attendance_stats.get('max_date')
+    
+    if not min_date or not max_date:
+        return periods
+    
+    current_date = min_date
+    seen_periods = set()
+    
+    while current_date <= max_date:
+        from_d, to_d = get_payroll_period_for_date(payroll_settings, current_date)
+        
+        period_key = f"{from_d}_{to_d}"
+        
+        if period_key not in seen_periods:
+            seen_periods.add(period_key)
+            
+            has_attendance = Attendance.objects.filter(
+                employee__company=company,
+                date__gte=from_d,
+                date__lte=to_d
+            ).exists()
+            
+            if has_attendance:
+                label = f"{from_d.strftime('%b %d')} - {to_d.strftime('%b %d, %Y')}"
+                periods.append({
+                    'label': label,
+                    'from_date': from_d,
+                    'to_date': to_d,
+                    'display_date': to_d,
+                })
+        
+        current_date += timedelta(days=1)
+    
+    periods.sort(key=lambda x: x['to_date'], reverse=True)
+    
+    return periods
+
+
+def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to_date):
+    """Calculate leave balance for a specific payroll period"""
+    
+    # ============================================
+    # STEP 1: Opening Balance - FIXED!
+    # Get PREVIOUS PERIOD's final balance (by period dates, not by ID!)
+    # ============================================
+    prev_period_end = from_date - timedelta(days=1)  # Day before this period starts
+    prev_from, prev_to = get_payroll_period_for_date(payroll_settings, prev_period_end)
+    
+    # Get the PREVIOUS PERIOD's record
+    previous_record = (
+        LeaveBalance.objects
+        .filter(
+            employee=employee,
+            period_from_date=prev_from,  # ✅ Search PREVIOUS PERIOD specifically!
+            period_to_date=prev_to       # ✅ Search PREVIOUS PERIOD specifically!
+        )
+        .first()
+    )
+    
+    opening_balance = (
+        previous_record.final_leave_balance 
+        if previous_record 
+        else Decimal("0.00")
+    )
+    
+    # Handle reset logic
+    if not getattr(payroll_settings, 'carry_forward', True):
+        reset_month = getattr(payroll_settings, 'reset_month', None)
+        if reset_month and reset_month == to_date.month:
+            opening_balance = Decimal("0.00")
+    
+    # ============================================
+    # STEP 2: Attendance for THIS period
+    # ============================================
+    attendance_records = Attendance.objects.filter(
+        employee=employee,
+        date__gte=from_date,
+        date__lte=to_date
+    )
+    
+    total_days = attendance_records.count()
+    
+    # ============================================
+    # STEP 3: Paid Days
+    # ============================================
+    paid_days_sum = attendance_records.aggregate(
+        total=Sum("count")
+    )["total"]
+    paid_days = paid_days_sum if paid_days_sum else Decimal("0.00")
+    
+    # ============================================
+    # STEP 4: Leave Taken
+    # ============================================
+    leave_taken = Decimal(str(total_days)) - paid_days
+    if leave_taken < 0:
+        leave_taken = Decimal("0.00")
+    
+    # ============================================
+    # STEP 5: Late
+    # ============================================
+    total_late_minutes = attendance_records.aggregate(
+        total=Sum("late")
+    )["total"]
+    total_late_minutes = total_late_minutes if total_late_minutes else 0
+    
+    late_days = Decimal(str(total_late_minutes)) / Decimal("480")
+    
+    # ============================================
+    # STEP 6: Comp-Off
+    # ============================================
+    compoff_total = (
+        CompOffRequest.objects
+        .filter(
+            employee=employee,
+            status="Approved",
+            from_date__gte=from_date,
+            to_date__lte=to_date
+        )
+        .aggregate(total=Sum("count"))["total"]
+        or Decimal("0.00")
+    )
+    
+    # ============================================
+    # STEP 7: LWP
+    # ============================================
+    balance_before_credit = opening_balance + compoff_total - leave_taken - late_days
+    
+    if balance_before_credit < 0:
+        leave_without_pay = abs(balance_before_credit)
+        leave_balance = Decimal("0.00")
+    else:
+        leave_without_pay = Decimal("0.00")
+        leave_balance = balance_before_credit
+    
+    # ============================================
+    # STEP 8: Leave Credit Policy
+    # ============================================
+    try:
+        policy = employee.company.leave_credit_policy
+        present_days_for_credit = int(paid_days)
+        
+        if present_days_for_credit <= policy.credit_1_limit:
+            monthly_credit = policy.credit_low
+        elif present_days_for_credit <= policy.credit_2_limit:
+            monthly_credit = policy.credit_mid
+        else:
+            monthly_credit = policy.credit_high
+        
+        monthly_cap = Decimal(str(payroll_settings.earned_leaves_per_year)) / Decimal("12")
+        monthly_credit = min(Decimal(str(monthly_credit)), monthly_cap)
+    except:
+        monthly_credit = Decimal("1.00")
+    
+    # ============================================
+    # STEP 9: Closing Balance
+    # ============================================
+    closing_balance = leave_balance + monthly_credit
+    
+    final_leave_balance = min(
+        closing_balance,
+        Decimal(str(payroll_settings.max_leave_balance))
+    )
+    
+    # ============================================
+    # STEP 10: Save Record (with period dates)
+    # ============================================
+    LeaveBalance.objects.update_or_create(
+        employee=employee,
+        period_from_date=from_date,
+        period_to_date=to_date,
+        defaults={
+            'opening_balance': opening_balance,
+            'leave_taken': leave_taken,
+            'number_of_days_present': paid_days,
+            'total_number_of_days': total_days,
+            'late': total_late_minutes,
+            'compoff': compoff_total,
+            'leave_without_pay': leave_without_pay,
+            'leave_balance': leave_balance,
+            'closing_balance': closing_balance,
+            'final_leave_balance': final_leave_balance
+        }
+    )
+    
+    return final_leave_balance
+
+
+def generate_leave_balances_for_all_periods(company, payroll_settings):
+    """Generate leave balance records for ALL periods"""
+    
+    periods = get_all_payroll_periods_from_attendance(company, payroll_settings)
+    
+    if not periods:
+        return 0
+    
+    employees = Employee.objects.filter(company=company, status='Active')
+    
+    total_calculated = 0
+    
+    for period_info in periods:
+        from_date = period_info['from_date']
+        to_date = period_info['to_date']
+        
+        for employee in employees:
+            try:
+                with transaction.atomic():
+                    calculate_leave_balance_for_period(
+                        employee, 
+                        payroll_settings, 
+                        from_date, 
+                        to_date
+                    )
+                    total_calculated += 1
+            except Exception as e:
+                print(f"Error: {employee.employee_code} {from_date}-{to_date}: {e}")
+                continue
+    
+    return total_calculated
+
+
+@login_required
+def leave_balance_view(request):
+    """
+    Display leave balance report - Filters by selected period
+    """
+    user_company = get_user_company(request.user)
+    
+    context = {
+        'user_company_id': user_company.id if user_company else None,
+        'can_recalculate': bool(user_company),
+    }
+    
+    if not user_company:
+        context.update({
+            'leave_balances': [],
+            'display_month': date.today().strftime("%B %Y"),
+            'available_periods': [],
+        })
+        return render(request, 'leave_balance/leave_balance_report.html', context)
+    
+    try:
+        payroll_settings = PayrollSettings.objects.get(company=user_company)
+    except PayrollSettings.DoesNotExist:
+        context.update({
+            'leave_balances': [],
+            'error': 'Payroll settings not configured.'
+        })
+        return render(request, 'leave_balance/leave_balance_report.html', context)
+    
+    # Get ALL available periods
+    available_periods = get_all_payroll_periods_from_attendance(user_company, payroll_settings)
+    
+    # Get selected period from request
+    selected_period_str = request.GET.get('period')
+    
+    # Find selected period
+    selected_period = None
+    if selected_period_str and available_periods:
+        for period in available_periods:
+            if str(period['to_date']) == selected_period_str:
+                selected_period = period
+                break
+    
+    if not selected_period and available_periods:
+        selected_period = available_periods[0]
+    
+    # ==========================================
+    # Filter by selected period (period dates!)
+    # ==========================================
+    if selected_period:
+        leave_balances = LeaveBalance.objects.filter(
+            employee__company=user_company,
+            employee__status='Active',
+            period_from_date=selected_period['from_date'],
+            period_to_date=selected_period['to_date']
+        ).select_related('employee').order_by(
+            'employee__first_name',
+            'employee__last_name'
+        )
+    else:
+        leave_balances = []
+    
+    # Format display
+    if selected_period:
+        display_month = selected_period['label']
+    else:
+        display_month = date.today().strftime("%b %d - %b %d, %Y")
+    
+    # Summary stats
+    total_employees = leave_balances.count()
+    
+    if leave_balances.exists():
+        total_lwp = sum(lb.leave_without_pay for lb in leave_balances)
+        total_leaves_taken = sum(lb.leave_taken for lb in leave_balances)
+        avg_balance = sum(lb.final_leave_balance for lb in leave_balances) / total_employees
+    else:
+        total_lwp = Decimal("0.00")
+        total_leaves_taken = Decimal("0.00")
+        avg_balance = Decimal("0.00")
+    
+    context.update({
+        'leave_balances': leave_balances,
+        'display_month': display_month,
+        'available_periods': available_periods,
+        'selected_period': str(selected_period['to_date']) if selected_period else None,
+        'user_company_id': user_company.id,
+        'user_company_name': getattr(user_company, 'name', 'Your Company'),
+        'can_recalculate': True,
+        'total_employees': total_employees,
+        'total_lwp': float(total_lwp) if total_lwp else 0,
+        'total_leaves_taken': float(total_leaves_taken) if total_leaves_taken else 0,
+        'avg_balance': float(avg_balance) if avg_balance else 0,
+    })
+    
+    return render(request, 'leave_balance/leave_balance_report.html', context)
+
+
+@login_required
+def recalculate_leave_balances_view(request):
+    """Recalculate leave balances for all periods and employees"""
+    from django.http import JsonResponse
+    
+    if request.method != 'POST':
+        return JsonResponse({
+            'success': False,
+            'message': 'Invalid request method.'
+        }, status=405)
+    
+    user_company = get_user_company(request.user)
+    
+    if not user_company:
+        return JsonResponse({
+            'success': False,
+            'message': 'No company associated.'
+        }, status=400)
+    
+    try:
+        payroll_settings = PayrollSettings.objects.get(company=user_company)
+        
+        calculated_count = generate_leave_balances_for_all_periods(user_company, payroll_settings)
+        
+        return JsonResponse({
+            'success': True,
+            'message': f'✓ Successfully calculated {calculated_count} leave balances.',
+            'recalculated_count': calculated_count
+        })
+        
+    except PayrollSettings.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'message': 'Payroll settings not found.'
+        }, status=400)
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'message': f'Error: {str(e)}'
+        }, status=500)
+
+
+@login_required
+def recalc_employee_leave_balance(request, employee_id):
+    """Recalculate for single employee"""
+    if not request.user.is_staff:
+        messages.error(request, "Permission denied.")
+        return redirect("leave-balance")
+    
+    try:
+        employee = Employee.objects.select_related('company').get(id=employee_id)
+        
+        user_company = get_user_company(request.user)
+        if user_company and user_company.id != employee.company_id:
+            messages.error(request, "Company mismatch.")
+            return redirect("leave-balance")
+        
+        payroll_settings = PayrollSettings.objects.get(company=employee.company)
+        
+        periods = get_all_payroll_periods_from_attendance(employee.company, payroll_settings)
+        count = 0
+        
+        for period in periods:
+            calculate_leave_balance_for_period(
+                employee,
+                payroll_settings,
+                period['from_date'],
+                period['to_date']
+            )
+            count += 1
+        
+        messages.success(request, f"✓ Recalculated {count} periods for {employee.first_name}")
+    except Exception as e:
+        messages.error(request, f"Error: {str(e)}")
+    
+    return redirect("leave-balance")
+
+
+@login_required
+def recalc_all_employees(request):
+    """Recalculate for all employees"""
+    if not request.user.is_staff:
+        messages.error(request, "Permission denied.")
+        return redirect("leave-balance")
+    
+    user_company = get_user_company(request.user)
+    
+    if not user_company:
+        messages.error(request, "No company.")
+        return redirect("leave-balance")
+    
+    try:
+        payroll_settings = PayrollSettings.objects.get(company=user_company)
+        count = generate_leave_balances_for_all_periods(user_company, payroll_settings)
+        messages.success(request, f"✓ Generated leave balances for {count} combinations.")
+    except PayrollSettings.DoesNotExist:
+        messages.error(request, "Payroll settings not found.")
+    except Exception as e:
+        messages.error(request, f"Error: {str(e)}")
+    
+    return redirect("leave-balance")
+
+
+@login_required
+def employee_leave_detail(request, employee_id):
+    """Show detailed leave history for specific employee"""
+    try:
+        employee = Employee.objects.select_related('company').get(id=employee_id)
+        
+        if not request.user.is_staff:
+            user_employee = Employee.objects.filter(user=request.user).first()
+            if not user_employee or user_employee.id != employee_id:
+                messages.error(request, "Permission denied.")
+                return redirect("leave-balance")
+        
+        history = LeaveBalance.objects.filter(
+            employee=employee
+        ).order_by('-period_to_date')
+        
+        current_balance = history.first()
+        
+        context = {
+            'employee': employee,
+            'history': history,
+            'current_balance': current_balance,
+        }
+        
+        return render(request, 'leave_balance/employee_detail.html', context)
+    
+    except Employee.DoesNotExist:
+        messages.error(request, "Employee not found.")
+        return redirect("leave-balance")
+    except Exception as e:
+        messages.error(request, f"Error: {str(e)}")
+        return redirect("leave-balance")
+        
 
 def update_leave_credit_policy(request):
     """Handle policy updates from the HR UI (AJAX or form submit)."""
@@ -2055,7 +2610,7 @@ def leave_credit_policy_view(request):
         if form.is_valid():
             form.save()
             messages.success(request, "Leave Credit Policy updated successfully!")
-            return redirect("leave-credit-policy")
+            return redirect("admin-dashboard")
         else:
             messages.error(request, "Please correct the errors below.")
     else:
@@ -3231,34 +3786,54 @@ def settings_page(request):
 
 
 # @login_required
-@csrf_exempt
+@login_required
+@require_http_methods(["POST"])
 def save_payroll_settings(request):
-    if request.method == "POST":
-        company = Company.objects.first()  # or request.user.company
+    try:
+        company = Company.objects.first()  # replace with request.user.company later
+
         settings, _ = PayrollSettings.objects.get_or_create(company=company)
 
+        # ✅ Boolean
         settings.is_auto = request.POST.get("is_auto") == "on"
-        settings.from_date = request.POST.get("from_date") or None
-        settings.to_date = request.POST.get("to_date") or None
-        settings.grace_period_minutes = request.POST.get("grace_period_minutes") or 15
-        settings.basic_percentage = request.POST.get("basic_percentage") or 50
-        settings.hra_percentage = request.POST.get("hra_percentage") or 60
-        settings.basic_cap = request.POST.get("basic_cap") or 21000
-        settings.pf_percentage = request.POST.get("pf_percentage") or 12
-        settings.esic_percentage = request.POST.get("esic_percentage") or 3.67
-        settings.gratuity_percentage = request.POST.get("gratuity_percentage") or 4.61
-        settings.professional_tax = request.POST.get("professional_tax") or 200
-        settings.bonus_percentage = request.POST.get("bonus_percentage") or 8.33
+
+        # ✅ Integers
+        settings.from_date = int(request.POST.get("from_date")) if request.POST.get("from_date") else None
+        settings.to_date = int(request.POST.get("to_date")) if request.POST.get("to_date") else None
+        settings.grace_period_minutes = int(request.POST.get("grace_period_minutes", 15))
+        settings.max_leave_balance = int(request.POST.get("max_leave_balance", 30))
+        settings.earned_leaves_per_year = int(request.POST.get("earned_leaves_per_year", 12))
+
+        # ✅ Floats / Decimals
+        settings.basic_percentage = float(request.POST.get("basic_percentage", 50))
+        settings.hra_percentage = float(request.POST.get("hra_percentage", 60))
+        settings.basic_cap = float(request.POST.get("basic_cap", 21000))
+
+        settings.pf_percentage = float(request.POST.get("pf_percentage", 12))
+        settings.esic_percentage = float(request.POST.get("esic_percentage", 3.67))
+        settings.gratuity_percentage = float(request.POST.get("gratuity_percentage", 4.61))
+        settings.bonus_percentage = float(request.POST.get("bonus_percentage", 8.33))
+        settings.professional_tax = float(request.POST.get("professional_tax", 200))
 
         settings.save()
-        return JsonResponse({"success": True, "message": "Payroll settings saved successfully!"})
-    return JsonResponse({"success": False, "message": "Invalid request"})
+        MonthlyEarnedLeaves.sync_with_payroll_settings(settings)
+
+        return JsonResponse({
+            "success": True,
+            "message": "Payroll settings saved successfully!"
+        })
+
+    except Exception as e:
+        return JsonResponse({
+            "success": False,
+            "error": str(e)
+        }, status=400)
 
 
-# @login_required
-@csrf_exempt
+@login_required
+@require_http_methods(["POST"])
 def save_leave_settings(request):
-    if request.method == "POST":
+    try:
         settings, _ = LeaveSettings.objects.get_or_create()
 
         settings.carry_forward = request.POST.get("carry_forward") == "on"
@@ -3266,8 +3841,11 @@ def save_leave_settings(request):
         settings.reset_month = int(reset_month) if reset_month else None
 
         settings.save()
+
         return JsonResponse({"success": True, "message": "Leave settings saved successfully!"})
-    return JsonResponse({"success": False, "message": "Invalid request"})
+
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=400)
 
 
 
@@ -3714,3 +4292,843 @@ def change_password(request):
         form = PasswordChangeForm(request.user)
 
     return render(request, "auth/change_password.html", {"form": form})
+
+
+
+# holiday calendar views
+
+
+# website/views.py - COMPLETE HOLIDAY CALENDAR VIEWS
+
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.http import JsonResponse
+from django.utils import timezone
+from django.views.decorators.http import require_http_methods
+from datetime import timedelta, date
+import json
+
+from .models import Holiday, HolidayType, MonthlyEarnedLeaves, PayrollSettings, Branch, Company
+from .forms import HolidayForm, MonthlyEarnedLeavesForm
+
+# ============================================================================
+# HOLIDAY CALENDAR DASHBOARD VIEW
+# ============================================================================
+
+@login_required
+@require_http_methods(["GET"])
+def holiday_calendar_dashboard(request):
+    """
+    Main Holiday Calendar Dashboard View
+    """
+
+    # ----------------------------------------------------
+    # 1️⃣ Year & Month handling
+    # ----------------------------------------------------
+    year = int(request.GET.get('year', timezone.now().year))
+    month = int(request.GET.get('month', timezone.now().month))
+
+    if not 1 <= month <= 12:
+        month = timezone.now().month
+
+    month_name = calendar.month_name[month]
+
+    # ----------------------------------------------------
+    # 2️⃣ Payroll Settings (company-wide)
+    # ----------------------------------------------------
+    payroll_settings = PayrollSettings.objects.first()
+
+    # ----------------------------------------------------
+    # 3️⃣ Auto-create Monthly Earned Leaves (CRITICAL FIX)
+    # ----------------------------------------------------
+    monthly_leaves = []
+
+    if payroll_settings:
+        annual_leaves = payroll_settings.earned_leaves_per_year or 24
+        monthly_default = (
+            Decimal(str(annual_leaves)) / Decimal('12')
+        ).quantize(Decimal('0.01'))
+
+        for m in range(1, 13):
+            leave, _ = MonthlyEarnedLeaves.objects.get_or_create(
+                payroll_settings=payroll_settings,
+                month=m,
+                year=year,
+                defaults={
+                    'earned_leaves': monthly_default,
+                    'is_auto_generated': True,
+                }
+            )
+            monthly_leaves.append(leave)
+
+        monthly_leaves = sorted(monthly_leaves, key=lambda x: x.month)
+
+    # ----------------------------------------------------
+    # 4️⃣ Holidays for calendar (month-based)
+    # ----------------------------------------------------
+    all_holidays_month = Holiday.objects.filter(
+        holiday_date__year=year,
+        holiday_date__month=month
+    ).order_by('holiday_date')
+
+    # ----------------------------------------------------
+    # 5️⃣ Holidays JSON for calendar UI
+    # ----------------------------------------------------
+    holidays_json = json.dumps([
+        {
+            'id': h.id,
+            'holiday_date': h.holiday_date.isoformat(),
+            'name': h.name,
+            'status': h.status,
+            'is_national': h.is_national,
+        }
+        for h in Holiday.objects.all()
+    ])
+
+    # ----------------------------------------------------
+    # 6️⃣ Upcoming Holidays (next 7 days)
+    # ----------------------------------------------------
+    today = date.today()
+    upcoming_holidays = Holiday.objects.filter(
+        holiday_date__gte=today,
+        holiday_date__lte=today + timedelta(days=7)
+    ).order_by('holiday_date')[:10]
+
+    # ----------------------------------------------------
+    # 7️⃣ Statistics (year-based)
+    # ----------------------------------------------------
+    all_holidays_year = Holiday.objects.filter(holiday_date__year=year)
+
+    total_holidays = all_holidays_year.count()
+    national_holidays = all_holidays_year.filter(is_national=True).count()
+    regional_holidays = all_holidays_year.filter(is_national=False).count()
+    emergency_closures = all_holidays_year.filter(status='emergency').count()
+
+    # ----------------------------------------------------
+    # 8️⃣ Holiday Types (dropdowns)
+    # ----------------------------------------------------
+    holiday_types = HolidayType.objects.all()
+
+    # ----------------------------------------------------
+    # 9️⃣ FINAL CONTEXT (⚠️ NOTHING REMOVED)
+    # ----------------------------------------------------
+    context = {
+        'year': year,
+        'month': month,
+        'month_name': month_name,
+
+        # Holidays
+        'all_holidays': Holiday.objects.all().order_by('holiday_date'),
+        'upcoming_holidays': upcoming_holidays,
+        'holidays_json': holidays_json,
+
+        # Stats
+        'total_holidays': total_holidays,
+        'national_holidays': national_holidays,
+        'regional_holidays': regional_holidays,
+        'emergency_closures': emergency_closures,
+
+        # Earned Leaves
+        'monthly_leaves': monthly_leaves,
+        'payroll_settings': payroll_settings,
+
+        # Dropdowns
+        'holiday_types': holiday_types,
+    }
+
+    return render(request, 'holiday_calendar/dashboard.html', context)
+
+
+
+
+
+# ============================================================================
+# ADD HOLIDAY VIEW
+# ============================================================================
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def add_holiday(request):
+    """
+    Add New Holiday View
+    
+    GET: Shows form (but in modal, so redirects)
+    POST: Creates new Holiday object
+    
+    Form Fields:
+    - holiday_date (DateField): Date of holiday
+    - name (CharField): Name of holiday
+    - holiday_type (ForeignKey): Type of holiday
+    - status (CharField): Status (declared/optional/emergency)
+    - is_national (BooleanField): Apply to all branches?
+    - description (TextField): Optional description
+    
+    Redirects back to dashboard with success/error message
+    """
+    
+    if request.method == 'POST':
+        # Instantiate form with POST data
+        form = HolidayForm(request.POST)
+        
+        if form.is_valid():
+            # Save the holiday
+            holiday = form.save(commit=False)
+            holiday.created_by = request.user
+
+            employee = request.user.employee_profile
+
+            # Map calendar automatically
+            holiday.holiday_calendar = HolidayCalendar.objects.get(
+                branch=employee.branch
+            )
+
+            # Auto-national logic
+            if holiday.holiday_type.type_category == "national":
+                holiday.is_national = True
+
+            holiday.save()
+            
+            # Show success message
+            messages.success(
+                request,
+                f'✓ Holiday "{holiday.name}" ({holiday.holiday_date.strftime("%b %d, %Y")}) '
+                f'added successfully!'
+            )
+            
+            return redirect('holiday-calendar')
+        else:
+            # Form has errors - show them
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f'{field.title()}: {error}')
+            
+            return redirect('holiday-calendar')
+    
+    # GET request - show form (in modal, so just redirect)
+    return redirect('holiday-calendar')
+
+# ============================================================================
+# EDIT HOLIDAY VIEW
+# ============================================================================
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def edit_holiday(request, holiday_id):
+    """
+    Edit Existing Holiday View
+    
+    GET: Loads holiday data via AJAX (see api_get_holiday)
+    POST: Updates existing Holiday object
+    
+    Parameters:
+    - holiday_id: ID of holiday to edit
+    
+    Redirects back to dashboard with success/error message
+    """
+    
+    # Get the holiday or 404
+    holiday = get_object_or_404(Holiday, id=holiday_id)
+    
+    if request.method == 'POST':
+        # Instantiate form with existing instance
+        form = HolidayForm(request.POST, instance=holiday)
+        
+        if form.is_valid():
+            # Save updates
+            form.save()
+            
+            # Show success message
+            messages.success(
+                request,
+                f'✓ Holiday "{holiday.name}" updated successfully!'
+            )
+            
+            return redirect('holiday-calendar')
+        else:
+            # Form has errors
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f'{field.title()}: {error}')
+    
+    return redirect('holiday-calendar')
+
+
+# ============================================================================
+# DELETE HOLIDAY VIEW
+# ============================================================================
+
+@login_required
+@require_http_methods(["POST"])
+def delete_holiday(request, holiday_id):
+    """
+    Delete Holiday View
+    
+    POST only (with confirmation from frontend)
+    
+    Parameters:
+    - holiday_id: ID of holiday to delete
+    
+    Deletes the holiday and redirects with message
+    """
+    
+    # Get the holiday
+    holiday = get_object_or_404(Holiday, id=holiday_id)
+    holiday_name = holiday.name
+    holiday_date = holiday.holiday_date.strftime("%b %d, %Y")
+    
+    # Delete it
+    holiday.delete()
+    
+    # Show success message
+    messages.success(
+        request,
+        f'✓ Holiday "{holiday_name}" ({holiday_date}) deleted successfully!'
+    )
+    
+    return redirect('holiday-calendar')
+
+
+# ============================================================================
+# HOLIDAY LIST VIEW
+# ============================================================================
+
+@login_required
+@require_http_methods(["GET"])
+def holiday_list(request):
+    """
+    Holiday List View (List Tab)
+    
+    Shows all holidays in table format
+    Can filter by type, status, branch
+    
+    Query Parameters:
+    - type: Filter by holiday type
+    - status: Filter by status
+    - branch: Filter by branch
+    
+    Returns: Redirects to dashboard (list is shown in tab)
+    """
+    
+    return redirect('holiday-calendar')
+
+
+# ============================================================================
+# EARNED LEAVES CONFIGURATION VIEW
+# ============================================================================
+
+@login_required
+@require_http_methods(["GET"])
+def earned_leaves_config(request):
+    """
+    Display Monthly Earned Leaves for a selected financial year.
+    Auto-generation is handled via signals.
+    """
+
+    try:
+        year = int(request.GET.get('year', timezone.now().year))
+
+        payroll_settings = PayrollSettings.objects.first()
+        if not payroll_settings:
+            messages.error(request, "❌ Payroll Settings not configured!")
+            return render(request, 'holiday_calendar/dashboard.html', {
+                'monthly_leaves': [],
+                'year': year,
+                'error': 'No payroll settings'
+            })
+
+        # ✅ JUST FETCH – do NOT create here
+        monthly_leaves = MonthlyEarnedLeaves.objects.filter(
+            payroll_settings=payroll_settings,
+            year=year
+        ).order_by('month')
+
+        # Safety check (optional but good)
+        if not monthly_leaves.exists():
+            messages.warning(
+                request,
+                "⚠️ Earned leaves not found for this year. Please check Payroll Settings."
+            )
+
+        # Statistics
+        total_earned_leaves = sum(
+            float(leave.earned_leaves) for leave in monthly_leaves
+        )
+        auto_count = monthly_leaves.filter(is_auto_generated=True).count()
+        manual_count = monthly_leaves.count() - auto_count
+
+        context = {
+            'monthly_leaves': monthly_leaves,
+            'year': year,
+            'payroll_settings': payroll_settings,
+            'total_earned_leaves': round(total_earned_leaves, 2),
+            'auto_generated_count': auto_count,
+            'manual_count': manual_count,
+        }
+
+        return render(request, 'holiday_calendar/dashboard.html', context)
+
+    except Exception as e:
+        messages.error(request, f"❌ Error loading earned leaves: {str(e)}")
+        return render(request, 'holiday_calendar/dashboard.html', {
+            'monthly_leaves': [],
+            'year': timezone.now().year,
+        })
+
+
+@login_required
+@require_http_methods(["POST"])
+def edit_earned_leave(request, leave_id):
+    """
+    ✅ Edit Monthly Earned Leave Value
+    
+    Updates the earned_leaves field for a specific month.
+    
+    Example:
+    POST /holiday/earned-leave/1/edit/
+    Data: {
+        'earned_leaves': '3.5',
+        'is_auto_generated': 'on'
+    }
+    """
+    
+    try:
+        # Get the leave record
+        leave = MonthlyEarnedLeaves.objects.get(id=leave_id)
+        
+        # Get form data
+        earned_leaves_value = request.POST.get('earned_leaves', '').strip()
+        is_auto_generated = request.POST.get('is_auto_generated', 'off') == 'on'
+        
+        # Validate input
+        if not earned_leaves_value:
+            messages.error(request, '❌ Earned leaves value is required!')
+            return redirect('holiday-calendar')
+        
+        # Try to convert to Decimal
+        try:
+            earned_leaves_decimal = Decimal(earned_leaves_value)
+        except:
+            messages.error(
+                request,
+                f'❌ Invalid value "{earned_leaves_value}". Use decimal numbers like 2.5 or 3.75'
+            )
+            return redirect('holiday-calendar')
+        
+        # Validate range (0-31 days)
+        if earned_leaves_decimal < 0 or earned_leaves_decimal > 31:
+            messages.error(request, '❌ Earned leaves must be between 0 and 31 days!')
+            return redirect('holiday-calendar')
+        
+        # Update the record
+        leave.earned_leaves = earned_leaves_decimal
+        leave.is_auto_generated = is_auto_generated
+        leave.save()
+        
+        # Get month name
+        month_names = {
+            1: 'January', 2: 'February', 3: 'March', 4: 'April',
+            5: 'May', 6: 'June', 7: 'July', 8: 'August',
+            9: 'September', 10: 'October', 11: 'November', 12: 'December'
+        }
+        month_name = month_names.get(leave.month, 'Month')
+        status_text = "Manual" if not is_auto_generated else "Auto"
+        
+        messages.success(
+            request,
+            f'✓ {month_name} {leave.year}: Updated to {earned_leaves_decimal} days ({status_text})'
+        )
+    
+    except MonthlyEarnedLeaves.DoesNotExist:
+        messages.error(request, '❌ Earned leave record not found!')
+    except ValueError as e:
+        messages.error(request, f'❌ Invalid input: {str(e)}')
+    except Exception as e:
+        messages.error(request, f'❌ Error updating earned leaves: {str(e)}')
+    
+    return redirect('holiday-calendar')
+
+
+@login_required
+@require_http_methods(["GET"])
+def api_earned_leaves(request):
+    """
+    ✅ API Endpoint - Get Earned Leaves as JSON
+    
+    Used by JavaScript to fetch earned leaves data.
+    
+    Example:
+    GET /api/earned-leaves/?year=2025
+    
+    Response:
+    [
+        {
+            'id': 1,
+            'month': 1,
+            'month_name': 'January',
+            'year': 2025,
+            'earned_leaves': '3.50',
+            'is_auto_generated': False
+        },
+        ...
+    ]
+    """
+    
+    try:
+        year = request.GET.get('year', timezone.now().year)
+        payroll_settings = PayrollSettings.objects.first()
+        
+        if not payroll_settings:
+            return JsonResponse({'error': 'No payroll settings'}, status=400)
+        
+        leaves = MonthlyEarnedLeaves.objects.filter(
+            payroll_settings=payroll_settings,
+            year=year
+        ).order_by('month')
+        
+        month_names = {
+            1: 'January', 2: 'February', 3: 'March', 4: 'April',
+            5: 'May', 6: 'June', 7: 'July', 8: 'August',
+            9: 'September', 10: 'October', 11: 'November', 12: 'December'
+        }
+        
+        data = [
+            {
+                'id': leave.id,
+                'month': leave.month,
+                'month_name': month_names.get(leave.month, 'Unknown'),
+                'year': leave.year,
+                'earned_leaves': str(leave.earned_leaves),
+                'is_auto_generated': leave.is_auto_generated,
+            }
+            for leave in leaves
+        ]
+        
+        return JsonResponse(data, safe=False)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+@require_http_methods(["GET"])
+def half_day_scenarios(request):
+    """
+    Half-Day Scenarios View
+    
+    Shows list of half-day closures (emergencies)
+    Allows adding new scenarios
+    
+    Returns: Redirects to dashboard (shown in tab)
+    """
+    
+    return redirect('holiday-calendar')
+
+
+# ============================================================================
+# ADD HALF-DAY SCENARIO VIEW
+# ============================================================================
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def add_half_day_scenario(request):
+    """
+    Add Half-Day Scenario View
+    
+    Creates emergency half-day closure records
+    
+    Returns: Redirects to dashboard with message
+    """
+    
+    if request.method == 'POST':
+        # Handle half-day scenario creation
+        # Similar to add_holiday but with different form
+        
+        return redirect('holiday-calendar')
+    
+    return redirect('holiday-calendar')
+
+
+# ============================================================================
+# API ENDPOINTS - JSON RESPONSES FOR AJAX
+# ============================================================================
+
+@login_required
+@require_http_methods(["GET"])
+def api_get_holiday(request, holiday_id):
+    """
+    API: Get Single Holiday Data
+    
+    Used by AJAX to populate edit modal
+    
+    Returns: JSON object with holiday data
+    
+    Example Response:
+    {
+        'id': 1,
+        'holiday_date': '2025-01-26',
+        'name': 'Republic Day',
+        'holiday_type': 1,
+        'status': 'declared',
+        'description': 'National holiday',
+        'is_national': true
+    }
+    """
+    
+    try:
+        # Get the holiday
+        holiday = Holiday.objects.get(id=holiday_id)
+        
+        # Build response data
+        data = {
+            'id': holiday.id,
+            'holiday_date': holiday.holiday_date.isoformat(),
+            'name': holiday.name,
+            'holiday_type': holiday.holiday_type.id,
+            'status': holiday.status,
+            'description': holiday.description or '',
+            'is_national': holiday.is_national,
+        }
+        
+        return JsonResponse(data)
+    
+    except Holiday.DoesNotExist:
+        # Holiday not found
+        return JsonResponse({'error': 'Holiday not found'}, status=404)
+    except Exception as e:
+        # Other error
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@login_required
+@require_http_methods(["GET"])
+def api_holidays_json(request):
+    """
+    API: Get All Holidays
+    
+    Returns JSON array of all holidays
+    Used to populate holiday list table
+    
+    Query Parameters:
+    - type: Filter by holiday type
+    - status: Filter by status
+    - year: Filter by year
+    
+    Example Response:
+    [
+        {
+            'id': 1,
+            'holiday_date': '2025-01-26',
+            'name': 'Republic Day',
+            'holiday_type': 'National',
+            'status': 'declared',
+            'is_national': true
+        },
+        ...
+    ]
+    """
+    
+    # Start with all holidays
+    holidays = Holiday.objects.all().order_by('holiday_date')
+    
+    # Apply filters if provided
+    holiday_type = request.GET.get('type')
+    if holiday_type:
+        holidays = holidays.filter(holiday_type__type_category=holiday_type)
+    
+    status = request.GET.get('status')
+    if status:
+        holidays = holidays.filter(status=status)
+    
+    year = request.GET.get('year')
+    if year:
+        holidays = holidays.filter(holiday_date__year=year)
+    
+    # Build response data
+    data = [
+        {
+            'id': h.id,
+            'holiday_date': h.holiday_date.isoformat(),
+            'name': h.name,
+            'holiday_type': h.holiday_type.name,
+            'status': h.status,
+            'is_national': h.is_national,
+        }
+        for h in holidays
+    ]
+    
+    return JsonResponse(data, safe=False)
+
+
+@login_required
+@require_http_methods(["GET"])
+def api_earned_leaves_json(request):
+    """
+    API: Get Earned Leaves Data
+    
+    Returns monthly earned leaves for calendar calculations
+    
+    Query Parameters:
+    - year: Filter by year (default: current year)
+    
+    Example Response:
+    [
+        {
+            'id': 1,
+            'month': 1,
+            'year': 2025,
+            'earned_leaves': '2.0',
+            'is_auto_generated': true
+        },
+        ...
+    ]
+    """
+    
+    # Get year from query params or use current
+    year = request.GET.get('year', timezone.now().year)
+    
+    # Get earned leaves
+    leaves = MonthlyEarnedLeaves.objects.filter(year=year).order_by('month')
+    
+    # Build response data
+    data = [
+        {
+            'id': l.id,
+            'month': l.month,
+            'year': l.year,
+            'earned_leaves': str(l.earned_leaves),
+            'is_auto_generated': l.is_auto_generated,
+        }
+        for l in leaves
+    ]
+    
+    return JsonResponse(data, safe=False)
+
+
+# ============================================================================
+# UTILITY VIEWS (Optional but helpful)
+# ============================================================================
+
+@login_required
+@require_http_methods(["GET"])
+def api_holiday_types(request):
+    """
+    API: Get Holiday Types
+    
+    Returns all available holiday types
+    Used to populate type filter and form dropdowns
+    """
+    
+    types = HolidayType.objects.all()
+    
+    data = [
+        {
+            'id': t.id,
+            'name': t.name,
+            'type_category': t.type_category,
+        }
+        for t in types
+    ]
+    
+    return JsonResponse(data, safe=False)
+
+
+@login_required
+@require_http_methods(["GET"])
+def api_payroll_settings(request):
+    """
+    API: Get Payroll Settings
+    
+    Returns company-wide holiday and leave settings
+    """
+    
+    try:
+        settings = PayrollSettings.objects.first()
+        
+        if not settings:
+            return JsonResponse({'error': 'Settings not configured'}, status=404)
+        
+        data = {
+            'id': settings.id,
+            'earned_leaves_per_year': str(settings.earned_leaves_per_year),
+            'financial_year_start_month': settings.financial_year_start_month,
+        }
+        
+        return JsonResponse(data)
+    
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+# ============================================================================
+# HELPER FUNCTIONS (Not views, but useful)
+# ============================================================================
+
+def get_holidays_for_month(year, month):
+    """
+    Helper: Get all holidays for a specific month
+    
+    Parameters:
+    - year: Year
+    - month: Month (1-12)
+    
+    Returns: QuerySet of Holiday objects
+    """
+    
+    return Holiday.objects.filter(
+        holiday_date__year=year,
+        holiday_date__month=month
+    ).order_by('holiday_date')
+
+
+def get_upcoming_holidays(days=7):
+    """
+    Helper: Get upcoming holidays
+    
+    Parameters:
+    - days: Number of days to look ahead (default: 7)
+    
+    Returns: QuerySet of Holiday objects
+    """
+    
+    today = date.today()
+    end_date = today + timedelta(days=days)
+    
+    return Holiday.objects.filter(
+        holiday_date__gte=today,
+        holiday_date__lte=end_date
+    ).order_by('holiday_date')
+
+
+def calculate_working_days(start_date, end_date):
+    """
+    Helper: Calculate working days (excluding holidays and weekends)
+    
+    Parameters:
+    - start_date: Start date
+    - end_date: End date
+    
+    Returns: Number of working days
+    """
+    
+    working_days = 0
+    current = start_date
+    
+    # Get all holidays in date range
+    holidays = Holiday.objects.filter(
+        holiday_date__gte=start_date,
+        holiday_date__lte=end_date
+    )
+    holiday_dates = set(h.holiday_date for h in holidays)
+    
+    # Count working days
+    while current <= end_date:
+        # Skip weekends (Saturday=5, Sunday=6)
+        if current.weekday() < 5:
+            # Skip holidays
+            if current not in holiday_dates:
+                working_days += 1
+        
+        current += timedelta(days=1)
+    
+    return working_days

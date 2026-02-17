@@ -189,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const formData = new FormData();
     // collect fields
     formData.append('is_auto', document.getElementById('is_auto')?.checked ? 'on' : '');
-    ['from_date','to_date','grace_period_minutes','basic_percentage','hra_percentage','basic_cap','pf_percentage','esic_percentage','gratuity_percentage','bonus_percentage','professional_tax'].forEach(id=>{
+    ['from_date','to_date','grace_period_minutes','basic_percentage','hra_percentage','basic_cap','pf_percentage','esic_percentage','gratuity_percentage','bonus_percentage','professional_tax','max_leave_balance','earned_leaves_per_year'].forEach(id=>{
       const el=document.getElementById(id);
       if(el) formData.append(id, el.value);
     });

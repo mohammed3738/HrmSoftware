@@ -137,8 +137,7 @@ class Employee(models.Model):
         verbose_name="Emergency Contact Relation 2"
     )
     emergency_contact_mobile2 = models.CharField(max_length=15, blank=True, verbose_name="Emergency Contact Mobile No 2")
-    status = models.CharField(max_length=50, choices=[("Active", "Active"), ("Pending", "Pending"), ("Left", "Left")] , default='Active'
-)
+    status = models.CharField(max_length=50, choices=[("Active", "Active"), ("Pending", "Pending"), ("Left", "Left")] , default='Active')
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
@@ -304,148 +303,6 @@ class SalaryMaster(models.Model):
         return f"Offboarding for {self.employee} - {self.gross_ctc_pm}"
 
 
-class Attendance(models.Model):
-    employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
-    date = models.DateField(default=now)  # Store attendance date
-    in_time = models.TimeField(null=True, blank=True)
-    out_time = models.TimeField(null=True, blank=True)
-    status = models.CharField(
-        max_length=20,
-        choices=[
-            ("Present", "Present"),
-            ("Late Present", "Late Present"),
-            ("Half Day", "Half Day"),
-            ("Absent", "Absent"),
-        ],
-        default="Absent"
-    )
-    # count = models.DecimalField(max_digits=5, decimal_places=2, default=0)  # 1.0, 0.5, 0
-    count = models.DecimalField( max_digits=5, decimal_places=2, default=Decimal("0.00")
-)
-
-    late = models.IntegerField(default=0)  # Minutes late
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["employee", "date"]),  # Composite index
-            models.Index(fields=["date"]),  # Index for date-based queries
-        ]
-
-    def __str__(self):
-        return f"{self.employee.first_name} {self.employee.employee_code} - {self.date}"
-
-    def calculate_lateness(self):
-        if not self.in_time:
-            return 0
-
-        shift_start = self.employee.shift_start_time
-        if not shift_start:
-            return 0
-
-        in_dt = datetime.datetime.combine(self.date, self.in_time)
-        shift_dt = datetime.datetime.combine(self.date, shift_start)
-
-        lateness = (in_dt - shift_dt).total_seconds() // 60
-        grace = getattr(settings, "GRACE_PERIOD_MINUTES", 15)
-
-        return int(lateness) if lateness > grace else 0
-
-    def calculate_status(self):
-        if not self.in_time or not self.out_time:
-            self.status = "Absent"
-            self.count = Decimal("0.00")
-            return
-
-        shift_start = self.employee.shift_start_time
-        shift_end = self.employee.shift_end_time
-
-        if not shift_start or not shift_end:
-            self.status = "Absent"
-            self.count = Decimal("0.00")
-            return
-
-        # Build datetime
-        in_dt = datetime.datetime.combine(self.date, self.in_time)
-        out_dt = datetime.datetime.combine(self.date, self.out_time)
-
-        shift_start_dt = datetime.datetime.combine(self.date, shift_start)
-        shift_end_dt = datetime.datetime.combine(self.date, shift_end)
-
-        # Night shift handling
-        if shift_end_dt <= shift_start_dt:
-            shift_end_dt += datetime.timedelta(days=1)
-        if out_dt <= in_dt:
-            out_dt += datetime.timedelta(days=1)
-
-        worked_hours = Decimal(
-            (out_dt - in_dt).total_seconds()
-        ) / Decimal("3600")
-
-        expected_hours = Decimal(
-            (shift_end_dt - shift_start_dt).total_seconds()
-        ) / Decimal("3600")
-
-        self.late = self.calculate_lateness()
-
-        # Dynamic rules
-        if worked_hours >= expected_hours:
-            self.status = "Present" if self.late == 0 else "Late Present"
-            self.count = Decimal("1.00")
-
-        elif worked_hours >= expected_hours * Decimal("0.7"):
-            self.status = "Late Present"
-            self.count = Decimal("1.00")
-
-        elif worked_hours >= expected_hours * Decimal("0.5"):
-            self.status = "Half Day"
-            self.count = Decimal("0.50")
-
-        else:
-            self.status = "Absent"
-            self.count = Decimal("0.00")
-            
-    def save(self, *args, **kwargs):
-        # Always calculate before saving
-        self.calculate_status()
-        super().save(*args, **kwargs)
-        
-    # def save(self, *args, **kwargs):
-    #     """Auto calculate count based on in_time and out_time"""
-    #     if self.in_time and self.out_time:
-    #         work_duration = datetime.datetime.combine(datetime.date.today(), self.out_time) - datetime.datetime.combine(datetime.date.today(), self.in_time)
-    #         total_hours = work_duration.total_seconds() / 3600  # Convert seconds to hours
-
-    #         # Assuming 8 hours is a full working day
-    #         self.count = round(min(total_hours / 9, 1), 2)  # Max count = 1 (full day)
-    #     else:
-    #         self.count = 0  # If out_time is missing, count remains 0
-
-    #     super().save(*args, **kwargs)
-
-
-class AttendanceCorrectionRequest(models.Model):
-    attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE, related_name="correction_requests")
-    # requested_by = models.ForeignKey(Employee, on_delete=models.CASCADE)  # The employee requesting the change
-    old_in_time = models.TimeField(null=True, blank=True)
-    old_out_time = models.TimeField(null=True, blank=True)
-    new_in_time = models.TimeField(null=True, blank=True)
-    new_out_time = models.TimeField(null=True, blank=True)
-
-    reason = models.TextField()
-    rejection_reason = models.TextField(null=True, blank=True)
-    status = models.CharField(
-        max_length=20,
-        choices=[("Pending", "Pending"), ("Approved", "Approved"), ("Rejected", "Rejected")],
-        default="Pending",
-    )
-    # reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="approvals")
-    reviewed_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"Correction Request {self.id} - {self.status}"
-
-
 
 
 # atul
@@ -559,6 +416,10 @@ class LeaveBalance(models.Model):
     closing_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
     leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
     final_leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+
+    period_from_date = models.DateField(null=True, blank=True)
+    period_to_date = models.DateField(null=True, blank=True)
+
     def __str__(self):
         return f"{self.employee.first_name} {self.employee.employee_code} - Leave Balance"
 
@@ -602,26 +463,45 @@ class LeaveBalance(models.Model):
         return f"{self.employee.first_name} - Balance: {self.leave_balance}"
 
 
+"""
+Add this model to your models.py
+This creates a monthly snapshot for historical tracking
+"""
+
 class LeaveBalanceHistory(models.Model):
+    """
+    Monthly snapshot of leave balance
+    Allows viewing historical leave data by month
+    """
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
-    month = models.CharField(max_length=20)  # e.g. 'November 2025'
-    opening_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    days_present = models.DecimalField(max_digits=6, decimal_places=2, default=0)
-    leave_taken = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    month = models.DateField(help_text="First day of the month")
+    
+    # Same fields as LeaveBalance for historical tracking
+    opening_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    leave_taken = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    number_of_days_present = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    total_number_of_days = models.IntegerField(default=0)
     late = models.IntegerField(default=0)
-    compoff = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    leave_without_pay = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    closing_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    final_leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    recorded_on = models.DateTimeField(auto_now_add=True)
-
+    compoff = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    leave_without_pay = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    closing_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    final_leave_balance = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
     class Meta:
-        ordering = ['-recorded_on']
-
-
+        unique_together = ['employee', 'month']
+        ordering = ['-month', 'employee']
+        indexes = [
+            models.Index(fields=['employee', 'month']),
+            models.Index(fields=['month']),
+        ]
+    
     def __str__(self):
-        return f"{self.employee.first_name} - {self.month}"
+        return f"{self.employee.first_name} - {self.month.strftime('%B %Y')}"
+
+
 
 
 class LeaveCreditPolicy(models.Model):
@@ -693,6 +573,18 @@ class PayrollSettings(models.Model):
     max_leave_balance = models.IntegerField(default=15)
     earned_leaves_per_year = models.PositiveIntegerField(default=24)
     grace_period_minutes = models.IntegerField(default=15)
+    financial_year_start_month = models.PositiveIntegerField(
+        default=4,  # April (month number 1-12)
+        validators=[MinValueValidator(1), MaxValueValidator(12)],
+        help_text="Financial year start month (1=January, 4=April, etc.)"
+    )
+
+
+    carry_forward = models.BooleanField(default=True)
+    reset_month = models.PositiveIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(12)],
+        null=True, blank=True    
+    )
 
     # Salary master settings
     pf_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=12.00)
@@ -711,22 +603,48 @@ class PayrollSettings(models.Model):
 
     def get_payroll_period(self):
         today = date.today()
+
+        # Auto payroll: calendar month
         if self.is_auto:
-            first_day_of_month = today.replace(day=1)
-            next_month = first_day_of_month.replace(day=28) + timedelta(days=4)
-            last_day_of_month = next_month - timedelta(days=next_month.day)
-            return first_day_of_month, last_day_of_month
+            first_day = today.replace(day=1)
+            next_month = first_day.replace(day=28) + timedelta(days=4)
+            last_day = next_month - timedelta(days=next_month.day)
+            return first_day, last_day
+
+        # Custom payroll period
+        current_year = today.year
+        current_month = today.month
+
+        # Determine start month/year
+        if today.day >= self.from_date:
+            start_month = current_month
+            start_year = current_year
         else:
-            current_month = today.month
-            current_year = today.year
-            start_month = current_month if today.day >= self.from_date else current_month - 1
-            end_month = start_month if self.from_date <= self.to_date else start_month + 1
-            from_date = date(current_year, start_month, self.from_date)
-            to_date = date(current_year, end_month, self.to_date)
-            return from_date, to_date
+            start_month = current_month - 1
+            start_year = current_year
+            if start_month == 0:   # 🔥 FIX
+                start_month = 12
+                start_year -= 1
+
+        # Determine end month/year
+        if self.from_date <= self.to_date:
+            end_month = start_month
+            end_year = start_year
+        else:
+            end_month = start_month + 1
+            end_year = start_year
+            if end_month == 13:   # 🔥 FIX
+                end_month = 1
+                end_year += 1
+
+        from_date = date(start_year, start_month, self.from_date)
+        to_date = date(end_year, end_month, self.to_date)
+
+        return from_date, to_date
 
     def __str__(self):
         return f"Payroll Settings for {self.company.name}"
+    
 
 
 # class SalaryIncrement(models.Model):
@@ -916,3 +834,627 @@ class PayrollRecord(models.Model):
         # avoid referencing removed fields
         return f"{self.employee} - {self.payroll.month:%b %Y}"
     
+
+
+
+
+
+
+
+
+
+class HolidayType(models.Model):
+    """
+    Holiday type/category for classification
+    
+    Examples:
+    - National Holiday (all branches)
+    - Regional/State Holiday (branch-specific)
+    - Company Holiday (all branches)
+    - Emergency Holiday (branch-specific, add anytime)
+    """
+    TYPES = [
+        ('national', 'National Holiday'),
+        ('regional', 'Regional/State Holiday'),
+        ('company', 'Company Holiday'),
+        ('emergency', 'Emergency Holiday'),
+        ('other', 'Other'),
+    ]
+    
+    name = models.CharField(max_length=100, unique=True)
+    type_category = models.CharField(max_length=20, choices=TYPES, default='national')
+    description = models.TextField(blank=True)
+    color_code = models.CharField(max_length=7, default='#2196F3',
+                                 help_text="Hex color for calendar display")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['name']
+        verbose_name_plural = "Holiday Types"
+        indexes = [models.Index(fields=['type_category'])]
+    
+    def __str__(self):
+        return self.name
+
+
+# ============================================
+# NEW MODEL 2: HolidayCalendar
+# ============================================
+
+class HolidayCalendar(models.Model):
+    """
+    Holiday calendar specific to a branch and year
+    
+    Example:
+    - Mumbai Branch, 2025
+    - Chennai Branch, 2025
+    - Delhi Branch, 2025
+    
+    Each branch has its own holiday calendar!
+    """
+    branch = models.ForeignKey('Branch', on_delete=models.CASCADE,
+                              related_name='holiday_calendars')
+    year = models.IntegerField()
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT)
+    
+    class Meta:
+        unique_together = ('branch', 'year')
+        ordering = ['-year']
+        indexes = [models.Index(fields=['branch', 'year'])]
+    
+    def __str__(self):
+        return f"{self.branch.branch_name} - {self.year}"
+
+
+# ============================================
+# NEW MODEL 3: Holiday
+# ============================================
+
+class Holiday(models.Model):
+    """
+    Individual holidays in a branch calendar
+    
+    Examples:
+    1. National Holiday (all branches):
+       - Independence Day (Aug 15)
+       - is_national = True
+    
+    2. Regional Holiday (specific branch):
+       - Pongal (Chennai branch only)
+       - is_national = False
+       - applicable_branches = [Chennai]
+    
+    3. Ad-hoc Holiday (add anytime, e.g., today/tomorrow):
+       - Heavy Rain Closure (Mumbai, today)
+       - status = 'emergency'
+    """
+    HOLIDAY_STATUS = [
+        ('declared', 'Declared'),
+        ('optional', 'Optional'),
+        ('emergency', 'Emergency'),
+    ]
+    
+    holiday_calendar = models.ForeignKey(HolidayCalendar, on_delete=models.CASCADE,
+                                        related_name='holidays')
+    holiday_date = models.DateField()
+    name = models.CharField(max_length=200)  # e.g., "Pongal", "Heavy Rain"
+    holiday_type = models.ForeignKey(HolidayType, on_delete=models.PROTECT)
+    description = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=HOLIDAY_STATUS, default='declared')
+    
+    # Applicability (BRANCH-BASED ONLY)
+    is_national = models.BooleanField(default=False,
+                                     help_text="True = all branches get this")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT)
+    
+    class Meta:
+        unique_together = ('holiday_calendar', 'holiday_date')
+        ordering = ['holiday_date']
+        indexes = [
+            models.Index(fields=['holiday_calendar', 'holiday_date']),
+            models.Index(fields=['holiday_date']),
+        ]
+    
+    def __str__(self):
+        return f"{self.name} - {self.holiday_date}"
+    
+    def is_applicable_to_branch(self, branch):
+        """Check if this holiday applies to a specific branch"""
+        # If national, applies to all branches
+        if self.is_national:
+            return True
+        
+        # If not national, only applies to the branch of this calendar
+        # (because Holiday is created in a specific branch's calendar)
+        return self.holiday_calendar.branch == branch
+
+
+# ============================================
+# NEW MODEL 4: MonthlyEarnedLeaves
+# ============================================
+
+class MonthlyEarnedLeaves(models.Model):
+    """
+    Monthly earned leave credits auto-generated from PayrollSettings
+    
+    Flow:
+    1. Admin creates PayrollSettings with financial_year_start_month = 4 (April)
+    2. MonthlyEarnedLeaves auto-generated with 12 months
+    3. Each month has default credit value
+    4. Admin can customize per month
+    5. Leave balance calculation reads from here
+    
+    Example for April-March year:
+    - April: 2 leaves
+    - May: 1 leave
+    - June: 2 leaves
+    - ...
+    - March: 1 leave
+    """
+    MONTHS = [
+        (1, 'January'),
+        (2, 'February'),
+        (3, 'March'),
+        (4, 'April'),
+        (5, 'May'),
+        (6, 'June'),
+        (7, 'July'),
+        (8, 'August'),
+        (9, 'September'),
+        (10, 'October'),
+        (11, 'November'),
+        (12, 'December'),
+    ]
+    
+    payroll_settings = models.ForeignKey(PayrollSettings, on_delete=models.CASCADE,
+                                        related_name='monthly_earned_leaves')
+    month = models.IntegerField(choices=MONTHS)
+    year = models.IntegerField()
+    earned_leaves = models.DecimalField(max_digits=5, decimal_places=2,
+                                       default=Decimal('0.00'))
+    
+    is_auto_generated = models.BooleanField(default=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ('payroll_settings', 'month', 'year')
+        ordering = ['year', 'month']
+        indexes = [
+            models.Index(fields=['payroll_settings', 'year', 'month']),
+        ]
+    
+    def __str__(self):
+        month_name = dict(self.MONTHS).get(self.month, 'Month')
+        return f"{self.payroll_settings.company.name} - {month_name} {self.year}: {self.earned_leaves} leaves"
+    
+    @classmethod
+    def generate_for_payroll_settings(cls, payroll_settings, start_year=None):
+        """
+        Auto-generate earned leaves for ONE financial year
+        Example: Apr 2025 → Mar 2026
+        """
+
+        if not payroll_settings.financial_year_start_month:
+            return 0
+
+        fy_start_month = payroll_settings.financial_year_start_month
+        earned_per_year = payroll_settings.earned_leaves_per_year or 0
+        earned_per_month = (
+            Decimal(str(earned_per_year)) / Decimal('12')
+        ).quantize(Decimal('0.01'))
+
+        if not start_year:
+            today = date.today()
+            start_year = today.year if today.month >= fy_start_month else today.year - 1
+
+        created_count = 0
+
+        for i in range(12):
+            month = fy_start_month + i
+            year = start_year
+
+            if month > 12:
+                month -= 12
+                year += 1
+
+            obj, created = cls.objects.get_or_create(
+                payroll_settings=payroll_settings,
+                month=month,
+                year=year,
+                defaults={
+                    'earned_leaves': earned_per_month,
+                    'is_auto_generated': True
+                }
+            )
+
+            if created:
+                created_count += 1
+
+        return created_count
+    
+    @classmethod
+    def sync_with_payroll_settings(cls, payroll_settings):
+        """
+        Update auto-generated monthly leaves when payroll policy changes
+        """
+        annual = payroll_settings.earned_leaves_per_year
+        monthly = (Decimal(annual) / Decimal('12')).quantize(Decimal('0.01'))
+
+        cls.objects.filter(
+            payroll_settings=payroll_settings,
+            is_auto_generated=True
+        ).update(earned_leaves=monthly)
+
+
+# ============================================
+# NEW MODEL 5: HalfDayScenario
+# ============================================
+
+class HalfDayScenario(models.Model):
+    """
+    Handle half-day scenarios per branch
+    
+    Examples:
+    - Rain/Flood (Chennai branch, today/tomorrow)
+    - Election Day (Delhi branch, today)
+    - Office maintenance (Mumbai branch)
+    
+    Branch-based only (not religion-based)
+    Can be added anytime (even today!)
+    """
+    SCENARIO_TYPES = [
+        ('rain_closure', 'Rain/Flood Closure'),
+        ('election_day', 'Election Day'),
+        ('emergency_closure', 'Emergency Closure'),
+        ('office_maintenance', 'Office Maintenance'),
+        ('safety_emergency', 'Safety Emergency'),
+        ('other', 'Other'),
+    ]
+    
+    branch = models.ForeignKey('Branch', on_delete=models.CASCADE,
+                              related_name='half_day_scenarios')
+    scenario_date = models.DateField()
+    scenario_type = models.CharField(max_length=30, choices=SCENARIO_TYPES)
+    description = models.TextField(help_text="e.g., Heavy rain, Election voting")
+    
+    credit_count = models.DecimalField(max_digits=3, decimal_places=2,
+                                      default=Decimal('0.50'),
+                                      help_text="Count: 0.5=half day, 1.0=full day")
+    
+    is_approved = models.BooleanField(default=False)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.PROTECT)
+    approved_by = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name='approved_half_day_scenarios')
+    
+    class Meta:
+        unique_together = ('branch', 'scenario_date')
+        ordering = ['-scenario_date']
+        indexes = [
+            models.Index(fields=['branch', 'scenario_date']),
+            models.Index(fields=['is_approved', 'scenario_date']),
+        ]
+    
+    def __str__(self):
+        return f"{self.branch.branch_name} - {self.scenario_date}: {self.scenario_type}"
+
+
+class Attendance(models.Model):
+    employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
+    date = models.DateField(default=now)
+    in_time = models.TimeField(null=True, blank=True)
+    out_time = models.TimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("Present", "Present"),
+            ("Late Present", "Late Present"),
+            ("Half Day", "Half Day"),
+            ("Absent", "Absent"),
+            ("Holiday", "Holiday"),
+            ("Weekend", "Weekend"),
+            ("Present (Half-Day)", "Present (Half-Day)"),
+
+        ],
+        default="Absent"
+    )
+    count = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    late = models.IntegerField(default=0)  # Minutes late
+
+
+    is_holiday = models.BooleanField(default=False)
+    holiday = models.ForeignKey(Holiday, null=True, blank=True, on_delete=models.SET_NULL)
+
+    is_half_day = models.BooleanField(default=False)
+    half_day_scenario = models.ForeignKey(HalfDayScenario, null=True, blank=True, on_delete=models.SET_NULL)
+
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=["employee", "date"]),
+            models.Index(fields=["date"]),
+        ]
+    
+    def __str__(self):
+        return f"{self.employee.first_name} {self.employee.employee_code} - {self.date}"
+    
+    def calculate_lateness(self):
+        """Calculate lateness based on shift start time"""
+        if not self.in_time:
+            return 0
+        
+        shift_start = self.employee.shift_start_time
+        if not shift_start:
+            return 0
+        
+        in_dt = datetime.datetime.combine(self.date, self.in_time)
+        shift_dt = datetime.datetime.combine(self.date, shift_start)
+        
+        lateness = (in_dt - shift_dt).total_seconds() // 60
+        grace = getattr(settings, "GRACE_PERIOD_MINUTES", 15)
+        
+        return int(lateness) if lateness > grace else 0
+    
+
+
+    def get_applicable_holiday(self, branch):
+        '''Get applicable holiday for employee's branch on this date'''
+        try:
+            holiday_calendar = HolidayCalendar.objects.get(
+                branch=branch,
+                year=self.date.year,
+                is_active=True
+            )
+        except HolidayCalendar.DoesNotExist:
+            return None
+        
+        holiday = Holiday.objects.filter(
+            holiday_calendar=holiday_calendar,
+            holiday_date=self.date
+        ).first()
+        
+        if not holiday:
+            return None
+        
+        if holiday.is_applicable_to_branch(branch):
+            return holiday
+        
+        return None
+    
+    def get_half_day_scenario(self, branch):
+        '''Get half-day scenario for this branch on this date'''
+        scenario = HalfDayScenario.objects.filter(
+            branch=branch,
+            scenario_date=self.date,
+            is_approved=True
+        ).first()
+        
+        return scenario
+    
+    def calculate_status(self):
+            """
+            Calculate attendance status with branch-aware holidays and half-days
+            """
+            # STEP 0: Check if weekend
+            if self.date.weekday() >= 6:  # Saturday=5, Sunday=6
+                self.status = "Weekend"
+                self.count = Decimal("1.00")
+                self.late = 0
+                return
+            
+            # Get employee's branch
+            branch = self.employee.branch
+            
+            # STEP 1: Check for half-day scenario (branch-specific)
+            if branch:
+                half_day = self.get_half_day_scenario(branch)
+                if half_day:
+                    self.is_half_day = True
+                    self.half_day_scenario = half_day
+                    self.status = "Present (Half-Day)"
+                    self.count = half_day.credit_count
+                    self.late = 0
+                    return
+                
+                # STEP 2: Check for holiday (branch-specific!)
+                holiday = self.get_applicable_holiday(branch)
+                if holiday:
+                    self.is_holiday = True
+                    self.holiday = holiday
+                    self.status = "Holiday"
+                    self.count = Decimal("1.00")
+                    self.late = 0
+                    return
+            
+            # STEP 3: Normal attendance calculation (EXISTING CODE - DON'T CHANGE)
+            # If no in_time or out_time, mark as Absent
+            if not self.in_time or not self.out_time:
+                self.status = "Absent"
+                self.count = Decimal("0.00")
+                self.late = 0
+                return
+            
+            # Build datetime objects
+            in_dt = datetime.datetime.combine(self.date, self.in_time)
+            out_dt = datetime.datetime.combine(self.date, self.out_time)
+            
+            # Handle overnight shifts (if out_time is before in_time, add a day)
+            if out_dt <= in_dt:
+                out_dt += datetime.timedelta(days=1)
+            
+            # Calculate total hours worked
+            worked_hours = Decimal((out_dt - in_dt).total_seconds()) / Decimal("3600")
+            
+            # Calculate lateness (for Late Present status)
+            self.late = self.calculate_lateness()
+            
+            # Define expected hours (9 hours)
+            expected_hours = Decimal("9.0")
+            
+            # Apply rules based on hours worked
+            if worked_hours >= expected_hours:
+                # Worked 9+ hours
+                self.status = "Present" if self.late == 0 else "Late Present"
+                self.count = Decimal("1.00")
+            
+            elif worked_hours >= expected_hours * Decimal("0.7"):
+                # Worked 6.3+ hours (70% of 9 hours)
+                self.status = "Late Present"
+                self.count = Decimal("1.00")
+            
+            elif worked_hours >= expected_hours * Decimal("0.5"):
+                # Worked 4.5+ hours (50% of 9 hours)
+                self.status = "Half Day"
+                self.count = Decimal("0.50")
+            
+            else:
+                # Worked less than 4.5 hours
+                self.status = "Absent"
+                self.count = Decimal("0.00")    
+
+    def save(self, *args, **kwargs):
+        # Always calculate status before saving
+        self.calculate_status()
+        super().save(*args, **kwargs)
+
+
+# Alternative version with configurable hours
+class AttendanceConfigurable(models.Model):
+    """
+    Version with configurable working hours
+    You can set REQUIRED_WORK_HOURS in settings.py
+    """
+    employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
+    date = models.DateField(default=now)
+    in_time = models.TimeField(null=True, blank=True)
+    out_time = models.TimeField(null=True, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("Present", "Present"),
+            ("Late Present", "Late Present"),
+            ("Half Day", "Half Day"),
+            ("Absent", "Absent"),
+        ],
+        default="Absent"
+    )
+    count = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0.00"))
+    late = models.IntegerField(default=0)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=["employee", "date"]),
+            models.Index(fields=["date"]),
+        ]
+    
+    def __str__(self):
+        return f"{self.employee.first_name} {self.employee.employee_code} - {self.date}"
+    
+    def calculate_lateness(self):
+        """Calculate lateness based on shift start time"""
+        if not self.in_time:
+            return 0
+        
+        shift_start = self.employee.shift_start_time
+        if not shift_start:
+            return 0
+        
+        in_dt = datetime.datetime.combine(self.date, self.in_time)
+        shift_dt = datetime.datetime.combine(self.date, shift_start)
+        
+        lateness = (in_dt - shift_dt).total_seconds() // 60
+        grace = getattr(settings, "GRACE_PERIOD_MINUTES", 15)
+        
+        return int(lateness) if lateness > grace else 0
+    
+    def calculate_status(self):
+        """
+        Calculate status based on configurable working hours
+        Set REQUIRED_WORK_HOURS in settings.py (default: 9)
+        """
+        if not self.in_time or not self.out_time:
+            self.status = "Absent"
+            self.count = Decimal("0.00")
+            self.late = 0
+            return
+        
+        # Build datetime
+        in_dt = datetime.datetime.combine(self.date, self.in_time)
+        out_dt = datetime.datetime.combine(self.date, self.out_time)
+        
+        # Handle overnight shifts
+        if out_dt <= in_dt:
+            out_dt += datetime.timedelta(days=1)
+        
+        # Calculate hours worked
+        worked_hours = Decimal((out_dt - in_dt).total_seconds()) / Decimal("3600")
+        
+        # Get required hours from settings (default 9)
+        required_hours = Decimal(str(getattr(settings, "REQUIRED_WORK_HOURS", 9)))
+        
+        # Calculate lateness
+        self.late = self.calculate_lateness()
+        
+        # Apply rules
+        if worked_hours >= required_hours:
+            self.status = "Present" if self.late == 0 else "Late Present"
+            self.count = Decimal("1.00")
+        elif worked_hours >= required_hours * Decimal("0.7"):
+            self.status = "Late Present"
+            self.count = Decimal("1.00")
+        elif worked_hours >= required_hours * Decimal("0.5"):
+            self.status = "Half Day"
+            self.count = Decimal("0.50")
+        else:
+            self.status = "Absent"
+            self.count = Decimal("0.00")
+    
+    def save(self, *args, **kwargs):
+        self.calculate_status()
+        super().save(*args, **kwargs)
+
+
+
+
+
+
+        
+
+class AttendanceCorrectionRequest(models.Model):
+    attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE, related_name="correction_requests")
+    # requested_by = models.ForeignKey(Employee, on_delete=models.CASCADE)  # The employee requesting the change
+    old_in_time = models.TimeField(null=True, blank=True)
+    old_out_time = models.TimeField(null=True, blank=True)
+    new_in_time = models.TimeField(null=True, blank=True)
+    new_out_time = models.TimeField(null=True, blank=True)
+
+    reason = models.TextField()
+    rejection_reason = models.TextField(null=True, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[("Pending", "Pending"), ("Approved", "Approved"), ("Rejected", "Rejected")],
+        default="Pending",
+    )
+    # reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="approvals")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Correction Request {self.id} - {self.status}"
+
+

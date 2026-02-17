@@ -27,7 +27,13 @@ app.conf.beat_schedule = {
         'task': 'website.tasks.reset_monthly_leave_balances_task',
         'schedule': crontab(hour=2, minute=0, day_of_month=1),
     },
+    'process-monthly-leave-balance': {
+        'task': 'website.tasks.auto_process_all_companies_leave_balance',
+        'schedule': crontab(hour=23, minute=55, day_of_month=25),  # ✅ Fixed: 25 not '25'
+    },
+
 }
+
 
 app.autodiscover_tasks()
 

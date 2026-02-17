@@ -107,7 +107,7 @@ urlpatterns = [
 
 
     path("leave-credit-policy/update/", views.update_leave_credit_policy, name="update_leave_credit_policy"),
-    path("recalculate-leaves/", views.recalculate_leave_balances, name="recalculate_leave_balances"),
+    # path("recalculate-leaves/", views.recalculate_leave_balances, name="recalculate_leave_balances"),
 
     path('attendance-correction-requests/', views.attendance_correction_requests_list, name='attendance_correction_requests_list'),
     path("branch/<int:pk>/details/", views.branch_details_api, name="branch_details_api"),
@@ -142,5 +142,32 @@ urlpatterns = [
 
     path("download-empty-excel/", views.download_empty_excel, name="download-empty-excel"),
 
-]
+    path('leave-balance/', views.leave_balance_view, name='leave_balance_report'),
+    path('leave-balance/recalculate/', views.recalculate_leave_balances_view, name='recalculate_leave_balances'),
 
+    path('leave-balance/employee/<int:employee_id>/recalc/', views.recalc_employee_leave_balance, name='recalc-employee-leave'),
+    path('leave-balance/employee/<int:employee_id>/', views.employee_leave_detail, name='employee-leave-detail'),
+
+
+
+
+    # Holiday Calendar URLs (NO namespace, just simple URLs)
+    path('holiday/dashboard/', views.holiday_calendar_dashboard, name='holiday-calendar'),
+    path('holiday/', views.holiday_calendar_dashboard, name='holiday-dashboard'),
+    path('holiday/add/', views.add_holiday, name='add-holiday'),
+    path('holiday/<int:holiday_id>/edit/', views.edit_holiday, name='edit-holiday'),
+    path('holiday/<int:holiday_id>/delete/', views.delete_holiday, name='delete-holiday'),
+    path('holiday/list/', views.holiday_list, name='holiday-list'),
+# Add to urlpatterns:
+    path('holiday/earned-leaves/', views.earned_leaves_config, name='earned-leaves'),
+    path('holiday/earned-leave/<int:leave_id>/edit/', views.edit_earned_leave, name='edit-earned-leave'),
+    path('api/earned-leaves/', views.api_earned_leaves, name='api-earned-leaves'),
+    path('holiday/half-day/', views.half_day_scenarios, name='half-day-scenarios'),
+    path('holiday/half-day/add/', views.add_half_day_scenario, name='add-half-day-scenario'),
+    
+    # API Endpoints
+    path('api/holiday/<int:holiday_id>/', views.api_get_holiday, name='api-holiday'),
+    path('api/holidays/', views.api_holidays_json, name='api-holidays'),
+    path('api/earned-leaves/', views.api_earned_leaves_json, name='api-earned-leaves'),
+
+]

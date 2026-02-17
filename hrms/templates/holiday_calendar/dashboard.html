@@ -1,0 +1,1486 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holiday Calendar Management</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --primary-light: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --accent: #8b5cf6;
+            --dark: #1f2937;
+            --light: #f9fafb;
+            --border: #e5e7eb;
+            --text: #374151;
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* Alert Messages */
+        .alert {
+            padding: 1rem 1.5rem;
+            border-radius: 10px;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            animation: slideDown 0.3s ease;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border-left: 4px solid var(--success);
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border-left: 4px solid var(--danger);
+        }
+
+        /* Header Section */
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 3rem 2rem;
+            border-radius: 20px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-xl);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -10%;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+            border-radius: 50%;
+        }
+
+        .header-content {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 2rem;
+        }
+
+        .header h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+            margin-bottom: 1rem;
+        }
+
+        .header-badges {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.75rem 1.5rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        /* Tabs Navigation */
+        .tabs-nav {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+            border-bottom: 2px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            padding: 1rem 1.5rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text);
+            position: relative;
+            transition: color 0.3s ease;
+        }
+
+        .tab-btn::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 0;
+            height: 3px;
+            background: var(--primary);
+            transition: width 0.3s ease;
+        }
+
+        .tab-btn.active {
+            color: var(--primary);
+        }
+
+        .tab-btn.active::after {
+            width: 100%;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Main Layout */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        /* Calendar Component */
+        .calendar-card {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
+        }
+
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--light);
+        }
+
+        .calendar-header h2 {
+            font-size: 1.5rem;
+            color: var(--dark);
+        }
+
+        .calendar-nav {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 10px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-secondary {
+            background: var(--light);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        .btn-sm {
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+        }
+
+        .btn-danger {
+            background: #fee2e2;
+            color: var(--danger);
+        }
+
+        .btn-danger:hover {
+            background: #fecaca;
+        }
+
+        /* Calendar Grid */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .weekday-header {
+            text-align: center;
+            font-weight: 700;
+            color: var(--primary);
+            padding: 1rem 0.5rem;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .day-cell {
+            aspect-ratio: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            font-size: 0.9rem;
+            min-height: 80px;
+            background: var(--light);
+        }
+
+        .day-cell:hover {
+            background: #e3e8ef;
+            transform: scale(1.05);
+        }
+
+        .day-cell.other-month {
+            color: #d1d5db;
+            opacity: 0.5;
+            cursor: default;
+        }
+
+        .day-cell.today {
+            background: var(--primary);
+            color: white;
+            font-weight: 700;
+        }
+
+        .day-cell.holiday {
+            background: #fecaca;
+            color: #991b1b;
+            font-weight: 600;
+        }
+
+        .day-cell.half-day {
+            background: #fef3c7;
+            color: #92400e;
+            font-weight: 600;
+        }
+
+        .day-number {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .day-label {
+            font-size: 0.7rem;
+            opacity: 0.7;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .sidebar-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .sidebar-card h3 {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            color: var(--dark);
+            border-bottom: 2px solid var(--light);
+            padding-bottom: 0.75rem;
+        }
+
+        .filter-group {
+            margin-bottom: 1.25rem;
+        }
+
+        .filter-label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        select, input[type="text"], input[type="date"], input[type="number"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.9rem;
+            transition: border-color 0.3s ease;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .legend {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 5px;
+        }
+
+        /* Holiday List */
+        .holiday-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .holiday-item {
+            padding: 1rem;
+            background: var(--light);
+            border-left: 4px solid var(--primary);
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .holiday-item:hover {
+            transform: translateX(5px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .holiday-item-date {
+            font-weight: 700;
+            color: var(--primary);
+            font-size: 0.85rem;
+        }
+
+        .holiday-item-name {
+            margin-top: 0.25rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        /* Modals */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            backdrop-filter: blur(2px);
+        }
+
+        .modal.active {
+            display: flex;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: var(--shadow-xl);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid var(--light);
+        }
+
+        .modal-header h2 {
+            font-size: 1.5rem;
+            color: var(--dark);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text);
+            transition: color 0.2s ease;
+        }
+
+        .modal-close:hover {
+            color: var(--primary);
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.9rem;
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .form-actions .btn {
+            flex: 1;
+            justify-content: center;
+        }
+
+        /* Table Styles */
+        .table-container {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: var(--shadow-lg);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: var(--light);
+            border-bottom: 2px solid var(--border);
+        }
+
+        th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 700;
+            color: var(--dark);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody tr:hover {
+            background: var(--light);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-approved {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-declared {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-optional {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-emergency {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .badge-national {
+            background: #d1e7f5;
+            color: #1e40af;
+        }
+
+        .badge-regional {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .badge-company {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .badge-emergency {
+            background: #fecaca;
+            color: #991b1b;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow-md);
+            border-left: 4px solid var(--primary);
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: #9ca3af;
+        }
+
+        .empty-state-icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .header-content {
+                flex-direction: column;
+                text-align: center;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .header {
+                padding: 2rem 1rem;
+            }
+
+            .calendar-grid {
+                gap: 0.25rem;
+            }
+
+            .day-cell {
+                min-height: 60px;
+                font-size: 0.8rem;
+            }
+
+            .tabs-nav {
+                overflow-x: auto;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .modal-content {
+                width: 95%;
+            }
+        }
+
+        /* Scrollbar Styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--light);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-dark);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Messages -->
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{% if message.tags %}{{ message.tags }}{% else %}success{% endif %}">
+                    ✓ {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div>
+                    <h1>Holiday Calendar</h1>
+                    <p>Manage company holidays and branch-specific closures</p>
+                    <div class="header-badges">
+                        <div class="badge">📅 {{ year }}</div>
+                        <div class="badge">🏢 Multi-Branch</div>
+                        <div class="badge">📊 Dashboard</div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Stats Grid -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Holidays</div>
+                <div class="stat-value">{{ total_holidays }}</div>
+            </div>
+            <div class="stat-card" style="border-left-color: var(--success);">
+                <div class="stat-label">National Holidays</div>
+                <div class="stat-value" style="color: var(--success);">{{ national_holidays }}</div>
+            </div>
+            <div class="stat-card" style="border-left-color: var(--warning);">
+                <div class="stat-label">Regional Holidays</div>
+                <div class="stat-value" style="color: var(--warning);">{{ regional_holidays }}</div>
+            </div>
+            <div class="stat-card" style="border-left-color: var(--danger);">
+                <div class="stat-label">Emergency Closures</div>
+                <div class="stat-value" style="color: var(--danger);">{{ emergency_closures }}</div>
+            </div>
+        </div>
+
+        <!-- Tabs Navigation -->
+        <div class="tabs-nav">
+            <button class="tab-btn active" onclick="switchTab(event, 'calendar')">📅 Calendar View</button>
+            <button class="tab-btn" onclick="switchTab(event, 'holidays')">🎉 Holidays List</button>
+            <button class="tab-btn" onclick="switchTab(event, 'earned')">⭐ Earned Leaves</button>
+            <button class="tab-btn" onclick="switchTab(event, 'settings')">⚙️ Settings</button>
+        </div>
+
+        <!-- Tab 1: Calendar View -->
+        <div id="calendar" class="tab-content active">
+            <div class="main-layout">
+                <!-- Calendar -->
+                <div class="calendar-card">
+                    <div class="calendar-header">
+                        <h2 id="monthYear">{{ month_name }} {{ year }}</h2>
+                        <div class="calendar-nav">
+                            <button class="btn btn-secondary btn-sm" onclick="previousMonth()">← Prev</button>
+                            <button class="btn btn-secondary btn-sm" onclick="todayMonth()">Today</button>
+                            <button class="btn btn-secondary btn-sm" onclick="nextMonth()">Next →</button>
+                        </div>
+                    </div>
+
+                    <!-- Calendar Grid -->
+                    <div class="calendar-grid" id="calendarGrid">
+                        <!-- Generated by JavaScript -->
+                    </div>
+
+                    <button class="btn btn-primary" onclick="openAddHolidayModal()" style="width: 100%; margin-top: 1rem;">
+                        + Add Holiday
+                    </button>
+                </div>
+
+                <!-- Sidebar -->
+                <div class="sidebar">
+                    <!-- Quick Filters -->
+                    <div class="sidebar-card">
+                        <h3>🔍 Filters</h3>
+                        <div class="filter-group">
+                            <label class="filter-label">Month</label>
+                            <select id="monthFilter" onchange="filterCalendar()">
+                                <option value="">All Months</option>
+                                <option value="1" {% if month == 1 %}selected{% endif %}>January</option>
+                                <option value="2" {% if month == 2 %}selected{% endif %}>February</option>
+                                <option value="3" {% if month == 3 %}selected{% endif %}>March</option>
+                                <option value="4" {% if month == 4 %}selected{% endif %}>April</option>
+                                <option value="5" {% if month == 5 %}selected{% endif %}>May</option>
+                                <option value="6" {% if month == 6 %}selected{% endif %}>June</option>
+                                <option value="7" {% if month == 7 %}selected{% endif %}>July</option>
+                                <option value="8" {% if month == 8 %}selected{% endif %}>August</option>
+                                <option value="9" {% if month == 9 %}selected{% endif %}>September</option>
+                                <option value="10" {% if month == 10 %}selected{% endif %}>October</option>
+                                <option value="11" {% if month == 11 %}selected{% endif %}>November</option>
+                                <option value="12" {% if month == 12 %}selected{% endif %}>December</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label class="filter-label">Holiday Type</label>
+                            <select id="typeFilter" onchange="filterCalendar()">
+                                <option value="">All Types</option>
+                                <option value="national">National Holiday</option>
+                                <option value="regional">Regional Holiday</option>
+                                <option value="company">Company Holiday</option>
+                                <option value="emergency">Emergency Closure</option>
+                            </select>
+                        </div>
+
+                        <div class="filter-group">
+                            <label class="filter-label">Year</label>
+                            <select id="yearFilter" onchange="filterCalendar()">
+                                <option value="2024">2024</option>
+                                <option value="2025" selected>2025</option>
+                                <option value="2026">2026</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Legend -->
+                    <div class="sidebar-card">
+                        <h3>📌 Legend</h3>
+                        <div class="legend">
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #fecaca;"></div>
+                                <span>Holiday</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #fef3c7;"></div>
+                                <span>Half-Day Closure</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: var(--primary);"></div>
+                                <span>Today</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: var(--light);"></div>
+                                <span>Normal Day</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Upcoming Holidays -->
+                    <div class="sidebar-card">
+                        <h3>📅 Upcoming (7 days)</h3>
+                        <div class="holiday-list">
+                            {% if upcoming_holidays %}
+                                {% for holiday in upcoming_holidays %}
+                                    <div class="holiday-item">
+                                        <div class="holiday-item-date">{{ holiday.holiday_date|date:"M d" }}</div>
+                                        <div class="holiday-item-name">{{ holiday.name }}</div>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="empty-state" style="padding: 1rem;">
+                                    <div class="empty-state-icon">📭</div>
+                                    <p>No holidays in next 7 days</p>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: Holidays List -->
+        <div id="holidays" class="tab-content">
+            <div class="table-container">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h2 style="font-size: 1.5rem; color: var(--dark);">Holiday Management</h2>
+                    <button class="btn btn-primary" onclick="openAddHolidayModal()">+ Add Holiday</button>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Holiday Name</th>
+                            <th>Type</th>
+                            <th>Scope</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="holidayTableBody">
+                        {% if all_holidays %}
+                            {% for holiday in all_holidays %}
+                                <tr>
+                                    <td><strong>{{ holiday.holiday_date|date:"M d, Y" }}</strong></td>
+                                    <td>{{ holiday.name }}</td>
+                                    <td>
+                                        <span class="status-badge badge-{{ holiday.holiday_type.type_category|lower }}">
+                                            {{ holiday.holiday_type.name }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if holiday.is_national %}
+                                            🌍 National
+                                        {% else %}
+                                            📍 Regional
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="status-badge status-{{ holiday.status|lower }}">
+                                            {{ holiday.get_status_display }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-secondary btn-sm" onclick="editHoliday({{ holiday.id }})">Edit</button>
+                                        <button class="btn btn-secondary btn-sm btn-danger" style="margin-left: 0.25rem;" onclick="deleteHoliday({{ holiday.id }})">Delete</button>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="empty-state">
+                                    <div class="empty-state-icon">📭</div>
+                                    <p>No holidays found</p>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab 3: Earned Leaves -->
+        <div id="earned" class="tab-content">
+            <div class="table-container">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <h2 style="font-size: 1.5rem; color: var(--dark);">Monthly Earned Leaves Configuration</h2>
+                    <button class="btn btn-primary" onclick="openEarnedLeavesModal()">⚙️ Edit Policy</button>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Month</th>
+                            <th>Year</th>
+                            <th>Earned Leaves</th>
+                            <th>Auto-Generated</th>
+                            <th>Last Updated</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="earnedLeavesTableBody">
+                        {% if monthly_leaves %}
+                            {% for leave in monthly_leaves %}
+                                <tr>
+                                    <td><strong>{{ leave.get_month_display }}</strong></td>
+                                    <td>{{ leave.year }}</td>
+                                    <td>{{ leave.earned_leaves }}</td>
+                                    <td>{% if leave.is_auto_generated %}✓ Yes{% else %}✗ Manual{% endif %}</td>
+                                    <td>{{ leave.updated_at|date:"Y-m-d" }}</td>
+                                    <td>
+                                        {% comment %} <button class="btn btn-secondary btn-sm" onclick="editEarnedLeaves({{ leave.id }})">Edit</button> {% endcomment %}
+                                    <button class="btn btn-secondary btn-sm"
+                                        onclick="editEarnedLeaves(
+                                            {{ leave.id }},
+                                            {{ leave.month }},
+                                            {{ leave.year }},
+                                            '{{ leave.earned_leaves }}',
+                                            {{ leave.is_auto_generated|yesno:"true,false" }}
+                                        )">
+                                        Edit
+                                    </button>
+
+                                    </td>
+                                    
+                                </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="empty-state">
+                                    <div class="empty-state-icon">📭</div>
+                                    <p>No earned leaves configured</p>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab 4: Settings -->
+        <div id="settings" class="tab-content">
+            <div class="table-container">
+                <h2 style="font-size: 1.5rem; color: var(--dark); margin-bottom: 1.5rem;">Holiday Calendar Settings</h2>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+                    <!-- Financial Year -->
+                    <div>
+                        <h3 style="margin-bottom: 1rem; color: var(--dark);">📅 Financial Year</h3>
+                        <div class="form-group">
+                            <label>Financial Year Start Month</label>
+                            <select id="financialYearMonth">
+                                <option value="1" {% if payroll_settings.financial_year_start_month == 1 %}selected{% endif %}>January</option>
+                                <option value="4" {% if payroll_settings.financial_year_start_month == 4 %}selected{% endif %}>April</option>
+                                <option value="7" {% if payroll_settings.financial_year_start_month == 7 %}selected{% endif %}>July</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Holiday Policy -->
+                    <div>
+                        <h3 style="margin-bottom: 1rem; color: var(--dark);">🎉 Holiday Policy</h3>
+                        <div class="form-group">
+                            <label>Allow Branch-Specific Holidays</label>
+                            <select id="branchSpecificPolicy">
+                                <option selected>Yes</option>
+                                <option>No</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Earned Leaves -->
+                    <div>
+                        <h3 style="margin-bottom: 1rem; color: var(--dark);">⭐ Earned Leaves</h3>
+                        <div class="form-group">
+                            <label>Annual Earned Leaves</label>
+                            <input type="number" id="annualEarnedLeaves" value="{{ payroll_settings.earned_leaves_per_year|default:24 }}" min="0">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1rem; margin-top: 2rem;">
+                    <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+                    <button class="btn btn-secondary" onclick="resetSettings()">↺ Reset to Default</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Holiday Modal -->
+    <div id="addHolidayModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Add Holiday</h2>
+                <button class="modal-close" onclick="closeModal('addHolidayModal')">✕</button>
+            </div>
+
+            <form id="addHolidayForm" method="POST" action="{% url 'add-holiday' %}">
+                {% csrf_token %}
+                
+                <div class="form-group">
+                    <label>Holiday Date</label>
+                    <input type="date" name="holiday_date" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Holiday Name</label>
+                    <input type="text" name="name" placeholder="e.g., Republic Day" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Holiday Type</label>
+                    <select name="holiday_type" required>
+                        <option value="">Select Type</option>
+                        {% for type in holiday_types %}
+                            <option value="{{ type.id }}">{{ type.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Status</label>
+                    <select name="status" required>
+                        <option value="declared">Declared</option>
+                        <option value="optional">Optional</option>
+                        <option value="emergency">Emergency</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" name="is_national"> Apply to All Branches (National)
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea name="description" placeholder="Add any additional details..."></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('addHolidayModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Holiday</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Holiday Modal -->
+    <div id="editHolidayModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Holiday</h2>
+                <button class="modal-close" onclick="closeModal('editHolidayModal')">✕</button>
+            </div>
+
+            <form id="editHolidayForm" method="POST">
+                {% csrf_token %}
+                
+                <div class="form-group">
+                    <label>Holiday Date</label>
+                    <input type="date" id="editHolidayDate" name="holiday_date" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Holiday Name</label>
+                    <input type="text" id="editHolidayName" name="name" required>
+                </div>
+
+                <div class="form-group">
+                    <label>Holiday Type</label>
+                    <select id="editHolidayType" name="holiday_type" required>
+                        {% for type in holiday_types %}
+                            <option value="{{ type.id }}">{{ type.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Status</label>
+                    <select id="editHolidayStatus" name="status" required>
+                        <option value="declared">Declared</option>
+                        <option value="optional">Optional</option>
+                        <option value="emergency">Emergency</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="editHolidayDesc" name="description"></textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('editHolidayModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Earned Leaves Modal -->
+    <div id="earnedLeavesModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Edit Earned Leaves</h2>
+                <button class="modal-close" onclick="closeModal('earnedLeavesModal')">✕</button>
+            </div>
+
+        <form id="editEarnedLeavesForm" method="POST">
+            {% csrf_token %}
+
+            <!-- Hidden field to store record ID -->
+            <input type="hidden" name="leave_id" id="earnedLeaveId">
+
+            <div class="form-group">
+                <label>Month</label>
+                <select id="earnedLeaveMonth" disabled>
+                    <option value="1">January</option>
+                    <option value="2">February</option>
+                    <option value="3">March</option>
+                    <option value="4">April</option>
+                    <option value="5">May</option>
+                    <option value="6">June</option>
+                    <option value="7">July</option>
+                    <option value="8">August</option>
+                    <option value="9">September</option>
+                    <option value="10">October</option>
+                    <option value="11">November</option>
+                    <option value="12">December</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>Year</label>
+                <input type="number" id="earnedLeaveYear" disabled>
+            </div>
+
+            <div class="form-group">
+                <label>Earned Leaves (days)</label>
+                <input
+                    type="number"
+                    name="earned_leaves"
+                    id="earnedLeavesDays"
+                    step="0.25"
+                    min="0"
+                    max="31"
+                    required
+                >
+            </div>
+
+            <div class="form-group">
+                <label>
+                    <input
+                        type="checkbox"
+                        name="is_auto_generated"
+                        id="autoGenerated"
+                    >
+                    Auto-Generated
+                </label>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary"
+                        onclick="closeModal('earnedLeavesModal')">
+                    Cancel
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    Save Changes
+                </button>
+            </div>
+        </form>
+
+    </div>
+
+    <script>
+        let currentDate = new Date({{ year }}, {{ month|add:"-1" }}, 1);
+        const holidaysData = {{ holidays_json|safe }};
+
+        function generateCalendar() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
+            
+            document.getElementById('monthYear').textContent = 
+                currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const daysInPrevMonth = new Date(year, month, 0).getDate();
+
+            const grid = document.getElementById('calendarGrid');
+            grid.innerHTML = '';
+
+            // Weekday headers
+            const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            weekdays.forEach(day => {
+                const header = document.createElement('div');
+                header.className = 'weekday-header';
+                header.textContent = day;
+                grid.appendChild(header);
+            });
+
+            // Previous month days
+            for (let i = firstDay - 1; i >= 0; i--) {
+                const cell = createDayCell(daysInPrevMonth - i, 'other-month');
+                grid.appendChild(cell);
+            }
+
+            // Current month days
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateObj = new Date(year, month, day);
+                const isToday = new Date().toDateString() === dateObj.toDateString();
+                
+                let className = '';
+                const holiday = findHolidayForDate(year, month + 1, day);
+                
+                if (isToday) {
+                    className = 'today';
+                } else if (holiday) {
+                    className = 'holiday';
+                }
+                
+                const cell = createDayCell(day, className, day);
+                grid.appendChild(cell);
+            }
+
+            // Next month days
+            const totalCells = grid.children.length - 7;
+            const remainingCells = 42 - totalCells;
+            for (let day = 1; day <= remainingCells; day++) {
+                const cell = createDayCell(day, 'other-month');
+                grid.appendChild(cell);
+            }
+        }
+
+        function findHolidayForDate(year, month, day) {
+            return holidaysData.find(h => {
+                const hDate = new Date(h.holiday_date);
+                return hDate.getFullYear() === year && 
+                       (hDate.getMonth() + 1) === month && 
+                       hDate.getDate() === day;
+            });
+        }
+
+        function createDayCell(day, className = '', dataDay = null) {
+            const cell = document.createElement('div');
+            cell.className = `day-cell ${className}`;
+            cell.innerHTML = `
+                <div class="day-number">${day}</div>
+                <div class="day-label"></div>
+            `;
+            if (dataDay && className !== 'other-month') {
+                cell.style.cursor = 'pointer';
+                cell.onclick = () => openAddHolidayModal();
+            }
+            return cell;
+        }
+
+        function previousMonth() {
+            currentDate.setMonth(currentDate.getMonth() - 1);
+            generateCalendar();
+        }
+
+        function nextMonth() {
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            generateCalendar();
+        }
+
+        function todayMonth() {
+            currentDate = new Date();
+            generateCalendar();
+        }
+
+        function switchTab(e, tabName) {
+            e.preventDefault();
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById(tabName).classList.add('active');
+            e.target.classList.add('active');
+        }
+
+        function openAddHolidayModal() {
+            document.getElementById('addHolidayModal').classList.add('active');
+        }
+
+        function openEarnedLeavesModal() {
+            document.getElementById('earnedLeavesModal').classList.add('active');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.remove('active');
+        }
+
+        function editHoliday(id) {
+            fetch(`/holiday/api/holiday/${id}/`, {
+                headers: {'X-Requested-With': 'XMLHttpRequest'}
+            })
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('editHolidayDate').value = data.holiday_date;
+                document.getElementById('editHolidayName').value = data.name;
+                document.getElementById('editHolidayType').value = data.holiday_type;
+                document.getElementById('editHolidayStatus').value = data.status;
+                document.getElementById('editHolidayDesc').value = data.description || '';
+                document.getElementById('editHolidayForm').action = `/holiday/${id}/edit/`;
+                document.getElementById('editHolidayModal').classList.add('active');
+            })
+            .catch(err => console.error('Error:', err));
+        }
+
+        function deleteHoliday(id) {
+            if (confirm('Are you sure you want to delete this holiday?')) {
+                window.location.href = `/holiday/${id}/delete/`;
+            }
+        }
+
+    function editEarnedLeaves(leaveId, month, year, earnedLeaves, isAuto) {
+        document.getElementById('earnedLeaveId').value = leaveId;
+        document.getElementById('earnedLeaveMonth').value = month;
+        document.getElementById('earnedLeaveYear').value = year;
+        document.getElementById('earnedLeavesDays').value = earnedLeaves;
+        document.getElementById('autoGenerated').checked = isAuto;
+
+        document.getElementById('editEarnedLeavesForm').action =
+            `/holiday/earned-leave/${leaveId}/edit/`;
+
+        document.getElementById('earnedLeavesModal').classList.add('active');
+    }
+
+        function filterCalendar() {
+            const year = document.getElementById('yearFilter').value;
+            const month = document.getElementById('monthFilter').value;
+            let url = window.location.pathname + '?year=' + year;
+            if (month) url += '&month=' + month;
+            window.location.href = url;
+        }
+
+        function saveSettings() {
+            alert('Settings saved successfully!');
+        }
+
+        function resetSettings() {
+            if (confirm('Reset all settings to default?')) {
+                alert('Settings reset to default');
+            }
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal')) {
+                e.target.classList.remove('active');
+            }
+        });
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', generateCalendar);
+    </script>
+</body>
+</html>

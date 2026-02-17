@@ -401,3 +401,414 @@ class PaymentForm(forms.Form):
 class SkipMonthForm(forms.Form):
     # expects due_month in YYYY-MM-DD (first of month)
     due_month = forms.DateField(widget=forms.HiddenInput())
+
+
+
+
+
+
+
+
+
+
+
+# forms.py - Holiday Calendar Forms
+
+from django import forms
+from django.forms import inlineformset_factory
+from .models import (
+    Holiday,
+    HolidayCalendar,
+    HolidayType,
+    MonthlyEarnedLeaves,
+    HalfDayScenario,
+    PayrollSettings,
+)
+from datetime import date
+
+
+class HolidayForm(forms.ModelForm):
+    """Form for creating/editing holidays"""
+    
+    class Meta:
+        model = Holiday
+        fields = ['holiday_date', 'name', 'holiday_type', 'status', 'description', 'is_national']
+        widgets = {
+            'holiday_date': forms.DateInput(attrs={
+                'type': 'date',
+                'class': 'form-control',
+                'min': date.today().isoformat(),
+            }),
+            'name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g., Republic Day',
+            }),
+            'holiday_type': forms.Select(attrs={
+                'class': 'form-control',
+            }),
+            'status': forms.Select(attrs={
+                'class': 'form-control',
+            }),
+            'description': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Add any additional details...',
+            }),
+            'is_national': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+            }),
+        }
+    
+    def clean_holiday_date(self):
+        holiday_date = self.cleaned_data.get('holiday_date')
+        
+        if holiday_date and holiday_date < date.today():
+            raise forms.ValidationError(
+                'Holiday date cannot be in the past.'
+            )
+        
+        # Check if holiday already exists for this date
+        existing = Holiday.objects.filter(
+            holiday_date=holiday_date
+        ).exclude(id=self.instance.id)
+        
+        if existing.exists():
+            raise forms.ValidationError(
+                f'A holiday already exists for {holiday_date.strftime("%B %d, %Y")}.'
+            )
+        
+        return holiday_date
+    
+    def clean_name(self):
+        name = self.cleaned_data.get('name', '').strip()
+        
+        if not name:
+            raise forms.ValidationError('Holiday name is required.')
+        
+        if len(name) < 3:
+            raise forms.ValidationError('Holiday name must be at least 3 characters long.')
+        
+        if len(name) > 200:
+            raise forms.ValidationError('Holiday name must not exceed 200 characters.')
+        
+        return name
+
+
+class HolidayCalendarForm(forms.ModelForm):
+    """Form for creating/editing holiday calendars"""
+    
+    class Meta:
+        model = HolidayCalendar
+        fields = ['branch', 'year', 'name', 'description', 'is_active']
+        widgets = {
+            'branch': forms.Select(attrs={
+                'class': 'form-control',
+            }),
+            'year': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': date.today().year,
+                'max': date.today().year + 10,
+            }),
+            'name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g., Mumbai Holiday Calendar 2025',
+            }),
+            'description': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+            }),
+            'is_active': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+            }),
+        }
+    
+    def clean_year(self):
+        year = self.cleaned_data.get('year')
+        
+        if year < date.today().year:
+            raise forms.ValidationError('Year cannot be in the past.')
+        
+        if year > date.today().year + 10:
+            raise forms.ValidationError('Year must be within the next 10 years.')
+        
+        return year
+
+
+class MonthlyEarnedLeavesForm(forms.ModelForm):
+    """Form for editing monthly earned leaves"""
+    
+    class Meta:
+        model = MonthlyEarnedLeaves
+        fields = ['earned_leaves', 'is_auto_generated']
+        widgets = {
+            # ✅ FIXED: Use NumberInput instead of DecimalInput
+            'earned_leaves': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.5',
+                'min': '0',
+                'max': '31',
+                'type': 'number',  # Explicitly set type
+            }),
+            'is_auto_generated': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+            }),
+        }
+    
+    def clean_earned_leaves(self):
+        earned_leaves = self.cleaned_data.get('earned_leaves')
+        
+        if earned_leaves < 0:
+            raise forms.ValidationError('Earned leaves cannot be negative.')
+        
+        if earned_leaves > 31:
+            raise forms.ValidationError('Earned leaves cannot exceed 31 days per month.')
+        
+        return earned_leaves
+
+
+
+class HalfDayScenarioForm(forms.ModelForm):
+    """Form for creating/editing half-day scenarios"""
+    
+    class Meta:
+        model = HalfDayScenario
+        fields = ['scenario_date', 'scenario_type', 'description', 'credit_count', 'is_approved']
+        widgets = {
+            'scenario_date': forms.DateInput(attrs={
+                'type': 'date',
+                'class': 'form-control',
+            }),
+            'scenario_type': forms.Select(attrs={
+                'class': 'form-control',
+            }),
+            'description': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'e.g., Heavy rain closure',
+            }),
+            # ✅ FIXED: Use NumberInput instead of DecimalInput
+            'credit_count': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.5',
+                'min': '0.5',
+                'max': '1.0',
+                'type': 'number',
+            }),
+            'is_approved': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+            }),
+        }
+    
+    def clean_scenario_date(self):
+        scenario_date = self.cleaned_data.get('scenario_date')
+        
+        if scenario_date and scenario_date < date.today():
+            raise forms.ValidationError(
+                'Scenario date cannot be in the past.'
+            )
+        
+        return scenario_date
+    
+    def clean_description(self):
+        description = self.cleaned_data.get('description', '').strip()
+        
+        if not description:
+            raise forms.ValidationError('Description is required.')
+        
+        if len(description) > 500:
+            raise forms.ValidationError('Description must not exceed 500 characters.')
+        
+        return description
+    
+    def clean_credit_count(self):
+        credit_count = self.cleaned_data.get('credit_count')
+        
+        if credit_count not in [0.5, 1.0]:
+            raise forms.ValidationError('Credit count must be either 0.5 or 1.0 days.')
+        
+        return credit_count
+
+
+class BulkHolidayImportForm(forms.Form):
+    """Form for bulk importing holidays from CSV/Excel"""
+    
+    csv_file = forms.FileField(
+        label='CSV/Excel File',
+        help_text='File should contain columns: holiday_date, name, holiday_type, status',
+        widget=forms.FileInput(attrs={
+            'class': 'form-control',
+            'accept': '.csv,.xlsx,.xls',
+        })
+    )
+    
+    year = forms.IntegerField(
+        label='Year',
+        initial=date.today().year,
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control',
+            'min': date.today().year,
+        })
+    )
+    
+    is_national = forms.BooleanField(
+        label='Apply to All Branches (National)',
+        required=False,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'form-check-input',
+        })
+    )
+    
+    def clean_csv_file(self):
+        csv_file = self.cleaned_data.get('csv_file')
+        
+        if csv_file:
+            # Check file size (max 5MB)
+            if csv_file.size > 5 * 1024 * 1024:
+                raise forms.ValidationError('File size must not exceed 5MB.')
+            
+            # Check file extension
+            allowed_extensions = ['.csv', '.xlsx', '.xls']
+            file_name = csv_file.name
+            if not any(file_name.endswith(ext) for ext in allowed_extensions):
+                raise forms.ValidationError('File must be CSV or Excel format.')
+        
+        return csv_file
+
+
+class PayrollSettingsForm(forms.ModelForm):
+    """Form for configuring payroll settings"""
+    
+    class Meta:
+        model = PayrollSettings
+        fields = [
+            'is_auto',
+            'from_date',
+            'to_date',
+            'grace_period_minutes',
+            'max_leave_balance',
+            'earned_leaves_per_year',
+            'financial_year_start_month',
+            'carry_forward',
+            'reset_month',
+            'pf_percentage',
+            'esic_percentage',
+            'gratuity_percentage',
+            'professional_tax',
+            'basic_percentage',
+            'hra_percentage',
+            'basic_cap',
+        ]
+        widgets = {
+            'is_auto': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+            }),
+            'from_date': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '1',
+                'max': '31',
+                'placeholder': 'Day of month',
+            }),
+            'to_date': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '1',
+                'max': '31',
+                'placeholder': 'Day of month',
+            }),
+            'grace_period_minutes': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0',
+                'placeholder': 'Minutes',
+            }),
+            'max_leave_balance': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0',
+            }),
+            'earned_leaves_per_year': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0',
+                'max': '365',
+            }),
+            'financial_year_start_month': forms.Select(
+                choices=[(i, ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][i-1]) for i in range(1, 13)],
+                attrs={
+                    'class': 'form-control',
+                }
+            ),
+            'carry_forward': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+            }),
+            'reset_month': forms.Select(
+                choices=[(None, 'None')] + [(i, ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][i-1]) for i in range(1, 13)],
+                attrs={
+                    'class': 'form-control',
+                }
+            ),
+            # ✅ FIXED: Use NumberInput with step for decimal values
+            'pf_percentage': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'max': '100',
+                'type': 'number',
+            }),
+            'esic_percentage': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'max': '100',
+                'type': 'number',
+            }),
+            'gratuity_percentage': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'max': '100',
+                'type': 'number',
+            }),
+            'professional_tax': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'type': 'number',
+            }),
+            'basic_percentage': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'max': '100',
+                'type': 'number',
+            }),
+            'hra_percentage': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'max': '100',
+                'type': 'number',
+            }),
+            'basic_cap': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'type': 'number',
+            }),
+        }
+    
+    def clean(self):
+        cleaned_data = super().clean()
+        
+        is_auto = cleaned_data.get('is_auto')
+        from_date = cleaned_data.get('from_date')
+        to_date = cleaned_data.get('to_date')
+        
+        if not is_auto:
+            if not from_date or not to_date:
+                raise forms.ValidationError(
+                    'From Date and To Date are required for manual payroll periods.'
+                )
+            
+            if from_date >= to_date:
+                raise forms.ValidationError(
+                    'To Date must be after From Date.'
+                )
+        
+        return cleaned_data

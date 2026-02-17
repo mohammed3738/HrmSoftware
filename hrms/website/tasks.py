@@ -295,15 +295,386 @@ def process_salary_increments():
 
 
 
-from celery import shared_task
-from website.signals import reset_monthly_leave_balances
+# from celery import shared_task
+# from website.signals import reset_monthly_leave_balances
 
-@shared_task
-def reset_monthly_leave_balances_task():
+# @shared_task
+# def reset_monthly_leave_balances_task():
+#     """
+#     Celery task to trigger monthly leave reset.
+#     """
+#     print("🕒 Celery Task: Running monthly leave reset...")
+#     reset_monthly_leave_balances()
+#     print("✅ Celery Task Completed: Leave balances reset successfully.")
+
+
+
+"""
+Celery tasks for leave balance and employee management
+Does NOT import from views.py to avoid circular imports
+Instead uses dedicated service functions
+"""
+
+from celery import shared_task
+from django.db import transaction
+from django.db.models import Sum, Min, Max
+from datetime import date, timedelta
+from decimal import Decimal
+from website.models import Employee, PayrollSettings, LeaveBalance, Company, Attendance
+
+
+# ============================================
+# HELPER FUNCTIONS (Moved from views.py)
+# ============================================
+
+def get_payroll_period_for_date(payroll_settings, target_date):
+    """Determine which payroll period a date falls into"""
+    if payroll_settings.is_auto:
+        first_day = target_date.replace(day=1)
+        if target_date.month == 12:
+            last_day = date(target_date.year + 1, 1, 1) - timedelta(days=1)
+        else:
+            last_day = date(target_date.year, target_date.month + 1, 1) - timedelta(days=1)
+        return first_day, last_day
+    else:
+        from_day = payroll_settings.from_date
+        to_day = payroll_settings.to_date
+        
+        if from_day < to_day:
+            if target_date.day >= from_day:
+                from_d = date(target_date.year, target_date.month, from_day)
+                to_d = date(target_date.year, target_date.month, to_day)
+            else:
+                prev_month = target_date.month - 1
+                prev_year = target_date.year
+                if prev_month == 0:
+                    prev_month = 12
+                    prev_year -= 1
+                from_d = date(prev_year, prev_month, from_day)
+                to_d = date(prev_year, prev_month, to_day)
+        else:
+            if target_date.day >= from_day:
+                from_d = date(target_date.year, target_date.month, from_day)
+                next_month = target_date.month + 1
+                next_year = target_date.year
+                if next_month > 12:
+                    next_month = 1
+                    next_year += 1
+                to_d = date(next_year, next_month, to_day)
+            else:
+                prev_month = target_date.month - 1
+                prev_year = target_date.year
+                if prev_month == 0:
+                    prev_month = 12
+                    prev_year -= 1
+                from_d = date(prev_year, prev_month, from_day)
+                to_d = date(target_date.year, target_date.month, to_day)
+        
+        return from_d, to_d
+
+
+def get_all_payroll_periods_from_attendance(company, payroll_settings):
+    """Get all unique payroll periods that have attendance data"""
+    periods = []
+    
+    attendance_stats = Attendance.objects.filter(
+        employee__company=company
+    ).aggregate(
+        min_date=Min('date'),
+        max_date=Max('date')
+    )
+    
+    min_date = attendance_stats.get('min_date')
+    max_date = attendance_stats.get('max_date')
+    
+    if not min_date or not max_date:
+        return periods
+    
+    current_date = min_date
+    seen_periods = set()
+    
+    while current_date <= max_date:
+        from_d, to_d = get_payroll_period_for_date(payroll_settings, current_date)
+        
+        period_key = f"{from_d}_{to_d}"
+        
+        if period_key not in seen_periods:
+            seen_periods.add(period_key)
+            
+            has_attendance = Attendance.objects.filter(
+                employee__company=company,
+                date__gte=from_d,
+                date__lte=to_d
+            ).exists()
+            
+            if has_attendance:
+                label = f"{from_d.strftime('%b %d')} - {to_d.strftime('%b %d, %Y')}"
+                periods.append({
+                    'label': label,
+                    'from_date': from_d,
+                    'to_date': to_d,
+                    'display_date': to_d,
+                })
+        
+        current_date += timedelta(days=1)
+    
+    periods.sort(key=lambda x: x['to_date'], reverse=True)
+    
+    return periods
+
+
+def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to_date):
+    """Calculate leave balance for a specific payroll period"""
+    
+    # STEP 1: Opening Balance - Get PREVIOUS PERIOD's final balance
+    prev_period_end = from_date - timedelta(days=1)
+    prev_from, prev_to = get_payroll_period_for_date(payroll_settings, prev_period_end)
+    
+    previous_record = (
+        LeaveBalance.objects
+        .filter(
+            employee=employee,
+            period_from_date=prev_from,
+            period_to_date=prev_to
+        )
+        .first()
+    )
+    
+    opening_balance = (
+        previous_record.final_leave_balance 
+        if previous_record 
+        else Decimal("0.00")
+    )
+    
+    # Handle reset logic
+    if not getattr(payroll_settings, 'carry_forward', True):
+        reset_month = getattr(payroll_settings, 'reset_month', None)
+        if reset_month and reset_month == to_date.month:
+            opening_balance = Decimal("0.00")
+    
+    # STEP 2: Attendance for THIS period
+    attendance_records = Attendance.objects.filter(
+        employee=employee,
+        date__gte=from_date,
+        date__lte=to_date
+    )
+    
+    total_days = attendance_records.count()
+    
+    # STEP 3: Paid Days
+    paid_days_sum = attendance_records.aggregate(
+        total=Sum("count")
+    )["total"]
+    paid_days = paid_days_sum if paid_days_sum else Decimal("0.00")
+    
+    # STEP 4: Leave Taken
+    leave_taken = Decimal(str(total_days)) - paid_days
+    if leave_taken < 0:
+        leave_taken = Decimal("0.00")
+    
+    # STEP 5: Late
+    total_late_minutes = attendance_records.aggregate(
+        total=Sum("late")
+    )["total"]
+    total_late_minutes = total_late_minutes if total_late_minutes else 0
+    
+    late_days = Decimal(str(total_late_minutes)) / Decimal("480")
+    
+    # STEP 6: Comp-Off
+    from website.models import CompOffRequest
+    compoff_total = (
+        CompOffRequest.objects
+        .filter(
+            employee=employee,
+            status="Approved",
+            from_date__gte=from_date,
+            to_date__lte=to_date
+        )
+        .aggregate(total=Sum("count"))["total"]
+        or Decimal("0.00")
+    )
+    
+    # STEP 7: LWP
+    balance_before_credit = opening_balance + compoff_total - leave_taken - late_days
+    
+    if balance_before_credit < 0:
+        leave_without_pay = abs(balance_before_credit)
+        leave_balance = Decimal("0.00")
+    else:
+        leave_without_pay = Decimal("0.00")
+        leave_balance = balance_before_credit
+    
+    # STEP 8: Leave Credit Policy
+    try:
+        policy = employee.company.leave_credit_policy
+        present_days_for_credit = int(paid_days)
+        
+        if present_days_for_credit <= policy.credit_1_limit:
+            monthly_credit = policy.credit_low
+        elif present_days_for_credit <= policy.credit_2_limit:
+            monthly_credit = policy.credit_mid
+        else:
+            monthly_credit = policy.credit_high
+        
+        monthly_cap = Decimal(str(payroll_settings.earned_leaves_per_year)) / Decimal("12")
+        monthly_credit = min(Decimal(str(monthly_credit)), monthly_cap)
+    except:
+        monthly_credit = Decimal("1.00")
+    
+    # STEP 9: Closing Balance
+    closing_balance = leave_balance + monthly_credit
+    
+    final_leave_balance = min(
+        closing_balance,
+        Decimal(str(payroll_settings.max_leave_balance))
+    )
+    
+    # STEP 10: Save Record
+    LeaveBalance.objects.update_or_create(
+        employee=employee,
+        period_from_date=from_date,
+        period_to_date=to_date,
+        defaults={
+            'opening_balance': opening_balance,
+            'leave_taken': leave_taken,
+            'number_of_days_present': paid_days,
+            'total_number_of_days': total_days,
+            'late': total_late_minutes,
+            'compoff': compoff_total,
+            'leave_without_pay': leave_without_pay,
+            'leave_balance': leave_balance,
+            'closing_balance': closing_balance,
+            'final_leave_balance': final_leave_balance
+        }
+    )
+    
+    return final_leave_balance
+
+
+
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60}
+)
+def reset_monthly_leave_balances_task(self):
     """
-    Celery task to trigger monthly leave reset.
+    Reset leave balances for financial year start (usually April 1st)
+    Runs MONTHLY on 1st at 2:30 AM
     """
-    print("🕒 Celery Task: Running monthly leave reset...")
-    reset_monthly_leave_balances()
-    print("✅ Celery Task Completed: Leave balances reset successfully.")
+    try:
+        today = date.today()
+        reset_month = today.month
+        
+        # Only reset in April (month 4)
+        if reset_month == 4:
+            companies = Company.objects.all()
+            
+            for company in companies:
+                try:
+                    if hasattr(company, 'payrollsettings'):
+                        payroll = company.payrollsettings
+                        
+                        if payroll.reset_month == reset_month:
+                            # Delete old leave balance records
+                            LeaveBalance.objects.filter(
+                                employee__company=company
+                            ).delete()
+                            
+                            print(f"✓ Reset leave balances for {company.name}")
+                except Exception as e:
+                    print(f"Error resetting {company.name}: {e}")
+                    continue
+        
+        return f"✓ Leave balances reset for month {reset_month}"
+        
+    except Exception as e:
+        print(f"Error in reset_monthly_leave_balances_task: {e}")
+        self.retry(exc=e)
+
+
+@shared_task(
+    bind=True,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60}
+)
+def auto_process_all_companies_leave_balance(self):
+    """
+    Auto-process leave balance for ALL periods of ALL employees
+    Runs on 25th of month at 11:55 PM
+    
+    This task:
+    1. Gets all companies
+    2. For each company, finds all payroll periods with attendance
+    3. For each period, calculates leave balance for all employees
+    4. Supports multi-period calculation (NOT just current period!)
+    """
+    try:
+        companies = Company.objects.all()
+        total_processed = 0
+        error_count = 0
+        
+        for company in companies:
+            try:
+                if not hasattr(company, 'payrollsettings'):
+                    continue
+                
+                payroll = company.payrollsettings
+                employees = Employee.objects.filter(
+                    company=company,
+                    status="Active"
+                )
+                
+                # Get ALL periods with attendance (not just current!)
+                periods = get_all_payroll_periods_from_attendance(company, payroll)
+                
+                if not periods:
+                    print(f"No periods found for {company.name}")
+                    continue
+                
+                # Calculate for each period and each employee
+                for period_info in periods:
+                    for employee in employees:
+                        try:
+                            # Use multi-period aware calculation
+                            calculate_leave_balance_for_period(
+                                employee,
+                                payroll,
+                                period_info['from_date'],
+                                period_info['to_date']
+                            )
+                            total_processed += 1
+                        except Exception as e:
+                            error_count += 1
+                            print(f"Error for {employee.employee_code} in {period_info}: {e}")
+                            continue
+                
+                print(f"✓ {company.name}: Processed {len(employees)} employees for {len(periods)} periods")
+                
+            except Exception as e:
+                error_count += 1
+                print(f"Error processing company {company.id}: {e}")
+                continue
+        
+        return f"✓ Processed {total_processed} leave balances, {error_count} errors"
+        
+    except Exception as e:
+        print(f"Error in auto_process_all_companies_leave_balance: {e}")
+        self.retry(exc=e)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

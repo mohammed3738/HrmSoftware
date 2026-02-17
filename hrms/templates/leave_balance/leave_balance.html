@@ -1,39 +1,235 @@
-{% extends 'base.html' %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leave Balance</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        h1 {
+            margin: 0;
+            color: #333;
+        }
+        .filters {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        select, button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+            position: sticky;
+            top: 0;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        .number {
+            text-align: right;
+        }
+        .positive {
+            color: #28a745;
+        }
+        .negative {
+            color: #dc3545;
+        }
+        .warning {
+            color: #ffc107;
+        }
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .badge-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .badge-warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        .alert {
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .alert-warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .employee-name {
+            cursor: pointer;
+            color: #007bff;
+            text-decoration: none;
+        }
+        .employee-name:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1>Leave Balance Report</h1>
+                <p style="color: #6c757d; margin: 5px 0 0 0;">{{ display_month }}</p>
+            </div>
+            
+            <div class="filters">
+                <form method="get" style="display: flex; gap: 10px;">
+                    <select name="month" onchange="this.form.submit()">
+                        <option value="">Current Month</option>
+                        {% for month in available_months %}
+                        <option value="{{ month|date:'Y-m-d' }}" 
+                                {% if selected_month == month|date:'Y-m-d' %}selected{% endif %}>
+                            {{ month|date:"F Y" }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </form>
+                
+                {% if user.is_staff and can_recalculate %}
+                    <a href="{% url 'recalc-leave-balance' company_id=user_company_id %}" 
+                       style="text-decoration: none;">
+                        <button>Recalculate All</button>
+                    </a>
+                {% elif user.is_staff %}
+                    <button disabled title="No company assigned">Recalculate All</button>
+                {% endif %}
+            </div>
+        </div>
 
-{% block content %}
+        {% if user.is_staff and not user_company_id %}
+        <div class="alert alert-warning">
+            ⚠️ <strong>Warning:</strong> Your user account is not associated with a company. 
+            Please contact your administrator to assign a company.
+        </div>
+        {% endif %}
 
-    <h2>Leave Balance Report</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Employee</th>
-                <th>Opening Balance</th>
-                <th>Leave Taken</th>
-                <th>Days Present</th>
-                <th>Total Days</th>
-                <th>Late</th>
-                <th>Comp Off</th>
-                <th>Leave Without Pay</th>
-                <th>Closing Balance</th>
-                <th>Leave Balance</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for leave in leave_balances %}
-            <tr>
-                <td>{{ leave.employee.first_name }} {{ leave.employee.last_name }}</td>
-                <td>{{ leave.opening_balance }}</td>
-                <td>{{ leave.leave_taken }}</td>
-                <td>{{ leave.number_of_days_present }}</td>
-                <td>{{ leave.total_number_of_days }}</td>
-                <td>{{ leave.late }}</td>
-                <td>{{ leave.compoff }}</td>
-                <td>{{ leave.leave_without_pay }}</td>
-                <td>{{ leave.closing_balance }}</td>
-                <td>{{ leave.leave_balance }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% endblock %}
-
+        {% if leave_balances %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Employee Code</th>
+                    <th>Name</th>
+                    <th class="number">Opening</th>
+                    <th class="number">Leave Taken</th>
+                    <th class="number">Late (min)</th>
+                    <th class="number">Comp-Off</th>
+                    <th class="number">LWP</th>
+                    <th class="number">Paid Days</th>
+                    <th class="number">Total Days</th>
+                    <th class="number">Balance</th>
+                    <th class="number">Final Balance</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for lb in leave_balances %}
+                <tr>
+                    <td>{{ lb.employee.employee_code }}</td>
+                    <td>
+                        <a href="{% url 'employee-leave-detail' employee_id=lb.employee.id %}" 
+                           class="employee-name">
+                            {{ lb.employee.first_name }} {{ lb.employee.last_name }}
+                        </a>
+                    </td>
+                    <td class="number">{{ lb.opening_balance }}</td>
+                    <td class="number">{{ lb.leave_taken }}</td>
+                    <td class="number">{{ lb.late }}</td>
+                    <td class="number">{{ lb.compoff }}</td>
+                    <td class="number {% if lb.leave_without_pay > 0 %}negative{% endif %}">
+                        {{ lb.leave_without_pay }}
+                    </td>
+                    <td class="number">{{ lb.number_of_days_present }}</td>
+                    <td class="number">{{ lb.total_number_of_days }}</td>
+                    <td class="number {% if lb.leave_balance > 10 %}positive{% elif lb.leave_balance > 5 %}warning{% else %}negative{% endif %}">
+                        {{ lb.leave_balance }}
+                    </td>
+                    <td class="number {% if lb.final_leave_balance > 10 %}positive{% elif lb.final_leave_balance > 5 %}warning{% else %}negative{% endif %}">
+                        <strong>{{ lb.final_leave_balance }}</strong>
+                    </td>
+                    <td>
+                        {% if lb.final_leave_balance >= 10 %}
+                            <span class="badge badge-success">Good</span>
+                        {% elif lb.final_leave_balance >= 5 %}
+                            <span class="badge badge-warning">Low</span>
+                        {% else %}
+                            <span class="badge badge-danger">Critical</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            <h3>No leave balance data available</h3>
+            <p>Click "Recalculate All" to generate leave balance records.</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+    <h2>Leave Balance Report</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Employee</th>
+                <th>Opening Balance</th>
+                <th>Leave Taken</th>
+                <th>Days Present</th>
+                <th>Total Days</th>
+                <th>Late</th>
+                <th>Comp Off</th>
+                <th>Leave Without Pay</th>
+                <th>Closing Balance</th>
+                <th>Leave Balance</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for leave in leave_balances %}
+            <tr>
+                <td>{{ leave.employee.first_name }} {{ leave.employee.last_name }}</td>
+                <td>{{ leave.opening_balance }}</td>
+                <td>{{ leave.leave_taken }}</td>
+                <td>{{ leave.number_of_days_present }}</td>
+                <td>{{ leave.total_number_of_days }}</td>
+                <td>{{ leave.late }}</td>
+                <td>{{ leave.compoff }}</td>
+                <td>{{ leave.leave_without_pay }}</td>
+                <td>{{ leave.closing_balance }}</td>
+                <td>{{ leave.leave_balance }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endblock %}
+

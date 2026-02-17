@@ -1,0 +1,430 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Holiday Management</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1e40af;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --light: #f9fafb;
+            --border: #e5e7eb;
+            --text: #374151;
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 2.5rem;
+            border-radius: 15px;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .header h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .header-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .filters {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .filter-group label {
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            opacity: 0.9;
+        }
+
+        select, input[type="text"], input[type="date"] {
+            padding: 0.75rem;
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.9rem;
+            width: 180px;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-secondary {
+            background: var(--light);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .table-container {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: var(--shadow-lg);
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: var(--light);
+            border-bottom: 2px solid var(--border);
+        }
+
+        th {
+            padding: 1rem;
+            text-align: left;
+            font-weight: 700;
+            color: var(--text);
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody tr:hover {
+            background: var(--light);
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-approved {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-pending {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .status-rejected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .type-badge {
+            display: inline-block;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .type-national {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .type-regional {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+        .type-company {
+            background: #d1d5db;
+            color: #374151;
+        }
+
+        .type-emergency {
+            background: #fecaca;
+            color: #991b1b;
+        }
+
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 0.5rem;
+            font-size: 1.3rem;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                padding: 1.5rem;
+            }
+
+            .header h1 {
+                font-size: 1.5rem;
+            }
+
+            .header-controls {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .filters {
+                flex-direction: column;
+            }
+
+            select, input[type="text"], input[type="date"] {
+                width: 100%;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            table {
+                font-size: 0.85rem;
+            }
+
+            th, td {
+                padding: 0.75rem 0.5rem;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎉 Holiday Management</h1>
+            <p>Manage company holidays and special closures across all branches</p>
+
+            <div class="header-controls">
+                <div class="filters">
+                    <div class="filter-group">
+                        <label>Branch</label>
+                        <select onchange="filterHolidays()">
+                            <option value="">All Branches</option>
+                            {% for branch in branches %}
+                            <option value="{{ branch.id }}">{{ branch.branch_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Type</label>
+                        <select onchange="filterHolidays()">
+                            <option value="">All Types</option>
+                            <option value="national">National Holiday</option>
+                            <option value="regional">Regional Holiday</option>
+                            <option value="company">Company Holiday</option>
+                            <option value="emergency">Emergency Closure</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Status</label>
+                        <select onchange="filterHolidays()">
+                            <option value="">All Status</option>
+                            <option value="declared">Declared</option>
+                            <option value="optional">Optional</option>
+                            <option value="emergency">Emergency</option>
+                        </select>
+                    </div>
+
+                    <div class="filter-group">
+                        <label>Year</label>
+                        <select onchange="filterHolidays()">
+                            <option value="2024">2024</option>
+                            <option value="2025" selected>2025</option>
+                            <option value="2026">2026</option>
+                        </select>
+                    </div>
+                </div>
+
+                <a href="{% url 'add-holiday' %}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Holiday
+                </a>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-container">
+            {% if holidays %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>📅 Date</th>
+                            <th>Holiday Name</th>
+                            <th>Type</th>
+                            <th>Applicable</th>
+                            <th>Status</th>
+                            <th>Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for holiday in holidays %}
+                        <tr>
+                            <td><strong>{{ holiday.holiday_date|date:"M d, Y" }}</strong></td>
+                            <td>{{ holiday.name }}</td>
+                            <td>
+                                <span class="type-badge type-{{ holiday.holiday_type.type_category }}">
+                                    {{ holiday.holiday_type.name }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if holiday.is_national %}
+                                    <span style="font-weight: 600; color: var(--success);">All Branches</span>
+                                {% else %}
+                                    <span style="font-weight: 600;">{{ holiday.holiday_calendar.branch.branch_name }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if holiday.status == "declared" %}
+                                    <span class="status-badge status-approved">Declared</span>
+                                {% elif holiday.status == "optional" %}
+                                    <span class="status-badge status-pending">Optional</span>
+                                {% else %}
+                                    <span class="status-badge status-rejected">Emergency</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ holiday.description|truncatewords:5 }}</td>
+                            <td>
+                                <div class="actions">
+                                    <a href="{% url 'edit-holiday' holiday.id %}" class="btn btn-secondary">Edit</a>
+                                    <a href="{% url 'delete-holiday' holiday.id %}" class="btn btn-danger">Delete</a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">🎪</div>
+                    <h3>No Holidays Found</h3>
+                    <p>There are no holidays matching your filters. <a href="{% url 'add-holiday' %}" style="color: var(--primary); text-decoration: underline;">Add one now</a></p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        function filterHolidays() {
+            const branch = document.querySelector('select[name="branch"]')?.value || '';
+            const type = document.querySelector('select[name="type"]')?.value || '';
+            const status = document.querySelector('select[name="status"]')?.value || '';
+            const year = document.querySelector('select[name="year"]')?.value || '';
+
+            const params = new URLSearchParams();
+            if (branch) params.append('branch', branch);
+            if (type) params.append('type', type);
+            if (status) params.append('status', status);
+            if (year) params.append('year', year);
+
+            window.location.href = `{% url 'holiday-list' %}?${params.toString()}`;
+        }
+    </script>
+</body>
+</html>

@@ -27,6 +27,7 @@ et_xmlfile==2.0.0
 flower==2.0.1
 fonttools==4.60.1
 freetype-py==2.5.1
+freezegun==1.5.5
 html5lib==1.1
 humanize==4.14.0
 idna==3.11
@@ -42,6 +43,7 @@ pillow==12.0.0
 pluggy==1.6.0
 prometheus_client==0.23.1
 prompt_toolkit==3.0.52
+pycairo==1.29.0
 pycparser==2.23
 pydyf==0.11.0
 Pygments==2.19.2
@@ -50,12 +52,14 @@ pyhanko-certvalidator==0.29.0
 pypdf==6.4.0
 pyphen==0.17.2
 pytest==9.0.2
+pytest-django==4.11.1
 python-bidi==0.6.7
 python-crontab==3.3.0
 python-dateutil==2.9.0.post0
 pytz==2025.2
 PyYAML==6.0.3
 redis==7.1.0
+reportlab==4.4.6
 requests==2.32.5
 rlPyCairo==0.4.0
 six==1.17.0
@@ -73,5 +77,6 @@ vine==5.1.0
 wcwidth==0.2.14
 weasyprint==66.0
 webencodings==0.5.1
+xhtml2pdf==0.2.17
 xlsxwriter==3.2.9
 zopfli==0.4.0

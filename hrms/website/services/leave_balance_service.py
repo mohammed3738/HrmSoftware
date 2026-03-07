@@ -1,20 +1,58 @@
 """
-Leave Balance Calculation Service
+✅ UPDATED Leave Balance Calculation Service
+Now reads monthly earned leaves from MonthlyEarnedLeaves table instead of dividing by 12
+
 Works with existing PayrollSettings model that has:
 - is_auto (bool): True = calendar month, False = custom period
 - from_date (int): Start day (e.g., 26)
 - to_date (int): End day (e.g., 25)
 - get_payroll_period(): Method that returns (from_date, to_date)
+- earned_leaves_per_year (int): Total leaves per year
+- max_leave_balance (int): Max leaves to carry forward
 """
 from decimal import Decimal
 from django.db.models import Sum
 from datetime import date, timedelta
-from website.models import Attendance, LeaveBalance, CompOffRequest
+from website.models import Attendance, LeaveBalance, CompOffRequest, MonthlyEarnedLeaves
+
+
+def get_monthly_earned_leaves(payroll_settings, month, year):
+    """
+    ✅ NEW: Get earned leaves for a specific month from database
+    
+    Instead of dividing earned_leaves_per_year by 12,
+    this reads the actual value from MonthlyEarnedLeaves table
+    
+    Parameters:
+    - payroll_settings: PayrollSettings instance
+    - month: Month number (1-12)
+    - year: Year
+    
+    Returns: Decimal value of earned leaves for that month
+    
+    Example:
+    >>> payroll = PayrollSettings.objects.first()
+    >>> march_leaves = get_monthly_earned_leaves(payroll, 3, 2025)
+    >>> print(march_leaves)  # Output: Decimal('1.00')
+    """
+    try:
+        monthly_leave = MonthlyEarnedLeaves.objects.get(
+            payroll_settings=payroll_settings,
+            month=month,
+            year=year
+        )
+        return Decimal(str(monthly_leave.earned_leaves))
+    except MonthlyEarnedLeaves.DoesNotExist:
+        # Fallback: If not found, return 0
+        # This shouldn't happen if admin set up MonthlyEarnedLeaves correctly
+        return Decimal('0.00')
 
 
 def calculate_leave_balance(employee, payroll_settings, target_date=None):
     """
-    Calculate monthly leave balance for an employee
+    ✅ UPDATED: Calculate monthly leave balance for an employee
+    Now reads monthly credit from MonthlyEarnedLeaves table
+    
     Uses payroll_settings.get_payroll_period() to get the date range
     
     Formula references match Excel columns:
@@ -60,11 +98,13 @@ def calculate_leave_balance(employee, payroll_settings, target_date=None):
     # ============================================
     # STEP 2: Attendance Aggregation
     # Get attendance records for this payroll period
+    # ✅ EXCLUDE HOLIDAYS (is_holiday=False)
     # ============================================
     attendance_records = Attendance.objects.filter(
         employee=employee,
         date__gte=from_date,
-        date__lte=to_date
+        date__lte=to_date,
+        is_holiday=False  # ✅ Don't count holidays as working days
     )
     
     # Total days in period (Column I)
@@ -129,23 +169,15 @@ def calculate_leave_balance(employee, payroll_settings, target_date=None):
         leave_balance = balance_before_credit
     
     # ============================================
-    # STEP 8: Leave Credit Based on Policy
+    # STEP 8: ✅ UPDATED - Get Monthly Credit from Database
+    # Instead of: earned_leaves_per_year / 12
+    # Now: Read from MonthlyEarnedLeaves table
     # ============================================
-    policy = employee.company.leave_credit_policy
-    
-    # Use paid_days for credit calculation
-    present_days_for_credit = int(paid_days)
-    
-    if present_days_for_credit <= policy.credit_1_limit:
-        monthly_credit = policy.credit_low
-    elif present_days_for_credit <= policy.credit_2_limit:
-        monthly_credit = policy.credit_mid
-    else:
-        monthly_credit = policy.credit_high
-    
-    # Apply monthly cap (earned_leaves_per_year / 12)
-    monthly_cap = Decimal(str(payroll_settings.earned_leaves_per_year)) / Decimal("12")
-    monthly_credit = min(Decimal(str(monthly_credit)), monthly_cap)
+    monthly_credit = get_monthly_earned_leaves(
+        payroll_settings, 
+        to_date.month,      # Month of period end date
+        to_date.year        # Year of period end date
+    )
     
     # ============================================
     # STEP 9: Closing Balance (Column K)
@@ -165,6 +197,8 @@ def calculate_leave_balance(employee, payroll_settings, target_date=None):
     # ============================================
     leave_record, created = LeaveBalance.objects.update_or_create(
         employee=employee,
+        period_from_date=from_date,
+        period_to_date=to_date,
         defaults={
             'opening_balance': opening_balance,
             'leave_taken': leave_taken,

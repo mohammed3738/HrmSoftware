@@ -117,6 +117,38 @@
                      value="{{ payroll_settings.earned_leaves_per_year }}">
             </div>
 
+            <div class="col-md-4">
+  <label class="form-label">Financial Year Start Month</label>
+  <select class="form-select" id="financial_year_start_month" name="financial_year_start_month">
+    <option value="1"  {% if payroll_settings.financial_year_start_month == 1  %}selected{% endif %}>January</option>
+    <option value="2"  {% if payroll_settings.financial_year_start_month == 2  %}selected{% endif %}>February</option>
+    <option value="3"  {% if payroll_settings.financial_year_start_month == 3  %}selected{% endif %}>March</option>
+    <option value="4"  {% if payroll_settings.financial_year_start_month == 4  %}selected{% endif %}>April (India Default)</option>
+    <option value="5"  {% if payroll_settings.financial_year_start_month == 5  %}selected{% endif %}>May</option>
+    <option value="6"  {% if payroll_settings.financial_year_start_month == 6  %}selected{% endif %}>June</option>
+    <option value="7"  {% if payroll_settings.financial_year_start_month == 7  %}selected{% endif %}>July</option>
+    <option value="8"  {% if payroll_settings.financial_year_start_month == 8  %}selected{% endif %}>August</option>
+    <option value="9"  {% if payroll_settings.financial_year_start_month == 9  %}selected{% endif %}>September</option>
+    <option value="10" {% if payroll_settings.financial_year_start_month == 10 %}selected{% endif %}>October</option>
+    <option value="11" {% if payroll_settings.financial_year_start_month == 11 %}selected{% endif %}>November</option>
+    <option value="12" {% if payroll_settings.financial_year_start_month == 12 %}selected{% endif %}>December</option>
+  </select>
+  <small class="text-muted">Changing this regenerates earned leave months.</small>
+</div>
+
+<div class="col-md-4">
+  <label class="form-label">Branch-Specific Holidays</label>
+  <select class="form-select" id="branch_specific_holidays" name="branch_specific_holidays">
+    <option value="true"  {% if payroll_settings.branch_specific_holidays %}selected{% endif %}>
+      Yes — Regional holidays apply per branch
+    </option>
+    <option value="false" {% if not payroll_settings.branch_specific_holidays %}selected{% endif %}>
+      No — All holidays apply company-wide
+    </option>
+  </select>
+  <small class="text-muted">National holidays always apply to all branches.</small>
+</div>
+
             <div class="col-12 text-end">
               <small class="text-muted">
               Last updated: 
@@ -184,27 +216,41 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Save Payroll via AJAX
-  document.getElementById('savePayrollBtn').addEventListener('click', async function(){
+document.getElementById('savePayrollBtn').addEventListener('click', async function(){
     const url = "{% url 'save-payroll-settings' %}";
     const formData = new FormData();
-    // collect fields
+
     formData.append('is_auto', document.getElementById('is_auto')?.checked ? 'on' : '');
-    ['from_date','to_date','grace_period_minutes','basic_percentage','hra_percentage','basic_cap','pf_percentage','esic_percentage','gratuity_percentage','bonus_percentage','professional_tax','max_leave_balance','earned_leaves_per_year'].forEach(id=>{
-      const el=document.getElementById(id);
-      if(el) formData.append(id, el.value);
+
+    // Existing fields
+    [
+        'from_date', 'to_date', 'grace_period_minutes', 'basic_percentage',
+        'hra_percentage', 'basic_cap', 'pf_percentage', 'esic_percentage',
+        'gratuity_percentage', 'bonus_percentage', 'professional_tax',
+        'max_leave_balance', 'earned_leaves_per_year',
+        // ✅ NEW fields
+        'financial_year_start_month', 'branch_specific_holidays'
+    ].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) formData.append(id, el.value);
     });
+
     formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
 
     try {
-      const res = await fetch(url, { method: 'POST', body: formData, headers: {'X-CSRFToken':'{{ csrf_token }}'} });
-      const data = await res.json();
-      if(data.success) showSuccess(data.message || 'Payroll settings saved');
-      else showError('Failed to save payroll settings');
-    } catch(err){
-      console.error(err); showError('Server error');
+        const res = await fetch(url, {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+        });
+        const data = await res.json();
+        if (data.success) showSuccess(data.message || 'Settings saved');
+        else showError(data.error || 'Failed to save settings');
+    } catch(err) {
+        console.error(err);
+        showError('Server error');
     }
-  });
-
+});
   // Save Leave via AJAX
   document.getElementById('saveLeaveBtn').addEventListener('click', async function(){
     const url = "{% url 'save-leave-settings' %}";

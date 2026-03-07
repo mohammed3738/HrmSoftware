@@ -573,6 +573,13 @@ class PayrollSettings(models.Model):
     max_leave_balance = models.IntegerField(default=15)
     earned_leaves_per_year = models.PositiveIntegerField(default=24)
     grace_period_minutes = models.IntegerField(default=15)
+
+    branch_specific_holidays = models.BooleanField(
+    default=True,
+    help_text="When True, regional holidays only apply to their specific branch. "
+              "When False, all holidays apply to all branches."
+)
+
     financial_year_start_month = models.PositiveIntegerField(
         default=4,  # April (month number 1-12)
         validators=[MinValueValidator(1), MaxValueValidator(12)],
@@ -1214,6 +1221,19 @@ class Attendance(models.Model):
 
     def get_applicable_holiday(self, branch):
         '''Get applicable holiday for employee's branch on this date'''
+        
+        # Get payroll settings to check branch_specific_holidays flag
+        from django.apps import apps
+        PayrollSettings = apps.get_model('website', 'PayrollSettings')
+        
+        try:
+            payroll_settings = PayrollSettings.objects.filter(
+                company=branch.company if hasattr(branch, 'company') else None
+            ).first() or PayrollSettings.objects.first()
+            branch_specific = getattr(payroll_settings, 'branch_specific_holidays', True)
+        except Exception:
+            branch_specific = True
+        
         try:
             holiday_calendar = HolidayCalendar.objects.get(
                 branch=branch,
@@ -1221,6 +1241,12 @@ class Attendance(models.Model):
                 is_active=True
             )
         except HolidayCalendar.DoesNotExist:
+            if not branch_specific:
+                # When branch-specific is OFF, check ALL calendars for this date
+                holiday = Holiday.objects.filter(
+                    holiday_date=self.date
+                ).first()
+                return holiday
             return None
         
         holiday = Holiday.objects.filter(
@@ -1231,11 +1257,16 @@ class Attendance(models.Model):
         if not holiday:
             return None
         
+        # When branch_specific is OFF — all holidays apply to all branches
+        if not branch_specific:
+            return holiday
+        
+        # When branch_specific is ON — use existing branch matching
         if holiday.is_applicable_to_branch(branch):
             return holiday
         
-        return None
-    
+        return None    
+
     def get_half_day_scenario(self, branch):
         '''Get half-day scenario for this branch on this date'''
         scenario = HalfDayScenario.objects.filter(

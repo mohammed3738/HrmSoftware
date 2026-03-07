@@ -9,7 +9,7 @@ from django.contrib import messages
 import pandas as pd
 from django.http import HttpResponse
 from .models import *  # Import your Employee model
-from datetime import datetime,timedelta
+from datetime import datetime,timedelta,time
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.utils.timezone import now
 import json
@@ -117,22 +117,132 @@ def branch_details_api(request, pk):
 # Vaishu
 
 
-def parse_time(time_value):
-    """Convert time string to a proper datetime.time object."""
-    if pd.isna(time_value) or time_value is None:
-        return None  # Return None if NaN or None
-        
-    time_value = str(time_value).strip()  # Convert to string and strip whitespace
-    
-    if not time_value:  # If empty after strip, return None
-        return None
 
-    try:
-        return datetime.strptime(time_value, "%H:%M:%S").time()
-    except ValueError:
-        print(f"⚠️ Invalid time format: {time_value}")
-        return None  # Return None if parsing fails
+def parse_time(time_value):
+    """
+    Convert time value to a proper datetime.time object.
+    Handles multiple formats:
+    - Excel time format (decimal 0-1)
+    - String format "HH:MM:SS" or "HH:MM"
+    - datetime.time objects
+    - Pandas Timestamp objects
+    """
+    if pd.isna(time_value) or time_value is None:
+        return None
     
+    # If it's already a time object, return it
+    if isinstance(time_value, time):
+        return time_value
+    
+    # If it's a pandas Timestamp, extract the time
+    if isinstance(time_value, pd.Timestamp):
+        return time_value.time()
+    
+    # Convert to string and strip whitespace
+    time_str = str(time_value).strip()
+    
+    if not time_str or time_str.lower() == 'nan':
+        return None
+    
+    # Try to parse as string format (HH:MM:SS or HH:MM)
+    for fmt in ["%H:%M:%S", "%H:%M", "%I:%M:%S %p", "%I:%M %p"]:
+        try:
+            return datetime.strptime(time_str, fmt).time()
+        except ValueError:
+            continue
+    
+    # If all string formats fail, try to handle Excel decimal format
+    try:
+        # Excel stores time as decimal where 0.5 = 12:00 PM
+        time_float = float(time_value)
+        if 0 <= time_float <= 1:
+            seconds = int(time_float * 86400)  # 86400 seconds in a day
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            secs = seconds % 60
+            return time(hours, minutes, secs)
+    except (ValueError, TypeError):
+        pass
+    
+    print(f"⚠️ Could not parse time value: {time_value} (type: {type(time_value).__name__})")
+    return None
+
+
+
+
+
+def fill_holiday_attendance_for_month(year, month):
+    from calendar import monthrange
+    first_day = date(year, month, 1)
+    last_day = date(year, month, monthrange(year, month)[1])
+    
+    # Get setting
+    payroll_settings = PayrollSettings.objects.first()
+    branch_specific = getattr(payroll_settings, 'branch_specific_holidays', True)
+    
+    # Get all holidays in month
+    all_holidays = Holiday.objects.filter(
+        holiday_date__gte=first_day,
+        holiday_date__lte=last_day
+    ).select_related('holiday_calendar__branch')
+    
+    # Get half-day scenarios with branch info
+    half_day_scenarios = HalfDayScenario.objects.filter(
+        scenario_date__gte=first_day,
+        scenario_date__lte=last_day,
+        is_approved=True
+    ).select_related('branch')
+    
+    # Build half-day dict: {date: set(branch_ids)}
+    half_day_by_date = {}
+    for s in half_day_scenarios:
+        half_day_by_date.setdefault(s.scenario_date, set()).add(s.branch_id)
+    
+    employees = Employee.objects.filter(status='Active').select_related('branch')
+    created_count = 0
+    
+    for employee in employees:
+        dates_to_create = set()
+        
+        # Determine which holiday dates apply to this employee
+        for holiday in all_holidays:
+            if holiday.is_national:
+                # National holidays apply to everyone always
+                dates_to_create.add(holiday.holiday_date)
+            elif not branch_specific:
+                # Branch-specific setting is OFF — all holidays apply to all
+                dates_to_create.add(holiday.holiday_date)
+            else:
+                # Branch-specific ON — only apply if branch matches
+                if (employee.branch_id and 
+                    holiday.holiday_calendar.branch_id == employee.branch_id):
+                    dates_to_create.add(holiday.holiday_date)
+        
+        # Half-day dates only apply if employee's branch matches
+        for hd_date, branch_ids in half_day_by_date.items():
+            if employee.branch_id and employee.branch_id in branch_ids:
+                dates_to_create.add(hd_date)
+        
+        for special_date in dates_to_create:
+            if Attendance.objects.filter(
+                employee=employee, date=special_date
+            ).exists():
+                continue
+            
+            attendance = Attendance(
+                employee=employee,
+                date=special_date,
+                in_time=None,
+                out_time=None,
+            )
+            attendance.save()
+            
+            if attendance.status in ('Holiday', 'Present (Half-Day)'):
+                created_count += 1
+            else:
+                attendance.delete()
+    
+    return created_count
 
 # @login_required
 # @group_required("Admin", "HR")    
@@ -146,12 +256,14 @@ def upload_attendance_excel(request):
     file = request.FILES["attendance_file"]
 
     try:
+        # Read Excel with proper time parsing
         df = pd.read_excel(file)
 
         # Clean column names
         df.columns = df.columns.str.strip()
 
         print(f"📄 Columns found: {df.columns.tolist()}")
+        print(f"📊 Data types:\n{df.dtypes}\n")
 
         for index, row in df.iterrows():
             employee_code = row.get("Employee Code")
@@ -168,6 +280,9 @@ def upload_attendance_excel(request):
             attendance_date = pd.to_datetime(attendance_date).date()
             in_time = parse_time(in_time_raw)
             out_time = parse_time(out_time_raw)
+
+            print(f"🔍 Row {index}: Employee={employee_code}, Date={attendance_date}, "
+                  f"In={in_time}, Out={out_time}")
 
             # Fetch employee
             employee = Employee.objects.filter(employee_code=employee_code).first()
@@ -203,6 +318,18 @@ def upload_attendance_excel(request):
                     f"on {attendance_date}: {str(e)}"
                 )
                 continue
+
+        uploaded_months = set()
+        for index, row in df.iterrows():
+            attendance_date_raw = row.get("Date")
+            if attendance_date_raw and not pd.isna(attendance_date_raw):
+                d = pd.to_datetime(attendance_date_raw).date()
+                uploaded_months.add((d.year, d.month))
+
+        for year, month in uploaded_months:
+            count = fill_holiday_attendance_for_month(year, month)
+            print(f"✅ Auto-created {count} holiday/half-day attendance records for {month}/{year}")
+
 
         messages.success(request, "Attendance uploaded successfully!")
         return JsonResponse(
@@ -2027,7 +2154,6 @@ def get_payroll_period_for_date(payroll_settings, target_date):
         
         return from_d, to_d
 
-
 def get_all_payroll_periods_from_attendance(company, payroll_settings):
     """Get all unique payroll periods that have attendance data"""
     periods = []
@@ -2078,23 +2204,41 @@ def get_all_payroll_periods_from_attendance(company, payroll_settings):
     return periods
 
 
+def get_monthly_earned_leaves(payroll_settings, month, year):
+    """
+    ✅ Get earned leaves for a specific month from database
+    
+    Instead of dividing by 12, reads from MonthlyEarnedLeaves table
+    """
+    try:
+        monthly_leave = MonthlyEarnedLeaves.objects.get(
+            payroll_settings=payroll_settings,
+            month=month,
+            year=year
+        )
+        return Decimal(str(monthly_leave.earned_leaves))
+    except MonthlyEarnedLeaves.DoesNotExist:
+        return Decimal('0.00')
+
 def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to_date):
-    """Calculate leave balance for a specific payroll period"""
+    """
+    ✅ UPDATED: Calculate leave balance for a specific payroll period
+    Now reads monthly credit from MonthlyEarnedLeaves table
+    """
     
     # ============================================
-    # STEP 1: Opening Balance - FIXED!
-    # Get PREVIOUS PERIOD's final balance (by period dates, not by ID!)
+    # STEP 1: Opening Balance
+    # Get PREVIOUS PERIOD's final balance (by period dates!)
     # ============================================
-    prev_period_end = from_date - timedelta(days=1)  # Day before this period starts
+    prev_period_end = from_date - timedelta(days=1)
     prev_from, prev_to = get_payroll_period_for_date(payroll_settings, prev_period_end)
     
-    # Get the PREVIOUS PERIOD's record
     previous_record = (
         LeaveBalance.objects
         .filter(
             employee=employee,
-            period_from_date=prev_from,  # ✅ Search PREVIOUS PERIOD specifically!
-            period_to_date=prev_to       # ✅ Search PREVIOUS PERIOD specifically!
+            period_from_date=prev_from,
+            period_to_date=prev_to
         )
         .first()
     )
@@ -2113,11 +2257,13 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     
     # ============================================
     # STEP 2: Attendance for THIS period
+    # Exclude holidays (is_holiday=False)
     # ============================================
     attendance_records = Attendance.objects.filter(
         employee=employee,
         date__gte=from_date,
-        date__lte=to_date
+        date__lte=to_date,
+        is_holiday=False  # ✅ Exclude holidays
     )
     
     total_days = attendance_records.count()
@@ -2175,23 +2321,15 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
         leave_balance = balance_before_credit
     
     # ============================================
-    # STEP 8: Leave Credit Policy
+    # STEP 8: ✅ UPDATED - Get Monthly Credit from Database
+    # Instead of: earned_leaves_per_year / 12
+    # Now: Read from MonthlyEarnedLeaves table
     # ============================================
-    try:
-        policy = employee.company.leave_credit_policy
-        present_days_for_credit = int(paid_days)
-        
-        if present_days_for_credit <= policy.credit_1_limit:
-            monthly_credit = policy.credit_low
-        elif present_days_for_credit <= policy.credit_2_limit:
-            monthly_credit = policy.credit_mid
-        else:
-            monthly_credit = policy.credit_high
-        
-        monthly_cap = Decimal(str(payroll_settings.earned_leaves_per_year)) / Decimal("12")
-        monthly_credit = min(Decimal(str(monthly_credit)), monthly_cap)
-    except:
-        monthly_credit = Decimal("1.00")
+    monthly_credit = get_monthly_earned_leaves(
+        payroll_settings, 
+        to_date.month,      # Month of period end date
+        to_date.year        # Year of period end date
+    )
     
     # ============================================
     # STEP 9: Closing Balance
@@ -2225,6 +2363,7 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     )
     
     return final_leave_balance
+
 
 
 def generate_leave_balances_for_all_periods(company, payroll_settings):
@@ -2356,11 +2495,9 @@ def leave_balance_view(request):
     
     return render(request, 'leave_balance/leave_balance_report.html', context)
 
-
 @login_required
 def recalculate_leave_balances_view(request):
     """Recalculate leave balances for all periods and employees"""
-    from django.http import JsonResponse
     
     if request.method != 'POST':
         return JsonResponse({
@@ -2435,6 +2572,7 @@ def recalc_employee_leave_balance(request, employee_id):
     return redirect("leave-balance")
 
 
+
 @login_required
 def recalc_all_employees(request):
     """Recalculate for all employees"""
@@ -2492,6 +2630,7 @@ def employee_leave_detail(request, employee_id):
     except Exception as e:
         messages.error(request, f"Error: {str(e)}")
         return redirect("leave-balance")
+
         
 
 def update_leave_credit_policy(request):
@@ -3790,37 +3929,54 @@ def settings_page(request):
 @require_http_methods(["POST"])
 def save_payroll_settings(request):
     try:
-        company = Company.objects.first()  # replace with request.user.company later
-
+        company = Company.objects.first()
         settings, _ = PayrollSettings.objects.get_or_create(company=company)
 
-        # ✅ Boolean
+        # Boolean
         settings.is_auto = request.POST.get("is_auto") == "on"
 
-        # ✅ Integers
+        # Integers
         settings.from_date = int(request.POST.get("from_date")) if request.POST.get("from_date") else None
         settings.to_date = int(request.POST.get("to_date")) if request.POST.get("to_date") else None
         settings.grace_period_minutes = int(request.POST.get("grace_period_minutes", 15))
         settings.max_leave_balance = int(request.POST.get("max_leave_balance", 30))
         settings.earned_leaves_per_year = int(request.POST.get("earned_leaves_per_year", 12))
 
-        # ✅ Floats / Decimals
+        # Floats / Decimals
         settings.basic_percentage = float(request.POST.get("basic_percentage", 50))
         settings.hra_percentage = float(request.POST.get("hra_percentage", 60))
         settings.basic_cap = float(request.POST.get("basic_cap", 21000))
-
         settings.pf_percentage = float(request.POST.get("pf_percentage", 12))
         settings.esic_percentage = float(request.POST.get("esic_percentage", 3.67))
         settings.gratuity_percentage = float(request.POST.get("gratuity_percentage", 4.61))
         settings.bonus_percentage = float(request.POST.get("bonus_percentage", 8.33))
         settings.professional_tax = float(request.POST.get("professional_tax", 200))
 
+        # ✅ NEW: Financial Year + Branch-Specific Holidays
+        fy_month = request.POST.get("financial_year_start_month")
+        if fy_month:
+            old_fy = settings.financial_year_start_month
+            new_fy = int(fy_month)
+            settings.financial_year_start_month = new_fy
+
+            # If FY changed, regenerate earned leaves
+            if old_fy != new_fy:
+                MonthlyEarnedLeaves.objects.filter(
+                    payroll_settings=settings,
+                    is_auto_generated=True
+                ).delete()
+                MonthlyEarnedLeaves.generate_for_payroll_settings(settings)
+
+        branch_specific = request.POST.get("branch_specific_holidays")
+        if branch_specific is not None:
+            settings.branch_specific_holidays = branch_specific == "true"
+
         settings.save()
         MonthlyEarnedLeaves.sync_with_payroll_settings(settings)
 
         return JsonResponse({
             "success": True,
-            "message": "Payroll settings saved successfully!"
+            "message": "Settings saved successfully!"
         })
 
     except Exception as e:
@@ -3830,6 +3986,7 @@ def save_payroll_settings(request):
         }, status=400)
 
 
+        
 @login_required
 @require_http_methods(["POST"])
 def save_leave_settings(request):
@@ -4344,26 +4501,45 @@ def holiday_calendar_dashboard(request):
     # ----------------------------------------------------
     monthly_leaves = []
 
+# In holiday_calendar_dashboard view, replace the monthly_leaves section:
+
     if payroll_settings:
         annual_leaves = payroll_settings.earned_leaves_per_year or 24
         monthly_default = (
             Decimal(str(annual_leaves)) / Decimal('12')
         ).quantize(Decimal('0.01'))
-
-        for m in range(1, 13):
+        
+        fy_start = payroll_settings.financial_year_start_month or 4  # April default
+        
+        # Determine FY year range based on selected year
+        # If FY starts April 2025 → months Apr2025 to Mar2026
+        # Current year shown in dashboard determines which FY
+        if month >= fy_start:
+            fy_start_year = year
+        else:
+            fy_start_year = year - 1
+        
+        monthly_leaves = []
+        for i in range(12):
+            m = fy_start + i
+            y = fy_start_year
+            if m > 12:
+                m -= 12
+                y += 1
+            
             leave, _ = MonthlyEarnedLeaves.objects.get_or_create(
                 payroll_settings=payroll_settings,
                 month=m,
-                year=year,
+                year=y,
                 defaults={
                     'earned_leaves': monthly_default,
                     'is_auto_generated': True,
                 }
             )
             monthly_leaves.append(leave)
-
-        monthly_leaves = sorted(monthly_leaves, key=lambda x: x.month)
-
+        
+        # Sort by year then month
+        monthly_leaves = sorted(monthly_leaves, key=lambda x: (x.year, x.month))
     # ----------------------------------------------------
     # 4️⃣ Holidays for calendar (month-based)
     # ----------------------------------------------------
@@ -4409,6 +4585,22 @@ def holiday_calendar_dashboard(request):
     # 8️⃣ Holiday Types (dropdowns)
     # ----------------------------------------------------
     holiday_types = HolidayType.objects.all()
+    branches = Branch.objects.all()
+
+    all_half_day_scenarios = HalfDayScenario.objects.all().order_by('scenario_date')
+    
+    half_day_json = json.dumps([
+        {
+            'id': s.id,
+            'scenario_date': s.scenario_date.isoformat(),
+            'description': s.description,    # ✅ correct field name
+            'scenario_type': s.scenario_type,
+            'is_approved': s.is_approved,
+            'branch': s.branch.branch_name if s.branch else 'All',
+            'credit_count': str(s.credit_count),
+        }
+        for s in all_half_day_scenarios
+    ])
 
     # ----------------------------------------------------
     # 9️⃣ FINAL CONTEXT (⚠️ NOTHING REMOVED)
@@ -4435,12 +4627,64 @@ def holiday_calendar_dashboard(request):
 
         # Dropdowns
         'holiday_types': holiday_types,
+
+        'branches': branches,
+        'all_half_day_scenarios': all_half_day_scenarios,
+        'half_day_json': half_day_json,
+        'total_half_days': all_half_day_scenarios.filter(
+            scenario_date__year=year, is_approved=True
+        ).count(),
+
     }
 
     return render(request, 'holiday_calendar/dashboard.html', context)
 
 
 
+
+
+
+
+@login_required
+@require_http_methods(["POST"])
+def save_holiday_settings(request):
+    try:
+        company = Company.objects.first()
+        settings, _ = PayrollSettings.objects.get_or_create(company=company)
+        
+        financial_year_start = request.POST.get('financial_year_start_month')
+        branch_specific_holidays = request.POST.get('branch_specific_holidays') == 'true'
+        
+        if financial_year_start:
+            fy_month = int(financial_year_start)
+            if 1 <= fy_month <= 12:
+                old_fy = settings.financial_year_start_month
+                settings.financial_year_start_month = fy_month
+                
+                # If FY start month changed, regenerate earned leaves
+                if old_fy != fy_month:
+                    # Delete old auto-generated leaves for future years
+                    MonthlyEarnedLeaves.objects.filter(
+                        payroll_settings=settings,
+                        is_auto_generated=True
+                    ).delete()
+                    # Regenerate for current FY
+                    MonthlyEarnedLeaves.generate_for_payroll_settings(settings)
+                    messages.success(
+                        request,
+                        f'✓ Financial year updated to start from month {fy_month}. '
+                        f'Earned leaves regenerated.'
+                    )
+        
+        settings.branch_specific_holidays = branch_specific_holidays
+        settings.save()
+        
+        messages.success(request, '✓ Holiday settings saved successfully!')
+        
+    except Exception as e:
+        messages.error(request, f'❌ Error saving settings: {str(e)}')
+    
+    return redirect('holiday-calendar')
 
 
 # ============================================================================
@@ -4480,9 +4724,9 @@ def add_holiday(request):
 
             # Map calendar automatically
             holiday.holiday_calendar = HolidayCalendar.objects.get(
-                branch=employee.branch
+                branch=employee.branch,
+                year=holiday.holiday_date.year  # ← add this
             )
-
             # Auto-national logic
             if holiday.holiday_type.type_category == "national":
                 holiday.is_national = True
@@ -4811,44 +5055,121 @@ def api_earned_leaves(request):
 
 
 @login_required
-@require_http_methods(["GET"])
-def half_day_scenarios(request):
-    """
-    Half-Day Scenarios View
-    
-    Shows list of half-day closures (emergencies)
-    Allows adding new scenarios
-    
-    Returns: Redirects to dashboard (shown in tab)
-    """
-    
-    return redirect('holiday-calendar')
-
-
-# ============================================================================
-# ADD HALF-DAY SCENARIO VIEW
-# ============================================================================
-
-@login_required
 @require_http_methods(["GET", "POST"])
 def add_half_day_scenario(request):
-    """
-    Add Half-Day Scenario View
-    
-    Creates emergency half-day closure records
-    
-    Returns: Redirects to dashboard with message
-    """
-    
     if request.method == 'POST':
-        # Handle half-day scenario creation
-        # Similar to add_holiday but with different form
-        
-        return redirect('holiday-calendar')
-    
+        scenario_date = request.POST.get('scenario_date')
+        description = request.POST.get('description', '')
+        scenario_type = request.POST.get('scenario_type', 'other')
+        is_approved = request.POST.get('is_approved') == 'on'
+        branch_id = request.POST.get('branch')
+        credit_count = request.POST.get('credit_count', '0.50')
+
+        if not scenario_date or not description or not branch_id:
+            messages.error(request, '❌ Date, description and branch are required.')
+            return redirect('holiday-calendar')
+
+        try:
+            from datetime import date as date_cls
+            parsed_date = date_cls.fromisoformat(scenario_date)
+            branch = get_object_or_404(Branch, id=branch_id)
+
+            # Prevent duplicate for same branch + date
+            if HalfDayScenario.objects.filter(
+                scenario_date=parsed_date, branch=branch
+            ).exists():
+                messages.error(
+                    request,
+                    f'❌ A half-day scenario already exists for '
+                    f'{branch.branch_name} on {parsed_date}.'
+                )
+                return redirect('holiday-calendar')
+
+            HalfDayScenario.objects.create(
+                scenario_date=parsed_date,
+                description=description,
+                scenario_type=scenario_type,
+                is_approved=is_approved,
+                branch=branch,
+                credit_count=Decimal(credit_count),
+                created_by=request.user,
+            )
+
+            messages.success(
+                request,
+                f'✓ Half-day scenario added for '
+                f'{branch.branch_name} on {parsed_date.strftime("%b %d, %Y")}!'
+            )
+        except Exception as e:
+            messages.error(request, f'❌ Error: {str(e)}')
+
     return redirect('holiday-calendar')
 
 
+@login_required
+@require_http_methods(["POST"])
+def edit_half_day_scenario(request, scenario_id):
+    scenario = get_object_or_404(HalfDayScenario, id=scenario_id)
+
+    try:
+        from datetime import date as date_cls
+        scenario_date = request.POST.get('scenario_date')
+        description = request.POST.get('description', '')
+        scenario_type = request.POST.get('scenario_type', 'other')
+        is_approved = request.POST.get('is_approved') == 'on'
+        branch_id = request.POST.get('branch')
+        credit_count = request.POST.get('credit_count', '0.50')
+
+        if not branch_id:
+            messages.error(request, '❌ Branch is required.')
+            return redirect('holiday-calendar')
+
+        scenario.scenario_date = date_cls.fromisoformat(scenario_date)
+        scenario.description = description
+        scenario.scenario_type = scenario_type
+        scenario.is_approved = is_approved
+        scenario.branch = get_object_or_404(Branch, id=branch_id)
+        scenario.credit_count = Decimal(credit_count)
+
+        # Set approved_by if being approved
+        if is_approved and not scenario.approved_by:
+            scenario.approved_by = request.user
+
+        scenario.save()
+        messages.success(request, '✓ Half-day scenario updated!')
+    except Exception as e:
+        messages.error(request, f'❌ Error: {str(e)}')
+
+    return redirect('holiday-calendar')
+
+
+@login_required
+@require_http_methods(["POST"])
+def delete_half_day_scenario(request, scenario_id):
+    scenario = get_object_or_404(HalfDayScenario, id=scenario_id)
+    branch_name = scenario.branch.branch_name
+    date_str = scenario.scenario_date.strftime("%b %d, %Y")
+    scenario.delete()
+    messages.success(request, f'✓ Half-day scenario for {branch_name} on {date_str} deleted!')
+    return redirect('holiday-calendar')
+
+
+@login_required
+@require_http_methods(["GET"])
+def api_get_half_day_scenario(request, scenario_id):
+    try:
+        s = HalfDayScenario.objects.get(id=scenario_id)
+        return JsonResponse({
+            'id': s.id,
+            'scenario_date': s.scenario_date.isoformat(),
+            'description': s.description,
+            'scenario_type': s.scenario_type,
+            'is_approved': s.is_approved,
+            'branch': s.branch.id if s.branch else None,
+            'credit_count': str(s.credit_count),
+        })
+    except HalfDayScenario.DoesNotExist:
+        return JsonResponse({'error': 'Not found'}, status=404)
 # ============================================================================
 # API ENDPOINTS - JSON RESPONSES FOR AJAX
 # ============================================================================

@@ -158,13 +158,17 @@ urlpatterns = [
     path('holiday/<int:holiday_id>/edit/', views.edit_holiday, name='edit-holiday'),
     path('holiday/<int:holiday_id>/delete/', views.delete_holiday, name='delete-holiday'),
     path('holiday/list/', views.holiday_list, name='holiday-list'),
+    path('holiday/settings/save/', views.save_holiday_settings, name='save-holiday-settings'),  # ← ADD THIS
+
 # Add to urlpatterns:
     path('holiday/earned-leaves/', views.earned_leaves_config, name='earned-leaves'),
     path('holiday/earned-leave/<int:leave_id>/edit/', views.edit_earned_leave, name='edit-earned-leave'),
     path('api/earned-leaves/', views.api_earned_leaves, name='api-earned-leaves'),
-    path('holiday/half-day/', views.half_day_scenarios, name='half-day-scenarios'),
     path('holiday/half-day/add/', views.add_half_day_scenario, name='add-half-day-scenario'),
-    
+    path('holiday/half-day/<int:scenario_id>/edit/', views.edit_half_day_scenario, name='edit-half-day-scenario'),
+    path('holiday/half-day/<int:scenario_id>/delete/', views.delete_half_day_scenario, name='delete-half-day-scenario'),
+    path('holiday/api/half-day/<int:scenario_id>/', views.api_get_half_day_scenario, name='api-get-half-day-scenario'),   
+
     # API Endpoints
     path('api/holiday/<int:holiday_id>/', views.api_get_holiday, name='api-holiday'),
     path('api/holidays/', views.api_holidays_json, name='api-holidays'),

@@ -896,14 +896,13 @@
                   </li>
 
 <li class="menu-item">
-  <a href="javascript:void(0)" class="menu-link menu-toggle">
+  <a href="{% url 'holiday-calendar' %}" class="menu-link">
     <i class="menu-icon tf-icons ri-exchange-dollar-line"></i>
     <div>Holiday Management</div>
   </a>
 
-  <ul class="menu-sub">
+  {% comment %} <ul class="menu-sub">
 
-    {# 📅 Calendar View #}
     <li class="menu-item">
       <a href="{% url 'holiday-calendar' %}" class="menu-link">
         <i class="menu-icon tf-icons ri-calendar-line"></i>
@@ -911,7 +910,6 @@
       </a>
     </li>
 
-    {# 📋 Holiday List #}
     <li class="menu-item">
       <a href="{% url 'holiday-list' %}" class="menu-link">
         <i class="menu-icon tf-icons ri-list-check"></i>
@@ -919,7 +917,6 @@
       </a>
     </li>
 
-    {# 💼 Earned Leaves Configuration #}
     <li class="menu-item">
       <a href="{% url 'earned-leaves' %}" class="menu-link">
         <i class="menu-icon tf-icons ri-file-list-line"></i>
@@ -927,15 +924,12 @@
       </a>
     </li>
 
-    {# 🚫 Half-Day Scenarios #}
-    {% comment %} <li class="menu-item">
+ <li class="menu-item">
       <a href="{% url 'half-day-scenarios' %}" class="menu-link">
         <i class="menu-icon tf-icons ri-time-line"></i>
         <div>🚫 Half-Day Scenarios</div>
       </a>
-    </li> {% endcomment %}
-
-    {# ➕ Add Holiday (Quick Access) #}
+    </li>
     <li class="menu-item">
       <a href="{% url 'add-holiday' %}" class="menu-link">
         <i class="menu-icon tf-icons ri-add-circle-line"></i>
@@ -943,7 +937,7 @@
       </a>
     </li>
 
-  </ul>
+  </ul> {% endcomment %}
 </li>
 
 

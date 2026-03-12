@@ -1,3 +1,5 @@
+from urllib import request
+
 from django.shortcuts import render, redirect,get_object_or_404
 from .forms import *
 from django.http import HttpResponse, Http404
@@ -246,103 +248,135 @@ def fill_holiday_attendance_for_month(year, month):
 
 # @login_required
 # @group_required("Admin", "HR")    
+# def upload_attendance_excel(request):
+#     if request.method != "POST" or not request.FILES.get("attendance_file"):
+#         return JsonResponse(
+#             {"success": False, "message": "No file uploaded!"},
+#             status=400
+#         )
+
+#     file = request.FILES["attendance_file"]
+
+#     try:
+#         # Read Excel with proper time parsing
+#         df = pd.read_excel(file)
+
+#         # Clean column names
+#         df.columns = df.columns.str.strip()
+
+#         print(f"📄 Columns found: {df.columns.tolist()}")
+#         print(f"📊 Data types:\n{df.dtypes}\n")
+
+#         for index, row in df.iterrows():
+#             employee_code = row.get("Employee Code")
+#             attendance_date = row.get("Date")
+#             in_time_raw = row.get("In Time")
+#             out_time_raw = row.get("Out Time")
+
+#             # Validate mandatory fields
+#             if not employee_code or pd.isna(attendance_date):
+#                 print(f"⚠️ Invalid row {index}, skipping")
+#                 continue
+
+#             # Parse date & time
+#             attendance_date = pd.to_datetime(attendance_date).date()
+#             in_time = parse_time(in_time_raw)
+#             out_time = parse_time(out_time_raw)
+
+#             print(f"🔍 Row {index}: Employee={employee_code}, Date={attendance_date}, "
+#                   f"In={in_time}, Out={out_time}")
+
+#             # Fetch employee
+#             employee = Employee.objects.filter(employee_code=employee_code).first()
+#             if not employee:
+#                 print(f"⚠️ Employee not found: {employee_code}")
+#                 continue
+
+#             # 🔐 Prevent overwrite (ANTI-CHEAT)
+#             if Attendance.objects.filter(employee=employee, date=attendance_date).exists():
+#                 print(
+#                     f"🔒 Attendance already exists for {employee_code} on {attendance_date}, skipped"
+#                 )
+#                 continue
+
+#             # ✅ Create attendance (NO calculation here)
+#             attendance = Attendance(
+#                 employee=employee,
+#                 date=attendance_date,
+#                 in_time=in_time if in_time else None,
+#                 out_time=out_time if out_time else None,
+#             )
+
+#             try:
+#                 attendance.save()  # 🔥 shift-based calculation happens here
+#                 print(
+#                     f"✅ Saved: {employee_code} | {attendance_date} | "
+#                     f"In: {attendance.in_time} | Out: {attendance.out_time} | "
+#                     f"Status: {attendance.status} | Count: {attendance.count}"
+#                 )
+#             except Exception as e:
+#                 print(
+#                     f"❌ Error saving attendance for {employee_code} "
+#                     f"on {attendance_date}: {str(e)}"
+#                 )
+#                 continue
+
+#         uploaded_months = set()
+#         for index, row in df.iterrows():
+#             attendance_date_raw = row.get("Date")
+#             if attendance_date_raw and not pd.isna(attendance_date_raw):
+#                 d = pd.to_datetime(attendance_date_raw).date()
+#                 uploaded_months.add((d.year, d.month))
+
+#         for year, month in uploaded_months:
+#             count = fill_holiday_attendance_for_month(year, month)
+#             print(f"✅ Auto-created {count} holiday/half-day attendance records for {month}/{year}")
+
+
+#         messages.success(request, "Attendance uploaded successfully!")
+#         return JsonResponse(
+#             {"success": True, "message": "Attendance uploaded successfully!"}
+#         )
+
+#     except Exception as e:
+#         print(f"❌ File processing error: {str(e)}")
+#         messages.error(request, f"Error processing file: {str(e)}")
+#         return JsonResponse(
+#             {"success": False, "message": str(e)}
+#         )
+
 def upload_attendance_excel(request):
-    if request.method != "POST" or not request.FILES.get("attendance_file"):
-        return JsonResponse(
-            {"success": False, "message": "No file uploaded!"},
-            status=400
-        )
 
-    file = request.FILES["attendance_file"]
+    if request.method != "POST":
+        return JsonResponse({"success": False})
 
-    try:
-        # Read Excel with proper time parsing
-        df = pd.read_excel(file)
+    file = request.FILES.get("attendance_file")
 
-        # Clean column names
-        df.columns = df.columns.str.strip()
+    upload = AttendanceUpload.objects.create(file=file)
 
-        print(f"📄 Columns found: {df.columns.tolist()}")
-        print(f"📊 Data types:\n{df.dtypes}\n")
+    from .tasks import process_attendance_file
+    process_attendance_file.delay(upload.id)
 
-        for index, row in df.iterrows():
-            employee_code = row.get("Employee Code")
-            attendance_date = row.get("Date")
-            in_time_raw = row.get("In Time")
-            out_time_raw = row.get("Out Time")
+    return JsonResponse({
+        "success": True,
+        "upload_id": upload.id
+    })
+    
+def attendance_upload_progress(request, upload_id):
 
-            # Validate mandatory fields
-            if not employee_code or pd.isna(attendance_date):
-                print(f"⚠️ Invalid row {index}, skipping")
-                continue
+    upload = AttendanceUpload.objects.get(id=upload_id)
 
-            # Parse date & time
-            attendance_date = pd.to_datetime(attendance_date).date()
-            in_time = parse_time(in_time_raw)
-            out_time = parse_time(out_time_raw)
+    if upload.total_rows == 0:
+        progress = 0
+    else:
+        progress = int((upload.processed_rows / upload.total_rows) * 100)
 
-            print(f"🔍 Row {index}: Employee={employee_code}, Date={attendance_date}, "
-                  f"In={in_time}, Out={out_time}")
+    return JsonResponse({
+        "progress": progress,
+        "status": upload.status
+    })
 
-            # Fetch employee
-            employee = Employee.objects.filter(employee_code=employee_code).first()
-            if not employee:
-                print(f"⚠️ Employee not found: {employee_code}")
-                continue
-
-            # 🔐 Prevent overwrite (ANTI-CHEAT)
-            if Attendance.objects.filter(employee=employee, date=attendance_date).exists():
-                print(
-                    f"🔒 Attendance already exists for {employee_code} on {attendance_date}, skipped"
-                )
-                continue
-
-            # ✅ Create attendance (NO calculation here)
-            attendance = Attendance(
-                employee=employee,
-                date=attendance_date,
-                in_time=in_time if in_time else None,
-                out_time=out_time if out_time else None,
-            )
-
-            try:
-                attendance.save()  # 🔥 shift-based calculation happens here
-                print(
-                    f"✅ Saved: {employee_code} | {attendance_date} | "
-                    f"In: {attendance.in_time} | Out: {attendance.out_time} | "
-                    f"Status: {attendance.status} | Count: {attendance.count}"
-                )
-            except Exception as e:
-                print(
-                    f"❌ Error saving attendance for {employee_code} "
-                    f"on {attendance_date}: {str(e)}"
-                )
-                continue
-
-        uploaded_months = set()
-        for index, row in df.iterrows():
-            attendance_date_raw = row.get("Date")
-            if attendance_date_raw and not pd.isna(attendance_date_raw):
-                d = pd.to_datetime(attendance_date_raw).date()
-                uploaded_months.add((d.year, d.month))
-
-        for year, month in uploaded_months:
-            count = fill_holiday_attendance_for_month(year, month)
-            print(f"✅ Auto-created {count} holiday/half-day attendance records for {month}/{year}")
-
-
-        messages.success(request, "Attendance uploaded successfully!")
-        return JsonResponse(
-            {"success": True, "message": "Attendance uploaded successfully!"}
-        )
-
-    except Exception as e:
-        print(f"❌ File processing error: {str(e)}")
-        messages.error(request, f"Error processing file: {str(e)}")
-        return JsonResponse(
-            {"success": False, "message": str(e)}
-        )
-
+    
 @login_required
 # @group_required("Admin", "HR")
 def attendance_list(request):
@@ -903,7 +937,8 @@ def comp_off_requests(request, pk):
     # Render a fragment suitable for modal body
     return render(request, "attendance/comp_off_request_table.html", context)
 
-@login_required
+@login_required(login_url="login")
+@group_required("Admin", "HR")
 def admin_dashboard(request):
     requests = AttendanceCorrectionRequest.objects.filter(status='Pending')  # Attendance approvals
     compoff_requests = CompOffRequest.objects.filter(status='Pending')  # CompOff approvals
@@ -914,8 +949,12 @@ def admin_dashboard(request):
 
     # Get the first day of the current month
     first_day_of_month = today.replace(day=1)
-    employee = Employee.objects.first()
-    # Calculate the number of days
+
+    try:
+        employee = Employee.objects.get(user=request.user)
+    except Employee.DoesNotExist:
+        employee = None    # Calculate the number of days
+
     total_days = (today - first_day_of_month).days + 1  # Adding 1 to include today
     compoff1 = CompOffRequest.objects.filter(employee=employee ,from_date__month=current_month, to_date__month = current_month)
 
@@ -4361,12 +4400,28 @@ def login_view(request):
 
         if user:
             login(request, user)
-            return redirect("admin-dashboard")
+
+            # ADMIN or HR → Admin Dashboard
+            if user.groups.filter(name__in=["Admin", "HR","Manager"]).exists():
+                return redirect("admin-dashboard")
+
+            # EMPLOYEE → Employee Detail Page
+            elif user.groups.filter(name="Employee").exists():
+                employee = Employee.objects.get(user=user)
+                return redirect("employee_detail", pk=employee.id)
+
+            # MANAGER (optional)
+            # elif user.groups.filter(name="Manager").exists():
+            #     employee = Employee.objects.get(user=user)
+            #     return redirect("employee_detail", pk=employee.id)
+
+            # fallback
+            return redirect("login")
+
         else:
             messages.error(request, "Invalid username or password")
 
     return render(request, "auth/login.html")
-
 
 
 from django.contrib.auth import logout

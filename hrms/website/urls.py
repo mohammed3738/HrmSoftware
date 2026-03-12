@@ -47,6 +47,8 @@ urlpatterns = [
     path("download-employees/", views.download_employees_excel, name="download_employees"),
     path("download-leave/", views.download_leave_excel, name="download_leave"),
     path("upload-attendance/", views.upload_attendance_excel, name="upload_attendance"),
+
+    path("attendance-progress/<int:upload_id>/", views.attendance_upload_progress),
     path("attendance/", views.attendance_list, name="attendance"),
     path("attendance/<int:employee_id>/", views.employee_attendance_detail, name="employee_attendance_detail"),
     path("ajax/employees/search/", views.employee_search, name="employee_search"),

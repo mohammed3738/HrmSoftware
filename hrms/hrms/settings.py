@@ -185,6 +185,8 @@ CACHES = {
 }
 
 
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "admin-dashboard"
 
 # settings.py
 

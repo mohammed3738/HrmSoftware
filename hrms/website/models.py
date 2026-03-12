@@ -1463,7 +1463,20 @@ class AttendanceConfigurable(models.Model):
 
 
 
-
+class AttendanceUpload(models.Model):
+    file = models.FileField(upload_to="attendance_uploads/")
+    total_rows = models.IntegerField(default=0)
+    processed_rows = models.IntegerField(default=0)
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("processing", "Processing"),
+            ("completed", "Completed"),
+            ("failed", "Failed"),
+        ],
+        default="processing"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
         
 
 class AttendanceCorrectionRequest(models.Model):

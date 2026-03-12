@@ -58,7 +58,15 @@
             <button type="submit" class="btn btn-success mt-3">Submit</button>
             <button type="button" id="closeUploadModal" class="btn btn-secondary mt-3">Close</button>
         </form>
-        <p id="responseMessage" class="mt-2"></p>
+<div class="progress mt-3" style="height:25px;">
+    <div id="progressBar"
+        class="progress-bar progress-bar-striped progress-bar-animated bg-success"
+        role="progressbar"
+        style="width:0%">
+        0%
+    </div>
+</div>
+      <p id="responseMessage" class="mt-2"></p>
     </div>
 </div>
                 <!--/ Gamification Card -->
@@ -4930,6 +4938,77 @@ function rejectLeave(id){
 </script>
 
 
+<script>
+document.getElementById("attendanceUploadForm").addEventListener("submit", function(e){
 
+    e.preventDefault();
+
+    let formData = new FormData(this);
+
+    document.getElementById("responseMessage").innerText = "Uploading...";
+
+    fetch("/upload-attendance/",{
+        method:"POST",
+        body:formData,
+        headers:{
+            "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value
+        }
+    })
+    .then(res=>res.json())
+    .then(data=>{
+
+        if(!data.success){
+            document.getElementById("responseMessage").innerText = "Upload failed";
+            return;
+        }
+
+        let uploadId = data.upload_id;
+
+        checkProgress(uploadId);
+
+    })
+    .catch(err=>{
+        console.error(err);
+        document.getElementById("responseMessage").innerText = "Error uploading file";
+    });
+
+});
+
+
+function checkProgress(uploadId){
+
+    let progressBar = document.getElementById("progressBar");
+
+    let interval = setInterval(function(){
+
+        fetch(`/attendance-progress/${uploadId}/`)
+        .then(res=>res.json())
+        .then(data=>{
+
+            let progress = data.progress || 0;
+
+            progressBar.style.width = progress + "%";
+            progressBar.innerText = progress + "%";
+
+            if(data.status === "completed"){
+
+                progressBar.style.width = "100%";
+                progressBar.innerText = "Completed";
+
+                document.getElementById("responseMessage").innerText = "Upload Completed";
+
+                clearInterval(interval);
+
+            }
+
+        })
+        .catch(err=>{
+            console.error(err);
+        });
+
+    },2000);
+
+}
+</script>
 
 {% endblock %}

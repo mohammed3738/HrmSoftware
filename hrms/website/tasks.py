@@ -678,3 +678,69 @@ def auto_process_all_companies_leave_balance(self):
 
 
 
+import pandas as pd
+from .models import AttendanceUpload, Employee, Attendance
+from django.db import transaction
+
+CHUNK_SIZE = 500
+
+
+@shared_task
+def process_attendance_file(upload_id):
+
+    upload = AttendanceUpload.objects.get(id=upload_id)
+
+    file_path = upload.file.path
+
+    df = pd.read_excel(file_path, engine="openpyxl")
+
+    total_rows = len(df)
+
+    upload.total_rows = total_rows
+    upload.processed_rows = 0
+    upload.status = "processing"
+    upload.save()
+
+    for start in range(0, total_rows, CHUNK_SIZE):
+
+        chunk = df.iloc[start:start + CHUNK_SIZE]
+
+        records = []
+
+        for index, row in chunk.iterrows():
+
+            employee_code = row.get("Employee Code")
+            attendance_date = pd.to_datetime(row.get("Date")).date()
+            in_time = row.get("In Time")
+            out_time = row.get("Out Time")
+
+            employee = Employee.objects.filter(
+                employee_code=employee_code
+            ).first()
+
+            if not employee:
+                continue
+
+            if Attendance.objects.filter(
+                employee=employee,
+                date=attendance_date
+            ).exists():
+                continue
+
+            records.append(
+                Attendance(
+                    employee=employee,
+                    date=attendance_date,
+                    in_time=in_time,
+                    out_time=out_time
+                )
+            )
+
+        if records:
+            Attendance.objects.bulk_create(records, batch_size=500)
+
+        upload.processed_rows += len(chunk)
+        upload.save(update_fields=["processed_rows"])
+
+    upload.status = "completed"
+    upload.save(update_fields=["status"])

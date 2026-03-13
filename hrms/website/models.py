@@ -574,6 +574,7 @@ class PayrollSettings(models.Model):
     earned_leaves_per_year = models.PositiveIntegerField(default=24)
     grace_period_minutes = models.IntegerField(default=15)
 
+
     branch_specific_holidays = models.BooleanField(
     default=True,
     help_text="When True, regional holidays only apply to their specific branch. "

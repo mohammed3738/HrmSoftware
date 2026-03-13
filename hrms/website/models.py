@@ -353,6 +353,13 @@ class LeaveRecord(models.Model):
 
 
 class LeaveSettings(models.Model):
+    company = models.OneToOneField(
+        'Company',
+        on_delete=models.CASCADE,
+        null=True,   # remove after migration
+        blank=True,
+    )
+
     carry_forward = models.BooleanField(default=True)
     reset_month = models.PositiveIntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(12)],

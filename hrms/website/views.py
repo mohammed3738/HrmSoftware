@@ -3897,108 +3897,106 @@ def upload_salary_increment(request):
 
 
 
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def get_user_company(request):
+    """Return the Company for the logged-in user, or None."""
+    try:
+        return request.user.employee_profile.company
+    except AttributeError:
+        return None
+
+
+# ── views ────────────────────────────────────────────────────────────────────
+
+@login_required
 def get_payroll_settings(request):
-    settings = PayrollSettings.objects.first()
+    company = get_user_company(request)
+    if company is None:
+        return JsonResponse(
+            {'error': 'No company linked to your account.'},
+            status=400
+        )
+
+    settings = PayrollSettings.objects.filter(company=company).first()
     if settings is None:
-        # Handle the case where no payroll settings exist
-        return JsonResponse({
-            'error': 'Payroll settings not found. Please configure them.',
-            'pf_percentage': 0.0, # Provide default values or handle as needed
-            'esic_percentage': 0.0,
-            'gratuity_percentage': 0.0,
-            'professional_tax': 0.0,
-            'bonus_percentage': 0.0,
-            'basic_percentage': 0.0,
-            'hra_percentage': 0.0,
-            'basic_cap': 0.0,
-            # ... other fields
-        }, status=404) # Return a 404 Not Found status
-    else:
-        return JsonResponse({
-            'pf_percentage': float(settings.pf_percentage),
-            'esic_percentage': float(settings.esic_percentage),
-            'gratuity_percentage': float(settings.gratuity_percentage),
-            'professional_tax': float(settings.professional_tax),
-            'bonus_percentage': float(settings.bonus_percentage),
-            'basic_percentage': float(settings.basic_percentage),
-            'hra_percentage': float(settings.hra_percentage),
-            'basic_cap': float(settings.basic_cap)
+        return JsonResponse(
+            {'error': 'Payroll settings not found. Please configure them.'},
+            status=404
+        )
+
+    return JsonResponse({
+        'pf_percentage':        float(settings.pf_percentage),
+        'esic_percentage':      float(settings.esic_percentage),
+        'gratuity_percentage':  float(settings.gratuity_percentage),
+        'professional_tax':     float(settings.professional_tax),
+        'bonus_percentage':     float(settings.bonus_percentage),
+        'basic_percentage':     float(settings.basic_percentage),
+        'hra_percentage':       float(settings.hra_percentage),
+        'basic_cap':            float(settings.basic_cap),
+    })
+
+
+@login_required
+def settings_page(request):
+    company = get_user_company(request)
+    if company is None:
+        # You can redirect to an error page or show a message instead
+        return render(request, 'settings/no_company.html', {
+            'error': 'Your account is not linked to any company.'
         })
 
-
-
-
-# setting
-
-# @login_required
-# def settings_page(request):
-#     company = Company.objects.first()  # adjust per your logic
-#     company_id = company.id if company else None
-#     payroll_settings, _ = PayrollSettings.objects.get_or_create(company=company_id)
-#     leave_settings, _ = LeaveSettings.objects.get_or_create(id=1)
-
-#     payroll_form = PayrollSettingsForm(instance=payroll_settings)
-#     leave_form = LeaveSettingsForm(instance=leave_settings)
-
-#     return render(request, "settings/settings_page.html", {
-#         "payroll_form": payroll_form,
-#         "leave_form": leave_form,
-#     })
-
-
-
-def settings_page(request):
-    # Assuming you have a logged-in user's company (adjust as needed)
-    company = Company.objects.first()  # or request.user.company
-    # company_id = company.id if company else None
-
-    # Get or create default settings
     payroll_settings, _ = PayrollSettings.objects.get_or_create(company=company)
-    leave_settings, _ = LeaveSettings.objects.get_or_create()
+
+    # ✅ FIX: LeaveSettings must also be scoped to company
+    # Your LeaveSettings model needs a company FK — see note below
+    leave_settings, _ = LeaveSettings.objects.get_or_create(company=company)
 
     context = {
-        "payroll_settings": payroll_settings,
-        "leave_settings": leave_settings,
+        'company':          company,
+        'payroll_settings': payroll_settings,
+        'leave_settings':   leave_settings,
     }
-    return render(request, "settings/settings_page.html", context)
+    return render(request, 'settings/settings_page.html', context)
 
 
-# @login_required
 @login_required
 @require_http_methods(["POST"])
 def save_payroll_settings(request):
+    company = get_user_company(request)
+    if company is None:
+        return JsonResponse({'success': False, 'error': 'No company linked to your account.'}, status=400)
+
     try:
-        company = Company.objects.first()
         settings, _ = PayrollSettings.objects.get_or_create(company=company)
 
         # Boolean
         settings.is_auto = request.POST.get("is_auto") == "on"
 
         # Integers
-        settings.from_date = int(request.POST.get("from_date")) if request.POST.get("from_date") else None
-        settings.to_date = int(request.POST.get("to_date")) if request.POST.get("to_date") else None
-        settings.grace_period_minutes = int(request.POST.get("grace_period_minutes", 15))
-        settings.max_leave_balance = int(request.POST.get("max_leave_balance", 30))
+        settings.from_date             = int(request.POST.get("from_date")) if request.POST.get("from_date") else None
+        settings.to_date               = int(request.POST.get("to_date"))   if request.POST.get("to_date")   else None
+        settings.grace_period_minutes  = int(request.POST.get("grace_period_minutes", 15))
+        settings.max_leave_balance     = int(request.POST.get("max_leave_balance", 30))
         settings.earned_leaves_per_year = int(request.POST.get("earned_leaves_per_year", 12))
 
         # Floats / Decimals
-        settings.basic_percentage = float(request.POST.get("basic_percentage", 50))
-        settings.hra_percentage = float(request.POST.get("hra_percentage", 60))
-        settings.basic_cap = float(request.POST.get("basic_cap", 21000))
-        settings.pf_percentage = float(request.POST.get("pf_percentage", 12))
-        settings.esic_percentage = float(request.POST.get("esic_percentage", 3.67))
+        settings.basic_percentage    = float(request.POST.get("basic_percentage",    50))
+        settings.hra_percentage      = float(request.POST.get("hra_percentage",      60))
+        settings.basic_cap           = float(request.POST.get("basic_cap",        21000))
+        settings.pf_percentage       = float(request.POST.get("pf_percentage",       12))
+        settings.esic_percentage     = float(request.POST.get("esic_percentage",   3.67))
         settings.gratuity_percentage = float(request.POST.get("gratuity_percentage", 4.61))
-        settings.bonus_percentage = float(request.POST.get("bonus_percentage", 8.33))
-        settings.professional_tax = float(request.POST.get("professional_tax", 200))
+        settings.bonus_percentage    = float(request.POST.get("bonus_percentage",   8.33))
+        settings.professional_tax    = float(request.POST.get("professional_tax",    200))
 
-        # ✅ NEW: Financial Year + Branch-Specific Holidays
+        # Financial year + branch-specific holidays
         fy_month = request.POST.get("financial_year_start_month")
         if fy_month:
             old_fy = settings.financial_year_start_month
             new_fy = int(fy_month)
             settings.financial_year_start_month = new_fy
 
-            # If FY changed, regenerate earned leaves
             if old_fy != new_fy:
                 MonthlyEarnedLeaves.objects.filter(
                     payroll_settings=settings,
@@ -4013,24 +4011,21 @@ def save_payroll_settings(request):
         settings.save()
         MonthlyEarnedLeaves.sync_with_payroll_settings(settings)
 
-        return JsonResponse({
-            "success": True,
-            "message": "Settings saved successfully!"
-        })
+        return JsonResponse({'success': True, 'message': 'Settings saved successfully!'})
 
     except Exception as e:
-        return JsonResponse({
-            "success": False,
-            "error": str(e)
-        }, status=400)
-
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
         
 @login_required
 @require_http_methods(["POST"])
 def save_leave_settings(request):
+    company = get_user_company(request)
+    if company is None:
+        return JsonResponse({'success': False, 'error': 'No company linked to your account.'}, status=400)
+
     try:
-        settings, _ = LeaveSettings.objects.get_or_create()
+        settings, _ = LeaveSettings.objects.get_or_create(company=company)
 
         settings.carry_forward = request.POST.get("carry_forward") == "on"
         reset_month = request.POST.get("reset_month")
@@ -4042,7 +4037,6 @@ def save_leave_settings(request):
 
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)}, status=400)
-
 
 
 

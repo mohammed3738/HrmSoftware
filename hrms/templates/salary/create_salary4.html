@@ -11,13 +11,21 @@
           <!-- Empty left side or you can add text here if needed -->
           <h5 class="card-header">Salary Master</h5>
         </div>
-        <div class="col-auto d-flex align-items-center">
-          <button type="button" class="btn btn-secondary buttons-collection dropdown-toggle btn-label-primary me-4 waves-effect waves-light" onclick="downloadEmployees()">Export</button>
-          {% comment %} <button type="button" class="btn btn-secondary create-new btn-primary waves-effect waves-light" data-bs-toggle="modal" data-bs-target="#employeeModal">Add Employee</button> {% endcomment %}
+        <div class="col-auto d-flex align-items-center gap-2">
+          <button type="button" class="btn btn-secondary buttons-collection dropdown-toggle btn-label-primary waves-effect waves-light" onclick="downloadEmployees()">Export</button>
+          <a href="{% url 'salary-import-template' %}" class="btn btn-outline-success waves-effect waves-light">
+            Download Template
+          </a>
+          <button
+            type="button"
+            class="btn btn-success waves-effect waves-light"
+            data-bs-toggle="modal"
+            data-bs-target="#importSalaryModal">
+            Import Excel
+          </button>
           <button class="btn btn-secondary create-new btn-primary waves-effect waves-light" data-bs-toggle="modal" data-bs-target="#salaryModal">
-    💰 Salary Calculator
-</button>
-
+            Salary Calculator
+          </button>
         </div>
       </div>
       <hr>
@@ -408,25 +416,21 @@ document.addEventListener("DOMContentLoaded", function () {
 
 <!-- ===== JS SCRIPT ===== -->
 <script>
-/* =====================================================
+
+  /* =====================================================
    GLOBAL STATE
 ===================================================== */
-
 let payrollSettings = {
-  pf_percentage: 0,
-  esic_percentage: 0,
-  gratuity_percentage: 0,
-  professional_tax: 0,
-  bonus_percentage: 0,
-  basic_percentage: 0,
-  hra_percentage: 0,
-  basic_cap: 0
+  pf_percentage: 0, esic_percentage: 0, gratuity_percentage: 0,
+  professional_tax: 0, bonus_percentage: 0, basic_percentage: 0,
+  hra_percentage: 0, basic_cap: 0
 };
+
+let userInteracted = false; // Track if user has touched the modal
 
 /* =====================================================
    HELPERS
 ===================================================== */
-
 function num(id) {
   return parseFloat(document.getElementById(id)?.value) || 0;
 }
@@ -434,7 +438,7 @@ function num(id) {
 function setVal(id, value) {
   const el = document.getElementById(id);
   if (!el) return;
-  if (el.dataset.manual === "true") return; // respect manual override
+  if (el.dataset.manual === "true") return;
   el.value = value.toFixed(2);
 }
 
@@ -445,10 +449,15 @@ function isYes(id) {
 /* =====================================================
    LOAD PAYROLL SETTINGS
 ===================================================== */
-
 async function loadPayrollSettings() {
   try {
     const res = await fetch("/payroll-settings/");
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      document.getElementById("settingsStatus").innerText =
+        "⚠️ " + (err.error || "Payroll settings not loaded.");
+      return;
+    }
     payrollSettings = await res.json();
     document.getElementById("settingsStatus").innerText = "✅ Settings loaded";
     calculateSalary();
@@ -459,22 +468,29 @@ async function loadPayrollSettings() {
 }
 
 /* =====================================================
-   MAIN CALCULATION (LOGIC UNCHANGED)
+   MAIN CALCULATION
 ===================================================== */
-
 function calculateSalary() {
-
   const grossCTC = num("grossCTC");
+  if (!grossCTC) return; // Don't calculate if no CTC entered
+
   const allowance1 = num("allowance1");
   const allowance2 = num("allowance2");
-
-  const pfEnabled = isYes("pfSelect");
-  const esicEnabled = isYes("esicSelect");
+  const pfEnabled       = isYes("pfSelect");
+  const esicEnabled     = isYes("esicSelect");
   const gratuityEnabled = isYes("gratuitySelect");
 
-  const profTax = payrollSettings.professional_tax || 0;
+  // Professional Tax
+  const profTaxEl = document.getElementById("profTax");
+  let profTax;
+  if (profTaxEl && profTaxEl.dataset.manual === "true") {
+    profTax = num("profTax");
+  } else {
+    profTax = payrollSettings.professional_tax || 0;
+    if (profTaxEl) profTaxEl.value = profTax ? profTax.toFixed(2) : "";
+  }
 
-  /* ---------- BASIC ---------- */
+  /* Basic = MIN(GrossCTC × basic_pct%, basic_cap) */
   let basic;
   if (document.getElementById("basic").dataset.manual === "true") {
     basic = num("basic");
@@ -485,7 +501,7 @@ function calculateSalary() {
     );
   }
 
-  /* ---------- HRA ---------- */
+  /* HRA = Basic × hra_pct% */
   let hra;
   if (document.getElementById("hra").dataset.manual === "true") {
     hra = num("hra");
@@ -493,108 +509,83 @@ function calculateSalary() {
     hra = basic * payrollSettings.hra_percentage / 100;
   }
 
-  /* ---------- STAT BONUS ---------- */
-  const statBonus =
-    basic < payrollSettings.basic_cap
-      ? Math.round(7000 * payrollSettings.bonus_percentage / 100)
-      : 0;
+  /* Stat Bonus = IF(Basic < basic_cap, ROUND(7000 × bonus_pct%, 0), 0) */
+  const statBonus = basic < payrollSettings.basic_cap
+    ? Math.round(7000 * payrollSettings.bonus_percentage / 100)
+    : 0;
 
-  /* ---------- PF ---------- */
+  /* PF(er) = IF(pfEnabled, MIN(Basic × pf_pct%, 1800), 0) */
   const pfEr = pfEnabled
     ? Math.min(basic * payrollSettings.pf_percentage / 100, 1800)
     : 0;
-
   const pfEe = pfEr;
 
-  /* ---------- GRATUITY ---------- */
+  /* Gratuity */
   const gratuity = gratuityEnabled
     ? Math.round(basic * payrollSettings.gratuity_percentage / 100)
     : 0;
 
-  /* ---------- SPECIAL ALLOWANCE (BALANCER) ---------- */
-  let specialAllowance =
-    grossCTC -
-    (basic + hra + statBonus + allowance1 + allowance2 + pfEr + gratuity);
+  /* ESIC circular dependency — solved algebraically:
+     GC = GrossCTC - PF(er) - ESIC(er)
+     ESIC(er) = GC × esic_pct%
+     => GC = (GrossCTC - PF(er)) / (1 + esic_pct%) */
+  let esicEr, esicEe, guaranteedCash, specialAllowance;
 
-  if (specialAllowance < 0) specialAllowance = 0;
-
-  let guaranteedCash =
-    basic + hra + statBonus + allowance1 + allowance2 + specialAllowance;
-
-  /* ---------- ESIC ---------- */
-  let esicEr = 0;
-  let esicEe = 0;
-
-  if (esicEnabled && guaranteedCash < 21000) {
-    esicEr = guaranteedCash * payrollSettings.esic_percentage / 100;
-    esicEe = esicEr;
+  if (esicEnabled) {
+    const gcWithEsic = (grossCTC - pfEr) / (1 + payrollSettings.esic_percentage / 100);
+    if (gcWithEsic < 21000) {
+      guaranteedCash = gcWithEsic;
+      esicEr = guaranteedCash * payrollSettings.esic_percentage / 100;
+      esicEe = esicEr;
+    } else {
+      esicEr = esicEe = 0;
+      guaranteedCash = grossCTC - pfEr;
+    }
+  } else {
+    esicEr = esicEe = 0;
+    guaranteedCash = grossCTC - pfEr;
   }
 
-  /* ---------- FINAL REBALANCE ---------- */
-  specialAllowance =
-    grossCTC -
-    (basic + hra + statBonus + allowance1 + allowance2 + pfEr + esicEr + gratuity);
+  specialAllowance = guaranteedCash - basic - hra - statBonus - allowance1 - allowance2;
+  if (specialAllowance < 0) specialAllowance = 0;
 
-  guaranteedCash =
-    basic + hra + statBonus + allowance1 + allowance2 + specialAllowance;
-
-  const costToCompany = guaranteedCash + pfEr + esicEr + gratuity;
+  const costToCompany = guaranteedCash + pfEr + esicEr;
   const netSalary = guaranteedCash - pfEe - esicEe - profTax;
 
-  /* =====================================================
-     WRITE BACK TO UI
-  ===================================================== */
-
+  /* Write to UI */
   setVal("basic", basic);
   setVal("hra", hra);
   setVal("statBonus", statBonus);
   setVal("specialAllowance", specialAllowance);
-  setVal("guaranteedCash", guaranteedCash);
+  document.getElementById("guaranteedCash").value  = guaranteedCash.toFixed(2);
+  document.getElementById("pfEr").value            = pfEr.toFixed(2);
+  document.getElementById("pfEe").value            = pfEe.toFixed(2);
+  document.getElementById("esicEr").value          = esicEr.toFixed(2);
+  document.getElementById("esicEe").value          = esicEe.toFixed(2);
+  document.getElementById("gratuity").value        = gratuity.toFixed(2);
+  document.getElementById("costToCompany").value   = costToCompany.toFixed(2);
+  document.getElementById("netSalary").value       = netSalary.toFixed(2);
 
-  document.getElementById("pfEr").value = pfEr.toFixed(2);
-  document.getElementById("pfEe").value = pfEe.toFixed(2);
-  document.getElementById("esicEr").value = esicEr.toFixed(2);
-  document.getElementById("esicEe").value = esicEe.toFixed(2);
-  document.getElementById("gratuity").value = gratuity.toFixed(2);
-
-  document.getElementById("costToCompany").value = costToCompany.toFixed(2);
-  document.getElementById("netSalary").value = netSalary.toFixed(2);
-
-  /* ---------- ANNUAL ---------- */
-/* ---------- ANNUAL ---------- */
-[
-  ["grossCTC", "grossCTCAnn"],
-  ["basic", "basicAnn"],
-  ["hra", "hraAnn"],
-  ["statBonus", "statBonusAnn"],
-  ["specialAllowance", "specialAllowanceAnn"],
-  ["guaranteedCash", "guaranteedCashAnn"],
-
-  // ✅ FIXED
-  ["allowance1", "allowance1Ann"],
-  ["allowance2", "allowance2Ann"],
-  ["profTax", "profTaxAnn"],
-
-  ["pfEr", "pfErAnn"],
-  ["pfEe", "pfEeAnn"],
-  ["esicEr", "esicErAnn"],
-  ["esicEe", "esicEeAnn"],
-  ["costToCompany", "costToCompanyAnn"],
-  ["netSalary", "netSalaryAnn"]
-].forEach(([monthlyId, annualId]) => {
-  const monthlyValue = num(monthlyId);
-  const annualInput = document.getElementById(annualId);
-  if (annualInput) {
-    annualInput.value = (monthlyValue * 12).toFixed(2);
-  }
-});
+  /* Annual × 12 */
+  [
+    ["grossCTC","grossCTCAnn"], ["basic","basicAnn"], ["hra","hraAnn"],
+    ["statBonus","statBonusAnn"], ["specialAllowance","specialAllowanceAnn"],
+    ["guaranteedCash","guaranteedCashAnn"], ["allowance1","allowance1Ann"],
+    ["allowance2","allowance2Ann"], ["profTax","profTaxAnn"],
+    ["pfEr","pfErAnn"], ["pfEe","pfEeAnn"], ["esicEr","esicErAnn"],
+    ["esicEe","esicEeAnn"], ["costToCompany","costToCompanyAnn"],
+    ["netSalary","netSalaryAnn"]
+  ].forEach(([mId, aId]) => {
+    const el = document.getElementById(aId);
+    if (el) el.value = (num(mId) * 12).toFixed(2);
+  });
 }
 
 /* =====================================================
-   MANUAL OVERRIDE HANDLING
+   MANUAL OVERRIDE — only fires after user interaction
 ===================================================== */
-
 function markManual(e) {
+  if (!userInteracted) return; // ignore programmatic pre-fill
   e.target.dataset.manual = "true";
   e.target.classList.add("border-warning");
 }
@@ -602,23 +593,41 @@ function markManual(e) {
 /* =====================================================
    INIT
 ===================================================== */
-
 document.addEventListener("DOMContentLoaded", () => {
-
   loadPayrollSettings();
 
-  document.querySelectorAll("input, select").forEach(el => {
+  // Attach calculation listeners to inputs inside the modal only
+  document.querySelectorAll("#salaryModal input, #salaryModal select").forEach(el => {
     el.addEventListener("input", calculateSalary);
     el.addEventListener("change", calculateSalary);
   });
 
-  document.querySelectorAll("#salaryModal input[id]").forEach(el => {
-    el.addEventListener("input", markManual);
+  // Mark manual only for calculated fields (not grossCTC/allowances which are inputs)
+  const calcFields = ["basic","hra","statBonus","specialAllowance","pfEr","esicEr","esicEe","gratuity","netSalary"];
+  calcFields.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("input", markManual);
   });
 
+  document.getElementById("salaryModal").addEventListener("show.bs.modal", () => {
+    userInteracted = false; // reset — programmatic fill won't trigger markManual
+
+    // Clear all manual overrides so auto-calc runs fresh
+    document.querySelectorAll("#salaryModal input[id]").forEach(el => {
+      delete el.dataset.manual;
+      el.classList.remove("border-warning");
+    });
+
+    // Small delay to let DOM settle, then calculate
+    setTimeout(() => {
+      userInteracted = true; // from now on, user edits mark as manual
+      if (Object.values(payrollSettings).some(v => v > 0)) {
+        calculateSalary();
+      }
+    }, 100);
+  });
 });
 </script>
-
 
 {% comment %} detail view js {% endcomment %}
 
@@ -684,6 +693,95 @@ document.addEventListener("DOMContentLoaded", function () {
     $('.dataTables_filter input').addClass('form-control');
     $('.dataTables_length select').addClass('form-select');
 });
+</script>
+
+<!-- ── Salary Import Modal ──────────────────────────────────────────────── -->
+<div class="modal fade" id="importSalaryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Import Salary Structures from Excel</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted">
+          Download the template, fill in salary data (one row per employee), then upload.
+          Existing active salary for an employee will be deactivated and replaced.
+        </p>
+        <a href="{% url 'salary-import-template' %}" class="btn btn-outline-secondary btn-sm mb-3">
+          Download Excel Template
+        </a>
+        <form id="salaryImportForm" enctype="multipart/form-data">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-bold">Select Excel File (.xlsx)</label>
+            <input type="file" class="form-control" id="salaryImportFile" name="salary_file" accept=".xlsx,.xls">
+          </div>
+          <div id="salaryImportProgress" class="d-none">
+            <div class="progress mb-2">
+              <div class="progress-bar progress-bar-striped progress-bar-animated w-100" style="height:6px"></div>
+            </div>
+            <small class="text-muted">Processing…</small>
+          </div>
+          <div id="salaryImportResult" class="mt-3"></div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-success" id="salaryImportBtn" onclick="submitSalaryImport()">
+          Upload &amp; Import
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function submitSalaryImport() {
+  const fileInput = document.getElementById("salaryImportFile");
+  if (!fileInput.files.length) {
+    alert("Please select an Excel file.");
+    return;
+  }
+  const formData = new FormData(document.getElementById("salaryImportForm"));
+  document.getElementById("salaryImportProgress").classList.remove("d-none");
+  document.getElementById("salaryImportResult").innerHTML = "";
+  document.getElementById("salaryImportBtn").disabled = true;
+
+  fetch("{% url 'import-salary' %}", {
+    method: "POST",
+    body: formData,
+    headers: { "X-CSRFToken": formData.get("csrfmiddlewaretoken") },
+  })
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById("salaryImportProgress").classList.add("d-none");
+    document.getElementById("salaryImportBtn").disabled = false;
+    if (!data.success) {
+      document.getElementById("salaryImportResult").innerHTML =
+        `<div class="alert alert-danger">${data.error}</div>`;
+      return;
+    }
+    let html = `<div class="alert alert-success">
+      <strong>Import complete:</strong> ${data.created} salary record(s) created, ${data.skipped} skipped.
+    </div>`;
+    if (data.errors && data.errors.length) {
+      html += `<div class="alert alert-warning"><strong>Row errors:</strong><ul class="mb-0 mt-1">`;
+      data.errors.forEach(e => {
+        html += `<li>Row ${e.row}: ${e.errors.join(", ")}</li>`;
+      });
+      html += `</ul></div>`;
+    }
+    document.getElementById("salaryImportResult").innerHTML = html;
+    if (data.created > 0) setTimeout(() => location.reload(), 2500);
+  })
+  .catch(() => {
+    document.getElementById("salaryImportProgress").classList.add("d-none");
+    document.getElementById("salaryImportBtn").disabled = false;
+    document.getElementById("salaryImportResult").innerHTML =
+      `<div class="alert alert-danger">An unexpected error occurred.</div>`;
+  });
+}
 </script>
 
 {% endblock %}

@@ -1,0 +1,119 @@
+{% extends 'base2.html' %} {% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="row justify-content-center">
+    <div class="col-md-8">
+      <div class="card shadow rounded-4">
+        <div class="card-header bg-primary text-white rounded-top-4">
+          <h5 class="mb-0"><i class="ri-upload-2-line me-2"></i>Upload Attendance Excel</h5>
+        </div>
+        <div class="card-body p-4">
+
+          <p class="text-muted mb-3">
+            Upload an Excel file with the following columns:
+            <strong>Emp Code</strong>, <strong>Att.Date</strong>,
+            <strong>In Time</strong>, <strong>Out Time</strong>
+          </p>
+
+          <form id="attendanceUploadForm" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Excel File <span class="text-danger">*</span></label>
+              <input type="file" class="form-control" id="attendanceFile" name="file" accept=".xlsx,.xls" required>
+              <div class="form-text">Accepted formats: .xlsx, .xls</div>
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="uploadBtn">
+              <i class="ri-upload-2-line me-1"></i> Upload
+            </button>
+          </form>
+
+          <div id="uploadResult" class="mt-4"></div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById("attendanceUploadForm").addEventListener("submit", function(e) {
+  e.preventDefault();
+  submitAttendanceUpload();
+});
+
+function showResult(html) {
+  var el = document.getElementById("uploadResult");
+  if (el) el.innerHTML = html;
+}
+
+function submitAttendanceUpload() {
+  var fileInput = document.getElementById("attendanceFile");
+  if (!fileInput.files.length) {
+    showResult('<div class="alert alert-warning">Please select a file.</div>');
+    return;
+  }
+
+  var btn = document.getElementById("uploadBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing...';
+  showResult('<div class="alert alert-info"><i class="ri-loader-4-line me-1"></i> Uploading and processing, please wait...</div>');
+
+  var formData = new FormData(document.getElementById("attendanceUploadForm"));
+  var controller = new AbortController();
+  var timer = setTimeout(function() { controller.abort(); }, 120000);
+
+  fetch("{% url 'upload_attendance' %}", {
+    method: "POST",
+    body: formData,
+    headers: { "X-CSRFToken": formData.get("csrfmiddlewaretoken") },
+    signal: controller.signal,
+  })
+  .then(function(r) {
+    return r.text().then(function(text) { return { status: r.status, text: text }; });
+  })
+  .then(function(res) {
+    clearTimeout(timer);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ri-upload-2-line me-1"></i> Upload';
+
+    var data;
+    try {
+      data = JSON.parse(res.text);
+    } catch (err) {
+      showResult('<div class="alert alert-danger"><strong>Server Error:</strong><pre class="mt-2 small">' + res.text.substring(0, 1000) + '</pre></div>');
+      return;
+    }
+
+    if (data.success) {
+      var html = '<div class="alert alert-success">'
+        + '<i class="ri-checkbox-circle-line me-1"></i>'
+        + '<strong>Upload successful!</strong><br>'
+        + 'Created: <strong>' + data.created + '</strong> &nbsp;|&nbsp; '
+        + 'Skipped: <strong>' + data.skipped + '</strong> &nbsp;|&nbsp; '
+        + 'Total rows: <strong>' + data.total_rows + '</strong>'
+        + '</div>';
+
+      if (data.errors && data.errors.length) {
+        html += '<div class="alert alert-warning"><strong>Row Errors (' + data.errors.length + '):</strong><ul class="mb-0 mt-2">';
+        data.errors.forEach(function(err) {
+          html += '<li>' + err + '</li>';
+        });
+        html += '</ul></div>';
+      }
+      showResult(html);
+    } else {
+      showResult('<div class="alert alert-danger"><i class="ri-error-warning-line me-1"></i><strong>Error:</strong> ' + (data.error || 'Unknown error') + '</div>');
+    }
+  })
+  .catch(function(err) {
+    clearTimeout(timer);
+    btn.disabled = false;
+    btn.innerHTML = '<i class="ri-upload-2-line me-1"></i> Upload';
+    var msg = err.name === 'AbortError'
+      ? 'Request timed out (120s). The server may be processing a large file.'
+      : err.message;
+    showResult('<div class="alert alert-danger"><i class="ri-wifi-off-line me-1"></i> ' + msg + '</div>');
+  });
+}
+</script>
+{% endblock %}

@@ -447,11 +447,11 @@ function confirmDelete(offId) {
   });
 }
 
-// 🔥 Dynamic Asset Rows Management - UPDATED VERSION
+// Dynamic Asset Rows Management
 (function () {
   const assetTableBody = document.querySelector("#assetTable tbody");
   const assetEmptyHtml = document.querySelector("#asset-empty tr").outerHTML;
-  
+
   function getTotalFormsInput() {
     return document.querySelector(`input[name="${FORMSET_PREFIX}-TOTAL_FORMS"]`);
   }
@@ -461,54 +461,49 @@ function confirmDelete(offId) {
     return parseInt(input ? input.value : "0", 10);
   }
 
-  // Add new asset row
+  function renumberAssetRows() {
+    const rows = Array.from(assetTableBody.querySelectorAll("tr:not([style*='display: none'])"));
+    rows.forEach((tr, newIdx) => {
+      tr.querySelectorAll("[name]").forEach(el => {
+        el.name = el.name.replace(new RegExp(`${FORMSET_PREFIX}-\\d+-`), `${FORMSET_PREFIX}-${newIdx}-`);
+      });
+      tr.querySelectorAll("[id]").forEach(el => {
+        el.id = el.id.replace(new RegExp(`id_${FORMSET_PREFIX}-\\d+-`), `id_${FORMSET_PREFIX}-${newIdx}-`);
+      });
+    });
+    const totalInput = getTotalFormsInput();
+    if (totalInput) totalInput.value = rows.length;
+  }
+
   document.getElementById("addAssetRow").addEventListener("click", function () {
     const index = getTotal();
-    console.log("➕ Adding new row at index:", index);
-    
     const newRowHtml = assetEmptyHtml.replace(/__prefix__/g, index);
     const tmp = document.createElement("tbody");
     tmp.innerHTML = newRowHtml;
     const newRow = tmp.querySelector("tr");
-    
-    // Clear all values in new row
+
     newRow.querySelectorAll("input, textarea, select").forEach((el) => {
-      if (el.type === "file") {
-        el.value = "";
-      } else if (el.type === "checkbox") {
-        el.checked = false;
-      } else if (!el.name.includes("-id") && !el.name.includes("DELETE")) {
-        el.value = "";
-      }
+      if (el.type === "file") el.value = "";
+      else if (el.type === "checkbox") el.checked = false;
+      else if (!el.name.includes("-id") && !el.name.includes("DELETE")) el.value = "";
     });
-    
+
     assetTableBody.appendChild(newRow);
     const totalInput = getTotalFormsInput();
-    if (totalInput) {
-      totalInput.value = index + 1;
-      console.log("✅ Row added. New TOTAL_FORMS:", totalInput.value);
-    }
+    if (totalInput) totalInput.value = index + 1;
   });
 
-  // Remove asset row
   assetTableBody.addEventListener("click", function (ev) {
     if (ev.target && ev.target.classList.contains("remove-asset-row")) {
       const row = ev.target.closest("tr");
       const deleteCheckbox = row.querySelector('input[type="checkbox"][name$="-DELETE"]');
-      
+
       if (deleteCheckbox) {
-        // Existing row - mark for deletion
         deleteCheckbox.checked = true;
         row.style.display = "none";
-        console.log("🗑️ Marked row for deletion");
       } else {
-        // New row - remove completely
         row.remove();
-        const totalInput = getTotalFormsInput();
-        if (totalInput) {
-          totalInput.value = Math.max(0, getTotal() - 1);
-          console.log("🗑️ Row removed. New TOTAL_FORMS:", totalInput.value);
-        }
+        renumberAssetRows();
       }
     }
 
@@ -568,6 +563,10 @@ document.addEventListener("DOMContentLoaded", function () {
             assetRows = `<tr><td colspan="8" class="text-center text-muted">No assets found</td></tr>`;
           }
 
+          const noticeBadge = data.notice_period_days !== null
+            ? `<span class="badge bg-info text-dark ms-2">${data.notice_period_days} day notice</span>`
+            : "";
+
           modalBody.innerHTML = `
 <div class="container-fluid">
   <div class="card border-0 shadow-sm mb-4">
@@ -575,15 +574,17 @@ document.addEventListener("DOMContentLoaded", function () {
       <i class="ri-user-line me-2"></i> Employee Information
     </div>
     <div class="card-body row g-3">
-      <div class="col-md-6"><div class="text-muted small">Employee Code</div><div class="fw-bold">${data.employee_code}</div></div>
-      <div class="col-md-6"><div class="text-muted small">Employee Name</div><div class="fw-bold">${data.employee_name}</div></div>
+      <div class="col-md-3"><div class="text-muted small">Employee Code</div><div class="fw-bold">${data.employee_code}</div></div>
+      <div class="col-md-3"><div class="text-muted small">Employee Name</div><div class="fw-bold">${data.employee_name}</div></div>
+      <div class="col-md-3"><div class="text-muted small">Designation</div><div class="fw-bold">${data.designation}</div></div>
+      <div class="col-md-3"><div class="text-muted small">Department</div><div class="fw-bold">${data.department}</div></div>
       <div class="col-md-6"><div class="text-muted small">Email</div><div class="fw-bold">${data.email}</div></div>
       <div class="col-md-6"><div class="text-muted small">Phone</div><div class="fw-bold">${data.phone}</div></div>
     </div>
   </div>
   <div class="card border-0 shadow-sm mb-4">
-    <div class="card-header bg-white fw-bold text-primary">
-      <i class="ri-calendar-line me-2"></i> Offboarding Dates
+    <div class="card-header bg-white fw-bold text-primary d-flex align-items-center">
+      <i class="ri-calendar-line me-2"></i> Offboarding Dates ${noticeBadge}
     </div>
     <div class="card-body row g-3">
       <div class="col-md-6"><div class="text-muted small">Date of Resignation</div><div class="fw-bold">${data.resignation_date}</div></div>
@@ -697,7 +698,7 @@ document.addEventListener("DOMContentLoaded", function () {
     <select class="form-control" name="${FORMSET_PREFIX}-${index}-condition_on_return">
       <option value="Good" ${a.condition === "Good" ? "selected" : ""}>Good</option>
       <option value="Damaged" ${a.condition === "Damaged" ? "selected" : ""}>Damaged</option>
-      <option value="Lost" ${a.condition === "Lost" ? "selected" : ""}>Lost</option>
+      <option value="Missing" ${a.condition === "Missing" ? "selected" : ""}>Missing</option>
     </select>
   </td>
   <td>

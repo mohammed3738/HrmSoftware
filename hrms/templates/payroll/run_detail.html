@@ -1,6 +1,6 @@
 {% extends 'base2.html' %}
 {% load static %}
-{% block title %}Payroll - {{ run.month|date:"F Y" }}{% endblock %}
+{% block title %}Payroll: {{ run.start_date|date:"d M" }}–{{ run.end_date|date:"d M Y" }}{% endblock %}
 
 {% block body %}
 <div class="container-xxl flex-grow-1 container-p-y">
@@ -8,269 +8,628 @@
   <!-- HEADER -->
   <div class="d-flex justify-content-between align-items-center mb-3">
     <div>
-      <h3 class="fw-bold">Payroll: {{ run.month|date:"F Y" }}</h3>
-      <small class="text-muted">Company: {{ run.company.name }}</small>
+      <h4 class="fw-bold mb-1">
+        {{ run.company.name }}
+        <span class="text-muted fw-normal fs-5">— {{ run.start_date|date:"d M Y" }} to {{ run.end_date|date:"d M Y" }}</span>
+      </h4>
+      <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="#"><i class="ti ti-smart-home"></i></a></li>
+        <li class="breadcrumb-item"><a href="{% url 'payroll-run-list' %}">Payroll Runs</a></li>
+        <li class="breadcrumb-item active">{{ run.month|date:"F Y" }}</li>
+      </ol>
     </div>
-
-    <div class="d-flex gap-2">
-      <a href="{% url 'payroll-export-pdf' run.id %}" class="btn btn-danger">
-        <i class="ti ti-file-text"></i> PDF
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      {% if run.status == "finalized" %}
+        <span class="badge bg-success px-3 py-2 fs-6"><i class="ti ti-lock me-1"></i>Finalized</span>
+      {% else %}
+        <span class="badge bg-label-warning text-warning px-3 py-2 fs-6"><i class="ti ti-pencil me-1"></i>Draft</span>
+      {% endif %}
+      <a href="{% url 'payroll-export-excel' run.id %}" class="btn btn-sm btn-success">
+        <i class="ti ti-file-spreadsheet me-1"></i> Excel
       </a>
-
-      <a href="{% url 'payroll-export-excel' run.id %}" class="btn btn-success">
-        <i class="ti ti-file-spreadsheet"></i> Excel
+      <a href="{% url 'payroll-export-pdf' run.id %}" class="btn btn-sm btn-danger">
+        <i class="ti ti-file-text me-1"></i> PDF
       </a>
-
-      <button id="btnFinalize" class="btn btn-danger">Finalize</button>
-      <a href="{% url 'payroll-run-list' %}" class="btn btn-outline-secondary">Back</a>
+      {% if run.status != "finalized" %}
+      <button id="btnFinalize" class="btn btn-sm btn-warning"
+              data-bs-toggle="modal" data-bs-target="#finalizeModal">
+        <i class="ti ti-lock me-1"></i> Finalize
+      </button>
+      {% endif %}
+      <a href="{% url 'payroll-run-list' %}" class="btn btn-sm btn-outline-secondary">
+        <i class="ti ti-arrow-left me-1"></i> Back
+      </a>
     </div>
   </div>
 
-  <!-- TABLE -->
-  <div class="card shadow-sm">
-    <div class="card-body p-0">
-      <div class="table-responsive">
-        <table class="table table-sm table-bordered align-middle mb-0">
-          <thead class="table-dark small">
-            <tr>
-              <th>#</th> <th>Code</th> <th>Name</th> <th>Company</th> <th>Designation</th>
-              <th>Branch</th> <th>DOJ</th> <th>Month</th>
+  <!-- SUMMARY CARDS -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-primary rounded"><i class="ti ti-users ti-md"></i></div>
+          <div>
+            <div class="text-muted small">Employees</div>
+            <div class="fw-bold fs-5" id="summaryCount">{{ records|length }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-success rounded"><i class="ti ti-cash ti-md"></i></div>
+          <div>
+            <div class="text-muted small">Total Gross</div>
+            <div class="fw-bold fs-5 text-success" id="summaryGross">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-danger rounded"><i class="ti ti-minus ti-md"></i></div>
+          <div>
+            <div class="text-muted small">Total Deductions</div>
+            <div class="fw-bold fs-5 text-danger" id="summaryDed">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-info rounded"><i class="ti ti-wallet ti-md"></i></div>
+          <div>
+            <div class="text-muted small">Net Payroll</div>
+            <div class="fw-bold fs-5 text-primary" id="summaryNet">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-              <!-- Salary -->
-              <th>Gross CTC</th> <th>Opt PF</th>
-              <th>Basic</th> <th>HRA</th> <th>Sp Allow</th>
-              <th>Stat Bonus</th> <th>Allow1</th> <th>Allow2</th>
-              <th>Total Gross</th>
+  <!-- PAYROLL TABLE -->
+  <div class="card border-0 shadow-sm">
 
-              <!-- Attendance -->
-              <th>Total Days</th>
-              <th>Present</th>
-              <th>Leave</th>
-              <th>LWP</th>
+    <!-- Search bar inside card header -->
+    <div class="card-header bg-transparent border-bottom py-2 px-3 d-flex align-items-center gap-3 flex-wrap">
+      <div class="input-group" style="max-width:340px;">
+        <span class="input-group-text"><i class="ti ti-search"></i></span>
+        <input type="text" id="empSearch" class="form-control form-control-sm"
+               placeholder="Search by name or employee code…">
+        <button class="btn btn-outline-secondary btn-sm" id="clearSearch" type="button" style="display:none;">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <small class="text-muted" id="searchCount"></small>
+    </div>
 
-              <!-- Processed -->
-              <th>Basic Proc</th><th>HRA Proc</th><th>Sp Proc</th>
-              <th>Stat Proc</th><th>Allow1 Proc</th><th>Allow2 Proc</th>
-              <th>Gross Proc</th>
+    <!-- Scrollable table wrapper with sticky header -->
+    <div class="payroll-table-wrap">
+      <table class="table table-sm table-bordered align-middle mb-0 payroll-table" style="font-size:0.8rem;">
+        <thead class="table-dark small payroll-thead">
+          <tr>
+            <th>#</th>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Designation</th>
+            <th>Branch</th>
+            <th>DOJ</th>
+            <th class="text-end">Gross CTC</th>
+            <th class="text-center">PF Opted</th>
+            <th class="text-end">Basic PM</th>
+            <th class="text-end">HRA PM</th>
+            <th class="text-end">Sp Allow PM</th>
+            <th class="text-end">Stat Bonus PM</th>
+            <th class="text-end">Allow1 PM</th>
+            <th class="text-end">Allow2 PM</th>
+            <th class="text-center">Total Days</th>
+            <th class="text-center" style="min-width:90px;">Present</th>
+            <th class="text-center">Leave Taken</th>
+            <th class="text-center" style="min-width:90px;">LWP</th>
+            <th class="text-end">Basic Proc</th>
+            <th class="text-end">HRA Proc</th>
+            <th class="text-end">Sp Proc</th>
+            <th class="text-end">Stat Proc</th>
+            <th class="text-end">Allow1 Proc</th>
+            <th class="text-end">Allow2 Proc</th>
+            <th class="text-end">Gross Proc</th>
+            <th class="text-end" style="min-width:90px;">PF (Emp)</th>
+            <th class="text-end" style="min-width:90px;">Prof Tax</th>
+            <th class="text-end" style="min-width:90px;">Advance</th>
+            <th class="text-end" style="min-width:90px;">ESIC (Emp)</th>
+            <th class="text-end" style="min-width:90px;">TDS</th>
+            <th class="text-end" style="min-width:90px;">Other Ded</th>
+            <th class="text-end">Total Ded</th>
+            <th class="text-end">Net Pay</th>
+            <th class="text-center">Actions</th>
+          </tr>
+        </thead>
 
-              <!-- Deductions -->
-              <th>PF (Emp)</th><th>Prof Tax</th><th>Advance</th>
-              <th>ESIC (Emp)</th><th>TDS</th><th>Other</th><th>Total Ded</th>
+        <tbody id="payrollRows">
+          {% for r in records %}
+          <tr class="payrow"
+              data-empname="{{ r.employee_name|lower }}"
+              data-empcode="{{ r.employee_code|lower }}"
+              data-record-id="{{ r.id }}"
+              data-update-url="{% url 'payroll-record-update' r.id %}"
+              data-basic-pm="{{ r.basic_pm }}"
+              data-hra-pm="{{ r.hra_pm }}"
+              data-spallow-pm="{{ r.sp_allowance_pm }}"
+              data-statbonus-pm="{{ r.stat_bonus_pm }}"
+              data-allow1-pm="{{ r.allowance1_pm }}"
+              data-allow2-pm="{{ r.allowance2_pm }}"
+              data-total-days="{{ r.total_days }}"
+              data-opted-pf="{{ r.opted_for_pf|yesno:'true,false' }}"
+          >
+            <td>{{ forloop.counter }}</td>
+            <td class="text-nowrap fw-semibold">{{ r.employee_code }}</td>
+            <td class="fw-semibold text-nowrap">{{ r.employee_name }}</td>
+            <td>{{ r.designation }}</td>
+            <td>{{ r.branch_name }}</td>
+            <td class="text-nowrap">{{ r.date_of_joining|date:"d M Y" }}</td>
 
-              <th>Net Pay</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
+            <td class="text-end">{{ r.gross_ctc }}</td>
+            <td class="text-center">
+              {% if r.opted_for_pf %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-label-secondary">No</span>{% endif %}
+            </td>
+            <td class="text-end">{{ r.basic_pm }}</td>
+            <td class="text-end">{{ r.hra_pm }}</td>
+            <td class="text-end">{{ r.sp_allowance_pm }}</td>
+            <td class="text-end">{{ r.stat_bonus_pm }}</td>
+            <td class="text-end">{{ r.allowance1_pm }}</td>
+            <td class="text-end">{{ r.allowance2_pm }}</td>
 
-          <tbody id="payrollRows">
-            {% for r in records %}
-            <tr class="payrow"
-                data-record-id="{{ r.id }}"
-                data-basic-pm="{{ r.basic_pm }}"
-                data-hra-pm="{{ r.hra_pm }}"
-                data-spallow-pm="{{ r.sp_allowance_pm }}"
-                data-statbonus-pm="{{ r.stat_bonus_pm }}"
-                data-allow1-pm="{{ r.allowance1_pm }}"
-                data-allow2-pm="{{ r.allowance2_pm }}"
-                data-total-days="{{ r.total_days }}"
-                data-opted-pf="{{ r.opted_for_pf|yesno:'true,false' }}"
-            >
-              <td>{{ forloop.counter }}</td>
-              <td>{{ r.employee_code }}</td>
-              <td>{{ r.employee_name }}</td>
-              <td>{{ r.company_name }}</td>
-              <td>{{ r.designation }}</td>
-              <td>{{ r.branch_name }}</td>
-              <td>{{ r.date_of_joining }}</td>
-              <td>{{ r.month_display }}</td>
+            <td class="text-center">{{ r.total_days }}</td>
+            <td class="text-center">
+              {% if run.status != "finalized" %}
+              <input class="form-control form-control-sm text-end present-days" value="{{ r.present_days }}" style="width:80px">
+              {% else %}{{ r.present_days }}{% endif %}
+            </td>
+            <td class="text-center">{{ r.leave_taken }}</td>
+            <td class="text-center">
+              {% if run.status != "finalized" %}
+              <input class="form-control form-control-sm text-end lwp" value="{{ r.leave_without_pay }}" style="width:80px">
+              {% else %}{{ r.leave_without_pay }}{% endif %}
+            </td>
 
-              <td class="text-end">₹{{ r.gross_ctc }}</td>
-              <td class="text-center">{% if r.opted_for_pf %}Yes{% else %}No{% endif %}</td>
+            <td class="text-end basic-proc">{{ r.basic_processed }}</td>
+            <td class="text-end hra-proc">{{ r.hra_processed }}</td>
+            <td class="text-end sp-proc">{{ r.sp_allowance_processed }}</td>
+            <td class="text-end stat-proc">{{ r.stat_bonus_processed }}</td>
+            <td class="text-end a1-proc">{{ r.allowance1_processed }}</td>
+            <td class="text-end a2-proc">{{ r.allowance2_processed }}</td>
+            <td class="text-end gross-proc fw-semibold">{{ r.gross_processed }}</td>
 
-              <td class="text-end">₹{{ r.basic_pm }}</td>
-              <td class="text-end">₹{{ r.hra_pm }}</td>
-              <td class="text-end">₹{{ r.sp_allowance_pm }}</td>
-              <td class="text-end">₹{{ r.stat_bonus_pm }}</td>
-              <td class="text-end">₹{{ r.allowance1_pm }}</td>
-              <td class="text-end">₹{{ r.allowance2_pm }}</td>
+            {% if run.status != "finalized" %}
+            <td><input class="form-control form-control-sm text-end pf-emp" style="width:80px" value="{{ r.pf_employee }}"></td>
+            <td><input class="form-control form-control-sm text-end prof-tax" style="width:80px" value="{{ r.professional_tax }}"></td>
+            <td><input class="form-control form-control-sm text-end advance" style="width:80px" value="{{ r.advance }}"></td>
+            <td><input class="form-control form-control-sm text-end esic-emp" style="width:80px" value="{{ r.esic_employee }}"></td>
+            <td><input class="form-control form-control-sm text-end tds" style="width:80px" value="{{ r.tds }}"></td>
+            <td><input class="form-control form-control-sm text-end other-ded" style="width:80px" value="{{ r.other_deductions }}"></td>
+            {% else %}
+            <td class="text-end">{{ r.pf_employee }}</td>
+            <td class="text-end">{{ r.professional_tax }}</td>
+            <td class="text-end">{{ r.advance }}</td>
+            <td class="text-end">{{ r.esic_employee }}</td>
+            <td class="text-end">{{ r.tds }}</td>
+            <td class="text-end">{{ r.other_deductions }}</td>
+            {% endif %}
 
-              <td class="text-end">₹{{ r.total_gross_salary }}</td>
+            <td class="text-end total-ded fw-semibold text-danger">{{ r.total_deductions }}</td>
+            <td class="text-end net-pay fw-bold text-primary">{{ r.net_salary }}</td>
 
-              <!-- Attendance -->
-              <td class="text-center">{{ r.total_days }}</td>
+            <td class="text-center text-nowrap">
+              {% if run.status != "finalized" %}
+              <button class="btn btn-sm btn-primary save-btn me-1" title="Save & Recalculate">
+                <i class="ti ti-device-floppy"></i> Save
+              </button>
+              {% endif %}
+              <a href="{% url 'salary-slip' r.id %}" target="_blank"
+                 class="btn btn-sm btn-outline-secondary" title="View Salary Slip">
+                <i class="ti ti-file-invoice"></i> Slip
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="34" class="text-center py-4 text-muted">No payroll records found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
 
-              <td class="text-center">
-                <input class="form-control form-control-sm text-end present-days"
-                       value="{{ r.present_days }}" style="width:80px">
-              </td>
+      <!-- No-results row (search) -->
+      <div id="noSearchResult" class="text-center py-4 text-muted d-none">
+        <i class="ti ti-search-off" style="font-size:2rem;display:block;margin-bottom:.5rem;"></i>
+        No employees match your search.
+      </div>
+    </div>
+  </div>
 
-              <td class="text-center">{{ r.leave_taken }}</td>
+</div>
 
-              <!-- NEW LWP -->
-              <td class="text-center">
-                <input class="form-control form-control-sm text-end lwp"
-                       value="{{ r.leave_without_pay }}" style="width:80px">
-              </td>
+<!-- Sticky-header + table scroll CSS -->
+<style>
+.payroll-table-wrap {
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: calc(100vh - 320px);
+  position: relative;
+}
+/* Sticky header row */
+.payroll-table thead.payroll-thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: #343a40;
+  white-space: nowrap;
+}
+/* ── Sticky columns: fixed widths + explicit left offsets ── */
+/* Col 1: serial # — 44 px */
+.payroll-table th:nth-child(1),
+.payroll-table td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  width: 44px; min-width: 44px; max-width: 44px;
+  z-index: 2;
+  background: #fff;
+}
+/* Col 2: employee code — 110 px, starts at 44 */
+.payroll-table th:nth-child(2),
+.payroll-table td:nth-child(2) {
+  position: sticky;
+  left: 44px;
+  width: 110px; min-width: 110px; max-width: 110px;
+  overflow: hidden; text-overflow: ellipsis;
+  z-index: 2;
+  background: #fff;
+}
+/* Col 3: employee name — 180 px min, starts at 154 (44+110) */
+.payroll-table th:nth-child(3),
+.payroll-table td:nth-child(3) {
+  position: sticky;
+  left: 154px;
+  min-width: 180px;
+  z-index: 2;
+  background: #fff;
+  box-shadow: 3px 0 5px rgba(0,0,0,0.13);
+}
+/* Corner cells: dark header bg + highest z so they sit above scrolling body */
+.payroll-table thead th:nth-child(1),
+.payroll-table thead th:nth-child(2),
+.payroll-table thead th:nth-child(3) {
+  z-index: 6;
+  background: #343a40;
+  color: #fff;
+}
+/* Even-row tint for sticky cells */
+.payroll-table tbody tr:nth-child(even) td:nth-child(1),
+.payroll-table tbody tr:nth-child(even) td:nth-child(2),
+.payroll-table tbody tr:nth-child(even) td:nth-child(3) {
+  background: #f8f9fa;
+}
+/* Hover tint for sticky cells — declared after even so it wins */
+.payroll-table tbody tr:hover td:nth-child(1),
+.payroll-table tbody tr:hover td:nth-child(2),
+.payroll-table tbody tr:hover td:nth-child(3) {
+  background: #e9ecef;
+}
+</style>
 
-              <!-- Processed -->
-              <td class="text-end basic-proc">₹{{ r.basic_processed }}</td>
-              <td class="text-end hra-proc">₹{{ r.hra_processed }}</td>
-              <td class="text-end sp-proc">₹{{ r.sp_allowance_processed }}</td>
-              <td class="text-end stat-proc">₹{{ r.stat_bonus_processed }}</td>
-              <td class="text-end a1-proc">₹{{ r.allowance1_processed }}</td>
-              <td class="text-end a2-proc">₹{{ r.allowance2_processed }}</td>
-              <td class="text-end gross-proc">₹{{ r.gross_processed }}</td>
+<!-- Server-side values -->
+<div id="payroll-meta" style="display:none;"
+     data-csrf="{{ csrf_token }}"
+     data-pf-pct="{{ settings.pf_percentage|default:'12' }}"
+     data-esic-pct="{{ settings.esic_percentage|default:'0' }}"
+     data-basic-cap="{{ settings.basic_cap|default:'15000' }}"
+     data-prof-tax="{{ settings.professional_tax|default:'0' }}"
+     data-finalize-url="{% url 'payroll-run-finalize' run.id %}"
+     data-total-records="{{ records|length }}">
+</div>
 
-              <!-- Deductions -->
-              <td><input class="form-control form-control-sm text-end pf-emp" style="width:80px" value="{{ r.pf_employee }}"></td>
-              <td><input class="form-control form-control-sm text-end prof-tax" style="width:80px" value="{{ r.professional_tax }}"></td>
-              <td><input class="form-control form-control-sm text-end advance" style="width:80px" value="{{ r.advance }}"></td>
-              <td><input class="form-control form-control-sm text-end esic-emp" style="width:80px" value="{{ r.esic_employee }}"></td>
-              <td><input class="form-control form-control-sm text-end tds" style="width:80px" value="{{ r.tds }}"></td>
-              <td><input class="form-control form-control-sm text-end other-ded" style="width:80px" value="{{ r.other_deductions }}"></td>
+<!-- Toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999;">
+  <div id="payrollToast" class="toast align-items-center text-white border-0" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="d-flex">
+      <div class="toast-body fw-semibold" id="toastMsg">Saved!</div>
+      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
 
-              <td class="text-end total-ded">₹{{ r.total_deductions }}</td>
-              <td class="text-end net-pay">₹{{ r.net_salary }}</td>
-
-              <td class="text-center">
-                <button class="btn btn-sm btn-primary save-btn">Save</button>
-                {% if run.status == "draft" %}
-                <button class="btn btn-sm btn-secondary recalc-btn">Recalc</button>
-                {% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+<!-- Finalize Confirmation Modal -->
+<div class="modal fade" id="finalizeModal" tabindex="-1" aria-labelledby="finalizeModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header" style="background:#f59e0b;">
+        <h5 class="modal-title fw-bold text-dark" id="finalizeModalLabel">
+          <i class="ti ti-lock me-2"></i>Finalize Payroll Run
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-4">
+        <p class="mb-3">You are about to finalize the payroll run for:</p>
+        <div class="alert alert-light border mb-3 py-2">
+          <div class="fw-bold">{{ run.company.name }}</div>
+          <div class="text-muted small">{{ run.start_date|date:"d M Y" }} &ndash; {{ run.end_date|date:"d M Y" }}</div>
+        </div>
+        <div class="text-muted small">
+          <i class="ti ti-alert-circle text-warning me-1"></i>
+          After finalizing:
+          <ul class="mt-1 mb-0 ps-3">
+            <li>All attendance, LWP, and deduction fields will be <strong>locked</strong></li>
+            <li>No further edits can be made to this payroll run</li>
+            <li>This action <strong class="text-danger">cannot be undone</strong></li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+          <i class="ti ti-x me-1"></i> Cancel
+        </button>
+        <button type="button" class="btn btn-warning fw-semibold" id="btnConfirmFinalize">
+          <i class="ti ti-lock me-1"></i> Yes, Finalize Payroll
+        </button>
       </div>
     </div>
   </div>
 </div>
 
-<!-- ========================= JS ============================= -->
+{% endblock %}
+
+{% block page_scripts %}
 <script>
-const CSRF = "{{ csrf_token }}";
-const settings = {
-  pf_percentage: {{ settings.pf_percentage|default:"12" }},
-  esic_percentage: {{ settings.esic_percentage|default:"0" }},
-  esic_threshold: {{ settings.esic_threshold|default:"21000" }},
-  basic_cap: {{ settings.basic_cap|default:"15000" }},
-  professional_tax: {{ settings.professional_tax|default:"0" }}
+// Wrap in IIFE so our top-level const/let names cannot collide with variables
+// declared by base2.html / theme scripts (e.g. a global `searchInput`).
+(function () {
+"use strict";
+const _meta = document.getElementById("payroll-meta").dataset;
+const CSRF = _meta.csrf;
+const TOTAL_RECORDS = parseInt(_meta.totalRecords) || 0;
+const psettings = {
+  pf_percentage:    parseFloat(_meta.pfPct)   || 12,
+  esic_percentage:  parseFloat(_meta.esicPct) || 0,
+  esic_threshold:   21000,
+  basic_cap:        parseFloat(_meta.basicCap) || 15000,
+  professional_tax: parseFloat(_meta.profTax) || 0,
 };
 
-function money(n){ return Math.round((Number(n)||0) * 100) / 100; }
-function moneyStr(n){ return "₹" + money(n).toFixed(2); }
-
-function computeRow(tr){
-    const td = Number(tr.dataset.totalDays);
-    const basic = Number(tr.dataset.basicPm);
-    const hra = Number(tr.dataset.hraPm);
-    const sp = Number(tr.dataset.spallowPm);
-    const stat = Number(tr.dataset.statbonusPm);
-    const a1 = Number(tr.dataset.allow1Pm);
-    const a2 = Number(tr.dataset.allow2Pm);
-
-    const present = Number(tr.querySelector(".present-days").value) || 0;
-    const lwp = Number(tr.querySelector(".lwp").value) || 0;
-
-    const payable = Math.max(0, td - lwp);
-    const factor = payable / td;
-
-    const bp = money(basic * factor);
-    const hp = money(hra * factor);
-    const sp_p = money(sp * factor);
-    const stat_p = money(stat * factor);
-    const a1_p = money(a1 * factor);
-    const a2_p = money(a2 * factor);
-
-    const gross = money(bp + hp + sp_p + stat_p + a1_p + a2_p);
-
-    // PF
-    let pf = Number(tr.querySelector(".pf-emp").value) || 0;
-    if(!pf && tr.dataset.optedPf === "true"){
-        pf = money(Math.min(bp, settings.basic_cap) * settings.pf_percentage / 100);
-        tr.querySelector(".pf-emp").value = pf.toFixed(2);
-    }
-
-    // ESIC
-    let esic = Number(tr.querySelector(".esic-emp").value) || 0;
-    if(!esic && gross <= settings.esic_threshold){
-        esic = money(gross * settings.esic_percentage / 100);
-        tr.querySelector(".esic-emp").value = esic.toFixed(2);
-    }
-
-    let prof = Number(tr.querySelector(".prof-tax").value) || settings.professional_tax;
-    let adv = Number(tr.querySelector(".advance").value) || 0;
-    let tds = Number(tr.querySelector(".tds").value) || 0;
-    let other = Number(tr.querySelector(".other-ded").value) || 0;
-
-    const total_ded = money(pf + esic + prof + adv + tds + other);
-    const net = money(gross - total_ded);
-
-    // Update UI
-    tr.querySelector(".basic-proc").innerText = moneyStr(bp);
-    tr.querySelector(".hra-proc").innerText = moneyStr(hp);
-    tr.querySelector(".sp-proc").innerText = moneyStr(sp_p);
-    tr.querySelector(".stat-proc").innerText = moneyStr(stat_p);
-    tr.querySelector(".a1-proc").innerText = moneyStr(a1_p);
-    tr.querySelector(".a2-proc").innerText = moneyStr(a2_p);
-    tr.querySelector(".gross-proc").innerText = moneyStr(gross);
-    tr.querySelector(".total-ded").innerText = moneyStr(total_ded);
-    tr.querySelector(".net-pay").innerText = moneyStr(net);
+// ── Toast ────────────────────────────────────────────────────────────────────
+const toastEl = document.getElementById("payrollToast");
+let bsToast = null;
+try {
+  if (typeof bootstrap !== "undefined" && bootstrap.Toast) {
+    bsToast = new bootstrap.Toast(toastEl, {delay: 3000});
+  }
+} catch (e) {
+  console.warn("Toast init failed:", e);
+}
+function showToast(msg, type = "success") {
+  if (!toastEl) { console.log(msg); return; }
+  toastEl.className = `toast align-items-center text-white border-0 bg-${type}`;
+  const msgEl = document.getElementById("toastMsg");
+  if (msgEl) msgEl.textContent = msg;
+  if (bsToast) {
+    bsToast.show();
+  } else {
+    // Fallback: show as a simple alert-style banner
+    toastEl.classList.add("show");
+    setTimeout(() => toastEl.classList.remove("show"), 3000);
+  }
 }
 
-document.addEventListener("input", (e)=>{
-    const tr = e.target.closest("tr.payrow");
-    if(tr) computeRow(tr);
+// ── Search ───────────────────────────────────────────────────────────────────
+const searchInput  = document.getElementById("empSearch");
+const clearBtn     = document.getElementById("clearSearch");
+const searchCount  = document.getElementById("searchCount");
+const noResult     = document.getElementById("noSearchResult");
+
+function applySearch() {
+  const q = searchInput.value.trim().toLowerCase();
+  clearBtn.style.display = q ? "" : "none";
+
+  const rows = document.querySelectorAll("tr.payrow");
+  let visible = 0;
+  rows.forEach(tr => {
+    const match = !q
+      || (tr.dataset.empname || "").includes(q)
+      || (tr.dataset.empcode || "").includes(q);
+    tr.style.display = match ? "" : "none";
+    if (match) visible++;
+  });
+
+  if (q) {
+    searchCount.textContent = `${visible} of ${TOTAL_RECORDS} employee${TOTAL_RECORDS !== 1 ? "s" : ""}`;
+  } else {
+    searchCount.textContent = "";
+  }
+  noResult.classList.toggle("d-none", visible > 0 || !q);
+  updateSummary();
+}
+
+searchInput.addEventListener("input", applySearch);
+clearBtn.addEventListener("click", () => { searchInput.value = ""; applySearch(); searchInput.focus(); });
+
+// ── Calc helpers ─────────────────────────────────────────────────────────────
+function money(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+function fmt(n)   { return "₹" + money(n).toLocaleString("en-IN", {minimumFractionDigits: 2}); }
+
+function computeRow(tr) {
+  const td    = Number(tr.dataset.totalDays);
+  const basic = Number(tr.dataset.basicPm);
+  const hra   = Number(tr.dataset.hraPm);
+  const sp    = Number(tr.dataset.spallowPm);
+  const stat  = Number(tr.dataset.statbonusPm);
+  const a1    = Number(tr.dataset.allow1Pm);
+  const a2    = Number(tr.dataset.allow2Pm);
+
+  const lwp     = Number(tr.querySelector(".lwp")?.value) || 0;
+  const payable = Math.max(0, td - lwp);
+  const factor  = td > 0 ? payable / td : 0;
+
+  const bp    = money(basic * factor);
+  const hp    = money(hra   * factor);
+  const sp_p  = money(sp    * factor);
+  const st_p  = money(stat  * factor);
+  const a1_p  = money(a1    * factor);
+  const a2_p  = money(a2    * factor);
+  const gross = money(bp + hp + sp_p + st_p + a1_p + a2_p);
+
+  tr.querySelector(".basic-proc").textContent = fmt(bp);
+  tr.querySelector(".hra-proc").textContent   = fmt(hp);
+  tr.querySelector(".sp-proc").textContent    = fmt(sp_p);
+  tr.querySelector(".stat-proc").textContent  = fmt(st_p);
+  tr.querySelector(".a1-proc").textContent    = fmt(a1_p);
+  tr.querySelector(".a2-proc").textContent    = fmt(a2_p);
+  tr.querySelector(".gross-proc").textContent = fmt(gross);
+
+  // PF auto-calc unless manually overridden
+  const pfInput = tr.querySelector(".pf-emp");
+  if (pfInput && tr.dataset.optedPf === "true" && !pfInput.dataset.manual) {
+    pfInput.value = money(Math.min(bp, psettings.basic_cap) * psettings.pf_percentage / 100).toFixed(2);
+  }
+  // ESIC auto-calc unless manually overridden
+  const esicInput = tr.querySelector(".esic-emp");
+  if (esicInput && !esicInput.dataset.manual && gross <= psettings.esic_threshold && psettings.esic_percentage > 0) {
+    esicInput.value = money(gross * psettings.esic_percentage / 100).toFixed(2);
+  }
+
+  const pf      = Number(tr.querySelector(".pf-emp")?.value)    || 0;
+  const esic    = Number(tr.querySelector(".esic-emp")?.value)   || 0;
+  const prof    = Number(tr.querySelector(".prof-tax")?.value)   || 0;
+  const adv     = Number(tr.querySelector(".advance")?.value)    || 0;
+  const tds     = Number(tr.querySelector(".tds")?.value)        || 0;
+  const other   = Number(tr.querySelector(".other-ded")?.value)  || 0;
+  const tot_ded = money(pf + esic + prof + adv + tds + other);
+  const net     = money(gross - tot_ded);
+
+  tr.querySelector(".total-ded").textContent = fmt(tot_ded);
+  tr.querySelector(".net-pay").textContent   = fmt(net);
+
+  updateSummary();
+}
+
+// Only sum visible rows so search-filtered rows don't inflate totals
+function updateSummary() {
+  let totalGross = 0, totalDed = 0, totalNet = 0, visible = 0;
+  document.querySelectorAll("tr.payrow").forEach(tr => {
+    if (tr.style.display === "none") return;
+    visible++;
+    totalGross += Number(tr.querySelector(".gross-proc")?.textContent?.replace(/[₹,]/g, "")) || 0;
+    totalDed   += Number(tr.querySelector(".total-ded")?.textContent?.replace(/[₹,]/g, ""))  || 0;
+    totalNet   += Number(tr.querySelector(".net-pay")?.textContent?.replace(/[₹,]/g, ""))    || 0;
+  });
+  const s = n => "₹" + n.toLocaleString("en-IN", {minimumFractionDigits: 2});
+  document.getElementById("summaryCount").textContent = visible;
+  document.getElementById("summaryGross").textContent = s(totalGross);
+  document.getElementById("summaryDed").textContent   = s(totalDed);
+  document.getElementById("summaryNet").textContent   = s(totalNet);
+}
+
+// Mark PF/ESIC as manually set when user edits
+document.addEventListener("input", e => {
+  if (e.target.classList.contains("pf-emp"))   e.target.dataset.manual = "1";
+  if (e.target.classList.contains("esic-emp")) e.target.dataset.manual = "1";
+  const tr = e.target.closest("tr.payrow");
+  if (tr) computeRow(tr);
 });
 
-// SAVE
-async function saveRow(tr){
-    const id = tr.dataset.recordId;
+// ── Save ─────────────────────────────────────────────────────────────────────
+async function saveRow(tr) {
+  const btn = tr.querySelector(".save-btn");
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i>'; }
 
-    const payload = {
-        present_days: tr.querySelector(".present-days").value,
-        leave_without_pay: tr.querySelector(".lwp").value,
-        pf_employee: tr.querySelector(".pf-emp").value,
-        professional_tax: tr.querySelector(".prof-tax").value,
-        advance: tr.querySelector(".advance").value,
-        esic_employee: tr.querySelector(".esic-emp").value,
-        tds: tr.querySelector(".tds").value,
-        other_deductions: tr.querySelector(".other-ded").value
-    };
+  const payload = {
+    present_days:      tr.querySelector(".present-days")?.value,
+    leave_without_pay: tr.querySelector(".lwp")?.value,
+    pf_employee:       tr.querySelector(".pf-emp")?.value,
+    professional_tax:  tr.querySelector(".prof-tax")?.value,
+    advance:           tr.querySelector(".advance")?.value,
+    esic_employee:     tr.querySelector(".esic-emp")?.value,
+    tds:               tr.querySelector(".tds")?.value,
+    other_deductions:  tr.querySelector(".other-ded")?.value
+  };
 
-    const res = await fetch(`/payroll/record/${id}/update/`, {
-        method: "POST",
-        headers: {"Content-Type":"application/json","X-CSRFToken":CSRF},
-        body: JSON.stringify(payload)
+  try {
+    const res  = await fetch(tr.dataset.updateUrl, {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF},
+      body: JSON.stringify(payload)
     });
-
     const json = await res.json();
-    if(json.success){
-        alert("Saved!");
-        computeRow(tr);
-    } else alert("Save failed");
+    if (json.success) {
+      showToast("Saved & recalculated.", "success");
+      computeRow(tr);
+    } else {
+      showToast(json.error || "Save failed.", "danger");
+    }
+  } catch {
+    showToast("Network error — save failed.", "danger");
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-device-floppy"></i> Save'; }
+  }
 }
 
-document.addEventListener("click", (e)=>{
-    if(e.target.classList.contains("save-btn")){
-        saveRow(e.target.closest("tr.payrow"));
-    }
-    if(e.target.classList.contains("recalc-btn")){
-        computeRow(e.target.closest("tr.payrow"));
-    }
+document.addEventListener("click", e => {
+  if (e.target.closest(".save-btn")) saveRow(e.target.closest("tr.payrow"));
 });
 
-// Finalize
-document.getElementById("btnFinalize").addEventListener("click", async ()=>{
-    if(!confirm("Finalize payroll? This cannot be undone.")) return;
-    await fetch("{% url 'payroll-run-finalize' run.id %}", {
-        method:"POST",
-        headers:{"X-CSRFToken":CSRF}
-    });
-    alert("Finalized!");
-    location.reload();
-});
+// ── Finalize ──────────────────────────────────────────────────────────────────
+// The Finalize button opens the modal via data-bs-toggle/data-bs-target (no JS needed).
+// JS only handles the Confirm button's AJAX call.
+const btnFinalize     = document.getElementById("btnFinalize");
+const btnConfirm      = document.getElementById("btnConfirmFinalize");
+const finalizeModalEl = document.getElementById("finalizeModal");
+
+function _hideModal() {
+  try {
+    if (typeof bootstrap !== "undefined" && bootstrap.Modal) {
+      const m = bootstrap.Modal.getInstance(finalizeModalEl);
+      if (m) m.hide();
+    }
+  } catch (_) {}
+}
+
+// Actual finalize when user confirms inside modal
+if (btnConfirm) {
+  btnConfirm.addEventListener("click", async () => {
+    btnConfirm.disabled = true;
+    btnConfirm.innerHTML = '<i class="ti ti-loader-2 me-1"></i> Finalizing…';
+    if (btnFinalize) { btnFinalize.disabled = true; btnFinalize.innerHTML = '<i class="ti ti-loader-2 me-1"></i> Finalizing…'; }
+    _hideModal();
+
+    try {
+      const res  = await fetch(_meta.finalizeUrl, {
+        method: "POST",
+        headers: { "X-CSRFToken": CSRF }
+      });
+      let json = {};
+      try { json = await res.json(); } catch (_) {}
+      if (res.ok && json.success) {
+        showToast("Payroll finalized! Page will refresh…", "success");
+        setTimeout(() => location.reload(), 1800);
+      } else {
+        const errMsg = json.error || (res.status === 403 ? "Permission denied." : "Finalize failed.");
+        showToast(errMsg, "danger");
+        btnConfirm.disabled = false;
+        btnConfirm.innerHTML = '<i class="ti ti-lock me-1"></i> Yes, Finalize Payroll';
+        if (btnFinalize) { btnFinalize.disabled = false; btnFinalize.innerHTML = '<i class="ti ti-lock me-1"></i> Finalize'; }
+      }
+    } catch {
+      showToast("Network error — finalize failed.", "danger");
+      btnConfirm.disabled = false;
+      btnConfirm.innerHTML = '<i class="ti ti-lock me-1"></i> Yes, Finalize Payroll';
+      if (btnFinalize) { btnFinalize.disabled = false; btnFinalize.innerHTML = '<i class="ti ti-lock me-1"></i> Finalize'; }
+    }
+  });
+}
+
+// Init
+updateSummary();
+})(); // end IIFE
 </script>
-
 {% endblock %}

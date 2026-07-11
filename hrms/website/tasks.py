@@ -33,7 +33,7 @@ def check_and_update_status():
 
 
 
-from django.db import transaction, IntegrityError
+from django.db import transaction
 
 # @shared_task
 # def process_salary_increments():
@@ -212,84 +212,85 @@ def process_salary_increments():
     }
 
     for inc in increments:
-        emp = inc.employee
-        current = SalaryMaster.objects.filter(employee=emp).first()
+        try:
+            with transaction.atomic():
+                emp = inc.employee
+                current = SalaryMaster.objects.filter(employee=emp).first()
 
-        # 1️⃣ SAVE CURRENT SALARY TO HISTORY
-        if current:
-            SalaryHistory.objects.create(
-                employee=emp,
-                data={
-                    "flags": {
-                        "pf_deducted": current.pf_deducted,
-                        "gratuity_applicable": current.gratuity_applicable,
-                        "esic_applicable": current.esic_applicable,
-                    },
-                    "salary": {
-                        "gross_ctc_pm": str(current.gross_ctc_pm),
-                        "basic_pm": str(current.basic_pm),
-                        "hra_pm": str(current.hra_pm),
-                        "stat_bonus_pm": str(current.stat_bonus_pm),
-                        "sp_allowance_pm": str(current.sp_allowance_pm),
-                        "allowance1_pm": str(current.allowance1_pm),
-                        "allowance2_pm": str(current.allowance2_pm),
-                        "guaranteed_cash_pm": str(current.guaranteed_cash_pm),
-                        "ctc_pm": str(current.ctc_pm),
-                        "pf_er_cont_pm": str(current.pf_er_cont_pm),
-                        "pf_ee_cont_pm": str(current.pf_ee_cont_pm),
-                        "esic_er_cont_pm": str(current.esic_er_cont_pm),
-                        "esic_ee_cont_pm": str(current.esic_ee_cont_pm),
-                        "profession_tax_pm": str(current.profession_tax_pm),
-                        "net_salary_pm": str(current.net_salary_pm),
-                    }
-                },
-                start_date=today - timedelta(days=1),
-                end_date=today,
-            )
+                # 1️⃣ SAVE CURRENT SALARY TO HISTORY
+                if current:
+                    SalaryHistory.objects.create(
+                        employee=emp,
+                        data={
+                            "flags": {
+                                "pf_deducted": current.pf_deducted,
+                                "gratuity_applicable": current.gratuity_applicable,
+                                "esic_applicable": current.esic_applicable,
+                            },
+                            "salary": {
+                                "gross_ctc_pm": str(current.gross_ctc_pm),
+                                "basic_pm": str(current.basic_pm),
+                                "hra_pm": str(current.hra_pm),
+                                "stat_bonus_pm": str(current.stat_bonus_pm),
+                                "sp_allowance_pm": str(current.sp_allowance_pm),
+                                "allowance1_pm": str(current.allowance1_pm),
+                                "allowance2_pm": str(current.allowance2_pm),
+                                "guaranteed_cash_pm": str(current.guaranteed_cash_pm),
+                                "ctc_pm": str(current.ctc_pm),
+                                "pf_er_cont_pm": str(current.pf_er_cont_pm),
+                                "pf_ee_cont_pm": str(current.pf_ee_cont_pm),
+                                "esic_er_cont_pm": str(current.esic_er_cont_pm),
+                                "esic_ee_cont_pm": str(current.esic_ee_cont_pm),
+                                "profession_tax_pm": str(current.profession_tax_pm),
+                                "net_salary_pm": str(current.net_salary_pm),
+                            }
+                        },
+                        start_date=today - timedelta(days=1),
+                        end_date=today,
+                    )
 
-        # 2️⃣ UPDATE SalaryMaster FROM INCREMENT
-        if current:
+                # 2️⃣ UPDATE SalaryMaster FROM INCREMENT
+                if current:
+                    flags = inc.change_set.get("flags", {})
+                    monthly = inc.change_set.get("monthly", {})
 
-            flags = inc.change_set.get("flags", {})
-            monthly = inc.change_set.get("monthly", {})
+                    for key, value in flags.items():
+                        field = FIELD_MAP.get(key)
+                        if field:
+                            setattr(current, field, value)
 
-            # Apply flags
-            for key, value in flags.items():
-                field = FIELD_MAP.get(key)
-                if field:
-                    setattr(current, field, value)
+                    for key, value in monthly.items():
+                        field = FIELD_MAP.get(key)
+                        if field:
+                            setattr(current, field, value)
 
-            # Apply monthly salary fields
-            for key, value in monthly.items():
-                field = FIELD_MAP.get(key)
-                if field:
-                    setattr(current, field, value)
+                    # 3️⃣ AUTO-GENERATE ANNUAL FIELDS (PA)
+                    for field in SalaryMaster._meta.get_fields():
+                        if field.name.endswith("_pa"):
+                            pm_field = field.name.replace("_pa", "_pm")
+                            pm_value = getattr(current, pm_field, None)
+                            if pm_value:
+                                setattr(current, field.name, pm_value * 12)
 
-            # 3️⃣ AUTO-GENERATE ANNUAL FIELDS (PA)
-            for field in SalaryMaster._meta.get_fields():
-                if field.name.endswith("_pa"):
-                    pm_field = field.name.replace("_pa", "_pm")
-                    pm_value = getattr(current, pm_field, None)
-                    if pm_value:
-                        setattr(current, field.name, pm_value * 12)
+                    # 4️⃣ UPDATE final computed CTC
+                    current.ctc_pm = (
+                        (current.basic_pm or 0) +
+                        (current.hra_pm or 0) +
+                        (current.sp_allowance_pm or 0) +
+                        (current.allowance1_pm or 0) +
+                        (current.allowance2_pm or 0) +
+                        (current.stat_bonus_pm or 0)
+                    )
+                    current.ctc_pa = current.ctc_pm * 12
+                    current.save()
 
-            # 4️⃣ UPDATE final computed CTC if needed
-            current.ctc_pm = (
-                (current.basic_pm or 0) +
-                (current.hra_pm or 0) +
-                (current.sp_allowance_pm or 0) +
-                (current.allowance1_pm or 0) +
-                (current.allowance2_pm or 0) +
-                (current.stat_bonus_pm or 0)
-            )
+                # 5️⃣ MARK increment processed (inside atomic — rolls back if any step fails)
+                inc.is_processed = True
+                inc.save()
 
-            current.ctc_pa = current.ctc_pm * 12
-
-            current.save()
-
-        # 5️⃣ MARK increment processed
-        inc.is_processed = True
-        inc.save()
+        except Exception as e:
+            print(f"Error processing increment {inc.id} for {inc.employee}: {e}")
+            continue
 
 
 
@@ -320,7 +321,7 @@ from django.db import transaction
 from django.db.models import Sum, Min, Max
 from datetime import date, timedelta
 from decimal import Decimal
-from website.models import Employee, PayrollSettings, LeaveBalance, Company, Attendance
+from website.models import Employee, LeaveBalance, Company, Attendance
 
 
 # ============================================
@@ -328,19 +329,17 @@ from website.models import Employee, PayrollSettings, LeaveBalance, Company, Att
 # ============================================
 
 def get_payroll_period_for_date(payroll_settings, target_date):
-    """Determine which payroll period a date falls into"""
-    if payroll_settings.is_auto:
-        first_day = target_date.replace(day=1)
-        if target_date.month == 12:
-            last_day = date(target_date.year + 1, 1, 1) - timedelta(days=1)
-        else:
-            last_day = date(target_date.year, target_date.month + 1, 1) - timedelta(days=1)
-        return first_day, last_day
-    else:
-        from_day = payroll_settings.from_date
-        to_day = payroll_settings.to_date
-        
-        if from_day < to_day:
+    """
+    Determine which payroll period a date falls into.
+    If from_date and to_date (day numbers) are explicitly configured, they always
+    take priority over the is_auto flag.  is_auto is only used as a fallback when
+    neither day number is set.
+    """
+    from_day = payroll_settings.from_date
+    to_day = payroll_settings.to_date
+
+    if from_day and to_day:
+        if from_day <= to_day:
             if target_date.day >= from_day:
                 from_d = date(target_date.year, target_date.month, from_day)
                 to_d = date(target_date.year, target_date.month, to_day)
@@ -369,57 +368,57 @@ def get_payroll_period_for_date(payroll_settings, target_date):
                     prev_year -= 1
                 from_d = date(prev_year, prev_month, from_day)
                 to_d = date(target_date.year, target_date.month, to_day)
-        
         return from_d, to_d
+
+    # Fallback: calendar month
+    first_day = target_date.replace(day=1)
+    if target_date.month == 12:
+        last_day = date(target_date.year + 1, 1, 1) - timedelta(days=1)
+    else:
+        last_day = date(target_date.year, target_date.month + 1, 1) - timedelta(days=1)
+    return first_day, last_day
 
 
 def get_all_payroll_periods_from_attendance(company, payroll_settings):
-    """Get all unique payroll periods that have attendance data"""
-    periods = []
-    
+    """
+    Return all payroll periods (derived from PayrollSettings.from_date / to_date)
+    that contain at least one attendance record for the company.
+
+    Steps period-by-period rather than day-by-day, so it is O(months) not O(days).
+    """
     attendance_stats = Attendance.objects.filter(
         employee__company=company
-    ).aggregate(
-        min_date=Min('date'),
-        max_date=Max('date')
-    )
-    
+    ).aggregate(min_date=Min('date'), max_date=Max('date'))
+
     min_date = attendance_stats.get('min_date')
     max_date = attendance_stats.get('max_date')
-    
+
     if not min_date or not max_date:
-        return periods
-    
-    current_date = min_date
-    seen_periods = set()
-    
-    while current_date <= max_date:
-        from_d, to_d = get_payroll_period_for_date(payroll_settings, current_date)
-        
-        period_key = f"{from_d}_{to_d}"
-        
-        if period_key not in seen_periods:
-            seen_periods.add(period_key)
-            
-            has_attendance = Attendance.objects.filter(
-                employee__company=company,
-                date__gte=from_d,
-                date__lte=to_d
-            ).exists()
-            
-            if has_attendance:
-                label = f"{from_d.strftime('%b %d')} - {to_d.strftime('%b %d, %Y')}"
-                periods.append({
-                    'label': label,
-                    'from_date': from_d,
-                    'to_date': to_d,
-                    'display_date': to_d,
-                })
-        
-        current_date += timedelta(days=1)
-    
+        return []
+
+    periods = []
+
+    from_d, to_d = get_payroll_period_for_date(payroll_settings, min_date)
+
+    while from_d <= max_date:
+        has_attendance = Attendance.objects.filter(
+            employee__company=company,
+            date__gte=from_d,
+            date__lte=to_d,
+        ).exists()
+
+        if has_attendance:
+            label = f"{from_d.strftime('%d %b %Y')} - {to_d.strftime('%d %b %Y')}"
+            periods.append({
+                'label': label,
+                'from_date': from_d,
+                'to_date': to_d,
+                'display_date': to_d,
+            })
+
+        from_d, to_d = get_payroll_period_for_date(payroll_settings, to_d + timedelta(days=1))
+
     periods.sort(key=lambda x: x['to_date'], reverse=True)
-    
     return periods
 
 
@@ -453,32 +452,55 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
             opening_balance = Decimal("0.00")
     
     # STEP 2: Attendance for THIS period
+    # Exclude weekends and holidays — respect PayrollSettings.weekend_days
+    if getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun':
+        weekend_exclude = [1]       # Django week_day: 1=Sunday
+    else:
+        weekend_exclude = [1, 7]    # 1=Sunday, 7=Saturday
+
     attendance_records = Attendance.objects.filter(
         employee=employee,
         date__gte=from_date,
-        date__lte=to_date
-    )
-    
-    total_days = attendance_records.count()
-    
+        date__lte=to_date,
+        is_holiday=False,
+    ).exclude(date__week_day__in=weekend_exclude)
+
+    # Total days = actual calendar days in the payroll period (from_date to to_date inclusive)
+    total_days = (to_date - from_date).days + 1
+
+    # Working days (non-weekend, non-holiday) for leave_taken calculation
+    working_days = attendance_records.count()
+
     # STEP 3: Paid Days
     paid_days_sum = attendance_records.aggregate(
         total=Sum("count")
     )["total"]
     paid_days = paid_days_sum if paid_days_sum else Decimal("0.00")
-    
-    # STEP 4: Leave Taken
-    leave_taken = Decimal(str(total_days)) - paid_days
+
+    # Count weekend days in period — always treated as present
+    sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
+    weekend_day_count = 0
+    d = from_date
+    while d <= to_date:
+        is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
+        if is_weekend:
+            weekend_day_count += 1
+        d += timedelta(days=1)
+
+    days_present = paid_days + Decimal(str(weekend_day_count))
+
+    # STEP 4: Leave Taken — based on working days only, weekends never count as absent
+    leave_taken = Decimal(str(working_days)) - paid_days
     if leave_taken < 0:
         leave_taken = Decimal("0.00")
-    
-    # STEP 5: Late
-    total_late_minutes = attendance_records.aggregate(
-        total=Sum("late")
-    )["total"]
-    total_late_minutes = total_late_minutes if total_late_minutes else 0
-    
-    late_days = Decimal(str(total_late_minutes)) / Decimal("480")
+
+    # STEP 5: Late — count of "Late Present" days (not raw minutes)
+    late_count = attendance_records.filter(status="Late Present").count()
+    if getattr(payroll_settings, 'late_marks_affect_lwp', True):
+        # Grace: first 5 late marks are free. Every 3 marks after that = 1 day deducted.
+        late_days = Decimal(str((late_count - 5) // 3)) if late_count > 5 else Decimal("0")
+    else:
+        late_days = Decimal("0")
     
     # STEP 6: Comp-Off
     from website.models import CompOffRequest
@@ -494,31 +516,41 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
         or Decimal("0.00")
     )
     
-    # STEP 7: LWP
-    balance_before_credit = opening_balance + compoff_total - leave_taken - late_days
-    
-    if balance_before_credit < 0:
-        leave_without_pay = abs(balance_before_credit)
-        leave_balance = Decimal("0.00")
+    # STEP 7: LWP — preserve manual override if set
+    from website.models import LeaveBalance as LB
+    existing_lb = LB.objects.filter(
+        employee=employee,
+        period_from_date=from_date,
+        period_to_date=to_date,
+        lwp_overridden=True,
+    ).first()
+
+    if existing_lb:
+        leave_without_pay = existing_lb.leave_without_pay
+        balance_after_lwp = opening_balance + compoff_total - leave_taken - late_days - leave_without_pay
+        leave_balance = max(Decimal("0.00"), balance_after_lwp)
     else:
-        leave_without_pay = Decimal("0.00")
-        leave_balance = balance_before_credit
+        balance_before_credit = opening_balance + compoff_total - leave_taken - late_days
+        if balance_before_credit < 0:
+            leave_without_pay = abs(balance_before_credit)
+            leave_balance = Decimal("0.00")
+        else:
+            leave_without_pay = Decimal("0.00")
+            leave_balance = balance_before_credit
     
-    # STEP 8: Leave Credit Policy
+    # STEP 8: Monthly Leave Credit via LeaveCreditPolicy
     try:
         policy = employee.company.leave_credit_policy
-        present_days_for_credit = int(paid_days)
-        
-        if present_days_for_credit <= policy.credit_1_limit:
-            monthly_credit = policy.credit_low
-        elif present_days_for_credit <= policy.credit_2_limit:
-            monthly_credit = policy.credit_mid
+        present_for_credit = int(days_present)
+        if present_for_credit <= policy.credit_1_limit:
+            monthly_credit = Decimal(str(policy.credit_low))
+        elif present_for_credit <= policy.credit_2_limit:
+            monthly_credit = Decimal(str(policy.credit_mid))
         else:
-            monthly_credit = policy.credit_high
-        
+            monthly_credit = Decimal(str(policy.credit_high))
         monthly_cap = Decimal(str(payroll_settings.earned_leaves_per_year)) / Decimal("12")
-        monthly_credit = min(Decimal(str(monthly_credit)), monthly_cap)
-    except:
+        monthly_credit = min(monthly_credit, monthly_cap)
+    except Exception:
         monthly_credit = Decimal("1.00")
     
     # STEP 9: Closing Balance
@@ -537,9 +569,9 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
         defaults={
             'opening_balance': opening_balance,
             'leave_taken': leave_taken,
-            'number_of_days_present': paid_days,
+            'number_of_days_present': days_present,
             'total_number_of_days': total_days,
-            'late': total_late_minutes,
+            'late': late_count,
             'compoff': compoff_total,
             'leave_without_pay': leave_without_pay,
             'leave_balance': leave_balance,
@@ -687,60 +719,71 @@ CHUNK_SIZE = 500
 
 @shared_task
 def process_attendance_file(upload_id):
-
     upload = AttendanceUpload.objects.get(id=upload_id)
-
     file_path = upload.file.path
 
-    df = pd.read_excel(file_path, engine="openpyxl")
+    try:
+        df = pd.read_excel(file_path, engine="openpyxl")
+    except Exception:
+        upload.status = "failed"
+        upload.save(update_fields=["status"])
+        raise
 
     total_rows = len(df)
-
     upload.total_rows = total_rows
     upload.processed_rows = 0
     upload.status = "processing"
     upload.save()
 
-    for start in range(0, total_rows, CHUNK_SIZE):
+    try:
+        for start in range(0, total_rows, CHUNK_SIZE):
+            chunk = df.iloc[start:start + CHUNK_SIZE]
+            records = []
 
-        chunk = df.iloc[start:start + CHUNK_SIZE]
+            for _, row in chunk.iterrows():
+                # Skip rows with missing date or employee code
+                employee_code = row.get("Employee Code")
+                raw_date = row.get("Date")
+                if pd.isna(employee_code) or pd.isna(raw_date):
+                    continue
 
-        records = []
+                try:
+                    attendance_date = pd.to_datetime(raw_date).date()
+                except Exception:
+                    continue
 
-        for index, row in chunk.iterrows():
+                raw_in = row.get("In Time")
+                raw_out = row.get("Out Time")
+                in_time = None if pd.isna(raw_in) else raw_in
+                out_time = None if pd.isna(raw_out) else raw_out
 
-            employee_code = row.get("Employee Code")
-            attendance_date = pd.to_datetime(row.get("Date")).date()
-            in_time = row.get("In Time")
-            out_time = row.get("Out Time")
+                employee = Employee.objects.filter(employee_code=employee_code).first()
+                if not employee:
+                    continue
 
-            employee = Employee.objects.filter(
-                employee_code=employee_code
-            ).first()
+                if Attendance.objects.filter(employee=employee, date=attendance_date).exists():
+                    continue
 
-            if not employee:
-                continue
-
-            if Attendance.objects.filter(
-                employee=employee,
-                date=attendance_date
-            ).exists():
-                continue
-
-            records.append(
-                Attendance(
+                record = Attendance(
                     employee=employee,
                     date=attendance_date,
                     in_time=in_time,
-                    out_time=out_time
+                    out_time=out_time,
                 )
-            )
+                # bulk_create bypasses save(), so run calculate_status() manually
+                record.calculate_status()
+                records.append(record)
 
-        if records:
-            Attendance.objects.bulk_create(records, batch_size=500)
+            if records:
+                Attendance.objects.bulk_create(records, batch_size=500)
 
-        upload.processed_rows += len(chunk)
-        upload.save(update_fields=["processed_rows"])
+            upload.processed_rows += len(chunk)
+            upload.save(update_fields=["processed_rows"])
 
-    upload.status = "completed"
-    upload.save(update_fields=["status"])
+        upload.status = "completed"
+        upload.save(update_fields=["status"])
+
+    except Exception:
+        upload.status = "failed"
+        upload.save(update_fields=["status"])
+        raise

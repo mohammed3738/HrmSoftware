@@ -1,6 +1,7 @@
 from urllib import request
 
-from django.shortcuts import render, redirect,get_object_or_404
+from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
 from .forms import *
 from django.http import HttpResponse, Http404
 # from .tasks import *
@@ -32,6 +33,13 @@ import os
 from django.http import FileResponse, Http404
 import openpyxl
 from .services import *  # from previous services.py
+from .utils.payroll_lock import (
+    get_locking_run,
+    get_locking_run_for_period,
+    lock_response,
+    build_date_locked_cache,
+    date_in_cache,
+)
 from django.forms.models import model_to_dict
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import permission_required
@@ -178,34 +186,37 @@ def fill_holiday_attendance_for_month(year, month):
     first_day = date(year, month, 1)
     last_day = date(year, month, monthrange(year, month)[1])
     
-    # Get setting
-    payroll_settings = PayrollSettings.objects.first()
-    branch_specific = getattr(payroll_settings, 'branch_specific_holidays', True)
-    
+    # Build per-company branch_specific_holidays flag
+    company_branch_specific = {
+        ps.company_id: getattr(ps, 'branch_specific_holidays', True)
+        for ps in PayrollSettings.objects.all()
+    }
+
     # Get all holidays in month
     all_holidays = Holiday.objects.filter(
         holiday_date__gte=first_day,
         holiday_date__lte=last_day
     ).select_related('holiday_calendar__branch')
-    
+
     # Get half-day scenarios with branch info
     half_day_scenarios = HalfDayScenario.objects.filter(
         scenario_date__gte=first_day,
         scenario_date__lte=last_day,
         is_approved=True
     ).select_related('branch')
-    
-    # Build half-day dict: {date: set(branch_ids)}
+
+    # Build half-day dict: {date: set(branch_ids)}; None means "all branches"
     half_day_by_date = {}
     for s in half_day_scenarios:
-        half_day_by_date.setdefault(s.scenario_date, set()).add(s.branch_id)
-    
-    employees = Employee.objects.filter(status='Active').select_related('branch')
+        half_day_by_date.setdefault(s.scenario_date, set()).add(s.branch_id)  # branch_id=None → all
+
+    employees = Employee.objects.filter(status='Active').select_related('branch', 'company')
     created_count = 0
     
     for employee in employees:
         dates_to_create = set()
-        
+        branch_specific = company_branch_specific.get(employee.company_id, True)
+
         # Determine which holiday dates apply to this employee
         for holiday in all_holidays:
             if holiday.is_national:
@@ -216,13 +227,14 @@ def fill_holiday_attendance_for_month(year, month):
                 dates_to_create.add(holiday.holiday_date)
             else:
                 # Branch-specific ON — only apply if branch matches
-                if (employee.branch_id and 
-                    holiday.holiday_calendar.branch_id == employee.branch_id):
+                # holiday_calendar is None means the holiday has no branch restriction
+                cal = holiday.holiday_calendar
+                if cal is None or (employee.branch_id and cal.branch_id == employee.branch_id):
                     dates_to_create.add(holiday.holiday_date)
         
-        # Half-day dates only apply if employee's branch matches
+        # Half-day: None in branch_ids means "all branches" scenario
         for hd_date, branch_ids in half_day_by_date.items():
-            if employee.branch_id and employee.branch_id in branch_ids:
+            if None in branch_ids or (employee.branch_id and employee.branch_id in branch_ids):
                 dates_to_create.add(hd_date)
         
         for special_date in dates_to_create:
@@ -345,40 +357,205 @@ def fill_holiday_attendance_for_month(year, month):
 #             {"success": False, "message": str(e)}
 #         )
 
+@login_required
+@group_required("Admin", "HR")
 def upload_attendance_excel(request):
+    if request.method == "GET":
+        return render(request, "attendance/attendance_upload.html")
 
-    if request.method != "POST":
-        return JsonResponse({"success": False})
+    # POST — process synchronously
+    try:
+        return _do_import_attendance(request)
+    except Exception as e:
+        import traceback
+        print(f"[ATTENDANCE IMPORT FATAL]\n{traceback.format_exc()}")
+        return JsonResponse({"success": False, "error": str(e)})
 
-    file = request.FILES.get("attendance_file")
 
-    upload = AttendanceUpload.objects.create(file=file)
+def _parse_excel_time(val):
+    """Parse a cell value into a datetime.time. Returns None if blank/invalid."""
+    import datetime as dt
+    if val is None:
+        return None
+    try:
+        if pd.isna(val):
+            return None
+    except (TypeError, ValueError):
+        pass
+    # Already a time object
+    if isinstance(val, dt.time):
+        return val
+    # datetime / Timestamp → extract .time()
+    if hasattr(val, "time") and callable(val.time):
+        try:
+            return val.time()
+        except Exception:
+            pass
+    # Excel stores times as fraction of a day (float 0–1)
+    if isinstance(val, float) and 0 <= val < 1:
+        total_sec = int(round(val * 86400))
+        return dt.time(total_sec // 3600, (total_sec % 3600) // 60, total_sec % 60)
+    # String parsing
+    s = str(val).strip()
+    if s.lower() in ("", "nan", "none", "nat"):
+        return None
+    for fmt in ("%H:%M:%S", "%H:%M", "%I:%M %p", "%I:%M:%S %p"):
+        try:
+            return dt.datetime.strptime(s, fmt).time()
+        except ValueError:
+            continue
+    try:
+        t = pd.to_datetime(s, errors="coerce")
+        if t is not None and not pd.isna(t):
+            return t.time()
+    except Exception:
+        pass
+    return None
 
-    from .tasks import process_attendance_file
-    process_attendance_file.delay(upload.id)
+
+def _do_import_attendance(request):
+    uploaded_file = request.FILES.get("file") or request.FILES.get("attendance_file")
+    if not uploaded_file:
+        return JsonResponse({"success": False, "error": "No file uploaded."})
+
+    try:
+        # Read without assuming a header row — check if row 0 is the header
+        df_raw = pd.read_excel(uploaded_file, engine="openpyxl", header=None)
+    except Exception as e:
+        return JsonResponse({"success": False, "error": f"Cannot read file: {e}"})
+
+    # ── Auto-detect header row ────────────────────────────────────────────────
+    # Some exports put the header in row 0 as data (columns become Unnamed).
+    # Check if the first row contains known header values.
+    header_row = None
+    for i in range(min(5, len(df_raw))):  # check first 5 rows
+        row_vals = [str(v).strip().lower() for v in df_raw.iloc[i].tolist()]
+        if "emp code" in row_vals or "employee code" in row_vals:
+            header_row = i
+            break
+
+    if header_row is not None:
+        # Re-read using the detected header row
+        uploaded_file.seek(0)  # rewind file pointer
+        df = pd.read_excel(uploaded_file, engine="openpyxl", header=header_row)
+    else:
+        df = df_raw
+
+    df.columns = df.columns.str.strip()
+
+    # ── Normalize column names ────────────────────────────────────────────────
+    # Handle variants: "Att. Date", "Att.Date", "Date", "Attendance Date"
+    col_aliases = {
+        "emp code":        "Emp Code",
+        "employee code":   "Emp Code",
+        "att. date":       "Att.Date",
+        "att.date":        "Att.Date",
+        "attendance date": "Att.Date",
+        "date":            "Att.Date",
+        "in time":         "In Time",
+        "out time":        "Out Time",
+    }
+    df.rename(columns={c: col_aliases.get(c.strip().lower(), c) for c in df.columns}, inplace=True)
+
+    # Verify required columns exist after normalization
+    required = ["Emp Code", "Att.Date"]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        return JsonResponse({
+            "success": False,
+            "error": (
+                f"Missing column(s): {', '.join(missing)}. "
+                f"Columns found after normalizing: {', '.join(df.columns.tolist())}"
+            )
+        })
+
+    created_count = 0
+    skipped_count = 0
+    errors = []
+
+    # Build the lock cache lazily — we'll add company ids as we discover them
+    _lock_cache = {}
+
+    for row_idx, row in df.iterrows():
+        row_num = row_idx + 2
+        try:
+            emp_code_raw = row.get("Emp Code")
+
+            # Skip blank or header-repeat rows
+            if emp_code_raw is None or str(emp_code_raw).strip().lower() in ("nan", "none", "", "emp code"):
+                skipped_count += 1
+                continue
+
+            emp_code = str(emp_code_raw).strip()
+            # Remove trailing ".0" if pandas read it as float (e.g. 2.0 → "2")
+            if emp_code.endswith(".0"):
+                emp_code = emp_code[:-2]
+
+            employee = Employee.objects.filter(employee_code=emp_code).first()
+            if not employee:
+                errors.append(f"Row {row_num}: Employee code '{emp_code}' not found")
+                skipped_count += 1
+                continue
+
+            att_date_raw = row.get("Att.Date")
+            att_date = parse_excel_date(att_date_raw)
+            if not att_date:
+                errors.append(f"Row {row_num}: Invalid or missing date '{att_date_raw}'")
+                skipped_count += 1
+                continue
+
+            if employee.company_id and employee.company_id not in _lock_cache:
+                _lock_cache.update(build_date_locked_cache([employee.company_id]))
+            if date_in_cache(_lock_cache, employee.company_id, att_date):
+                errors.append(
+                    f"Row {row_num}: {att_date:%d %b %Y} is part of a finalized payroll run — attendance cannot be modified."
+                )
+                skipped_count += 1
+                continue
+
+            in_time  = _parse_excel_time(row.get("In Time"))
+            out_time = _parse_excel_time(row.get("Out Time"))
+
+            _, created = Attendance.objects.get_or_create(
+                employee=employee,
+                date=att_date,
+                defaults={
+                    'in_time': in_time,
+                    'out_time': out_time,
+                }
+            )
+            if created:
+                created_count += 1
+            else:
+                skipped_count += 1
+
+        except Exception as e:
+            import traceback
+            print(f"[ATTENDANCE] Row {row_num} error: {traceback.format_exc()}")
+            errors.append(f"Row {row_num}: {e}")
+            skipped_count += 1
 
     return JsonResponse({
         "success": True,
-        "upload_id": upload.id
+        "created": created_count,
+        "skipped": skipped_count,
+        "total_rows": len(df),
+        "errors": errors[:50],  # cap at 50 so response doesn't get huge
     })
-    
+
+@login_required
 def attendance_upload_progress(request, upload_id):
-
-    upload = AttendanceUpload.objects.get(id=upload_id)
-
-    if upload.total_rows == 0:
-        progress = 0
-    else:
-        progress = int((upload.processed_rows / upload.total_rows) * 100)
-
-    return JsonResponse({
-        "progress": progress,
-        "status": upload.status
-    })
+    # Kept for backward compat — not used by new sync flow
+    try:
+        upload = AttendanceUpload.objects.get(id=upload_id)
+        progress = 0 if upload.total_rows == 0 else int((upload.processed_rows / upload.total_rows) * 100)
+        return JsonResponse({"progress": progress, "status": upload.status})
+    except AttendanceUpload.DoesNotExist:
+        return JsonResponse({"progress": 0, "status": "not_found"})
 
     
 @login_required
-# @group_required("Admin", "HR")
+@group_required("Admin", "HR", "Manager")
 def attendance_list(request):
     user = request.user
 
@@ -420,6 +597,7 @@ def attendance_list(request):
     return render(request, "attendance/today.html", context)
 
 
+@login_required
 def employee_attendance_detail(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
 
@@ -457,6 +635,7 @@ def employee_attendance_detail(request, employee_id):
 
 
 
+@login_required
 def employee_search(request):
     q = request.GET.get("q", "").strip()
 
@@ -478,15 +657,21 @@ def employee_search(request):
     return JsonResponse(data, safe=False)
 
 
+@login_required
 def submit_correction_request(request):
     if request.method == "POST":
         attendance_id = request.POST.get("attendance_id")
         new_in_time = request.POST.get("new_in_time")
         new_out_time = request.POST.get("new_out_time")
         reason = request.POST.get("reason")
-        
+
         attendance = get_object_or_404(Attendance, id=attendance_id)
-        
+
+        # Block raising a correction request for a finalized payroll period
+        locking_run = get_locking_run(attendance.employee.company, attendance.date)
+        if locking_run:
+            return lock_response(locking_run, action="raise a correction request")
+
         # Create a correction request
         correction_request = AttendanceCorrectionRequest.objects.create(
             attendance=attendance,
@@ -502,11 +687,17 @@ def submit_correction_request(request):
 
 
 # approval
+@login_required
 def approve_correction_request(request, request_id):
     correction_request = get_object_or_404(AttendanceCorrectionRequest, id=request_id)
 
-    # Update attendance record
+    # Block approval if the attendance date falls in a finalized payroll run
     attendance = correction_request.attendance
+    locking_run = get_locking_run(attendance.employee.company, attendance.date)
+    if locking_run:
+        return lock_response(locking_run, action="approve this correction")
+
+    # Update attendance record
     attendance.in_time = correction_request.new_in_time
     attendance.out_time = correction_request.new_out_time
     attendance.save()
@@ -524,6 +715,7 @@ def approve_correction_request(request, request_id):
     return JsonResponse({"message": "Correction Approved!"})
 
 
+@login_required
 def reject_correction_request(request, request_id):
     correction_request = get_object_or_404(AttendanceCorrectionRequest, id=request_id)
 
@@ -571,6 +763,8 @@ def _format_date_iso(d):
     """Return ISO string or None."""
     return d.isoformat() if d else None
 
+@login_required
+@group_required("Admin", "HR", "Manager")
 def attendance_correction_requests_list(request):
     from .models import AttendanceCorrectionRequest, Attendance
 
@@ -661,6 +855,8 @@ def attendance_correction_requests_list(request):
         "attendance_requests": rows,
     })
 
+@login_required
+@group_required("Admin", "HR", "Manager")
 def attendance_correction_detail(request, pk):
     obj = get_object_or_404(AttendanceCorrectionRequest, pk=pk)
 
@@ -792,6 +988,8 @@ from django.db.models import Count
 from django.db.models.functions import ExtractYear, ExtractMonth
 from django.shortcuts import render
 
+@login_required
+@group_required("Admin", "HR", "Manager")
 def comp_off_requests_list(request):
     # read optional filters from GET
     selected_year = request.GET.get("year")   # e.g. "2025" or ""
@@ -878,6 +1076,8 @@ from datetime import datetime
 import datetime as dt
 
 
+@login_required
+@group_required("Admin", "HR", "Manager")
 def comp_off_requests(request, pk):
     """
     Return all comp-off requests for the employee with id=pk for the requested month/year.
@@ -940,45 +1140,112 @@ def comp_off_requests(request, pk):
 @login_required(login_url="login")
 @group_required("Admin", "HR")
 def admin_dashboard(request):
-    requests = AttendanceCorrectionRequest.objects.filter(status='Pending')  # Attendance approvals
-    compoff_requests = CompOffRequest.objects.filter(status='Pending')  # CompOff approvals
-    leave_requests = LeaveApplication.objects.select_related("employee").filter(status="Pending").order_by("-id")
-    user = request.user
     today = date.today()
-    current_month = date.today().month
+    user = request.user
+    user_company = get_user_company(user)
+    company_filter = get_company_filter(user)
 
-    # Get the first day of the current month
-    first_day_of_month = today.replace(day=1)
+    base_qs = Employee.objects.filter(company=company_filter) if company_filter else Employee.objects.all()
+    active_qs = base_qs.filter(status='Active')
 
-    try:
-        employee = Employee.objects.get(user=request.user)
-    except Employee.DoesNotExist:
-        employee = None    # Calculate the number of days
+    # ── KPI numbers ──────────────────────────────────────────────
+    total_active = active_qs.count()
+    total_left   = base_qs.filter(status='Left').count()
 
-    total_days = (today - first_day_of_month).days + 1  # Adding 1 to include today
-    compoff1 = CompOffRequest.objects.filter(employee=employee ,from_date__month=current_month, to_date__month = current_month)
+    new_joiners_month = active_qs.filter(
+        date_of_joining__year=today.year,
+        date_of_joining__month=today.month,
+    ).count()
 
-    compoff = 0
-    for i in compoff1:
-        from_date = i.from_date
-        to_date = i.to_date
-        compoff = compoff + (to_date-from_date).days +1 
-        print(compoff,'ppppppp')
-        print(i.from_date,'jjjjj')
-        print(i.to_date,'llll')
-    print(compoff,'aaaaaa') 
+    pending_leaves      = LeaveApplication.objects.filter(employee__in=active_qs, status='Pending').count()
+    pending_compoffs    = CompOffRequest.objects.filter(employee__in=active_qs, status='Pending').count()
+    pending_corrections = AttendanceCorrectionRequest.objects.filter(
+        attendance__employee__in=active_qs, status='Pending'
+    ).count()
+    total_pending       = pending_leaves + pending_compoffs + pending_corrections
+
+    # ── Today's attendance breakdown ─────────────────────────────
+    today_attn   = Attendance.objects.filter(employee__in=active_qs, date=today)
+    present_today   = today_attn.filter(status__in=['Present', 'Late Present', 'Half Day']).count()
+    absent_today    = today_attn.filter(status='Absent').count()
+    late_today      = today_attn.filter(status='Late Present').count()
+    on_leave_today  = today_attn.filter(status='On Leave').count()
+    not_marked      = total_active - today_attn.count()
+
+    # ── Department distribution ───────────────────────────────────
+    dept_data = list(
+        active_qs.exclude(department__isnull=True).exclude(department='')
+        .values('department').annotate(count=Count('id')).order_by('-count')[:8]
+    )
+
+    # ── Detail lists ──────────────────────────────────────────────
+    recent_joiners = active_qs.filter(date_of_joining__isnull=False).order_by('-date_of_joining')[:6]
+
+    anniversary_employees = active_qs.filter(
+        date_of_joining__month=today.month,
+        date_of_joining__isnull=False,
+    ).exclude(date_of_joining__year=today.year).order_by('date_of_joining__day')[:5]
+
+    leave_requests = (
+        LeaveApplication.objects.select_related('employee')
+        .filter(employee__in=active_qs, status='Pending').order_by('-id')[:8]
+    )
+    compoff_requests = (
+        CompOffRequest.objects.select_related('employee')
+        .filter(employee__in=active_qs, status='Pending').order_by('-id')[:8]
+    )
+    correction_requests = (
+        AttendanceCorrectionRequest.objects.select_related('attendance__employee')
+        .filter(attendance__employee__in=active_qs, status='Pending').order_by('-id')[:8]
+    )
+    upcoming_offboarding = (
+        Offboarding.objects.select_related('employee')
+        .filter(date_of_relieving__gte=today, date_of_relieving__lte=today + timedelta(days=30))
+        .order_by('date_of_relieving')[:5]
+    )
+
     return render(request, 'd/f.html', {
-        "requests": requests,
-        "compoff_requests": compoff_requests,
-        "leave_requests": leave_requests,
-        "user": user,
+        'user': user,
+        'today': today,
+        'user_company': user_company,
+        # KPI
+        'total_active': total_active,
+        'total_left': total_left,
+        'new_joiners_month': new_joiners_month,
+        'total_pending': total_pending,
+        'present_today': present_today,
+        'absent_today': absent_today,
+        'late_today': late_today,
+        'on_leave_today': on_leave_today,
+        'not_marked': not_marked,
+        # Pending counts
+        'pending_leaves': pending_leaves,
+        'pending_compoffs': pending_compoffs,
+        'pending_corrections': pending_corrections,
+        # Lists
+        'recent_joiners': recent_joiners,
+        'anniversary_employees': anniversary_employees,
+        'leave_requests': leave_requests,
+        'compoff_requests': compoff_requests,
+        'correction_requests': correction_requests,
+        'upcoming_offboarding': upcoming_offboarding,
+        'dept_data': dept_data,
     })
 
 
-@csrf_exempt
+@login_required
+@group_required("Admin", "HR", "Manager")
 def approve_compoff(request, compoff_id):
     try:
         compoff = CompOffRequest.objects.get(id=compoff_id)
+
+        # Block approval if the comp-off period overlaps a finalized payroll run
+        locking_run = get_locking_run_for_period(
+            compoff.employee.company, compoff.from_date, compoff.to_date
+        )
+        if locking_run:
+            return lock_response(locking_run, action="approve this comp-off")
+
         compoff.status = "Approved"
         compoff.save()
         return JsonResponse({"message": "CompOff request approved successfully!"})
@@ -998,6 +1265,8 @@ def approve_compoff(request, compoff_id):
 #         except CompOffRequest.DoesNotExist:
 #             return JsonResponse({"message": "Request not found!"}, status=404)
 
+@login_required
+@group_required("Admin", "HR", "Manager")
 def reject_compoff(request, compoff_id):
     correction_request = get_object_or_404(CompOffRequest, id=compoff_id)
 
@@ -1019,6 +1288,8 @@ def reject_compoff(request, compoff_id):
     return JsonResponse({"error": "Invalid request"}, status=400)
 
 
+@login_required
+@group_required("Admin", "HR")
 def download_employees_excel(request):
     # Fetch active employees
     employees = Employee.objects.filter(status="Active").values(
@@ -1026,7 +1297,7 @@ def download_employees_excel(request):
         "gender", "blood_group", "date_of_birth", "place_of_birth",
         "personal_email", "personal_mobile", "present_address", "permanent_address",
         "date_of_marriage", "designation", "department", "date_of_joining",
-        "date_of_confirmation", "location", "payroll_of", "shift_start_time", "shift_end_time",
+        "date_of_confirmation", "location", "shift_start_time", "shift_end_time",
         "pan_no", "aadhar_no", "voter_id", "passport", "uan_no", "pf_no", "esic_no",
         "name_as_per_bank", "salary_account_number", "ifsc_code",
         "emergency_contact_name1", "emergency_contact_relation1", "emergency_contact_mobile1",
@@ -1057,7 +1328,6 @@ def download_employees_excel(request):
         "date_of_joining": "Date of Joining",
         "date_of_confirmation": "Date of Confirmation",
         "location": "Location",
-        "payroll_of": "On Payroll Of",
         # "shift": "Shift",
         "shift_start_time": "Shift Start Time",
         "shift_end_time": "Shift End Time",
@@ -1090,6 +1360,8 @@ def download_employees_excel(request):
     return response
 
 
+@login_required
+@group_required("Admin", "HR")
 def download_leave_excel(request):
     # Fetch active leave balances along with related employee info
     leave_balances = LeaveBalance.objects.select_related("employee").filter(employee__status="Active")
@@ -1117,7 +1389,6 @@ def download_leave_excel(request):
             "Date of Joining": emp.date_of_joining,
             "Date of Confirmation": emp.date_of_confirmation,
             "Location": emp.location,
-            "On Payroll Of": emp.payroll_of,
             "Shift": emp.shift,
             "PAN Number": emp.pan_no,
             "Aadhar Number": emp.aadhar_no,
@@ -1167,6 +1438,7 @@ def test(request):
     return HttpResponse("Done")
 
 
+@login_required
 def home(request):
     return render(request, 'base2.html')
 
@@ -1309,8 +1581,14 @@ def home(request):
 
 #     return render(request, 'employee/create_employee2.html', context)
 
+from django.contrib.auth.models import Group
+
+# Add to context in both views:
+
+from django.contrib.auth.models import Group, User
 
 @login_required
+@group_required("Admin", "HR")
 def create_or_edit_employee(request, employee_id=None):
     employee = None
     is_edit = False
@@ -1320,49 +1598,51 @@ def create_or_edit_employee(request, employee_id=None):
         is_edit = True
 
     if request.method == 'POST':
-        form = EmployeeForm(
-            request.POST,
-            request.FILES,
-            instance=employee
-        )
-
-        formset = PreviousEmploymentFormSet(
-            request.POST,
-            instance=employee
-        )
-
-        attachment_formset = AttachmentFormSet(
-            request.POST,
-            request.FILES,
-            instance=employee
-        )
-
-        print("REQUEST METHOD:", request.method)
-        print("EMPLOYEE ID FROM URL:", employee_id)
-        print("EDIT MODE:", is_edit)
-        print("EMPLOYEE INSTANCE:", employee)
+        form = EmployeeForm(request.POST, request.FILES, instance=employee)
+        formset = PreviousEmploymentFormSet(request.POST, instance=employee)
+        attachment_formset = AttachmentFormSet(request.POST, request.FILES, instance=employee)
 
         if form.is_valid() and formset.is_valid() and attachment_formset.is_valid():
-
             with transaction.atomic():
-
                 emp_obj = form.save(commit=False)
                 emp_obj.save()
 
+                # ✅ HANDLE GROUP ASSIGNMENT
+                selected_group_id = request.POST.get("employee_group")
+                if selected_group_id:
+                    # Create or get the linked User for this employee
+                    if not emp_obj.user:
+                        # Auto-create a user only if employee_code exists
+                        if emp_obj.employee_code:
+                            username = emp_obj.employee_code.lower()
+                            user, created = User.objects.get_or_create(username=username)
+                            if created:
+                                user.set_unusable_password()
+                                user.save()
+                            emp_obj.user = user
+                            emp_obj.save()
+
+                    # Clear old groups and assign new one (only if user exists)
+                    if emp_obj.user:
+                        emp_obj.user.groups.clear()
+                        try:
+                            group = Group.objects.get(id=selected_group_id)
+                            emp_obj.user.groups.add(group)
+                        except Group.DoesNotExist:
+                            pass
+
+                # ... rest of your existing formset saving logic
                 formset.instance = emp_obj
                 attachment_formset.instance = emp_obj
 
-                # ✅ SAVE PREVIOUS EMPLOYMENT + NESTED ATTACHMENTS
-                for form in formset.forms:
-                    if not form.cleaned_data or form.cleaned_data.get("DELETE"):
+                for f in formset.forms:
+                    if not f.cleaned_data or f.cleaned_data.get("DELETE"):
                         continue
-
-                    record = form.instance
+                    record = f.instance
                     record.employee = emp_obj
                     record.save()
 
-                    form_index = form.prefix.split("-")[-1]
-
+                    form_index = f.prefix.split("-")[-1]
                     prefix = f"attach-{form_index}-"
                     file_keys = [k for k in request.FILES.keys() if k.startswith(prefix)]
 
@@ -1370,61 +1650,47 @@ def create_or_edit_employee(request, employee_id=None):
                         uploaded_file = request.FILES.get(key)
                         if not uploaded_file:
                             continue
-
                         file_index = key.split("-")[2]
-                        doc_name = request.POST.get(
-                            f"attach-{form_index}-{file_index}-document_name", ""
-                        )
-
+                        doc_name = request.POST.get(f"attach-{form_index}-{file_index}-document_name", "")
                         PreviousEmploymentAttachment.objects.create(
                             previous_employment=record,
                             file=uploaded_file,
                             document_name=doc_name
                         )
 
-                # ✅ HANDLE DELETIONS
-                # for obj in formset.deleted_objects:
-                #     obj.delete()
-
-                # ✅ SAVE EMPLOYEE ATTACHMENTS (AADHAAR / PAN / ETC)
-                # attachment_formset.save()
                 attachments = attachment_formset.save(commit=False)
-
+                has_attachment_error = False
                 for attachment in attachments:
-                    # ensure employee is set
                     attachment.employee = emp_obj
-
-                    # 🔥 IMPORTANT LOGIC
-                    if attachment.file_name == "other":
-                        if not attachment.other_file_name:
-                            # safety check (optional)
-                            raise ValueError("Other file name is required when file type is Other")
-
+                    if attachment.file_name == "other" and not attachment.other_file_name:
+                        messages.error(request, "Please enter a document name for the 'Other' file type in KYC tab.")
+                        has_attachment_error = True
+                        break
                     attachment.save()
 
-                # handle deletes
-                for obj in attachment_formset.deleted_objects:
-                    obj.delete()
+                if not has_attachment_error:
+                    for obj in attachment_formset.deleted_objects:
+                        obj.delete()
 
-
-
-                messages.success(
-                    request,
-                    "Employee updated successfully!" if is_edit else "Employee created successfully!"
-                )
-
-                return redirect("employee_create")
+                    messages.success(
+                        request,
+                        "Employee updated successfully!" if is_edit else "Employee created successfully!"
+                    )
+                    return redirect("employee_create")
 
         else:
-            print("FORM ERRORS:", form.errors)
-            print("FORMSET ERRORS:", formset.errors)
-            print("ATTACHMENT ERRORS:", attachment_formset.errors)
             messages.error(request, "Please correct the errors below.")
 
     else:
         form = EmployeeForm(instance=employee)
         formset = PreviousEmploymentFormSet(instance=employee)
         attachment_formset = AttachmentFormSet(instance=employee)
+
+    # ✅ Get current group of employee's user (for pre-selecting in edit mode)
+    current_group_id = None
+    if employee and employee.user:
+        first_group = employee.user.groups.first()
+        current_group_id = first_group.id if first_group else None
 
     return render(request, "employee/create_employee2.html", {
         "form": form,
@@ -1433,9 +1699,15 @@ def create_or_edit_employee(request, employee_id=None):
         "employees": Employee.objects.all(),
         "is_edit": is_edit,
         "employee": employee,
+        "groups": Group.objects.all(),
+        "current_group_id": current_group_id,
+        "all_groups": Group.objects.all(),
+        "open_modal": request.method == "POST",
     })
 
+from django.contrib.auth.models import Group
 
+# Add to context in both views:
 
 # @permission_required("website.view_employee", raise_exception=True)
 @login_required
@@ -1446,7 +1718,10 @@ def employee_list(request):
         "formset": PreviousEmploymentFormSet(),
         "attachment_formset": AttachmentFormSet(),
         "employees": Employee.objects.all(),
-        "is_edit": False,   # 🔴 IMPORTANT
+        "is_edit": False,
+        "groups": Group.objects.all(),
+        "current_group_id": None,
+        "all_groups": Group.objects.all(),
     })
 
 
@@ -1467,6 +1742,51 @@ def employee_list(request):
 #     print('Employee Details:', employee)
 #     print('Previous Employeement Details:', employeement)
 #     return render(request, 'employee/employee_detail.html', context)
+
+
+@login_required
+@group_required("Admin", "HR")
+@require_http_methods(["POST"])
+def bulk_employee_action(request):
+    try:
+        data = json.loads(request.body)
+    except Exception:
+        return JsonResponse({"success": False, "error": "Invalid JSON"}, status=400)
+
+    employee_ids = data.get("employee_ids", [])
+    new_status   = data.get("status", "").strip()
+    new_role     = data.get("role", "").strip()
+
+    if not employee_ids:
+        return JsonResponse({"success": False, "error": "No employees selected."}, status=400)
+    if not new_status and not new_role:
+        return JsonResponse({"success": False, "error": "No action specified."}, status=400)
+
+    valid_statuses = {"Active", "Pending", "Left"}
+    if new_status and new_status not in valid_statuses:
+        return JsonResponse({"success": False, "error": f"Invalid status: {new_status}"}, status=400)
+
+    employees = Employee.objects.filter(id__in=employee_ids)
+    updated = 0
+
+    for emp in employees:
+        changed = False
+        if new_status:
+            emp.status = new_status
+            changed = True
+        if new_role and emp.user:
+            emp.user.groups.clear()
+            try:
+                group = Group.objects.get(name=new_role)
+                emp.user.groups.add(group)
+                changed = True
+            except Group.DoesNotExist:
+                pass
+        if changed:
+            emp.save(update_fields=["status"] if new_status else [])
+            updated += 1
+
+    return JsonResponse({"success": True, "updated": updated})
 
 from django.shortcuts import get_object_or_404, render
 
@@ -1534,6 +1854,7 @@ def my_profile(request):
     employee = request.user.employee_profile
     return redirect('employee_detail', pk=employee.pk)
 
+@login_required
 def download_attachment(request, pk):
     attachment = get_object_or_404(EmployeeAttachment, pk=pk)
 
@@ -1615,85 +1936,50 @@ AssetHandoverFormSet = inlineformset_factory(
     can_delete=True
 )
 
+@login_required
+@group_required("Admin", "HR")
 def offboarding_list(request):
     """Main page - List, Create, Edit, View, Delete all in one"""
     if request.method == 'POST':
         off_id = request.POST.get("offboarding_id")
-        
-        # Debug: Print all POST data
-        print("=" * 50)
-        print("POST Data:")
-        for key, value in request.POST.items():
-            print(f"{key} = {value}")
-        print("=" * 50)
-        
-        if off_id:
-            # EDIT MODE
-            print(f"🔥 EDIT MODE - Offboarding ID: {off_id}")
-            offboarding = get_object_or_404(Offboarding, id=off_id)
-            form = OffboardingForm(request.POST, request.FILES, instance=offboarding)
-            formset = AssetHandoverFormSet(request.POST, request.FILES, instance=offboarding)
-        else:
-            # CREATE MODE
-            print("🆕 CREATE MODE")
-            form = OffboardingForm(request.POST, request.FILES)
-            # 🔥 CRITICAL: Use queryset=none() for new records
-            if off_id:
-                # EDIT MODE
-                offboarding = get_object_or_404(Offboarding, id=off_id)
-                form = OffboardingForm(request.POST, request.FILES, instance=offboarding)
-                formset = AssetHandoverFormSet(
-                    request.POST,
-                    request.FILES,
-                    instance=offboarding
-                )
-            else:
-                # CREATE MODE
-                form = OffboardingForm(request.POST, request.FILES)
-                formset = AssetHandoverFormSet(
-                    request.POST,
-                    request.FILES,
-                    instance=None    # 🔥 THIS IS CORRECT
-                )
 
-        
-        # Debug formset data
-        print(f"\nFormset Prefix: {formset.prefix}")
-        print(f"TOTAL_FORMS: {request.POST.get(formset.prefix + '-TOTAL_FORMS')}")
-        print(f"INITIAL_FORMS: {request.POST.get(formset.prefix + '-INITIAL_FORMS')}")
-        
-        # Debug: Print form errors
-        print("\n📋 Form Valid:", form.is_valid())
-        if not form.is_valid():
-            print("Form Errors:", form.errors)
-        
-        print("📦 Formset Valid:", formset.is_valid())
-        if not formset.is_valid():
-            print("Formset Errors:", formset.errors)
-            for i, form_err in enumerate(formset):
-                if form_err.errors:
-                    print(f"Form {i} Errors:", form_err.errors)
-        
+        if off_id:
+            offboarding_instance = get_object_or_404(Offboarding, id=off_id)
+            form = OffboardingForm(request.POST, request.FILES, instance=offboarding_instance)
+            formset = AssetHandoverFormSet(request.POST, request.FILES, instance=offboarding_instance)
+        else:
+            offboarding_instance = None
+            form = OffboardingForm(request.POST, request.FILES)
+            formset = AssetHandoverFormSet(request.POST, request.FILES, instance=Offboarding())
+
         if form.is_valid() and formset.is_valid():
-            offboarding = form.save()
-            formset.instance = offboarding
-            formset.save()
-            
+            with transaction.atomic():
+                offboarding = form.save()
+                formset.instance = offboarding
+                formset.save()
+
+                # Auto-mark employee as Left when creating a new offboarding
+                if not off_id:
+                    employee = offboarding.employee
+                    if employee.status != 'Left':
+                        employee.status = 'Left'
+                        employee.save(update_fields=['status'])
+
             if off_id:
                 messages.success(request, "Offboarding updated successfully!")
             else:
-                messages.success(request, "Offboarding created successfully!")
-            
+                messages.success(request, f"Offboarding created. {offboarding.employee} has been marked as Left.")
+
             return redirect('offboarding-list')
         else:
             messages.error(request, "Please fix the errors below.")
     else:
         form = OffboardingForm()
-        formset = AssetHandoverFormSet(queryset=AssetHandover.objects.none())
-    
+        formset = AssetHandoverFormSet(instance=Offboarding())
+
     offboardings = Offboarding.objects.all().select_related('employee')
-    employees = Employee.objects.filter(status='Active')
-    
+    employees = Employee.objects.filter(status__in=['Active', 'Pending'])
+
     return render(request, 'employee/offboarding2.html', {
         'form': form,
         'formset': formset,
@@ -1701,6 +1987,7 @@ def offboarding_list(request):
         'employees': employees,
     })
 
+@login_required
 def offboarding_detail(request, off_id):
     """Return JSON data for view modal"""
     off = get_object_or_404(Offboarding, id=off_id)
@@ -1719,16 +2006,21 @@ def offboarding_detail(request, off_id):
             "receipt": a.receipt.url if a.receipt else None,
         })
 
+    notice_days = (off.date_of_relieving - off.date_of_resignation).days if off.date_of_resignation and off.date_of_relieving else None
+
     data = {
         # Employee
-        "employee_code": emp.employee_code,
-        "employee_name": str(emp),
-        "email": getattr(emp, "email", "-"),
-        "phone": getattr(emp, "phone_number", "-"),
+        "employee_code": emp.employee_code or "-",
+        "employee_name": f"{emp.first_name or ''} {emp.last_name or ''}".strip() or str(emp),
+        "designation": emp.designation or "-",
+        "department": emp.department or "-",
+        "email": emp.personal_email or "-",
+        "phone": emp.personal_mobile or "-",
 
         # Offboarding
         "resignation_date": off.date_of_resignation.strftime("%b %d, %Y") if off.date_of_resignation else "-",
         "relieving_date": off.date_of_relieving.strftime("%b %d, %Y") if off.date_of_relieving else "-",
+        "notice_period_days": notice_days,
 
         # Documents
         "experience_certificate": off.experience_certificate.url if off.experience_certificate else None,
@@ -1742,6 +2034,7 @@ def offboarding_detail(request, off_id):
 
     return JsonResponse(data)
 
+@login_required
 def offboarding_edit_data(request, id):
     """Return JSON data for edit modal"""
     off = get_object_or_404(Offboarding, id=id)
@@ -1795,6 +2088,7 @@ def offboarding_edit_data(request, id):
         ]
     })
 
+@login_required
 def offboarding_delete(request, pk):
     """Delete offboarding via AJAX"""
     if request.method == 'POST':
@@ -1819,6 +2113,8 @@ def offboarding_delete(request, pk):
 #     }
 #     return render(request, 'branch/create-branch.html', context)
 
+@login_required
+@group_required("Admin", "HR")
 def create_branchs(request):
     if request.method == "POST":
         branch_name = request.POST.get("branch_name")
@@ -1835,6 +2131,7 @@ def create_branchs(request):
     return render(request, "branch/create-branch.html",{"branches": branches})
 
 
+@login_required
 def edit_branch(request, branch_id):
     branch = get_object_or_404(Branch, id=branch_id)
 
@@ -1850,6 +2147,7 @@ def edit_branch(request, branch_id):
     return render(request, "branch/_edit_branch_form.html", {"form": form, "branch": branch})
 
 
+@login_required
 def get_branch(request, branch_id):
     branch = Branch.objects.get(id=branch_id)
     return JsonResponse({
@@ -1864,6 +2162,7 @@ def get_branch(request, branch_id):
         # "status": company.status,
     })
 
+@login_required
 def delete_branch(request, branch_id):
     branch = get_object_or_404(Branch, id=branch_id)
 
@@ -1935,6 +2234,8 @@ def create_company(request):
 
 
 
+@login_required
+@group_required("Admin")
 def edit_company(request, company_id):
     company = get_object_or_404(Company, id=company_id)
 
@@ -1952,6 +2253,8 @@ def edit_company(request, company_id):
     return render(request, "company/_edit_company_form.html", {"form": form, "company": company})
 
 
+@login_required
+@group_required("Admin", "HR")
 def get_company(request, company_id):
     company = Company.objects.get(id=company_id)
     return JsonResponse({
@@ -1969,6 +2272,8 @@ def get_company(request, company_id):
 
 
 
+@login_required
+@group_required("Admin")
 def delete_company(request, company_id):
     company = get_object_or_404(Company, id=company_id)
 
@@ -2084,6 +2389,7 @@ def delete_company(request, company_id):
 
 
 
+@login_required
 def employee_leave_history(request, employee_id):
     """Return HTML for the employee’s month-by-month leave history."""
     history = LeaveBalanceHistory.objects.filter(employee_id=employee_id).order_by("-recorded_on")
@@ -2135,12 +2441,14 @@ from django.contrib import messages
 from django.db.models import Sum, Min, Max
 from datetime import date, timedelta
 from decimal import Decimal
-from website.models import LeaveBalance, Employee, PayrollSettings, Attendance, CompOffRequest
+from website.models import LeaveBalance, Employee, PayrollSettings, Attendance, CompOffRequest, Company, MonthlyEarnedLeaves
 from django.db import transaction
 
 
 def get_user_company(user):
-    """Get company from user via employee relationship"""
+    """Get the company linked to this user via their employee profile.
+    Returns None for global users (superuser/staff) without an employee profile
+    — callers must handle None and resolve company via URL param or selection."""
     try:
         employee = Employee.objects.get(user=user)
         return employee.company
@@ -2148,20 +2456,41 @@ def get_user_company(user):
         return None
 
 
+def user_has_global_access(user):
+    """
+    Admin, HR, and Manager groups can view and manage data across ALL companies.
+    Only Employee group is restricted to their own company.
+    """
+    if user.is_superuser or user.is_staff:
+        return True
+    return user.groups.filter(name__in=['Admin', 'HR', 'Manager']).exists()
+
+
+def get_company_filter(user):
+    """
+    Returns the company to scope data queries to.
+    Returns None for Admin/HR/Manager (global access — no company filter).
+    Returns the user's own company for Employee group.
+    """
+    if user_has_global_access(user):
+        return None
+    return get_user_company(user)
+
+
 def get_payroll_period_for_date(payroll_settings, target_date):
-    """Determine which payroll period a date falls into"""
-    if payroll_settings.is_auto:
-        first_day = target_date.replace(day=1)
-        if target_date.month == 12:
-            last_day = date(target_date.year + 1, 1, 1) - timedelta(days=1)
-        else:
-            last_day = date(target_date.year, target_date.month + 1, 1) - timedelta(days=1)
-        return first_day, last_day
-    else:
-        from_day = payroll_settings.from_date
-        to_day = payroll_settings.to_date
-        
-        if from_day < to_day:
+    """
+    Determine which payroll period a date falls into.
+    If from_date and to_date (day numbers) are explicitly configured, they always
+    take priority over the is_auto flag.  is_auto is only used as a fallback when
+    neither day number is set.
+    """
+    from_day = payroll_settings.from_date
+    to_day = payroll_settings.to_date
+
+    # Use custom period when day numbers are configured
+    if from_day and to_day:
+        if from_day <= to_day:
+            # Same-month period (e.g. 1 → 31)
             if target_date.day >= from_day:
                 from_d = date(target_date.year, target_date.month, from_day)
                 to_d = date(target_date.year, target_date.month, to_day)
@@ -2174,6 +2503,7 @@ def get_payroll_period_for_date(payroll_settings, target_date):
                 from_d = date(prev_year, prev_month, from_day)
                 to_d = date(prev_year, prev_month, to_day)
         else:
+            # Cross-month period (e.g. 27 → 26)
             if target_date.day >= from_day:
                 from_d = date(target_date.year, target_date.month, from_day)
                 next_month = target_date.month + 1
@@ -2190,65 +2520,63 @@ def get_payroll_period_for_date(payroll_settings, target_date):
                     prev_year -= 1
                 from_d = date(prev_year, prev_month, from_day)
                 to_d = date(target_date.year, target_date.month, to_day)
-        
         return from_d, to_d
 
+    # Fallback: calendar month (is_auto behaviour)
+    first_day = target_date.replace(day=1)
+    if target_date.month == 12:
+        last_day = date(target_date.year + 1, 1, 1) - timedelta(days=1)
+    else:
+        last_day = date(target_date.year, target_date.month + 1, 1) - timedelta(days=1)
+    return first_day, last_day
+
 def get_all_payroll_periods_from_attendance(company, payroll_settings):
-    """Get all unique payroll periods that have attendance data"""
-    periods = []
-    
+    """
+    Return all payroll periods (derived from PayrollSettings.from_date / to_date)
+    that contain at least one attendance record for the company.
+
+    Steps period-by-period rather than day-by-day, so it is O(months) not O(days).
+    """
     attendance_stats = Attendance.objects.filter(
         employee__company=company
-    ).aggregate(
-        min_date=Min('date'),
-        max_date=Max('date')
-    )
-    
+    ).aggregate(min_date=Min('date'), max_date=Max('date'))
+
     min_date = attendance_stats.get('min_date')
     max_date = attendance_stats.get('max_date')
-    
+
     if not min_date or not max_date:
-        return periods
-    
-    current_date = min_date
-    seen_periods = set()
-    
-    while current_date <= max_date:
-        from_d, to_d = get_payroll_period_for_date(payroll_settings, current_date)
-        
-        period_key = f"{from_d}_{to_d}"
-        
-        if period_key not in seen_periods:
-            seen_periods.add(period_key)
-            
-            has_attendance = Attendance.objects.filter(
-                employee__company=company,
-                date__gte=from_d,
-                date__lte=to_d
-            ).exists()
-            
-            if has_attendance:
-                label = f"{from_d.strftime('%b %d')} - {to_d.strftime('%b %d, %Y')}"
-                periods.append({
-                    'label': label,
-                    'from_date': from_d,
-                    'to_date': to_d,
-                    'display_date': to_d,
-                })
-        
-        current_date += timedelta(days=1)
-    
+        return []
+
+    periods = []
+
+    # Start at the payroll period that contains the earliest attendance date
+    from_d, to_d = get_payroll_period_for_date(payroll_settings, min_date)
+
+    while from_d <= max_date:
+        has_attendance = Attendance.objects.filter(
+            employee__company=company,
+            date__gte=from_d,
+            date__lte=to_d,
+        ).exists()
+
+        if has_attendance:
+            label = f"{from_d.strftime('%d %b %Y')} - {to_d.strftime('%d %b %Y')}"
+            periods.append({
+                'label': label,
+                'from_date': from_d,
+                'to_date': to_d,
+                'display_date': to_d,
+            })
+
+        # Advance one full period forward (day after current period ends)
+        from_d, to_d = get_payroll_period_for_date(payroll_settings, to_d + timedelta(days=1))
+
     periods.sort(key=lambda x: x['to_date'], reverse=True)
-    
     return periods
 
 
 def get_monthly_earned_leaves(payroll_settings, month, year):
-    """
-    ✅ Get earned leaves for a specific month from database
-    
-    Instead of dividing by 12, reads from MonthlyEarnedLeaves table
-    """
+    """Get earned leaves for a specific month, falling back to earned_leaves_per_year / 12."""
     try:
         monthly_leave = MonthlyEarnedLeaves.objects.get(
             payroll_settings=payroll_settings,
@@ -2257,7 +2585,7 @@ def get_monthly_earned_leaves(payroll_settings, month, year):
         )
         return Decimal(str(monthly_leave.earned_leaves))
     except MonthlyEarnedLeaves.DoesNotExist:
-        return Decimal('0.00')
+        return (Decimal(str(payroll_settings.earned_leaves_per_year)) / Decimal('12')).quantize(Decimal('0.01'))
 
 def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to_date):
     """
@@ -2298,15 +2626,25 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     # STEP 2: Attendance for THIS period
     # Exclude holidays (is_holiday=False)
     # ============================================
+    # Determine weekend exclusion based on PayrollSettings (Django week_day: 1=Sunday, 7=Saturday)
+    if getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun':
+        weekend_exclude = [1]       # Sunday only
+    else:
+        weekend_exclude = [1, 7]    # Saturday & Sunday
+
     attendance_records = Attendance.objects.filter(
         employee=employee,
         date__gte=from_date,
         date__lte=to_date,
-        is_holiday=False  # ✅ Exclude holidays
-    )
-    
-    total_days = attendance_records.count()
-    
+        is_holiday=False,
+    ).exclude(date__week_day__in=weekend_exclude)
+
+    # Total days = actual calendar days in the payroll period (from_date to to_date inclusive)
+    total_days = (to_date - from_date).days + 1
+
+    # Working days (excluding weekends/holidays) used for leave taken calculation
+    working_days = attendance_records.count()
+
     # ============================================
     # STEP 3: Paid Days
     # ============================================
@@ -2314,24 +2652,41 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
         total=Sum("count")
     )["total"]
     paid_days = paid_days_sum if paid_days_sum else Decimal("0.00")
-    
+
+    # Count weekend days in the period — always treated as present
+    sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
+    weekend_day_count = 0
+    d = from_date
+    while d <= to_date:
+        is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
+        if is_weekend:
+            weekend_day_count += 1
+        d += timedelta(days=1)
+
+    # Days present = actual paid working days + all weekends in period
+    days_present = paid_days + Decimal(str(weekend_day_count))
+
     # ============================================
     # STEP 4: Leave Taken
+    # Based on working days only — weekends are never counted as leave taken
     # ============================================
-    leave_taken = Decimal(str(total_days)) - paid_days
+    leave_taken = Decimal(str(working_days)) - paid_days
     if leave_taken < 0:
         leave_taken = Decimal("0.00")
     
     # ============================================
     # STEP 5: Late
+    # Count "Late Present" records directly — Attendance.late (minutes) is
+    # only set when shift_start_time is configured, so Sum("late") would be
+    # 0 for all employees without a configured shift time.
     # ============================================
-    total_late_minutes = attendance_records.aggregate(
-        total=Sum("late")
-    )["total"]
-    total_late_minutes = total_late_minutes if total_late_minutes else 0
-    
-    late_days = Decimal(str(total_late_minutes)) / Decimal("480")
-    
+    late_count = attendance_records.filter(status="Late Present").count()
+    if getattr(payroll_settings, 'late_marks_affect_lwp', True):
+        # Grace: first 5 late marks are free. Every 3 marks after that = 1 day deducted.
+        late_days = Decimal(str((late_count - 5) // 3)) if late_count > 5 else Decimal("0")
+    else:
+        late_days = Decimal("0")
+
     # ============================================
     # STEP 6: Comp-Off
     # ============================================
@@ -2346,29 +2701,49 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
         .aggregate(total=Sum("count"))["total"]
         or Decimal("0.00")
     )
-    
+
     # ============================================
     # STEP 7: LWP
+    # Check if this record has a manual LWP override — preserve it if so.
     # ============================================
-    balance_before_credit = opening_balance + compoff_total - leave_taken - late_days
-    
-    if balance_before_credit < 0:
-        leave_without_pay = abs(balance_before_credit)
-        leave_balance = Decimal("0.00")
+    existing_lb = LeaveBalance.objects.filter(
+        employee=employee,
+        period_from_date=from_date,
+        period_to_date=to_date,
+        lwp_overridden=True,
+    ).first()
+
+    if existing_lb:
+        leave_without_pay = existing_lb.leave_without_pay
+        leave_balance = max(Decimal("0.00"), opening_balance + compoff_total - leave_taken - late_days - leave_without_pay)
+        if leave_balance < 0:
+            leave_balance = Decimal("0.00")
     else:
-        leave_without_pay = Decimal("0.00")
-        leave_balance = balance_before_credit
+        balance_before_credit = opening_balance + compoff_total - leave_taken - late_days
+        if balance_before_credit < 0:
+            leave_without_pay = abs(balance_before_credit)
+            leave_balance = Decimal("0.00")
+        else:
+            leave_without_pay = Decimal("0.00")
+            leave_balance = balance_before_credit
     
     # ============================================
-    # STEP 8: ✅ UPDATED - Get Monthly Credit from Database
-    # Instead of: earned_leaves_per_year / 12
-    # Now: Read from MonthlyEarnedLeaves table
+    # STEP 8: Monthly Leave Credit via LeaveCreditPolicy
+    # Credit depends on how many days the employee was present this period.
     # ============================================
-    monthly_credit = get_monthly_earned_leaves(
-        payroll_settings, 
-        to_date.month,      # Month of period end date
-        to_date.year        # Year of period end date
-    )
+    try:
+        policy = employee.company.leave_credit_policy
+        present_for_credit = int(days_present)
+        if present_for_credit <= policy.credit_1_limit:
+            monthly_credit = Decimal(str(policy.credit_low))
+        elif present_for_credit <= policy.credit_2_limit:
+            monthly_credit = Decimal(str(policy.credit_mid))
+        else:
+            monthly_credit = Decimal(str(policy.credit_high))
+        monthly_cap = Decimal(str(payroll_settings.earned_leaves_per_year)) / Decimal('12')
+        monthly_credit = min(monthly_credit, monthly_cap)
+    except Exception:
+        monthly_credit = Decimal("1.00")
     
     # ============================================
     # STEP 9: Closing Balance
@@ -2382,6 +2757,7 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     
     # ============================================
     # STEP 10: Save Record (with period dates)
+    # Never overwrite lwp_overridden — it is managed only by override_lwp_view.
     # ============================================
     LeaveBalance.objects.update_or_create(
         employee=employee,
@@ -2390,203 +2766,411 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
         defaults={
             'opening_balance': opening_balance,
             'leave_taken': leave_taken,
-            'number_of_days_present': paid_days,
+            'number_of_days_present': days_present,
             'total_number_of_days': total_days,
-            'late': total_late_minutes,
+            'late': late_count,
             'compoff': compoff_total,
             'leave_without_pay': leave_without_pay,
             'leave_balance': leave_balance,
             'closing_balance': closing_balance,
-            'final_leave_balance': final_leave_balance
+            'final_leave_balance': final_leave_balance,
         }
     )
-    
+
     return final_leave_balance
 
 
 
 def generate_leave_balances_for_all_periods(company, payroll_settings):
     """Generate leave balance records for ALL periods"""
-    
+
     periods = get_all_payroll_periods_from_attendance(company, payroll_settings)
-    
+
     if not periods:
         return 0
-    
+
     employees = Employee.objects.filter(company=company, status='Active')
-    
+    employee_ids = list(employees.values_list('id', flat=True))
+
+    # Delete stale records whose period_to_date does NOT match any valid payroll
+    # period — these are old calendar-month records (e.g. Apr 1-30) that were
+    # created before the payroll cycle was configured, and would otherwise shadow
+    # the correct payroll-cycle records in the report.
+    valid_to_dates = [p['to_date'] for p in periods]
+    if employee_ids:
+        LeaveBalance.objects.filter(
+            employee_id__in=employee_ids,
+            period_to_date__isnull=False,
+        ).exclude(
+            period_to_date__in=valid_to_dates
+        ).delete()
+
     total_calculated = 0
-    
+
     for period_info in periods:
         from_date = period_info['from_date']
         to_date = period_info['to_date']
-        
+
         for employee in employees:
             try:
                 with transaction.atomic():
                     calculate_leave_balance_for_period(
-                        employee, 
-                        payroll_settings, 
-                        from_date, 
+                        employee,
+                        payroll_settings,
+                        from_date,
                         to_date
                     )
                     total_calculated += 1
             except Exception as e:
                 print(f"Error: {employee.employee_code} {from_date}-{to_date}: {e}")
                 continue
-    
+
     return total_calculated
 
 
 @login_required
 def leave_balance_view(request):
     """
-    Display leave balance report - Filters by selected period
+    Leave balance report.
+    - Global users (Admin/HR/Manager): see ALL companies by default.
+      ?company_id=X filters to a single company and enables period selection.
+    - Employee group: sees only their own company with period selection.
     """
-    user_company = get_user_company(request.user)
-    
+    from website.models import Company
+    user = request.user
+    user_own_company = get_user_company(user)
+    is_global = user_has_global_access(user)
+    all_companies = Company.objects.all().order_by('name') if is_global else None
+
+    # Resolve which company we're scoping to (None = all)
+    company_id_param = request.GET.get('company_id', '').strip()
+    if is_global and company_id_param:
+        try:
+            scoped_company = Company.objects.get(id=company_id_param)
+        except Company.DoesNotExist:
+            scoped_company = None
+    elif is_global:
+        scoped_company = None          # all companies
+    else:
+        scoped_company = user_own_company
+
+    # ── Base context ──────────────────────────────────────────────────────────
     context = {
-        'user_company_id': user_company.id if user_company else None,
-        'can_recalculate': bool(user_company),
+        'is_global': is_global,
+        'all_companies': all_companies,
+        'selected_company_id': scoped_company.id if scoped_company else None,
+        'user_company_id': scoped_company.id if scoped_company else (user_own_company.id if user_own_company else None),
+        # Global users can always recalculate (all companies or one specific)
+        'can_recalculate': is_global or bool(scoped_company),
+        'show_company_col': is_global and scoped_company is None,
     }
-    
-    if not user_company:
+
+    # ── Non-global with no company — error ────────────────────────────────────
+    if not is_global and not scoped_company:
+        context.update({'leave_balances': [], 'display_month': date.today().strftime("%B %Y"), 'available_periods': [], 'available_months': [], 'period_month_str': ''})
+        return render(request, 'leave_balance/leave_balance_report.html', context)
+
+    search_query = request.GET.get('q', '').strip()
+    company_filter_q = request.GET.get('company_filter', '').strip()  # text filter for all-company view
+
+    # ── ALL-COMPANIES MODE (global user, no specific company selected) ─────────
+    if scoped_company is None:
+        from django.db.models import OuterRef, Subquery, Max
+
+        # Build available periods from actual attendance + payroll settings.
+        # Only use the dominant explicit cycle (most companies sharing the same
+        # from_day / to_day). Companies still on calendar-month defaults (no
+        # explicit from_date / to_date) are excluded so they don't pollute the
+        # dropdown with Apr 1-30 / Mar 1-31 entries.
+        from collections import Counter as _Counter
+
+        _ps_map = {}  # company_pk -> (company, payroll_settings)
+        for _company in Company.objects.filter(status='active'):
+            try:
+                _ps = PayrollSettings.objects.get(company=_company)
+                _ps_map[_company.pk] = (_company, _ps)
+            except PayrollSettings.DoesNotExist:
+                pass
+
+        # Count explicitly configured cycles only
+        _cycle_counts = _Counter()
+        for _, (_c, _ps) in _ps_map.items():
+            if _ps.from_date and _ps.to_date:
+                _cycle_counts[(_ps.from_date, _ps.to_date)] += 1
+
+        dominant_cycle = _cycle_counts.most_common(1)[0][0] if _cycle_counts else None
+
+        period_map = {}  # str(to_date) -> dict
+        for _company_pk, (_company, _ps) in _ps_map.items():
+            ps_cycle = (_ps.from_date, _ps.to_date) if (_ps.from_date and _ps.to_date) else None
+            # Skip companies not on the dominant cycle (includes calendar-month defaults)
+            if dominant_cycle and ps_cycle != dominant_cycle:
+                continue
+            for _p in get_all_payroll_periods_from_attendance(_company, _ps):
+                key = str(_p['to_date'])
+                if key not in period_map:
+                    period_map[key] = {
+                        'value': key,
+                        'label': f"{_p['from_date'].strftime('%d %b %Y')} - {_p['to_date'].strftime('%d %b %Y')}",
+                        'to_date': _p['to_date'],
+                    }
+
+        available_months = sorted(period_map.values(), key=lambda x: x['to_date'], reverse=True)
+
+        # Parse ?period_month=YYYY-MM-DD (exact to_date of the selected period)
+        period_month_str = request.GET.get('period_month', '').strip()
+        sel_to_date = None
+        if period_month_str:
+            try:
+                sel_to_date = date.fromisoformat(period_month_str)
+            except ValueError:
+                period_month_str = ''
+
+        # Subquery: get the relevant LB id per employee.
+        # Restrict to records whose period_to_date is a valid payroll-cycle period
+        # so that old calendar-month records (e.g. Apr 1-30) don't shadow newer
+        # payroll-cycle records (e.g. Mar 27 - Apr 26) just because Apr 30 > Apr 26.
+        valid_to_dates = [m['to_date'] for m in available_months]
+
+        if sel_to_date:
+            latest_lb_id = (
+                LeaveBalance.objects
+                .filter(
+                    employee=OuterRef('pk'),
+                    period_to_date=sel_to_date,
+                )
+                .order_by('-id')
+                .values('id')[:1]
+            )
+        elif valid_to_dates:
+            latest_lb_id = (
+                LeaveBalance.objects
+                .filter(
+                    employee=OuterRef('pk'),
+                    period_to_date__in=valid_to_dates,
+                )
+                .order_by('-period_to_date', '-id')
+                .values('id')[:1]
+            )
+        else:
+            latest_lb_id = (
+                LeaveBalance.objects
+                .filter(employee=OuterRef('pk'))
+                .order_by('-period_to_date', '-id')
+                .values('id')[:1]
+            )
+
+        employees_qs = (
+            Employee.objects
+            .filter(status='Active')
+            .select_related('company')
+            .annotate(latest_lb_id=Subquery(latest_lb_id))
+            .order_by('company__name', 'first_name', 'last_name')
+        )
+
+        # Text search
+        if search_query:
+            sq = search_query.lower()
+            employees_qs = employees_qs.filter(
+                first_name__icontains=sq
+            ) | employees_qs.filter(
+                last_name__icontains=sq
+            ) | employees_qs.filter(
+                employee_code__icontains=sq
+            )
+            employees_qs = employees_qs.order_by('company__name', 'first_name', 'last_name')
+
+        # Company text filter
+        if company_filter_q:
+            employees_qs = employees_qs.filter(company__name__icontains=company_filter_q)
+
+        employees_list = list(employees_qs)
+
+        # Build leave balance lookup by id
+        lb_ids = [emp.latest_lb_id for emp in employees_list if emp.latest_lb_id]
+        lb_map = {lb.id: lb for lb in LeaveBalance.objects.filter(id__in=lb_ids).select_related('employee')}
+
+        rows = [{'employee': emp, 'lb': lb_map.get(emp.latest_lb_id)} for emp in employees_list]
+
+        total_employees = len(rows)
+        lb_with_data = [r['lb'] for r in rows if r['lb']]
+        total_lwp = sum(lb.leave_without_pay for lb in lb_with_data) if lb_with_data else Decimal("0.00")
+        total_leaves_taken = sum(lb.leave_taken for lb in lb_with_data) if lb_with_data else Decimal("0.00")
+        avg_balance = (sum(lb.final_leave_balance for lb in lb_with_data) / len(lb_with_data)) if lb_with_data else Decimal("0.00")
+
+        if sel_to_date and period_month_str in period_map:
+            display_month = period_map[period_month_str]['label'] + ' (All Companies)'
+        else:
+            display_month = 'Latest Period (All Companies)'
+
+        paginator = Paginator(rows, 25)
+        page_obj = paginator.get_page(request.GET.get('page', 1))
+
         context.update({
-            'leave_balances': [],
-            'display_month': date.today().strftime("%B %Y"),
+            'leave_balances': page_obj,
+            'page_obj': page_obj,
+            'paginator': paginator,
+            'search_query': search_query,
+            'company_filter_q': company_filter_q,
+            'display_month': display_month,
             'available_periods': [],
+            'available_months': available_months,
+            'selected_period': None,
+            'period_month_str': period_month_str,
+            'total_employees': total_employees,
+            'total_lwp': float(total_lwp),
+            'total_leaves_taken': float(total_leaves_taken),
+            'avg_balance': float(avg_balance),
         })
         return render(request, 'leave_balance/leave_balance_report.html', context)
-    
+
+    # ── SINGLE-COMPANY MODE ───────────────────────────────────────────────────
+    user_company = scoped_company
+    context['user_company_id'] = user_company.id
+    context['user_company_name'] = getattr(user_company, 'name', 'Your Company')
+
     try:
         payroll_settings = PayrollSettings.objects.get(company=user_company)
     except PayrollSettings.DoesNotExist:
-        context.update({
-            'leave_balances': [],
-            'error': 'Payroll settings not configured.'
-        })
+        context.update({'leave_balances': [], 'error': 'Payroll settings not configured.', 'available_periods': [], 'available_months': [], 'period_month_str': ''})
         return render(request, 'leave_balance/leave_balance_report.html', context)
-    
-    # Get ALL available periods
+
     available_periods = get_all_payroll_periods_from_attendance(user_company, payroll_settings)
-    
-    # Get selected period from request
+
     selected_period_str = request.GET.get('period')
-    
-    # Find selected period
     selected_period = None
     if selected_period_str and available_periods:
         for period in available_periods:
             if str(period['to_date']) == selected_period_str:
                 selected_period = period
                 break
-    
     if not selected_period and available_periods:
         selected_period = available_periods[0]
-    
-    # ==========================================
-    # Filter by selected period (period dates!)
-    # ==========================================
+
+    all_employees = list(
+        Employee.objects.filter(company=user_company, status='Active')
+        .order_by('first_name', 'last_name')
+    )
+
+    lb_lookup = {}
     if selected_period:
-        leave_balances = LeaveBalance.objects.filter(
+        for lb in LeaveBalance.objects.filter(
             employee__company=user_company,
-            employee__status='Active',
             period_from_date=selected_period['from_date'],
-            period_to_date=selected_period['to_date']
-        ).select_related('employee').order_by(
-            'employee__first_name',
-            'employee__last_name'
-        )
-    else:
-        leave_balances = []
-    
-    # Format display
-    if selected_period:
-        display_month = selected_period['label']
-    else:
-        display_month = date.today().strftime("%b %d - %b %d, %Y")
-    
-    # Summary stats
-    total_employees = leave_balances.count()
-    
-    if leave_balances.exists():
-        total_lwp = sum(lb.leave_without_pay for lb in leave_balances)
-        total_leaves_taken = sum(lb.leave_taken for lb in leave_balances)
-        avg_balance = sum(lb.final_leave_balance for lb in leave_balances) / total_employees
-    else:
-        total_lwp = Decimal("0.00")
-        total_leaves_taken = Decimal("0.00")
-        avg_balance = Decimal("0.00")
-    
+            period_to_date=selected_period['to_date'],
+        ).select_related('employee'):
+            lb_lookup[lb.employee_id] = lb
+
+    if search_query:
+        sq = search_query.lower()
+        all_employees = [
+            emp for emp in all_employees
+            if sq in (emp.first_name or '').lower()
+            or sq in (emp.last_name or '').lower()
+            or sq in (emp.employee_code or '').lower()
+        ]
+
+    rows = [{'employee': emp, 'lb': lb_lookup.get(emp.id)} for emp in all_employees]
+
+    display_month = selected_period['label'] if selected_period else date.today().strftime("%b %d - %b %d, %Y")
+
+    total_employees = len(rows)
+    lb_with_data = [r['lb'] for r in rows if r['lb']]
+    total_lwp = sum(lb.leave_without_pay for lb in lb_with_data) if lb_with_data else Decimal("0.00")
+    total_leaves_taken = sum(lb.leave_taken for lb in lb_with_data) if lb_with_data else Decimal("0.00")
+    avg_balance = (sum(lb.final_leave_balance for lb in lb_with_data) / len(lb_with_data)) if lb_with_data else Decimal("0.00")
+
+    paginator = Paginator(rows, 25)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+
     context.update({
-        'leave_balances': leave_balances,
+        'leave_balances': page_obj,
+        'page_obj': page_obj,
+        'paginator': paginator,
+        'search_query': search_query,
         'display_month': display_month,
         'available_periods': available_periods,
+        'available_months': [],
+        'period_month_str': '',
         'selected_period': str(selected_period['to_date']) if selected_period else None,
-        'user_company_id': user_company.id,
-        'user_company_name': getattr(user_company, 'name', 'Your Company'),
         'can_recalculate': True,
         'total_employees': total_employees,
-        'total_lwp': float(total_lwp) if total_lwp else 0,
-        'total_leaves_taken': float(total_leaves_taken) if total_leaves_taken else 0,
-        'avg_balance': float(avg_balance) if avg_balance else 0,
+        'total_lwp': float(total_lwp),
+        'total_leaves_taken': float(total_leaves_taken),
+        'avg_balance': float(avg_balance),
     })
-    
     return render(request, 'leave_balance/leave_balance_report.html', context)
 
 @login_required
 def recalculate_leave_balances_view(request):
     """Recalculate leave balances for all periods and employees"""
-    
+
     if request.method != 'POST':
         return JsonResponse({
             'success': False,
             'message': 'Invalid request method.'
         }, status=405)
-    
-    user_company = get_user_company(request.user)
-    
-    if not user_company:
-        return JsonResponse({
-            'success': False,
-            'message': 'No company associated.'
-        }, status=400)
-    
+
+    from website.models import Company
+    company_id_param = request.POST.get('company_id') or request.GET.get('company_id')
+
+    # Global user with no company selected → recalculate ALL companies
+    if user_has_global_access(request.user) and not company_id_param:
+        companies = Company.objects.all()
+        total_count = 0
+        errors = []
+        for company in companies:
+            try:
+                ps = PayrollSettings.objects.get(company=company)
+                total_count += generate_leave_balances_for_all_periods(company, ps)
+            except PayrollSettings.DoesNotExist:
+                errors.append(f"{company.name}: no payroll settings")
+            except Exception as e:
+                errors.append(f"{company.name}: {e}")
+
+        msg = f'✓ Calculated {total_count} leave balance(s) across {companies.count()} company(ies).'
+        if errors:
+            msg += f' Skipped ({len(errors)} company(ies) with no settings — use Settings Hub to broadcast): {"; ".join(errors)}'
+        return JsonResponse({'success': True, 'message': msg, 'recalculated_count': total_count, 'skipped': errors})
+
+    # Specific company
+    if company_id_param and user_has_global_access(request.user):
+        try:
+            target_company = Company.objects.get(id=company_id_param)
+        except Company.DoesNotExist:
+            return JsonResponse({'success': False, 'message': 'Company not found.'}, status=400)
+    else:
+        target_company = get_user_company(request.user)
+
+    if not target_company:
+        return JsonResponse({'success': False, 'message': 'No company associated.'}, status=400)
+
     try:
-        payroll_settings = PayrollSettings.objects.get(company=user_company)
-        
-        calculated_count = generate_leave_balances_for_all_periods(user_company, payroll_settings)
-        
+        payroll_settings = PayrollSettings.objects.get(company=target_company)
+        calculated_count = generate_leave_balances_for_all_periods(target_company, payroll_settings)
         return JsonResponse({
             'success': True,
-            'message': f'✓ Successfully calculated {calculated_count} leave balances.',
+            'message': f'✓ Successfully calculated {calculated_count} leave balance(s) for {target_company.name}.',
             'recalculated_count': calculated_count
         })
-        
     except PayrollSettings.DoesNotExist:
-        return JsonResponse({
-            'success': False,
-            'message': 'Payroll settings not found.'
-        }, status=400)
+        return JsonResponse({'success': False, 'message': f'Payroll settings not configured for {target_company.name}.'}, status=400)
     except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'message': f'Error: {str(e)}'
-        }, status=500)
+        return JsonResponse({'success': False, 'message': f'Error: {str(e)}'}, status=500)
 
 
 @login_required
 def recalc_employee_leave_balance(request, employee_id):
     """Recalculate for single employee"""
-    if not request.user.is_staff:
+    if not (request.user.is_staff or user_has_global_access(request.user)):
         messages.error(request, "Permission denied.")
         return redirect("leave-balance")
-    
+
     try:
         employee = Employee.objects.select_related('company').get(id=employee_id)
-        
-        user_company = get_user_company(request.user)
-        if user_company and user_company.id != employee.company_id:
+
+        company_filter = get_company_filter(request.user)
+        if company_filter and company_filter.id != employee.company_id:
             messages.error(request, "Company mismatch.")
             return redirect("leave-balance")
         
@@ -2613,14 +3197,83 @@ def recalc_employee_leave_balance(request, employee_id):
 
 
 @login_required
+@require_http_methods(["POST"])
+def override_lwp_view(request):
+    """Manually override the LWP value for a single LeaveBalance record."""
+    lb_id = request.POST.get('lb_id')
+    lwp_raw = request.POST.get('lwp_value', '0')
+
+    try:
+        lb = LeaveBalance.objects.select_related('employee__company').get(id=lb_id)
+
+        company_filter = get_company_filter(request.user)
+        if company_filter and lb.employee.company_id != company_filter.id:
+            return JsonResponse({'success': False, 'message': 'Permission denied.'}, status=403)
+
+        # Block override if the leave balance period overlaps a finalized payroll run
+        locking_run = get_locking_run_for_period(
+            lb.employee.company, lb.period_from_date, lb.period_to_date
+        )
+        if locking_run:
+            return lock_response(locking_run, action="override LWP")
+
+        new_lwp = Decimal(str(lwp_raw))
+        if new_lwp < 0:
+            return JsonResponse({'success': False, 'message': 'LWP cannot be negative.'}, status=400)
+
+        # Derive the monthly credit that was applied (credit = closing - leave_balance)
+        monthly_credit = lb.closing_balance - lb.leave_balance
+
+        try:
+            payroll = PayrollSettings.objects.get(company=lb.employee.company)
+            max_cap = Decimal(str(payroll.max_leave_balance))
+            affect_lwp = getattr(payroll, 'late_marks_affect_lwp', True)
+        except PayrollSettings.DoesNotExist:
+            max_cap = Decimal('30')
+            affect_lwp = True
+
+        # Recalculate leave_balance under the new LWP
+        if affect_lwp:
+            late_days = Decimal(str((lb.late - 5) // 3)) if lb.late > 5 else Decimal('0')
+        else:
+            late_days = Decimal('0')
+
+        balance_before_credit = lb.opening_balance + lb.compoff - lb.leave_taken - late_days - new_lwp
+        leave_balance = max(Decimal('0.00'), balance_before_credit)
+
+        closing_balance = leave_balance + monthly_credit
+        final_leave_balance = min(closing_balance, max_cap)
+
+        lb.leave_without_pay = new_lwp
+        lb.leave_balance = leave_balance
+        lb.closing_balance = closing_balance
+        lb.final_leave_balance = final_leave_balance
+        lb.lwp_overridden = True
+        lb.save(update_fields=['leave_without_pay', 'leave_balance', 'closing_balance', 'final_leave_balance', 'lwp_overridden'])
+
+        return JsonResponse({
+            'success': True,
+            'lwp': f'{new_lwp:.2f}',
+            'leave_balance': f'{leave_balance:.2f}',
+            'closing_balance': f'{closing_balance:.2f}',
+            'final_leave_balance': f'{final_leave_balance:.2f}',
+        })
+
+    except LeaveBalance.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Record not found.'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=400)
+
+
+@login_required
 def recalc_all_employees(request):
     """Recalculate for all employees"""
-    if not request.user.is_staff:
+    if not (request.user.is_staff or user_has_global_access(request.user)):
         messages.error(request, "Permission denied.")
         return redirect("leave-balance")
-    
+
     user_company = get_user_company(request.user)
-    
+
     if not user_company:
         messages.error(request, "No company.")
         return redirect("leave-balance")
@@ -2672,6 +3325,8 @@ def employee_leave_detail(request, employee_id):
 
         
 
+@login_required
+@group_required("Admin", "HR")
 def update_leave_credit_policy(request):
     """Handle policy updates from the HR UI (AJAX or form submit)."""
     if request.method == "POST":
@@ -2706,6 +3361,7 @@ def update_leave_credit_policy(request):
 
 
 
+@login_required
 def leave_apply_view(request):
     leaves = LeaveApplication.objects.select_related("employee").order_by("-id")
 
@@ -2732,7 +3388,20 @@ def leave_apply_view(request):
     if request.method == "POST":
         form = LeaveApplicationForm(request.POST)
         if form.is_valid():
-            form.save()
+            leave_obj = form.save(commit=False)
+            # Block applying for leave that overlaps a finalized payroll period
+            locking_run = get_locking_run_for_period(
+                leave_obj.employee.company, leave_obj.start_date, leave_obj.end_date
+            )
+            if locking_run:
+                messages.error(
+                    request,
+                    f"Cannot apply for leave: {leave_obj.start_date:%d %b %Y}–{leave_obj.end_date:%d %b %Y} "
+                    f"overlaps the finalized payroll run "
+                    f"({locking_run.start_date:%d %b %Y}–{locking_run.end_date:%d %b %Y}).",
+                )
+                return redirect("leave_apply")
+            leave_obj.save()
             messages.success(request,"Leave Applied Successfully!")
             return redirect("leave_apply")
         messages.error(request,"Please fix the errors.")
@@ -2747,18 +3416,30 @@ def leave_apply_view(request):
     })
 
 
+@login_required
+@group_required("Admin", "HR", "Manager")
 @require_POST
 def approve_leave(request, leave_id):
     try:
         leave = LeaveApplication.objects.get(id=leave_id)
+
+        # Block approval if leave overlaps a finalized payroll period
+        locking_run = get_locking_run_for_period(
+            leave.employee.company, leave.start_date, leave.end_date
+        )
+        if locking_run:
+            return lock_response(locking_run, action="approve this leave")
+
         leave.status = "Approved"
         leave.save()
 
         return JsonResponse({"message": "Leave Approved Successfully!"})
-    except:
+    except LeaveApplication.DoesNotExist:
         return JsonResponse({"message": "Leave not found"}, status=404)
 
 
+@login_required
+@group_required("Admin", "HR", "Manager")
 @require_POST
 def reject_leave(request, leave_id):
     try:
@@ -2777,9 +3458,16 @@ def reject_leave(request, leave_id):
         return JsonResponse({"message": "Error while rejecting"}, status=404)
 
 
-def leave_credit_policy_view(request):                           
-    # Assume HR selects the company or logged-in user company
-    company = Company.objects.first()  # You can customise this
+@login_required
+@group_required("Admin", "HR")
+def leave_credit_policy_view(request):
+    if user_has_global_access(request.user):
+        return redirect('company-settings-hub')
+
+    company = get_user_company(request.user)
+    if not company:
+        messages.error(request, "No company linked to your account.")
+        return redirect('admin-dashboard')
 
     policy, created = LeaveCreditPolicy.objects.get_or_create(company=company)
 
@@ -2821,14 +3509,12 @@ def leave_credit_policy_view(request):
 
 
 
+@login_required
 def employee_compoff_details(request, employee_id):
     """Return comp-off details for a given employee (for modal)."""
     today = date.today()
-    company = Company.objects.first()
-    payroll_settings = PayrollSettings.objects.filter(company=company).first()
-    
-    print(payroll_settings.__dict__, "kkkkkk")
-    print(company, "companiess")
+    employee_obj = get_object_or_404(Employee, pk=employee_id)
+    payroll_settings = PayrollSettings.objects.filter(company=employee_obj.company).first()
     if payroll_settings:
         from_date, to_date = payroll_settings.get_payroll_period()
     else:
@@ -2893,7 +3579,7 @@ from datetime import datetime
 
 
 
-@csrf_exempt
+@login_required
 def submit_comp_off_request(request):
     if request.method == "POST":
         try:
@@ -2913,10 +3599,16 @@ def submit_comp_off_request(request):
             count = (to_date_obj - from_date_obj).days + 1
 
             employee = Employee.objects.get(id=employee_id)
+
+            # Block raising a comp-off whose date range falls in a finalized payroll period
+            locking_run = get_locking_run_for_period(employee.company, from_date_obj, to_date_obj)
+            if locking_run:
+                return lock_response(locking_run, action="raise a comp-off request")
+
             comp_off = CompOffRequest.objects.create(
-                employee=employee, 
-                from_date=from_date_obj, 
-                to_date=to_date_obj, 
+                employee=employee,
+                from_date=from_date_obj,
+                to_date=to_date_obj,
                 reason=reason,
                 count=count
             )
@@ -3118,6 +3810,8 @@ def extract_decimal(request, key):
         return Decimal("0")
 
 
+@login_required
+@group_required("Admin", "HR")
 def create_salary(request):
     if request.method == "POST":
         salary_id = request.POST.get("salary_id")
@@ -3131,21 +3825,37 @@ def create_salary(request):
 
         data = {
             "gross_ctc_pm": extract_decimal(request, "gross_ctc_pm"),
+            "gross_ctc_pa": extract_decimal(request, "gross_ctc_pa"),
             "basic_pm": extract_decimal(request, "basic_pm"),
+            "basic_pa": extract_decimal(request, "basic_pa"),
             "hra_pm": extract_decimal(request, "hra_pm"),
+            "hra_pa": extract_decimal(request, "hra_pa"),
             "stat_bonus_pm": extract_decimal(request, "stat_bonus_pm"),
+            "stat_bonus_pa": extract_decimal(request, "stat_bonus_pa"),
             "allowance1_pm": extract_decimal(request, "allowance1_pm"),
+            "allowance1_pa": extract_decimal(request, "allowance1_pa"),
             "allowance2_pm": extract_decimal(request, "allowance2_pm"),
+            "allowance2_pa": extract_decimal(request, "allowance2_pa"),
             "sp_allowance_pm": extract_decimal(request, "sp_allowance_pm"),
+            "sp_allowance_pa": extract_decimal(request, "sp_allowance_pa"),
             "guaranteed_cash_pm": extract_decimal(request, "guaranteed_cash_pm"),
+            "guaranteed_cash_pa": extract_decimal(request, "guaranteed_cash_pa"),
             "profession_tax_pm": extract_decimal(request, "profession_tax_pm"),
+            "profession_tax_pa": extract_decimal(request, "profession_tax_pa"),
             "pf_er_cont_pm": extract_decimal(request, "pf_er_cont_pm"),
+            "pf_er_cont_pa": extract_decimal(request, "pf_er_cont_pa"),
             "pf_ee_cont_pm": extract_decimal(request, "pf_ee_cont_pm"),
+            "pf_ee_cont_pa": extract_decimal(request, "pf_ee_cont_pa"),
             "esic_er_cont_pm": extract_decimal(request, "esic_er_cont_pm"),
+            "esic_er_cont_pa": extract_decimal(request, "esic_er_cont_pa"),
             "esic_ee_cont_pm": extract_decimal(request, "esic_ee_cont_pm"),
+            "esic_ee_cont_pa": extract_decimal(request, "esic_ee_cont_pa"),
             "gratuity_pm": extract_decimal(request, "gratuity_pm"),
+            "gratuity_pa": extract_decimal(request, "gratuity_pa"),
             "net_salary_pm": extract_decimal(request, "net_salary_pm"),
+            "net_salary_pa": extract_decimal(request, "net_salary_pa"),
             "ctc_pm": extract_decimal(request, "ctc_pm"),
+            "ctc_pa": extract_decimal(request, "ctc_pa"),
         }
 
         if salary_id:
@@ -3160,34 +3870,31 @@ def create_salary(request):
         sm.gratuity_applicable = gratuity_applicable
         sm.esic_applicable = esic_applicable
 
-        for field, value in data.items():
+        for field, value in data.items():  # ✅ simple, no redundant logic
             setattr(sm, field, value)
-            setattr(sm, field.replace("_pm", "_pa"), value * 12)
 
         sm.save()
-
         messages.success(request, message)
         return redirect("create-salary")
 
-    # 🔹 GET REQUEST
+    # GET
     employees = Employee.objects.all()
     salaries = SalaryMaster.objects.all()
-
     salary_id = request.GET.get("edit")
     salary_obj = SalaryMaster.objects.filter(pk=salary_id).first() if salary_id else None
 
     return render(request, "salary/create_salary4.html", {
         "employees": employees,
         "salary": salaries,
-        "salary_obj": salary_obj,   # 👈 IMPORTANT
+        "salary_obj": salary_obj,
         "is_edit": bool(salary_obj)
     })
 
 
-
-
 # salary detail view
 
+@login_required
+@group_required("Admin", "HR", "Manager")
 def salary_details(request, pk):
     try:
         salary = SalaryMaster.objects.select_related('employee').get(pk=pk)
@@ -3342,6 +4049,8 @@ def to_float(v):
         return 0.0
 
 # Add these to your views.py
+@login_required
+@group_required("Admin", "HR")
 def create_salary_increment(request):
     if request.method == "POST":
         try:
@@ -3404,6 +4113,9 @@ def create_salary_increment(request):
         "employees": Employee.objects.all(),
         "increments": SalaryIncrement.objects.all(),
     })
+
+@login_required
+@group_required("Admin", "HR")
 def edit_increment(request, pk):
     """Return increment data as JSON for editing"""
     try:
@@ -3448,6 +4160,8 @@ def edit_increment(request, pk):
         return JsonResponse({"error": "Increment not found"}, status=404)
 
 
+@login_required
+@group_required("Admin", "HR")
 def update_salary_increment(request, pk):
     """Update existing increment"""
     if request.method == "POST":
@@ -3508,6 +4222,8 @@ def update_salary_increment(request, pk):
     return JsonResponse({"error": "Invalid request"}, status=400)
 
 
+@login_required
+@group_required("Admin", "HR", "Manager")
 def increment_details(request, pk):
     inc = get_object_or_404(SalaryIncrement, id=pk)
 
@@ -3526,6 +4242,8 @@ def increment_details(request, pk):
 
 
 
+@login_required
+@group_required("Admin", "HR")
 def delete_salary_increment(request, pk):
     """Delete increment"""
     if request.method == "POST":
@@ -3547,6 +4265,7 @@ def delete_salary_increment(request, pk):
     
     return JsonResponse({"error": "Invalid request"}, status=400)
 
+@login_required
 def employee_salary_ajax(request):
     employee_id = request.GET.get("employee_id")
 
@@ -3597,6 +4316,8 @@ def employee_salary_ajax(request):
 # -------------------------
 # Salary History list view
 # -------------------------
+@login_required
+@group_required("Admin", "HR", "Manager")
 def salary_history(request):
     qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
 
@@ -3626,6 +4347,8 @@ def salary_history(request):
 # -------------------------
 # AJAX: SalaryHistory detail (used by modal)
 # -------------------------
+@login_required
+@group_required("Admin", "HR", "Manager")
 def salary_history_detail(request, pk):
     entry = get_object_or_404(SalaryHistory, pk=pk)
     html = render_to_string("partials/salary_history_detail.html", {"entry": entry})
@@ -3634,6 +4357,8 @@ def salary_history_detail(request, pk):
 # -------------------------
 # Export to Excel
 # -------------------------
+@login_required
+@group_required("Admin", "HR")
 def salary_history_export_excel(request):
     qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
     # apply same filters as list (to keep export consistent)
@@ -3776,6 +4501,8 @@ def salary_history_export_excel(request):
 # -------------------------
 # Compare: return JSON of compare table (modal)
 # -------------------------
+@login_required
+@group_required("Admin", "HR", "Manager")
 def salary_compare(request, history_id, employee_id):
     history = SalaryHistory.objects.get(id=history_id)
     employee = Employee.objects.get(id=employee_id)
@@ -3823,6 +4550,7 @@ def salary_compare(request, history_id, employee_id):
 
 # -------------------------
 # Chart data endpoint for timeline
+@login_required
 # -------------------------
 def salary_timeline_data(request, employee_id):
     # Return JSON data: labels = list of end_date, data = net_salary_pm values
@@ -3834,6 +4562,7 @@ def salary_timeline_data(request, employee_id):
 
 from django.core.files.storage import default_storage
 
+@login_required
 def upload_salary_increment(request):
     if request.method == "POST" and request.FILES.get("excel_file"):
         excel_file = request.FILES["excel_file"]
@@ -3899,31 +4628,30 @@ def upload_salary_increment(request):
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def get_user_company(request):
-    """Return the Company for the logged-in user, or None."""
-    try:
-        return request.user.employee_profile.company
-    except AttributeError:
-        return None
-
 
 # ── views ────────────────────────────────────────────────────────────────────
 
 @login_required
 def get_payroll_settings(request):
-    company = get_user_company(request)
+    # If an employee_id is provided (global users creating salaries for other companies),
+    # use that employee's company settings instead of the user's own company.
+    employee_id = request.GET.get('employee_id')
+    if employee_id and user_has_global_access(request.user):
+        try:
+            emp = Employee.objects.select_related('company').get(id=employee_id)
+            company = emp.company
+        except Employee.DoesNotExist:
+            company = get_user_company(request.user)
+    else:
+        company = get_user_company(request.user)
+
     if company is None:
         return JsonResponse(
             {'error': 'No company linked to your account.'},
             status=400
         )
 
-    settings = PayrollSettings.objects.filter(company=company).first()
-    if settings is None:
-        return JsonResponse(
-            {'error': 'Payroll settings not found. Please configure them.'},
-            status=404
-        )
+    settings, _ = PayrollSettings.objects.get_or_create(company=company)
 
     return JsonResponse({
         'pf_percentage':        float(settings.pf_percentage),
@@ -3939,7 +4667,8 @@ def get_payroll_settings(request):
 
 @login_required
 def settings_page(request):
-    company = get_user_company(request)
+    return redirect('company-settings-hub')
+    company = get_user_company(request.user)
     if company is None:
         # You can redirect to an error page or show a message instead
         return render(request, 'settings/no_company.html', {
@@ -3963,12 +4692,23 @@ def settings_page(request):
 @login_required
 @require_http_methods(["POST"])
 def save_payroll_settings(request):
-    company = get_user_company(request)
-    if company is None:
-        return JsonResponse({'success': False, 'error': 'No company linked to your account.'}, status=400)
+    company_id_param = request.POST.get('company_id')
+    if user_has_global_access(request.user) and company_id_param:
+        try:
+            company = Company.objects.get(pk=company_id_param)
+        except Company.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Company not found.'}, status=400)
+    else:
+        company = get_user_company(request.user)
+        if company is None:
+            return JsonResponse({'success': False, 'error': 'No company linked to your account.'}, status=400)
 
     try:
         settings, _ = PayrollSettings.objects.get_or_create(company=company)
+
+        # Capture which leave-affecting flags changed before overwriting them
+        old_late_marks_affect_lwp = settings.late_marks_affect_lwp
+        old_weekend_days = settings.weekend_days
 
         # Boolean
         settings.is_auto = request.POST.get("is_auto") == "on"
@@ -4008,10 +4748,27 @@ def save_payroll_settings(request):
         if branch_specific is not None:
             settings.branch_specific_holidays = branch_specific == "true"
 
+        weekend_days = request.POST.get("weekend_days")
+        if weekend_days in ('sat_sun', 'sun'):
+            settings.weekend_days = weekend_days
+
+        settings.late_marks_affect_lwp = request.POST.get("late_marks_affect_lwp") == "on"
+
         settings.save()
         MonthlyEarnedLeaves.sync_with_payroll_settings(settings)
 
-        return JsonResponse({'success': True, 'message': 'Settings saved successfully!'})
+        # If late-mark or weekend setting changed, auto-recalculate leave balances so
+        # the report reflects the new rules immediately without a manual recalculate step.
+        recalc_msg = ''
+        if (settings.late_marks_affect_lwp != old_late_marks_affect_lwp
+                or settings.weekend_days != old_weekend_days):
+            try:
+                recalc_count = generate_leave_balances_for_all_periods(company, settings)
+                recalc_msg = f' Leave balances auto-recalculated ({recalc_count} record(s) updated).'
+            except Exception:
+                recalc_msg = ' (Leave balance recalculation failed — use Recalculate button manually.)'
+
+        return JsonResponse({'success': True, 'message': f'Settings saved successfully!{recalc_msg}'})
 
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
@@ -4020,9 +4777,16 @@ def save_payroll_settings(request):
 @login_required
 @require_http_methods(["POST"])
 def save_leave_settings(request):
-    company = get_user_company(request)
-    if company is None:
-        return JsonResponse({'success': False, 'error': 'No company linked to your account.'}, status=400)
+    company_id_param = request.POST.get('company_id')
+    if user_has_global_access(request.user) and company_id_param:
+        try:
+            company = Company.objects.get(pk=company_id_param)
+        except Company.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Company not found.'}, status=400)
+    else:
+        company = get_user_company(request.user)
+        if company is None:
+            return JsonResponse({'success': False, 'error': 'No company linked to your account.'}, status=400)
 
     try:
         settings, _ = LeaveSettings.objects.get_or_create(company=company)
@@ -4039,22 +4803,205 @@ def save_leave_settings(request):
         return JsonResponse({"success": False, "error": str(e)}, status=400)
 
 
-
-def advance_list(request):
-    advances = AdvanceMaster.objects.all()
-
-    for adv in advances:
+@login_required
+@require_http_methods(["POST"])
+def save_leave_credit_policy(request):
+    company_id_param = request.POST.get('company_id')
+    if user_has_global_access(request.user) and company_id_param:
         try:
-            paid = adv.advance_amount - adv.outstanding_amount
-            adv.progress = (paid / adv.advance_amount) * 100
-        except:
-            adv.progress = 0
+            company = Company.objects.get(pk=company_id_param)
+        except Company.DoesNotExist:
+            return JsonResponse({'success': False, 'error': 'Company not found.'}, status=400)
+    else:
+        company = get_user_company(request.user)
+        if company is None:
+            return JsonResponse({'success': False, 'error': 'No company linked to your account.'}, status=400)
 
-    return render(request, 'advances/advance_list.html', {
-        'advances': advances
+    try:
+        policy, _ = LeaveCreditPolicy.objects.get_or_create(company=company)
+        policy.credit_1_limit = int(request.POST.get("credit_1_limit", 15))
+        policy.credit_2_limit = int(request.POST.get("credit_2_limit", 25))
+        policy.credit_low = Decimal(request.POST.get("credit_low", 0))
+        policy.credit_mid = Decimal(request.POST.get("credit_mid", 1))
+        policy.credit_high = Decimal(request.POST.get("credit_high", 2))
+        policy.save()
+        return JsonResponse({"success": True, "message": "Leave Credit Policy saved successfully!"})
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=400)
+
+
+@login_required
+def company_settings_hub(request):
+    if not user_has_global_access(request.user):
+        messages.error(request, "You don't have permission to access the company settings hub.")
+        return redirect('settings-page')
+
+    companies = Company.objects.filter(status='active').order_by('name')
+
+    # Which companies already have payroll settings saved
+    companies_with_payroll = set(
+        PayrollSettings.objects.filter(company__status='active').values_list('company_id', flat=True)
+    )
+
+    company_id = request.GET.get('company_id')
+    selected_company = None
+    payroll_settings = None
+    leave_settings = None
+    credit_policy = None
+
+    if company_id:
+        try:
+            selected_company = Company.objects.get(pk=company_id, status='active')
+        except Company.DoesNotExist:
+            messages.error(request, "Company not found.")
+
+    if selected_company is None and companies.exists():
+        selected_company = companies.first()
+
+    if selected_company:
+        payroll_settings, _ = PayrollSettings.objects.get_or_create(company=selected_company)
+        leave_settings, _ = LeaveSettings.objects.get_or_create(company=selected_company)
+        credit_policy, _ = LeaveCreditPolicy.objects.get_or_create(company=selected_company)
+
+    missing_count = companies.exclude(pk__in=companies_with_payroll).count()
+    if selected_company:
+        missing_count = companies.exclude(pk=selected_company.pk).exclude(pk__in=companies_with_payroll).count()
+
+    return render(request, 'settings/company_settings_hub.html', {
+        'companies': companies,
+        'selected_company': selected_company,
+        'payroll_settings': payroll_settings,
+        'leave_settings': leave_settings,
+        'credit_policy': credit_policy,
+        'companies_with_payroll': companies_with_payroll,
+        'missing_settings_count': missing_count,
+        'total_other_companies': companies.exclude(pk=selected_company.pk).count() if selected_company else 0,
     })
 
 
+@login_required
+@group_required("Admin")
+@require_http_methods(["POST"])
+def broadcast_settings_to_all_companies(request):
+    """Copy all settings from one company to all other active companies."""
+    source_company_id = request.POST.get('source_company_id')
+    if not source_company_id:
+        return JsonResponse({'success': False, 'error': 'Source company ID is required.'}, status=400)
+
+    try:
+        source_company = Company.objects.get(pk=source_company_id, status='active')
+    except Company.DoesNotExist:
+        return JsonResponse({'success': False, 'error': 'Company not found.'}, status=400)
+
+    try:
+        source_payroll = PayrollSettings.objects.get(company=source_company)
+    except PayrollSettings.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': f'No payroll settings found for "{source_company.name}". Please save settings first, then broadcast.'
+        }, status=400)
+
+    source_leave, _ = LeaveSettings.objects.get_or_create(company=source_company)
+    source_policy, _ = LeaveCreditPolicy.objects.get_or_create(company=source_company)
+
+    EXCLUDE = {'id', 'company', 'company_id', 'created_at', 'updated_at'}
+
+    payroll_fields = {f.name: getattr(source_payroll, f.name) for f in PayrollSettings._meta.fields if f.name not in EXCLUDE}
+    leave_fields   = {f.name: getattr(source_leave,   f.name) for f in LeaveSettings._meta.fields   if f.name not in EXCLUDE}
+    policy_fields  = {f.name: getattr(source_policy,  f.name) for f in LeaveCreditPolicy._meta.fields if f.name not in EXCLUDE}
+
+    target_companies = Company.objects.filter(status='active').exclude(pk=source_company_id)
+    updated = 0
+    errors = []
+
+    for company in target_companies:
+        try:
+            with transaction.atomic():
+                # PayrollSettings
+                ps, _ = PayrollSettings.objects.get_or_create(company=company)
+                old_fy = ps.financial_year_start_month
+                for field, value in payroll_fields.items():
+                    setattr(ps, field, value)
+                ps.save()
+                # Regenerate earned leaves
+                if old_fy != ps.financial_year_start_month:
+                    MonthlyEarnedLeaves.objects.filter(payroll_settings=ps, is_auto_generated=True).delete()
+                MonthlyEarnedLeaves.generate_for_payroll_settings(ps)
+                MonthlyEarnedLeaves.sync_with_payroll_settings(ps)
+
+                # LeaveSettings
+                ls, _ = LeaveSettings.objects.get_or_create(company=company)
+                for field, value in leave_fields.items():
+                    setattr(ls, field, value)
+                ls.save()
+
+                # LeaveCreditPolicy
+                lcp, _ = LeaveCreditPolicy.objects.get_or_create(company=company)
+                for field, value in policy_fields.items():
+                    setattr(lcp, field, value)
+                lcp.save()
+
+                updated += 1
+        except Exception as e:
+            errors.append(f"{company.name}: {str(e)}")
+
+    msg = f'Settings from "{source_company.name}" applied to {updated} company(ies).'
+    if errors:
+        msg += f' Errors: {"; ".join(errors)}'
+
+    return JsonResponse({
+        'success': updated > 0 or len(errors) == 0,
+        'message': msg,
+        'updated_count': updated,
+        'errors': errors,
+    })
+
+
+@login_required
+@group_required("Admin", "HR")
+def advance_list(request):
+    status_filter = request.GET.get('status', '').strip()
+    search = request.GET.get('q', '').strip()
+
+    qs = AdvanceMaster.objects.select_related('employee').prefetch_related('schedules').order_by('-created_at')
+
+    if status_filter in ('active', 'completed'):
+        qs = qs.filter(status=status_filter)
+
+    if search:
+        from django.db.models import Q as _Q
+        qs = qs.filter(
+            _Q(employee__first_name__icontains=search) |
+            _Q(employee__last_name__icontains=search) |
+            _Q(employee__employee_code__icontains=search)
+        )
+
+    all_qs = AdvanceMaster.objects.all()
+    active_qs = all_qs.filter(status='active')
+    stats = {
+        'total': all_qs.count(),
+        'active': active_qs.count(),
+        'completed': all_qs.filter(status='completed').count(),
+        'outstanding': sum(a.outstanding_amount for a in active_qs),
+    }
+
+    advances = list(qs)
+    for adv in advances:
+        paid = adv.advance_amount - adv.outstanding_amount
+        adv.paid_amount = paid
+        adv.progress = round((paid / adv.advance_amount) * 100) if adv.advance_amount else 0
+        adv.schedules_paid = adv.schedules.filter(status='paid').count()
+
+    return render(request, 'advances/advance_list.html', {
+        'advances': advances,
+        'stats': stats,
+        'status_filter': status_filter,
+        'search': search,
+    })
+
+
+@login_required
+@group_required("Admin", "HR")
 def advance_create(request):
     """Admin/HR creates an advance."""
     # if not request.user.is_staff:
@@ -4078,6 +5025,8 @@ def advance_create(request):
 
 
 
+@login_required
+@group_required("Admin", "HR")
 def advance_detail(request, pk):
     """Show schedule, payments, actions (pay/skip)."""
     adv = get_object_or_404(AdvanceMaster, pk=pk)
@@ -4093,6 +5042,10 @@ def advance_detail(request, pk):
     payments = adv.payments.order_by('-date')
     payment_form = PaymentForm()
     skip_form = SkipMonthForm()
+    adv.paid_amount = adv.advance_amount - adv.outstanding_amount
+    adv.progress = round((adv.paid_amount / adv.advance_amount) * 100) if adv.advance_amount else 0
+    adv.schedules_paid = schedules.filter(status='paid').count()
+    adv.schedules_total = schedules.count()
     return render(request, 'advances/advance_detail.html', {
         'advance': adv,
         'schedules': schedules,
@@ -4101,6 +5054,8 @@ def advance_detail(request, pk):
         'skip_form': skip_form
     })
 
+@login_required
+@group_required("Admin", "HR")
 @require_POST
 @transaction.atomic
 def pay_advance(request, pk):
@@ -4126,21 +5081,25 @@ def pay_advance(request, pk):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
-    # return updated schedule + outstanding
-    schedules = []
-    for s in adv.schedules.order_by('due_month'):
-        schedules.append({
-            'due_month': s.due_month.strftime('%Y-%m'),
+    schedules = [
+        {
+            'due_month': s.due_month.strftime('%b %Y'),
+            'due_month_iso': s.due_month.strftime('%Y-%m-%d'),
             'scheduled_amount': s.scheduled_amount,
             'paid_amount': s.paid_amount,
-            'status': s.status
-        })
+            'status': s.status,
+        }
+        for s in adv.schedules.order_by('due_month')
+    ]
     return JsonResponse({
         'success': True,
         'outstanding': adv.outstanding_amount,
-        'schedules': schedules
+        'advance_status': adv.status,
+        'schedules': schedules,
     })
 
+@login_required
+@group_required("Admin", "HR")
 @require_POST
 @transaction.atomic
 def skip_advance_month(request, pk):
@@ -4165,21 +5124,26 @@ def skip_advance_month(request, pk):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
-    schedules = []
-    for s in adv.schedules.order_by('due_month'):
-        schedules.append({
-            'due_month': s.due_month.strftime('%Y-%m'),
+    schedules = [
+        {
+            'due_month': s.due_month.strftime('%b %Y'),
+            'due_month_iso': s.due_month.strftime('%Y-%m-%d'),
             'scheduled_amount': s.scheduled_amount,
             'paid_amount': s.paid_amount,
-            'status': s.status
-        })
+            'status': s.status,
+        }
+        for s in adv.schedules.order_by('due_month')
+    ]
     return JsonResponse({
         'success': True,
         'outstanding': adv.outstanding_amount,
-        'schedules': schedules
+        'advance_status': adv.status,
+        'schedules': schedules,
     })
 
 
+@login_required
+@group_required("Admin", "HR")
 @require_POST
 def revert_skip_view(request, pk):
     adv = get_object_or_404(AdvanceMaster, pk=pk)
@@ -4191,44 +5155,141 @@ def revert_skip_view(request, pk):
     except Exception as e:
         return JsonResponse({"success": False, "error": str(e)}, status=400)
 
-    updated = [{
-        "due_month": s.due_month.strftime("%Y-%m"),
-        "scheduled_amount": s.scheduled_amount,
-        "paid_amount": s.paid_amount,
-        "status": s.status
-    } for s in adv.schedules.order_by("due_month")]
+    updated = [
+        {
+            "due_month": s.due_month.strftime("%b %Y"),
+            "due_month_iso": s.due_month.strftime("%Y-%m-%d"),
+            "scheduled_amount": s.scheduled_amount,
+            "paid_amount": s.paid_amount,
+            "status": s.status,
+        }
+        for s in adv.schedules.order_by("due_month")
+    ]
+    return JsonResponse({"success": True, "schedules": updated, "advance_status": adv.status})
 
-    return JsonResponse({"success": True, "schedules": updated})
 
 
 
-
+@login_required
 def payroll_run_list(request):
-    runs = PayrollRun.objects.order_by("-month")
-    return render(request, "payroll/run_list.html", {"runs": runs})
+    companies = Company.objects.filter(status="active").order_by("name")
+    company_id = request.GET.get("company")
+    status_filter = request.GET.get("status")
 
+    runs = PayrollRun.objects.select_related("company").prefetch_related("records").order_by("-month")
+
+    if company_id:
+        runs = runs.filter(company_id=company_id)
+    if status_filter:
+        runs = runs.filter(status=status_filter)
+
+    draft_count = runs.filter(status=PayrollRun.STATUS_DRAFT).count()
+    finalized_count = runs.filter(status=PayrollRun.STATUS_FINALIZED).count()
+
+    selected_company = None
+    if company_id:
+        selected_company = companies.filter(id=company_id).first()
+
+    return render(request, "payroll/run_list.html", {
+        "runs": runs,
+        "companies": companies,
+        "selected_company_id": company_id or "",
+        "selected_company": selected_company,
+        "status_filter": status_filter or "",
+        "draft_count": draft_count,
+        "finalized_count": finalized_count,
+    })
+
+
+def _compute_payroll_dates(ps, year, m):
+    """Return (month_start, month_end) for the given year/month using company's payroll cycle."""
+    if ps and ps.from_date and ps.to_date:
+        from_day, to_day = ps.from_date, ps.to_date
+        if from_day <= to_day:
+            # Same-month cycle (e.g. 1 → 30)
+            month_start = date(year, m, from_day)
+            month_end = date(year, m, to_day)
+        else:
+            # Cross-month cycle (e.g. 27 → 26): month m is the ending month
+            month_end = date(year, m, to_day)
+            prev_m = m - 1 if m > 1 else 12
+            prev_y = year if m > 1 else year - 1
+            month_start = date(prev_y, prev_m, from_day)
+    else:
+        # Calendar month fallback
+        month_start = date(year, m, 1)
+        nxt = month_start.replace(day=28) + timedelta(days=4)
+        month_end = nxt - timedelta(days=nxt.day)
+    return month_start, month_end
+
+
+@login_required
 def payroll_run_create(request):
     companies = Company.objects.all()
     if request.method == "POST":
         company_id = request.POST.get("company")
-        month = request.POST.get("month")  # expected "YYYY-MM"
+        month = request.POST.get("month")  # "YYYY-MM"
         if not company_id or not month:
-            return redirect("payroll-run-create")
+            messages.error(request, "Company and month are required.")
+            return render(request, "payroll/run_create.html", {"companies": companies})
+
         company = get_object_or_404(Company, id=company_id)
-        year, m = map(int, month.split("-"))
-        month_start = date(year, m, 1)
-        next_month = month_start.replace(day=28) + timedelta(days=4)
-        month_end = next_month - timedelta(days=next_month.day)
+        try:
+            year, m = map(int, month.split("-"))
+        except ValueError:
+            messages.error(request, "Invalid month format.")
+            return render(request, "payroll/run_create.html", {"companies": companies})
+
+        ps = PayrollSettings.objects.filter(company=company).first()
+        month_start, month_end = _compute_payroll_dates(ps, year, m)
+
+        if PayrollRun.objects.filter(company=company, start_date=month_start, end_date=month_end).exists():
+            messages.error(
+                request,
+                f"A payroll run already exists for {month_start:%d %b %Y} – {month_end:%d %b %Y}."
+            )
+            return render(request, "payroll/run_create.html", {"companies": companies})
+
         run = create_payroll_run(company, month_start, month_end)
+        messages.success(request, f"Payroll run created: {month_start:%d %b %Y} – {month_end:%d %b %Y}")
         return redirect("payroll-run-detail", run_id=run.id)
+
     return render(request, "payroll/run_create.html", {"companies": companies})
 
+
+@login_required
+def payroll_period_preview(request):
+    """AJAX: return payroll period dates for a given company + month."""
+    company_id = request.GET.get("company_id")
+    month = request.GET.get("month")  # "YYYY-MM"
+    if not company_id or not month:
+        return JsonResponse({"error": "Missing params"}, status=400)
+    try:
+        year, m = map(int, month.split("-"))
+        company = Company.objects.get(id=company_id)
+    except Exception:
+        return JsonResponse({"error": "Invalid params"}, status=400)
+
+    ps = PayrollSettings.objects.filter(company=company).first()
+    start, end = _compute_payroll_dates(ps, year, m)
+
+    existing = PayrollRun.objects.filter(company=company, start_date=start, end_date=end).first()
+    return JsonResponse({
+        "start": start.strftime("%d %b %Y"),
+        "end": end.strftime("%d %b %Y"),
+        "days": (end - start).days + 1,
+        "existing_id": existing.id if existing else None,
+    })
+
+@login_required
 def payroll_run_detail(request, run_id):
     run = get_object_or_404(PayrollRun, id=run_id)
     records = run.records.select_related("employee").all()
     settings = PayrollSettings.objects.filter(company=run.company).first()
     return render(request, "payroll/run_detail.html", {"run": run, "records": records, "settings": settings})
 
+@login_required
+@group_required("Admin", "HR")
 @require_POST
 def payroll_record_update(request, record_id):
     record = get_object_or_404(PayrollRecord, id=record_id)
@@ -4239,8 +5300,8 @@ def payroll_record_update(request, record_id):
     except Exception:
         return HttpResponseBadRequest("Invalid JSON")
 
-    # apply edits to record fields (present_days, leave_adjust, pf_employee, professional_tax, advance, tds, other_deductions)
-    editable = ["present_days", "leave_adjust", "pf_employee", "professional_tax", "advance", "tds", "other_deductions", "esic_employee"]
+    # apply edits to record fields
+    editable = ["present_days", "leave_without_pay", "pf_employee", "professional_tax", "advance", "tds", "other_deductions", "esic_employee"]
     manual = {}
     for k in editable:
         if k in payload:
@@ -4265,10 +5326,13 @@ def payroll_record_update(request, record_id):
         }
     })
 
+@login_required
+@group_required("Admin", "HR")
 @require_POST
 def payroll_run_finalize(request, run_id):
     run = get_object_or_404(PayrollRun, id=run_id)
-    # recalc all and set finalized
+    if run.status == PayrollRun.STATUS_FINALIZED:
+        return JsonResponse({"success": False, "error": "This payroll run is already finalized."}, status=400)
     for rec in run.records.all():
         recalc_and_save_record(rec, manual_overrides=rec.manual_override or {})
     run.status = PayrollRun.STATUS_FINALIZED
@@ -4282,6 +5346,7 @@ from openpyxl import Workbook
 from django.http import HttpResponse
 from .models import PayrollRun, PayrollRecord
 
+@login_required
 def payroll_export_excel(request, run_id):
     run = PayrollRun.objects.get(id=run_id)
     records = PayrollRecord.objects.filter(payroll=run)   # ✅ FIXED FIELD NAME
@@ -4332,6 +5397,7 @@ from xhtml2pdf import pisa
 from django.http import HttpResponse
 from io import BytesIO
 
+@login_required
 def payroll_export_pdf(request, run_id):
     run = PayrollRun.objects.get(id=run_id)
     records = PayrollRecord.objects.filter(payroll=run)   # ✅ FIXED FIELD NAME
@@ -4351,7 +5417,78 @@ def payroll_export_pdf(request, run_id):
     return response
 
 
+# ---------------------------------------------------------------------------
+# SALARY SLIP
+# ---------------------------------------------------------------------------
 
+def _amount_to_words(amount: int) -> str:
+    """Return amount in Indian English words (e.g. 'Rupees Fifty Thousand Five Hundred Only')."""
+    ones = [
+        '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+        'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+        'Seventeen', 'Eighteen', 'Nineteen',
+    ]
+    tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+
+    def _below_hundred(n):
+        return ones[n] if n < 20 else tens[n // 10] + (' ' + ones[n % 10] if n % 10 else '')
+
+    def _below_thousand(n):
+        if n < 100:
+            return _below_hundred(n)
+        return ones[n // 100] + ' Hundred' + (' ' + _below_hundred(n % 100) if n % 100 else '')
+
+    if amount == 0:
+        return 'Rupees Zero Only'
+
+    n = int(amount)
+    parts = []
+    for divisor, label in [(10_000_000, 'Crore'), (100_000, 'Lakh'), (1_000, 'Thousand')]:
+        if n >= divisor:
+            parts.append(_below_thousand(n // divisor) + ' ' + label)
+            n %= divisor
+    if n > 0:
+        parts.append(_below_thousand(n))
+
+    return 'Rupees ' + ' '.join(parts) + ' Only'
+
+
+@login_required
+def salary_slip_view(request, record_id):
+    record = get_object_or_404(
+        PayrollRecord.objects.select_related('payroll', 'payroll__company', 'employee'),
+        id=record_id,
+    )
+    employee = record.employee
+    company  = record.payroll.company
+
+    context = {
+        'record':       record,
+        'run':          record.payroll,
+        'employee':     employee,
+        'company':      company,
+        'net_in_words': _amount_to_words(int(record.net_salary)),
+        'is_pdf':       request.GET.get('format') == 'pdf',
+    }
+
+    if context['is_pdf']:
+        tpl  = get_template('payroll/salary_slip.html')
+        html = tpl.render(context)
+        buf  = BytesIO()
+        if pisa.CreatePDF(html, dest=buf).err:
+            return HttpResponse('PDF generation failed', status=500)
+        fname = (
+            f"SalarySlip_{employee.employee_code or employee.id}_"
+            f"{record.payroll.month.strftime('%b_%Y')}.pdf"
+        )
+        resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
+        resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+        return resp
+
+    return render(request, 'payroll/salary_slip.html', context)
+
+
+@login_required
 def download_empty_excel(request):
     # Create a new Excel workbook
     wb = openpyxl.Workbook()
@@ -4401,16 +5538,14 @@ def login_view(request):
 
             # EMPLOYEE → Employee Detail Page
             elif user.groups.filter(name="Employee").exists():
-                employee = Employee.objects.get(user=user)
-                return redirect("employee_detail", pk=employee.id)
+                try:
+                    employee = Employee.objects.get(user=user)
+                    return redirect("employee_detail", pk=employee.id)
+                except Employee.DoesNotExist:
+                    return redirect("admin-dashboard")
 
-            # MANAGER (optional)
-            # elif user.groups.filter(name="Manager").exists():
-            #     employee = Employee.objects.get(user=user)
-            #     return redirect("employee_detail", pk=employee.id)
-
-            # fallback
-            return redirect("login")
+            # fallback for users with no group assigned
+            return redirect("admin-dashboard")
 
         else:
             messages.error(request, "Invalid username or password")
@@ -4429,6 +5564,7 @@ def logout_view(request):
 from django.contrib.auth.models import User, Group
 
 @login_required
+@group_required("Admin")
 def create_user_view(request):
     if request.method == "POST":
         employee_id = request.POST.get("employee_id")
@@ -4541,9 +5677,16 @@ def holiday_calendar_dashboard(request):
     month_name = calendar.month_name[month]
 
     # ----------------------------------------------------
-    # 2️⃣ Payroll Settings (company-wide)
+    # 2️⃣ Company & Payroll Settings resolution
     # ----------------------------------------------------
-    payroll_settings = PayrollSettings.objects.first()
+    _company = get_user_company(request.user)
+    if _company is None and user_has_global_access(request.user):
+        _cid = request.GET.get('company_id')
+        if _cid:
+            _company = Company.objects.filter(pk=_cid).first()
+        else:
+            _company = Company.objects.filter(payrollsettings__isnull=False).first()
+    payroll_settings = PayrollSettings.objects.filter(company=_company).first() if _company else None
 
     # ----------------------------------------------------
     # 3️⃣ Auto-create Monthly Earned Leaves (CRITICAL FIX)
@@ -4698,7 +5841,14 @@ def holiday_calendar_dashboard(request):
 @require_http_methods(["POST"])
 def save_holiday_settings(request):
     try:
-        company = Company.objects.first()
+        company_id_param = request.POST.get('company_id')
+        if user_has_global_access(request.user) and company_id_param:
+            company = Company.objects.filter(pk=company_id_param).first()
+        else:
+            company = get_user_company(request.user)
+        if not company:
+            messages.error(request, 'No company found.')
+            return redirect('holiday-calendar')
         settings, _ = PayrollSettings.objects.get_or_create(company=company)
         
         financial_year_start = request.POST.get('financial_year_start_month')
@@ -4765,21 +5915,11 @@ def add_holiday(request):
         form = HolidayForm(request.POST)
         
         if form.is_valid():
-            # Save the holiday
             holiday = form.save(commit=False)
             holiday.created_by = request.user
-
-            employee = request.user.employee_profile
-
-            # Map calendar automatically
-            holiday.holiday_calendar = HolidayCalendar.objects.get(
-                branch=employee.branch,
-                year=holiday.holiday_date.year  # ← add this
-            )
-            # Auto-national logic
-            if holiday.holiday_type.type_category == "national":
+            # Auto-flag national holidays
+            if holiday.holiday_type and holiday.holiday_type.type_category == "national":
                 holiday.is_national = True
-
             holiday.save()
             
             # Show success message
@@ -4921,7 +6061,12 @@ def earned_leaves_config(request):
     try:
         year = int(request.GET.get('year', timezone.now().year))
 
-        payroll_settings = PayrollSettings.objects.first()
+        _company = get_user_company(request.user)
+        if _company is None and user_has_global_access(request.user):
+            _cid = request.GET.get('company_id')
+            _company = Company.objects.filter(pk=_cid).first() if _cid else Company.objects.filter(payrollsettings__isnull=False).first()
+        payroll_settings = PayrollSettings.objects.filter(company=_company).first() if _company else None
+
         if not payroll_settings:
             messages.error(request, "❌ Payroll Settings not configured!")
             return render(request, 'holiday_calendar/dashboard.html', {
@@ -5069,11 +6214,15 @@ def api_earned_leaves(request):
     
     try:
         year = request.GET.get('year', timezone.now().year)
-        payroll_settings = PayrollSettings.objects.first()
-        
+        _company = get_user_company(request.user)
+        if _company is None and user_has_global_access(request.user):
+            _cid = request.GET.get('company_id')
+            _company = Company.objects.filter(pk=_cid).first() if _cid else Company.objects.filter(payrollsettings__isnull=False).first()
+        payroll_settings = PayrollSettings.objects.filter(company=_company).first() if _company else None
+
         if not payroll_settings:
             return JsonResponse({'error': 'No payroll settings'}, status=400)
-        
+
         leaves = MonthlyEarnedLeaves.objects.filter(
             payroll_settings=payroll_settings,
             year=year
@@ -5114,25 +6263,31 @@ def add_half_day_scenario(request):
         branch_id = request.POST.get('branch')
         credit_count = request.POST.get('credit_count', '0.50')
 
-        if not scenario_date or not description or not branch_id:
-            messages.error(request, '❌ Date, description and branch are required.')
+        if not scenario_date or not description:
+            messages.error(request, '❌ Date and description are required.')
             return redirect('holiday-calendar')
 
         try:
             from datetime import date as date_cls
             parsed_date = date_cls.fromisoformat(scenario_date)
-            branch = get_object_or_404(Branch, id=branch_id)
 
-            # Prevent duplicate for same branch + date
-            if HalfDayScenario.objects.filter(
-                scenario_date=parsed_date, branch=branch
-            ).exists():
-                messages.error(
-                    request,
-                    f'❌ A half-day scenario already exists for '
-                    f'{branch.branch_name} on {parsed_date}.'
-                )
-                return redirect('holiday-calendar')
+            # branch_id == 'all' or empty → applies to all branches (branch=None)
+            if branch_id == 'all' or not branch_id:
+                branch = None
+                if HalfDayScenario.objects.filter(scenario_date=parsed_date, branch__isnull=True).exists():
+                    messages.error(request, f'❌ An all-branches half-day scenario already exists for {parsed_date}.')
+                    return redirect('holiday-calendar')
+                branch_label = 'All Branches'
+            else:
+                branch = get_object_or_404(Branch, id=branch_id)
+                if HalfDayScenario.objects.filter(scenario_date=parsed_date, branch=branch).exists():
+                    messages.error(
+                        request,
+                        f'❌ A half-day scenario already exists for '
+                        f'{branch.branch_name} on {parsed_date}.'
+                    )
+                    return redirect('holiday-calendar')
+                branch_label = branch.branch_name
 
             HalfDayScenario.objects.create(
                 scenario_date=parsed_date,
@@ -5146,8 +6301,7 @@ def add_half_day_scenario(request):
 
             messages.success(
                 request,
-                f'✓ Half-day scenario added for '
-                f'{branch.branch_name} on {parsed_date.strftime("%b %d, %Y")}!'
+                f'✓ Half-day scenario added for {branch_label} on {parsed_date.strftime("%b %d, %Y")}!'
             )
         except Exception as e:
             messages.error(request, f'❌ Error: {str(e)}')
@@ -5169,15 +6323,11 @@ def edit_half_day_scenario(request, scenario_id):
         branch_id = request.POST.get('branch')
         credit_count = request.POST.get('credit_count', '0.50')
 
-        if not branch_id:
-            messages.error(request, '❌ Branch is required.')
-            return redirect('holiday-calendar')
-
         scenario.scenario_date = date_cls.fromisoformat(scenario_date)
         scenario.description = description
         scenario.scenario_type = scenario_type
         scenario.is_approved = is_approved
-        scenario.branch = get_object_or_404(Branch, id=branch_id)
+        scenario.branch = None if (branch_id == 'all' or not branch_id) else get_object_or_404(Branch, id=branch_id)
         scenario.credit_count = Decimal(credit_count)
 
         # Set approved_by if being approved
@@ -5196,7 +6346,7 @@ def edit_half_day_scenario(request, scenario_id):
 @require_http_methods(["POST"])
 def delete_half_day_scenario(request, scenario_id):
     scenario = get_object_or_404(HalfDayScenario, id=scenario_id)
-    branch_name = scenario.branch.branch_name
+    branch_name = scenario.branch.branch_name if scenario.branch else 'All Branches'
     date_str = scenario.scenario_date.strftime("%b %d, %Y")
     scenario.delete()
     messages.success(request, f'✓ Half-day scenario for {branch_name} on {date_str} deleted!')
@@ -5376,6 +6526,90 @@ def api_earned_leaves_json(request):
 
 
 # ============================================================================
+# HOLIDAY TYPE MANAGEMENT
+# ============================================================================
+
+@login_required
+@group_required("Admin", "HR")
+@require_POST
+def create_holiday_type(request):
+    name = request.POST.get("name", "").strip()
+    type_category = request.POST.get("type_category", "national")
+    description = request.POST.get("description", "").strip()
+    color_code = request.POST.get("color_code", "#2196F3").strip() or "#2196F3"
+
+    if not name:
+        messages.error(request, "Holiday type name is required.")
+        return redirect(f"{reverse('holiday-dashboard')}?tab=holiday-types")
+
+    if HolidayType.objects.filter(name__iexact=name).exists():
+        messages.error(request, f"A holiday type named '{name}' already exists.")
+        return redirect(f"{reverse('holiday-dashboard')}?tab=holiday-types")
+
+    ht = HolidayType.objects.create(
+        name=name,
+        type_category=type_category,
+        description=description,
+        color_code=color_code,
+    )
+    messages.success(request, f"Holiday type '{ht.name}' created successfully.")
+    return redirect(f"{reverse('holiday-dashboard')}?tab=holiday-types")
+
+
+@login_required
+@group_required("Admin", "HR")
+@require_POST
+def edit_holiday_type(request, type_id):
+    ht = get_object_or_404(HolidayType, id=type_id)
+    name = request.POST.get("name", "").strip()
+    type_category = request.POST.get("type_category", ht.type_category)
+    description = request.POST.get("description", "").strip()
+    color_code = request.POST.get("color_code", ht.color_code).strip() or "#2196F3"
+
+    if not name:
+        messages.error(request, "Holiday type name is required.")
+        return redirect(f"{reverse('holiday-dashboard')}?tab=holiday-types")
+
+    if HolidayType.objects.filter(name__iexact=name).exclude(id=type_id).exists():
+        messages.error(request, f"A holiday type named '{name}' already exists.")
+        return redirect(f"{reverse('holiday-dashboard')}?tab=holiday-types")
+
+    ht.name = name
+    ht.type_category = type_category
+    ht.description = description
+    ht.color_code = color_code
+    ht.save()
+    messages.success(request, f"Holiday type '{ht.name}' updated successfully.")
+    return redirect(f"{reverse('holiday-dashboard')}?tab=holiday-types")
+
+
+@login_required
+@group_required("Admin", "HR")
+@require_POST
+def delete_holiday_type(request, type_id):
+    ht = get_object_or_404(HolidayType, id=type_id)
+    if Holiday.objects.filter(holiday_type=ht).exists():
+        messages.error(request, f"Cannot delete '{ht.name}': it is used by existing holidays.")
+        return redirect(f"{reverse('holiday-dashboard')}?tab=holiday-types")
+    name = ht.name
+    ht.delete()
+    messages.success(request, f"Holiday type '{name}' deleted.")
+    return redirect(f"{reverse('holiday-dashboard')}?tab=holiday-types")
+
+
+@login_required
+def api_get_holiday_type(request, type_id):
+    ht = get_object_or_404(HolidayType, id=type_id)
+    return JsonResponse({
+        "id": ht.id,
+        "name": ht.name,
+        "type_category": ht.type_category,
+        "description": ht.description,
+        "color_code": ht.color_code,
+    })
+
+
+# ============================================================================
 # UTILITY VIEWS (Optional but helpful)
 # ============================================================================
 
@@ -5413,11 +6647,15 @@ def api_payroll_settings(request):
     """
     
     try:
-        settings = PayrollSettings.objects.first()
-        
+        _company = get_user_company(request.user)
+        if _company is None and user_has_global_access(request.user):
+            _cid = request.GET.get('company_id')
+            _company = Company.objects.filter(pk=_cid).first() if _cid else Company.objects.filter(payrollsettings__isnull=False).first()
+        settings = PayrollSettings.objects.filter(company=_company).first() if _company else None
+
         if not settings:
             return JsonResponse({'error': 'Settings not configured'}, status=404)
-        
+
         data = {
             'id': settings.id,
             'earned_leaves_per_year': str(settings.earned_leaves_per_year),
@@ -5470,35 +6708,595 @@ def get_upcoming_holidays(days=7):
     ).order_by('holiday_date')
 
 
-def calculate_working_days(start_date, end_date):
+def calculate_working_days(start_date, end_date, payroll_settings=None):
     """
     Helper: Calculate working days (excluding holidays and weekends)
-    
+
     Parameters:
     - start_date: Start date
     - end_date: End date
-    
+    - payroll_settings: PayrollSettings instance (used for weekend_days config)
+
     Returns: Number of working days
     """
-    
+
     working_days = 0
     current = start_date
-    
+
+    sunday_only = payroll_settings is not None and getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
+
     # Get all holidays in date range
     holidays = Holiday.objects.filter(
         holiday_date__gte=start_date,
         holiday_date__lte=end_date
     )
     holiday_dates = set(h.holiday_date for h in holidays)
-    
+
     # Count working days
     while current <= end_date:
-        # Skip weekends (Saturday=5, Sunday=6)
-        if current.weekday() < 5:
+        # Skip weekends based on setting (Python weekday: 5=Saturday, 6=Sunday)
+        is_weekend = (current.weekday() == 6) if sunday_only else (current.weekday() >= 5)
+        if not is_weekend:
             # Skip holidays
             if current not in holiday_dates:
                 working_days += 1
         
         current += timedelta(days=1)
+
+
+# ─── Employee Excel Import ────────────────────────────────────────────────────
+
+import re
+import pandas as pd
+from decimal import Decimal
+from datetime import date as date_cls, timedelta
+
+from django.http import JsonResponse
+from django.db import transaction
+from django.contrib.auth.models import User
+
+# ─── Helpers ──────────────────────────────────────────────────────────────────
+
+def normalize_blood_group(val):
+    """
+    Convert Excel variants → model choices.
+    'B (+ve)', 'A (+ ve)', 'O (- ve)', 'AB (+ ve)' → 'B+', 'A+', 'O-', 'AB+'
+    Already-correct formats like 'B+', 'AB-' are passed through unchanged.
+    """
+    if not val or str(val).strip().lower() in ("", "nan", "na", "n/a"):
+        return ""
+    v = str(val).strip().upper()
+    m = re.match(r'^(AB|A|B|O)\s*[\(\[]?\s*([+\-])\s*V?E?\s*[\)\]]?', v)
+    if m:
+        return m.group(1) + m.group(2)
+    # already in correct format (A+, B-, AB+, O-)
+    m2 = re.match(r'^(AB|A|B|O)[+\-]$', v)
+    if m2:
+        return m2.group(0)
+    return ""   # unrecognised → blank (field is nullable)
+
+
+def normalize_relation(val):
+    """
+    Fix typos/variants in emergency contact relation so they match model choices.
+    Model choices: Spouse, Father, Mother, Brother, Sister, Son, Daughter, Other
+    """
+    if not val or str(val).strip().lower() in ("", "nan", "0"):
+        return ""
+    mapping = {
+        "spouse": "Spouse",
+        "wife": "Spouse",
+        "husband": "Spouse",
+        "father": "Father",
+        "fathar": "Father",
+        "dad": "Father",
+        "mother": "Mother",
+        "mather": "Mother",        # typo in actual data
+        "mom": "Mother",
+        "brother": "Brother",
+        "bro": "Brother",
+        "sister": "Sister",
+        "sis": "Sister",
+        "son": "Son",
+        "daughter": "Daughter",
+        "other": "Other",
+    }
+    return mapping.get(str(val).strip().lower(), "Other")
+
+
+def parse_excel_date(val):
+    """
+    Robustly parse a date value that may be:
+    - Already a datetime / date object (pandas already parsed it)
+    - A string in YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY etc.
+    - An Excel serial number integer stored as string e.g. "31664"
+    Returns a date object or None.
+    """
+    if val is None:
+        return None
+    # guard against pandas NaT (NaTType.date() raises an error)
+    try:
+        if pd.isna(val):
+            return None
+    except (TypeError, ValueError):
+        pass
+    # already a date/datetime from pandas
+    if hasattr(val, "date"):
+        try:
+            return val.date()
+        except Exception:
+            return None
+    if isinstance(val, date_cls):
+        return val
+
+    s = str(val).strip()
+    if s in ("", "nan", "NaT", "0", "None"):
+        return None
+
+    # try standard pandas parsing first (handles most string formats)
+    try:
+        parsed = pd.to_datetime(s, dayfirst=False, errors="coerce")
+        if parsed is not None and not pd.isna(parsed):
+            return parsed.date()
+    except Exception:
+        pass
+
+    # try as Excel serial number
+    try:
+        serial = int(float(s))
+        if 1000 < serial < 60000:          # sanity range for real dates
+            return (date_cls(1899, 12, 30) + timedelta(days=serial))
+    except Exception:
+        pass
+
+    return None
+
+
+def safe_str(val):
+    """Return clean string or empty string for NaN/None/0."""
+    if val is None:
+        return ""
+    s = str(val).strip()
+    return "" if s.lower() in ("nan", "nat", "none") else s
+
+
+# ─── Template download ────────────────────────────────────────────────────────
+
+@login_required
+@group_required("Admin", "HR")
+def download_employee_import_template(request):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill
+    from django.http import HttpResponse
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Employees"
+
+    headers = [
+        "Employee Code*", "Salutation*", "First Name*", "Middle Name", "Last Name*",
+        "Father Name*", "Gender* (Male/Female)", "Blood Group*", "Date of Birth* (YYYY-MM-DD)",
+        "Place of Birth*", "Personal Email*", "Personal Mobile*",
+        "Present Address*", "Permanent Address*", "Date of Marriage (YYYY-MM-DD)",
+        "Company Name*", "Branch Name*", "Designation*", "Department*",
+        "Date of Joining* (YYYY-MM-DD)", "Date of Confirmation (YYYY-MM-DD)",
+        "Location*", "On Payroll Of",
+        "Shift Start Time (HH:MM)", "Shift End Time (HH:MM)",
+        "PAN No*", "Aadhar No*", "Voter ID", "Passport", "UAN No", "PF No", "ESIC No",
+        "Name As Per Bank*", "Salary Account Number*", "IFSC Code*",
+        "Emergency Contact Name 1*", "Emergency Contact Relation 1*", "Emergency Contact Mobile 1*",
+        "Emergency Contact Name 2", "Emergency Contact Relation 2", "Emergency Contact Mobile 2",
+        "Status (Active/Pending/Left)",
+    ]
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1F4E79")
+
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        ws.column_dimensions[cell.column_letter].width = max(len(header) + 4, 18)
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="employee_import_template.xlsx"'
+    wb.save(response)
+    return response
+
+
+# ─── Main import view ─────────────────────────────────────────────────────────
+
+@login_required
+@group_required("Admin", "HR")
+def import_employees_excel(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({"success": False, "error": "Not authenticated. Please log in."}, status=401)
+    if request.method != "POST":
+        return JsonResponse({"success": False, "error": "POST required"}, status=405)
+
+    try:
+        return _do_import_employees(request)
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[IMPORT FATAL ERROR]\n{tb}")
+        return JsonResponse({
+            "success": False,
+            "error": f"Server error: {str(e)}",
+        })
+
+
+def _do_import_employees(request):
+    from .models import Employee, Company, Branch   # adjust import path if needed
+
+    print("[IMPORT] Request received")
+
+    uploaded_file = request.FILES.get("employee_file")
+    if not uploaded_file:
+        return JsonResponse({"success": False, "error": "No file uploaded."})
+
+    print(f"[IMPORT] Reading file: {uploaded_file.name}, size: {uploaded_file.size} bytes")
+
+    # ── 1. Read Excel ─────────────────────────────────────────────────────────
+    # Do NOT use dtype=str — let pandas parse dates natively.
+    # We convert to strings ourselves field-by-field below.
+    try:
+        df = pd.read_excel(uploaded_file, engine="openpyxl")
+    except Exception as e:
+        print(f"[IMPORT] File read error: {e}")
+        return JsonResponse({"success": False, "error": f"Cannot read file: {e}"})
+
+    print(f"[IMPORT] Rows: {len(df)}, Columns: {list(df.columns)}")
+    df.columns = df.columns.str.strip()
+
+    # ── 2. Column → field mapping ─────────────────────────────────────────────
+    # "_skip" prefix = read but ignore (column exists in template but not in model)
+    col_map = {
+        "Employee Code*":                          "employee_code",
+        "Salutation*":                             "salutation",
+        "First Name*":                             "first_name",
+        "Middle Name":                             "middle_name",
+        "Last Name*":                              "last_name",
+        "Father Name*":                            "father_name",
+        "Gender* (Male/Female)":                   "gender",
+        "Blood Group*":                            "blood_group",
+        "Date of Birth* (YYYY-MM-DD)":             "date_of_birth",
+        "Place of Birth*":                         "place_of_birth",
+        "Personal Email*":                         "personal_email",
+        "Personal Mobile*":                        "personal_mobile",
+        "Present Address*":                        "present_address",
+        "Permanent Address*":                      "permanent_address",
+        "Date of Marriage (YYYY-MM-DD)":           "date_of_marriage",
+        "Company Name*":                           "_company_name",
+        "Branch Name*":                            "_branch_name",
+        "Designation*":                            "designation",
+        "Department*":                             "department",
+        "Date of Joining* (YYYY-MM-DD)":           "date_of_joining",
+        "Date of Confirmation (YYYY-MM-DD)":       "date_of_confirmation",
+        "Location*":                               "location",
+        "On Payroll Of":                           "_skip_on_payroll",   # not in model
+        "Shift Start Time (HH:MM)":                "shift_start_time",
+        "Shift End Time (HH:MM)":                  "shift_end_time",
+        "PAN No*":                                 "pan_no",
+        "Aadhar No*":                              "aadhar_no",
+        "Voter ID":                                "voter_id",
+        "Passport":                                "passport",
+        "UAN No":                                  "uan_no",
+        "PF No":                                   "pf_no",
+        "ESIC No":                                 "esic_no",
+        "Name As Per Bank*":                       "name_as_per_bank",
+        "Salary Account Number*":                  "salary_account_number",
+        "IFSC Code*":                              "ifsc_code",
+        "Emergency Contact Name 1*":               "emergency_contact_name1",
+        "Emergency Contact Relation 1*":           "emergency_contact_relation1",
+        "Emergency Contact Mobile 1*":             "emergency_contact_mobile1",
+        "Emergency Contact Name 2":                "emergency_contact_name2",
+        "Emergency Contact Relation 2":            "emergency_contact_relation2",
+        "Emergency Contact Mobile 2":              "emergency_contact_mobile2",
+        "Status (Active/Pending/Left)":            "status",
+    }
+
+    date_fields  = {"date_of_birth", "date_of_joining", "date_of_confirmation", "date_of_marriage"}
+    time_fields  = {"shift_start_time", "shift_end_time"}
+
+    # Fields that are truly optional — missing value is fine
+    optional_fields = {
+        "middle_name", "father_name", "blood_group", "place_of_birth",
+        "personal_email", "personal_mobile", "present_address", "permanent_address",
+        "date_of_marriage", "date_of_confirmation", "location",
+        "shift_start_time", "shift_end_time", "designation", "department",
+        "voter_id", "passport", "uan_no", "pf_no", "esic_no",
+        "name_as_per_bank", "salary_account_number", "ifsc_code",
+        "emergency_contact_name1", "emergency_contact_relation1", "emergency_contact_mobile1",
+        "emergency_contact_name2", "emergency_contact_relation2", "emergency_contact_mobile2",
+        "status", "salutation",
+    }
+
+    created_count = 0
+    skipped_count = 0
+    errors        = []
+
+    # ── 3. Process rows ───────────────────────────────────────────────────────
+    for row_idx, row in df.iterrows():
+        row_num  = row_idx + 2
+        row_data = {}
+
+        for excel_col, field in col_map.items():
+            if excel_col not in df.columns:
+                continue
+
+            raw = row.get(excel_col)
+
+            if field.startswith("_skip"):
+                continue
+
+            if field in date_fields:
+                row_data[field] = parse_excel_date(raw)
+                continue
+
+            if field in time_fields:
+                if raw is not None and not (isinstance(raw, float) and pd.isna(raw)):
+                    try:
+                        t = pd.to_datetime(str(raw), format="%H:%M", errors="coerce")
+                        if t is not None and not pd.isna(t):
+                            row_data[field] = t.time()
+                        else:
+                            t2 = pd.to_datetime(str(raw), errors="coerce")
+                            row_data[field] = t2.time() if t2 and not pd.isna(t2) else None
+                    except Exception:
+                        row_data[field] = None
+                else:
+                    row_data[field] = None
+                continue
+
+            if field in ("_company_name", "_branch_name"):
+                row_data[field] = safe_str(raw)
+                continue
+
+            if field == "blood_group":
+                row_data[field] = normalize_blood_group(raw)
+                continue
+
+            if field in ("emergency_contact_relation1", "emergency_contact_relation2"):
+                row_data[field] = normalize_relation(raw)
+                continue
+
+            if field == "gender":
+                val = safe_str(raw)
+                row_data[field] = "Male" if val.lower() == "male" else ("Female" if val.lower() == "female" else "")
+                continue
+
+            if field == "status":
+                val = safe_str(raw)
+                if val.lower() in ("left", "resigned"):
+                    row_data[field] = "Left"
+                elif val.lower() == "pending":
+                    row_data[field] = "Pending"
+                else:
+                    row_data[field] = "Active"
+                continue
+
+            val = safe_str(raw)
+            row_data[field] = "" if val == "0" else val
+
+        # Store employee_code as None when blank to avoid unique constraint clash
+        emp_code = str(row_data.get("employee_code", "")).strip() or None
+        row_data["employee_code"] = emp_code
+
+        # ── Resolve Company & Branch ──────────────────────────────────────────
+        company_name = row_data.pop("_company_name", "")
+        branch_name  = row_data.pop("_branch_name", "")
+
+        company = None
+        if company_name:
+            company = Company.objects.filter(name__iexact=company_name).first()
+            if not company:
+                # try partial match
+                company = Company.objects.filter(name__icontains=company_name.split()[0]).first()
+
+        branch = None
+        if branch_name:
+            branch = Branch.objects.filter(branch_name__iexact=branch_name).first()
+
+        # ── Save employee ─────────────────────────────────────────────────────
+        try:
+            status_val = row_data.pop("status", "Active") or "Active"
+
+            emp = Employee(
+                company=company,
+                branch=branch,
+                status=status_val,
+                **{k: v for k, v in row_data.items() if not k.startswith("_")},
+            )
+            emp.save()
+
+            # auto-create linked User if employee_code exists
+            if emp_code:
+                username = emp_code.lower()
+                user, _ = User.objects.get_or_create(username=username)
+                if _:
+                    user.set_unusable_password()
+                    user.save()
+                emp.user = user
+                emp.force_password_change = True
+                emp.save(update_fields=["user", "force_password_change"])
+
+            created_count += 1
+            print(f"[IMPORT] Row {row_num}: created employee '{emp_code}'")
+
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[IMPORT] Row {row_num} save error: {tb}")
+            errors.append({"row": row_num, "errors": [str(e)]})
+            skipped_count += 1
+
+    print(f"[IMPORT] Done — created: {created_count}, skipped: {skipped_count}, errors: {len(errors)}")
+
+    return JsonResponse({
+        "success":  True,
+        "created":  created_count,
+        "skipped":  skipped_count,
+        "errors":   errors,
+    })
+
     
+# ─── Salary Excel Import ──────────────────────────────────────────────────────
+
+@login_required
+@group_required("Admin", "HR")
+def download_salary_import_template(request):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Salary"
+
+    headers = [
+        "Employee Code*",
+        "Gross CTC Monthly*", "Basic Monthly*", "HRA Monthly*",
+        "Stat Bonus Monthly", "Allowance 1 Monthly", "Allowance 2 Monthly",
+        "Special Allowance Monthly", "Guaranteed Cash Monthly",
+        "PF Employer Monthly", "PF Employee Monthly",
+        "ESIC Employer Monthly", "ESIC Employee Monthly",
+        "Gratuity Monthly", "Profession Tax Monthly",
+        "CTC Monthly", "Net Salary Monthly*",
+        "Include PF (yes/no)", "Include ESIC (yes/no)", "Include Gratuity (yes/no)",
+        "Effective Date (YYYY-MM-DD)",
+    ]
+
+    from openpyxl.styles import Font, PatternFill
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1F4E79")
+
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        ws.column_dimensions[cell.column_letter].width = max(len(header) + 4, 20)
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="salary_import_template.xlsx"'
+    wb.save(response)
+    return response
+
+
+@login_required
+@group_required("Admin", "HR")
+def import_salary_excel(request):
+    if request.method != "POST":
+        return JsonResponse({"success": False, "error": "POST required"}, status=405)
+
+    uploaded_file = request.FILES.get("salary_file")
+    if not uploaded_file:
+        return JsonResponse({"success": False, "error": "No file uploaded."})
+
+    try:
+        df = pd.read_excel(uploaded_file, dtype=str)
+    except Exception as e:
+        return JsonResponse({"success": False, "error": f"Cannot read file: {e}"})
+
+    df.columns = df.columns.str.strip()
+
+    def safe_decimal(val):
+        try:
+            cleaned = str(val).strip().replace(",", "")
+            if cleaned in ("", "nan", "NaT", "None"):
+                return Decimal("0.00")
+            return Decimal(cleaned)
+        except Exception:
+            return Decimal("0.00")
+
+    created_count = 0
+    skipped_count = 0
+    errors = []
+
+    from django.db import transaction
+
+    for row_idx, row in df.iterrows():
+        row_num = row_idx + 2
+        row_errors = []
+
+        emp_code = str(row.get("Employee Code*", "")).strip()
+        if not emp_code or emp_code in ("nan", ""):
+            errors.append({"row": row_num, "errors": ["Employee Code: required"]})
+            skipped_count += 1
+            continue
+
+        try:
+            employee = Employee.objects.get(employee_code=emp_code)
+        except Employee.DoesNotExist:
+            errors.append({"row": row_num, "errors": [f"Employee '{emp_code}' not found"]})
+            skipped_count += 1
+            continue
+
+        def get(col):
+            return str(row.get(col, "")).strip()
+
+        pf_deducted = get("Include PF (yes/no)").lower() == "yes"
+        esic_applicable = get("Include ESIC (yes/no)").lower() == "yes"
+        gratuity_applicable = get("Include Gratuity (yes/no)").lower() == "yes"
+
+        effective_date = None
+        eff_raw = get("Effective Date (YYYY-MM-DD)")
+        if eff_raw and eff_raw not in ("nan", ""):
+            try:
+                effective_date = pd.to_datetime(eff_raw).date()
+            except Exception:
+                row_errors.append("Effective Date: invalid date format")
+
+        if row_errors:
+            errors.append({"row": row_num, "errors": row_errors})
+            skipped_count += 1
+            continue
+
+        pm_fields = {
+            "gross_ctc_pm": safe_decimal(get("Gross CTC Monthly*")),
+            "basic_pm": safe_decimal(get("Basic Monthly*")),
+            "hra_pm": safe_decimal(get("HRA Monthly*")),
+            "stat_bonus_pm": safe_decimal(get("Stat Bonus Monthly")),
+            "allowance1_pm": safe_decimal(get("Allowance 1 Monthly")),
+            "allowance2_pm": safe_decimal(get("Allowance 2 Monthly")),
+            "sp_allowance_pm": safe_decimal(get("Special Allowance Monthly")),
+            "guaranteed_cash_pm": safe_decimal(get("Guaranteed Cash Monthly")),
+            "pf_er_cont_pm": safe_decimal(get("PF Employer Monthly")),
+            "pf_ee_cont_pm": safe_decimal(get("PF Employee Monthly")),
+            "esic_er_cont_pm": safe_decimal(get("ESIC Employer Monthly")),
+            "esic_ee_cont_pm": safe_decimal(get("ESIC Employee Monthly")),
+            "gratuity_pm": safe_decimal(get("Gratuity Monthly")),
+            "profession_tax_pm": safe_decimal(get("Profession Tax Monthly")),
+            "ctc_pm": safe_decimal(get("CTC Monthly")),
+            "net_salary_pm": safe_decimal(get("Net Salary Monthly*")),
+        }
+
+        pa_fields = {k.replace("_pm", "_pa"): v * 12 for k, v in pm_fields.items()}
+
+        try:
+            with transaction.atomic():
+                SalaryMaster.objects.filter(employee=employee, is_active=True).update(is_active=False)
+                sm = SalaryMaster(
+                    employee=employee,
+                    pf_deducted=pf_deducted,
+                    esic_applicable=esic_applicable,
+                    gratuity_applicable=gratuity_applicable,
+                    effective_date=effective_date,
+                    is_active=True,
+                )
+                for k, v in {**pm_fields, **pa_fields}.items():
+                    setattr(sm, k, v)
+                sm.save()
+            created_count += 1
+        except Exception as e:
+            errors.append({"row": row_num, "errors": [str(e)]})
+            skipped_count += 1
+
+    return JsonResponse({
+        "success": True,
+        "created": created_count,
+        "skipped": skipped_count,
+        "errors": errors,
+    })
+
     return working_days

@@ -318,6 +318,15 @@
             border-color: rgba(255, 171, 0, 0.25);
         }
 
+        .day-cell.weekend {
+            background: rgba(67, 89, 113, 0.04);
+            color: var(--text-muted);
+        }
+
+        .day-cell.weekend:hover {
+            background: rgba(105, 108, 255, 0.06);
+        }
+
         .day-number {
             font-weight: 600;
             line-height: 1;
@@ -874,12 +883,13 @@
         </div>
 
         <!-- Tabs Navigation -->
-        <div class="nav-tabs-wrapper">
-            <button class="tab-btn active" onclick="switchTab(event, 'calendar')">📅 Calendar View</button>
-            <button class="tab-btn" onclick="switchTab(event, 'holidays')">🎉 Holidays List</button>
-            <button class="tab-btn" onclick="switchTab(event, 'earned')">⭐ Earned Leaves</button>
-            <button class="tab-btn" onclick="switchTab(event, 'halfday')">🌓 Half-Day Scenarios</button>
-            <button class="tab-btn" onclick="switchTab(event, 'settings')">⚙️ Settings</button>
+        <div class="nav-tabs-wrapper" id="tabNav">
+            <button class="tab-btn" data-tab="calendar">📅 Calendar View</button>
+            <button class="tab-btn" data-tab="holidays">🎉 Holidays List</button>
+            <button class="tab-btn" data-tab="holiday-types">🏷️ Holiday Types</button>
+            <button class="tab-btn" data-tab="earned">⭐ Earned Leaves</button>
+            <button class="tab-btn" data-tab="halfday">🌓 Half-Day Scenarios</button>
+            <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
         </div>
 
         <!-- Tab 1: Calendar View -->
@@ -942,9 +952,11 @@
                             <div class="filter-group">
                                 <label class="filter-label">Year</label>
                                 <select id="yearFilter" onchange="filterCalendar()">
-                                    <option value="2024">2024</option>
-                                    <option value="2025" selected>2025</option>
-                                    <option value="2026">2026</option>
+                                    <option value="{{ year|add:'-2' }}">{{ year|add:'-2' }}</option>
+                                    <option value="{{ year|add:'-1' }}">{{ year|add:'-1' }}</option>
+                                    <option value="{{ year }}" selected>{{ year }}</option>
+                                    <option value="{{ year|add:'1' }}">{{ year|add:'1' }}</option>
+                                    <option value="{{ year|add:'2' }}">{{ year|add:'2' }}</option>
                                 </select>
                             </div>
                         </div>
@@ -1067,7 +1079,7 @@
             <div class="table-container">
                 <div class="table-header">
                     <h2>Monthly Earned Leaves Configuration</h2>
-                    <button class="btn btn-primary" onclick="openEarnedLeavesModal()">⚙️ Edit Policy</button>
+                    <small style="color:var(--text-muted);">Click <strong>Edit</strong> on any row to adjust its credit.</small>
                 </div>
                 <table>
                     <thead>
@@ -1113,6 +1125,62 @@
                                 </td>
                             </tr>
                         {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Tab: Holiday Types -->
+        <div id="holiday-types" class="tab-content">
+            <div class="table-container">
+                <div class="table-header">
+                    <h2>Holiday Types</h2>
+                    <button class="btn btn-primary" onclick="openModal('addHolidayTypeModal')">+ Add Type</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Color</th>
+                            <th>Name</th>
+                            <th>Category</th>
+                            <th>Description</th>
+                            <th>Holidays Using</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ht in holiday_types %}
+                        <tr>
+                            <td>
+                                <span style="display:inline-block;width:20px;height:20px;border-radius:4px;background:{{ ht.color_code }};vertical-align:middle;border:1px solid rgba(0,0,0,.12);"></span>
+                            </td>
+                            <td><strong>{{ ht.name }}</strong></td>
+                            <td>
+                                <span class="status-badge badge-{{ ht.type_category }}">
+                                    {{ ht.get_type_category_display }}
+                                </span>
+                            </td>
+                            <td>{{ ht.description|default:"—" }}</td>
+                            <td>{{ ht.holiday_set.count }}</td>
+                            <td>
+                                <button class="btn btn-secondary btn-sm" onclick="editHolidayType({{ ht.id }})">Edit</button>
+                                <form method="POST" action="{% url 'holiday-type-delete' ht.id %}" style="display:inline;"
+                                      onsubmit="return confirm('Delete holiday type \'{{ ht.name|escapejs }}\'? This cannot be undone.')">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-danger btn-sm" style="margin-left:0.25rem;">Delete</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6">
+                                <div class="empty-state">
+                                    <span class="empty-state-icon">🏷️</span>
+                                    <p>No holiday types yet. Add one to start categorising holidays.</p>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
                     </tbody>
                 </table>
             </div>
@@ -1274,13 +1342,15 @@
                         <input type="date" name="scenario_date" required>
                     </div>
                     <div class="form-group">
-                        <label>Branch *</label>
-                        <select name="branch" required>
-                            <option value="">Select Branch</option>
+                        <label>Branch</label>
+                        <select name="branch">
+                            <option value="">— Select Branch —</option>
+                            <option value="all">🌐 All Branches</option>
                             {% for branch in branches %}
                                 <option value="{{ branch.id }}">{{ branch.branch_name }}</option>
                             {% endfor %}
                         </select>
+                        <small style="color:var(--text-muted)">Leave blank or choose "All Branches" to apply to every branch.</small>
                     </div>
                     <div class="form-group">
                         <label>Scenario Type *</label>
@@ -1333,9 +1403,10 @@
                         <input type="date" id="editHalfDayDate" name="scenario_date" required>
                     </div>
                     <div class="form-group">
-                        <label>Branch *</label>
-                        <select id="editHalfDayBranch" name="branch" required>
-                            <option value="">Select Branch</option>
+                        <label>Branch</label>
+                        <select id="editHalfDayBranch" name="branch">
+                            <option value="">— Select Branch —</option>
+                            <option value="all">🌐 All Branches</option>
                             {% for branch in branches %}
                                 <option value="{{ branch.id }}">{{ branch.branch_name }}</option>
                             {% endfor %}
@@ -1371,6 +1442,91 @@
                 </div>
                 <div class="form-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('editHalfDayModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Holiday Type Modal -->
+    <div id="addHolidayTypeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>🏷️ Add Holiday Type</h2>
+                <button class="modal-close" onclick="closeModal('addHolidayTypeModal')">✕</button>
+            </div>
+            <form method="POST" action="{% url 'holiday-type-add' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Name <span style="color:var(--bs-danger)">*</span></label>
+                        <input type="text" name="name" placeholder="e.g., State Public Holiday" required maxlength="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Category <span style="color:var(--bs-danger)">*</span></label>
+                        <select name="type_category" required>
+                            <option value="national">National Holiday</option>
+                            <option value="regional">Regional / State Holiday</option>
+                            <option value="company">Company Holiday</option>
+                            <option value="emergency">Emergency Holiday</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Color (for calendar display)</label>
+                        <div style="display:flex;gap:0.75rem;align-items:center;">
+                            <input type="color" name="color_code" value="#2196F3" style="width:48px;height:38px;padding:2px;cursor:pointer;flex-shrink:0;">
+                            <small style="margin:0;">Shown on calendar cells for this type</small>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea name="description" placeholder="Optional notes about this holiday type..." rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('addHolidayTypeModal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Create Type</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Holiday Type Modal -->
+    <div id="editHolidayTypeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>✏️ Edit Holiday Type</h2>
+                <button class="modal-close" onclick="closeModal('editHolidayTypeModal')">✕</button>
+            </div>
+            <form id="editHolidayTypeForm" method="POST">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Name <span style="color:var(--bs-danger)">*</span></label>
+                        <input type="text" id="editTypeName" name="name" required maxlength="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Category</label>
+                        <select id="editTypeCategory" name="type_category">
+                            <option value="national">National Holiday</option>
+                            <option value="regional">Regional / State Holiday</option>
+                            <option value="company">Company Holiday</option>
+                            <option value="emergency">Emergency Holiday</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Color</label>
+                        <input type="color" id="editTypeColor" name="color_code" style="width:48px;height:38px;padding:2px;cursor:pointer;">
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="editTypeDesc" name="description" rows="2"></textarea>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('editHolidayTypeModal')">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Changes</button>
                 </div>
             </form>
@@ -1528,76 +1684,139 @@
     </div>
 
     <script>
-        /* ===================== Calendar ===================== */
-        let currentDate = new Date({{ year }}, {{ month|add:"-1" }}, 1);
-        const holidaysData = {{ holidays_json|safe }};
+    (function () {
+        /* ===================================================
+           DATA FROM SERVER
+        =================================================== */
+        const holidaysData  = {{ holidays_json|safe }};
+        const halfDayData   = {{ half_day_json|safe }};
+        const CSRF          = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        const SERVER_YEAR   = {{ year }};
+        const SERVER_MONTH  = {{ month }};   // 1-based
+
+        /* ===================================================
+           TAB SYSTEM  (URL-param-persistent)
+        =================================================== */
+        const DEFAULT_TAB = 'calendar';
+
+        function activateTab(tabName) {
+            const target = document.getElementById(tabName);
+            if (!target) return;
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            target.classList.add('active');
+            const btn = document.querySelector(`.tab-btn[data-tab="${tabName}"]`);
+            if (btn) btn.classList.add('active');
+            // keep ?tab= in URL for reload-persistence (no extra server round-trip)
+            const url = new URL(window.location.href);
+            url.searchParams.set('tab', tabName);
+            history.replaceState(null, '', url.toString());
+        }
+
+        // Wire tab buttons
+        document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+            btn.addEventListener('click', () => activateTab(btn.dataset.tab));
+        });
+
+        // On load: honour ?tab= param, fall back to default
+        const urlTab = new URLSearchParams(window.location.search).get('tab') || DEFAULT_TAB;
+        activateTab(urlTab);
+
+        /* ===================================================
+           CALENDAR
+        =================================================== */
+        let currentDate = new Date(SERVER_YEAR, SERVER_MONTH - 1, 1);
 
         function generateCalendar() {
-            const year = currentDate.getFullYear();
-            const month = currentDate.getMonth();
-            
-            document.getElementById('monthYear').textContent = 
+            const yr  = currentDate.getFullYear();
+            const mo  = currentDate.getMonth();      // 0-based
+            document.getElementById('monthYear').textContent =
                 currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
 
-            const firstDay = new Date(year, month, 1).getDay();
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const daysInPrevMonth = new Date(year, month, 0).getDate();
+            const firstDayOfWeek  = new Date(yr, mo, 1).getDay();   // 0=Sun
+            const daysInMonth     = new Date(yr, mo + 1, 0).getDate();
+            const daysInPrevMonth = new Date(yr, mo, 0).getDate();
+            const todayStr        = new Date().toDateString();
 
             const grid = document.getElementById('calendarGrid');
             grid.innerHTML = '';
 
-            const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-            weekdays.forEach(day => {
-                const header = document.createElement('div');
-                header.className = 'weekday-header';
-                header.textContent = day;
-                grid.appendChild(header);
+            // Weekday headers
+            ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].forEach(d => {
+                const h = document.createElement('div');
+                h.className = 'weekday-header';
+                h.textContent = d;
+                grid.appendChild(h);
             });
 
-            for (let i = firstDay - 1; i >= 0; i--) {
-                const cell = createDayCell(daysInPrevMonth - i, 'other-month');
-                grid.appendChild(cell);
+            // Previous-month filler cells
+            for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+                grid.appendChild(makeDayCell(daysInPrevMonth - i, 'other-month', null, null));
             }
 
+            // Current-month cells
             for (let day = 1; day <= daysInMonth; day++) {
-                const dateObj = new Date(year, month, day);
-                const isToday = new Date().toDateString() === dateObj.toDateString();
-                const holiday = findHolidayForDate(year, month + 1, day);
-                
-                let className = '';
-                if (isToday) {
-                    className = 'today';
-                } else if (holiday) {
-                    className = 'holiday';
-                }
-                
-                const cell = createDayCell(day, className, day);
-                grid.appendChild(cell);
+                const dateObj  = new Date(yr, mo, day);
+                const isToday  = dateObj.toDateString() === todayStr;
+                const holiday  = findHolidayForDate(yr, mo + 1, day);
+                const halfDay  = findHalfDayForDate(yr, mo + 1, day);
+                let   cls      = isToday ? 'today' : (holiday ? 'holiday' : (halfDay ? 'half-day' : ''));
+                const dow = dateObj.getDay();
+                if (!cls && (dow === 0 || dow === 6)) cls = 'weekend';
+                const dateStr = `${yr}-${String(mo + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                grid.appendChild(makeDayCell(day, cls, dateStr, holiday, halfDay));
             }
 
-            const totalCells = grid.children.length - 7;
-            const remainingCells = 42 - totalCells;
-            for (let day = 1; day <= remainingCells; day++) {
-                const cell = createDayCell(day, 'other-month');
-                grid.appendChild(cell);
+            // Next-month filler cells (pad to complete last row)
+            const filled = grid.children.length - 7;   // subtract header row
+            const remain = (Math.ceil(filled / 7) * 7) - filled;
+            for (let day = 1; day <= remain; day++) {
+                grid.appendChild(makeDayCell(day, 'other-month', null, null));
             }
         }
 
-        function findHolidayForDate(year, month, day) {
+        function findHolidayForDate(yr, mo, day) {
             return holidaysData.find(h => {
-                const hDate = new Date(h.holiday_date);
-                return hDate.getFullYear() === year && 
-                       (hDate.getMonth() + 1) === month && 
-                       hDate.getDate() === day;
+                const d = new Date(h.holiday_date + 'T00:00:00');
+                return d.getFullYear() === yr && (d.getMonth() + 1) === mo && d.getDate() === day;
             });
         }
 
-        function createDayCell(day, className = '', dataDay = null) {
+        function findHalfDayForDate(yr, mo, day) {
+            return halfDayData.find(s => {
+                const d = new Date(s.scenario_date + 'T00:00:00');
+                return d.getFullYear() === yr && (d.getMonth() + 1) === mo && d.getDate() === day;
+            });
+        }
+
+        function makeDayCell(day, cls, dateStr, holiday, halfDay) {
             const cell = document.createElement('div');
-            cell.className = `day-cell ${className}`;
-            cell.innerHTML = `<div class="day-number">${day}</div><div class="day-label"></div>`;
-            if (dataDay && className !== 'other-month') {
-                cell.onclick = () => openAddHolidayModal();
+            cell.className = 'day-cell ' + (cls || '');
+
+            function shortLabel(text) {
+                const words = text.split(' ');
+                return words.slice(0, 2).join(' ') + (words.length > 2 ? '…' : '');
+            }
+
+            let label = '';
+            let titleText = dateStr || '';
+
+            if (holiday) {
+                label = shortLabel(holiday.name);
+                titleText = holiday.name;
+                if (halfDay) {
+                    label += ' · 🌓';
+                    titleText += ' | Half-day: ' + halfDay.description;
+                }
+            } else if (halfDay) {
+                label = '🌓 ' + shortLabel(halfDay.description);
+                titleText = 'Half-day (' + halfDay.branch + '): ' + halfDay.description;
+            }
+
+            cell.innerHTML = `<div class="day-number">${day}</div><div class="day-label">${label}</div>`;
+            if (dateStr) {
+                cell.title = titleText;
+                cell.addEventListener('click', () => openAddHolidayModal(dateStr));
             }
             return cell;
         }
@@ -1617,126 +1836,145 @@
             generateCalendar();
         }
 
-        /* ===================== Tabs ===================== */
-        function switchTab(e, tabName) {
-            e.preventDefault();
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-            document.getElementById(tabName).classList.add('active');
-            e.target.classList.add('active');
+        /* ===================================================
+           FILTERS — sync dropdowns → URL reload
+        =================================================== */
+        function filterCalendar() {
+            const yr  = document.getElementById('yearFilter').value;
+            const mo  = document.getElementById('monthFilter').value;
+            const tab = new URLSearchParams(window.location.search).get('tab') || DEFAULT_TAB;
+            let url   = window.location.pathname + '?year=' + yr + '&tab=' + tab;
+            if (mo) url += '&month=' + mo;
+            window.location.href = url;
         }
 
-        /* ===================== Modals ===================== */
-        function openAddHolidayModal() {
-            document.getElementById('addHolidayModal').classList.add('active');
+        /* ===================================================
+           MODALS
+        =================================================== */
+        function openModal(id)  { document.getElementById(id).classList.add('active'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+
+        // Close on backdrop click
+        document.addEventListener('click', e => {
+            if (e.target.classList.contains('modal')) closeModal(e.target.id);
+        });
+
+        function openAddHolidayModal(dateStr) {
+            const dateInput = document.querySelector('#addHolidayForm input[name="holiday_date"]');
+            if (dateInput && dateStr) dateInput.value = dateStr;
+            openModal('addHolidayModal');
         }
 
-        function openEarnedLeavesModal() {
-            document.getElementById('earnedLeavesModal').classList.add('active');
-        }
+        function openAddHalfDayModal() { openModal('addHalfDayModal'); }
 
-        function openAddHalfDayModal() {
-            document.getElementById('addHalfDayModal').classList.add('active');
-        }
-
-        function closeModal(modalId) {
-            document.getElementById(modalId).classList.remove('active');
-        }
-
+        /* ----- Edit Holiday ----- */
         function editHoliday(id) {
-            fetch(`/holiday/api/holiday/${id}/`, {
-                headers: {'X-Requested-With': 'XMLHttpRequest'}
-            })
-            .then(r => r.json())
-            .then(data => {
-                document.getElementById('editHolidayDate').value = data.holiday_date;
-                document.getElementById('editHolidayName').value = data.name;
-                document.getElementById('editHolidayType').value = data.holiday_type;
-                document.getElementById('editHolidayStatus').value = data.status;
-                document.getElementById('editHolidayDesc').value = data.description || '';
-                document.getElementById('editHolidayForm').action = `/holiday/${id}/edit/`;
-                document.getElementById('editHolidayModal').classList.add('active');
-            })
-            .catch(err => console.error('Error:', err));
+            fetch(`/api/holiday/${id}/`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('editHolidayDate').value   = data.holiday_date;
+                    document.getElementById('editHolidayName').value   = data.name;
+                    document.getElementById('editHolidayType').value   = data.holiday_type;
+                    document.getElementById('editHolidayStatus').value = data.status;
+                    document.getElementById('editHolidayDesc').value   = data.description || '';
+                    document.getElementById('editHolidayForm').action  = `/holiday/${id}/edit/`;
+                    openModal('editHolidayModal');
+                })
+                .catch(err => alert('Could not load holiday: ' + err));
         }
 
         function deleteHoliday(id) {
-            if (confirm('Are you sure you want to delete this holiday?')) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = `/holiday/${id}/delete/`;
-                const csrf = document.createElement('input');
-                csrf.type = 'hidden';
-                csrf.name = 'csrfmiddlewaretoken';
-                csrf.value = document.querySelector('[name=csrfmiddlewaretoken]').value;
-                form.appendChild(csrf);
-                document.body.appendChild(form);
-                form.submit();
-            }
+            if (!confirm('Delete this holiday?')) return;
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/holiday/${id}/delete/`;
+            const csrf = document.createElement('input');
+            csrf.type = 'hidden'; csrf.name = 'csrfmiddlewaretoken'; csrf.value = CSRF;
+            form.appendChild(csrf);
+            document.body.appendChild(form);
+            form.submit();
         }
 
+        /* ----- Edit Holiday Type ----- */
+        function editHolidayType(id) {
+            fetch(`/api/holiday-type/${id}/`, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(r => r.json())
+                .then(data => {
+                    document.getElementById('editTypeName').value       = data.name;
+                    document.getElementById('editTypeCategory').value   = data.type_category;
+                    document.getElementById('editTypeColor').value      = data.color_code;
+                    document.getElementById('editTypeDesc').value       = data.description || '';
+                    document.getElementById('editHolidayTypeForm').action = `/holiday/type/${id}/edit/`;
+                    openModal('editHolidayTypeModal');
+                })
+                .catch(err => alert('Could not load holiday type: ' + err));
+        }
+
+        /* ----- Edit Half-Day ----- */
         function editHalfDay(id) {
             fetch(`/holiday/api/half-day/${id}/`)
                 .then(r => r.json())
                 .then(data => {
-                    document.getElementById('editHalfDayDate').value = data.scenario_date;
-                    document.getElementById('editHalfDayDesc').value = data.description;
-                    document.getElementById('editHalfDayType').value = data.scenario_type;
+                    document.getElementById('editHalfDayDate').value     = data.scenario_date;
+                    document.getElementById('editHalfDayDesc').value     = data.description;
+                    document.getElementById('editHalfDayType').value     = data.scenario_type;
                     document.getElementById('editHalfDayApproved').checked = data.is_approved;
-                    document.getElementById('editHalfDayBranch').value = data.branch || '';
-                    document.getElementById('editHalfDayCredit').value = data.credit_count;
-                    document.getElementById('editHalfDayForm').action = `/holiday/half-day/${id}/edit/`;
-                    document.getElementById('editHalfDayModal').classList.add('active');
-                });
+                    document.getElementById('editHalfDayBranch').value   = data.branch !== null ? String(data.branch) : 'all';
+                    document.getElementById('editHalfDayCredit').value   = data.credit_count;
+                    document.getElementById('editHalfDayForm').action    = `/holiday/half-day/${id}/edit/`;
+                    openModal('editHalfDayModal');
+                })
+                .catch(err => alert('Could not load half-day: ' + err));
         }
 
+        /* ----- Edit Earned Leave ----- */
         function editEarnedLeaves(leaveId, month, year, earnedLeaves, isAuto) {
-            document.getElementById('earnedLeaveId').value = leaveId;
-            document.getElementById('earnedLeaveMonth').value = month;
-            document.getElementById('earnedLeaveYear').value = year;
-            document.getElementById('earnedLeavesDays').value = earnedLeaves;
-            document.getElementById('autoGenerated').checked = isAuto;
+            document.getElementById('earnedLeaveId').value        = leaveId;
+            document.getElementById('earnedLeaveMonth').value     = month;
+            document.getElementById('earnedLeaveYear').value      = year;
+            document.getElementById('earnedLeavesDays').value     = earnedLeaves;
+            document.getElementById('autoGenerated').checked      = isAuto;
             document.getElementById('editEarnedLeavesForm').action = `/holiday/earned-leave/${leaveId}/edit/`;
-            document.getElementById('earnedLeavesModal').classList.add('active');
+            openModal('earnedLeavesModal');
         }
 
-        function filterCalendar() {
-            const year = document.getElementById('yearFilter').value;
-            const month = document.getElementById('monthFilter').value;
-            let url = window.location.pathname + '?year=' + year;
-            if (month) url += '&month=' + month;
-            window.location.href = url;
-        }
-
+        /* ===================================================
+           SETTINGS RESET
+        =================================================== */
         function resetHolidaySettings() {
-            if (confirm('Reset to defaults? (April FY start, branch-specific holidays ON)')) {
-                const form = document.createElement('form');
-                form.method = 'POST';
-                form.action = "{% url 'save-holiday-settings' %}";
-                const fields = {
-                    'csrfmiddlewaretoken': document.querySelector('[name=csrfmiddlewaretoken]').value,
-                    'financial_year_start_month': '4',
-                    'branch_specific_holidays': 'true'
-                };
-                Object.entries(fields).forEach(([name, value]) => {
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = name;
-                    input.value = value;
-                    form.appendChild(input);
-                });
-                document.body.appendChild(form);
-                form.submit();
-            }
+            if (!confirm('Reset to defaults? (April FY start, branch-specific holidays ON)')) return;
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = "{% url 'save-holiday-settings' %}";
+            [
+                ['csrfmiddlewaretoken', CSRF],
+                ['financial_year_start_month', '4'],
+                ['branch_specific_holidays', 'true'],
+            ].forEach(([name, value]) => {
+                const inp = document.createElement('input');
+                inp.type = 'hidden'; inp.name = name; inp.value = value;
+                form.appendChild(inp);
+            });
+            document.body.appendChild(form);
+            form.submit();
         }
 
-        // Close modal on backdrop click
-        document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('modal')) {
-                e.target.classList.remove('active');
-            }
-        });
+        /* ===================================================
+           INIT
+        =================================================== */
+        generateCalendar();
 
-        document.addEventListener('DOMContentLoaded', generateCalendar);
+        // Expose functions needed by inline HTML handlers
+        Object.assign(window, {
+            previousMonth, nextMonth, todayMonth, filterCalendar,
+            openAddHolidayModal, openAddHalfDayModal,
+            openModal, closeModal,
+            editHoliday, deleteHoliday,
+            editHolidayType,
+            editHalfDay,
+            editEarnedLeaves,
+            resetHolidaySettings,
+        });
+    })();
     </script>
 {% endblock %}

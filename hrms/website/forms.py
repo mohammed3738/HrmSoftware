@@ -52,7 +52,7 @@ class EmployeeForm(forms.ModelForm):
             'father_name', 'gender', 'blood_group', 'date_of_birth', 'place_of_birth',
             'personal_email', 'present_address', 'permanent_address', 'personal_mobile',
             'date_of_marriage', 'employee_code', 'designation', 'department',
-            'date_of_joining', 'date_of_confirmation', 'location', 'payroll_of','shift_start_time','shift_end_time',
+            'date_of_joining', 'date_of_confirmation', 'location', 'shift_start_time', 'shift_end_time',
             'pan_no', 'aadhar_no', 'voter_id', 'passport', 'uan_no', 'pf_no', 'esic_no',
             'name_as_per_bank', 'salary_account_number', 'ifsc_code',
             'emergency_contact_name1', 'emergency_contact_relation1', 'emergency_contact_mobile1',
@@ -186,18 +186,25 @@ class OffboardingForm(forms.ModelForm):
         model = Offboarding
         fields = [
             'employee', 'date_of_resignation', 'date_of_relieving',
-            'experience_certificate', 'relieving_letter', 'other_documents','fnf_documents'
+            'experience_certificate', 'relieving_letter', 'other_documents', 'fnf_documents'
         ]
         widgets = {
             'employee': forms.Select(attrs={'class': 'form-control'}),
             'date_of_resignation': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
             'date_of_relieving': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            # file widgets get default input type=file; add class via attrs
             'experience_certificate': forms.ClearableFileInput(attrs={'class': 'form-control'}),
             'relieving_letter': forms.ClearableFileInput(attrs={'class': 'form-control'}),
             'other_documents': forms.ClearableFileInput(attrs={'class': 'form-control'}),
             'fnf_documents': forms.ClearableFileInput(attrs={'class': 'form-control'}),
         }
+
+    def clean(self):
+        cleaned_data = super().clean()
+        resignation = cleaned_data.get('date_of_resignation')
+        relieving = cleaned_data.get('date_of_relieving')
+        if resignation and relieving and relieving < resignation:
+            self.add_error('date_of_relieving', 'Date of relieving cannot be before date of resignation.')
+        return cleaned_data
 
 class AssetHandoverForm(forms.ModelForm):
     class Meta:

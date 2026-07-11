@@ -10,7 +10,7 @@ urlpatterns = [
     path('home',views.home,name="home"),
     path('employees/', views.employee_list, name='employee_list'),
     path('my-profile/', views.my_profile, name='my_profile'),
-
+    path('employees/bulk-action/', views.bulk_employee_action, name='bulk-employee-action'),
     path('employee/', views.create_or_edit_employee, name='employee_create'),
     path('employee/<int:employee_id>/', views.create_or_edit_employee, name='employee_edit'),
     path('employee-detail/<int:pk>/', views.employee_detail, name='employee_detail'),
@@ -101,6 +101,9 @@ urlpatterns = [
     path('settings/', views.settings_page, name='settings-page'),
     path('settings/save/payroll/', views.save_payroll_settings, name='save-payroll-settings'),
     path('settings/save/leave/', views.save_leave_settings, name='save-leave-settings'),
+    path('settings/save/credit-policy/', views.save_leave_credit_policy, name='save-leave-credit-policy'),
+    path('settings/hub/', views.company_settings_hub, name='company-settings-hub'),
+    path('settings/hub/broadcast/', views.broadcast_settings_to_all_companies, name='broadcast-settings'),
 
     path("leave-credit-policy/", views.leave_credit_policy_view, name="leave_credit_policy"),
     path("leave-apply/", views.leave_apply_view, name="leave_apply"),
@@ -133,8 +136,10 @@ urlpatterns = [
 
     path("payroll/", views.payroll_run_list, name="payroll-run-list"),
     path("payroll/run/create/", views.payroll_run_create, name="payroll-run-create"),
+    path("payroll/run/period-preview/", views.payroll_period_preview, name="payroll-period-preview"),
     path("payroll/run/<int:run_id>/", views.payroll_run_detail, name="payroll-run-detail"),
     path("payroll/record/<int:record_id>/update/", views.payroll_record_update, name="payroll-record-update"),
+    path("payroll/record/<int:record_id>/salary-slip/", views.salary_slip_view, name="salary-slip"),
     path("payroll/run/<int:run_id>/finalize/", views.payroll_run_finalize, name="payroll-run-finalize"),
 
 
@@ -144,11 +149,20 @@ urlpatterns = [
 
     path("download-empty-excel/", views.download_empty_excel, name="download-empty-excel"),
 
+    # Employee Excel import
+    path("import-employees/", views.import_employees_excel, name="import-employees"),
+    path("import-employees/template/", views.download_employee_import_template, name="employee-import-template"),
+
+    # Salary Excel import
+    path("import-salary/", views.import_salary_excel, name="import-salary"),
+    path("import-salary/template/", views.download_salary_import_template, name="salary-import-template"),
+
     path('leave-balance/', views.leave_balance_view, name='leave_balance_report'),
     path('leave-balance/recalculate/', views.recalculate_leave_balances_view, name='recalculate_leave_balances'),
 
     path('leave-balance/employee/<int:employee_id>/recalc/', views.recalc_employee_leave_balance, name='recalc-employee-leave'),
     path('leave-balance/employee/<int:employee_id>/', views.employee_leave_detail, name='employee-leave-detail'),
+    path('leave-balance/override-lwp/', views.override_lwp_view, name='override-lwp'),
 
 
 
@@ -169,10 +183,16 @@ urlpatterns = [
     path('holiday/half-day/add/', views.add_half_day_scenario, name='add-half-day-scenario'),
     path('holiday/half-day/<int:scenario_id>/edit/', views.edit_half_day_scenario, name='edit-half-day-scenario'),
     path('holiday/half-day/<int:scenario_id>/delete/', views.delete_half_day_scenario, name='delete-half-day-scenario'),
-    path('holiday/api/half-day/<int:scenario_id>/', views.api_get_half_day_scenario, name='api-get-half-day-scenario'),   
+    path('holiday/api/half-day/<int:scenario_id>/', views.api_get_half_day_scenario, name='api-get-half-day-scenario'),
+
+    # Holiday Type management
+    path('holiday/type/add/', views.create_holiday_type, name='holiday-type-add'),
+    path('holiday/type/<int:type_id>/edit/', views.edit_holiday_type, name='holiday-type-edit'),
+    path('holiday/type/<int:type_id>/delete/', views.delete_holiday_type, name='holiday-type-delete'),
 
     # API Endpoints
     path('api/holiday/<int:holiday_id>/', views.api_get_holiday, name='api-holiday'),
+    path('api/holiday-type/<int:type_id>/', views.api_get_holiday_type, name='api-holiday-type'),
     path('api/holidays/', views.api_holidays_json, name='api-holidays'),
     path('api/earned-leaves/', views.api_earned_leaves_json, name='api-earned-leaves'),
 

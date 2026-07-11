@@ -30,7 +30,6 @@ def create_test_employee():
         date_of_joining=date(2020, 1, 1),
         date_of_confirmation=None,
         location="Office",
-        payroll_of="Company",
         shift="Morning",
 
         pan_no="ABCDE1234F",

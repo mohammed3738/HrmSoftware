@@ -1,38 +1,144 @@
 {% extends 'base2.html' %}
+{% load static %}
+{% block title %}Process Payroll{% endblock %}
 
 {% block body %}
 <div class="container-xxl flex-grow-1 container-p-y">
 
-    <h3 class="fw-bold mb-3">Process Payroll</h3>
-
-    <div class="card shadow-sm">
-        <div class="card-body">
-
-            <form method="post">
-                {% csrf_token %}
-
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Select Company</label>
-                    <select class="form-select" name="company" required>
-                        <option value="">-- Select Company --</option>
-                        {% for c in companies %}
-                        <option value="{{ c.id }}">{{ c.name }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <div class="mb-3">
-                    <label class="form-label fw-semibold">Select Month</label>
-                    <input type="month" class="form-control" name="month" required>
-                </div>
-
-                <button class="btn btn-primary">
-                    <i class="ti ti-calendar-check"></i> Process Payroll
-                </button>
-            </form>
-
-        </div>
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h4 class="fw-bold mb-1">Process New Payroll</h4>
+      <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="#"><i class="ti ti-smart-home"></i></a></li>
+        <li class="breadcrumb-item"><a href="{% url 'payroll-run-list' %}">Payroll Runs</a></li>
+        <li class="breadcrumb-item active">New</li>
+      </ol>
     </div>
+    <a href="{% url 'payroll-run-list' %}" class="btn btn-outline-secondary">
+      <i class="ti ti-arrow-left me-1"></i> Back
+    </a>
+  </div>
+
+  {% if messages %}
+  {% for msg in messages %}
+  <div class="alert alert-{% if msg.tags == 'error' %}danger{% else %}{{ msg.tags }}{% endif %} alert-dismissible fade show mb-4" role="alert">
+    {{ msg }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  <div class="row justify-content-center">
+    <div class="col-lg-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-transparent border-bottom fw-semibold d-flex align-items-center gap-2">
+          <i class="ti ti-calendar-check text-primary"></i> Payroll Details
+        </div>
+        <div class="card-body p-4">
+          <form method="post" id="createForm">
+            {% csrf_token %}
+
+            <!-- Company -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold">Company <span class="text-danger">*</span></label>
+              <select class="form-select" name="company" id="companySelect" required>
+                <option value="">— Select Company —</option>
+                {% for c in companies %}
+                <option value="{{ c.id }}">{{ c.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Month -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold">Payroll Month <span class="text-danger">*</span></label>
+              <input type="month" class="form-control" name="month" id="monthPicker" required>
+              <div class="form-text text-muted">Select the month this payroll represents.</div>
+            </div>
+
+            <!-- Period Preview (dynamic) -->
+            <div id="periodPreview" class="d-none mb-4">
+              <div class="alert alert-light border mb-0 py-3">
+                <div class="fw-semibold text-muted small mb-2 text-uppercase">Payroll Period</div>
+                <div class="d-flex align-items-center gap-4">
+                  <div>
+                    <div class="text-muted small">From</div>
+                    <div class="fw-bold" id="previewStart">—</div>
+                  </div>
+                  <i class="ti ti-arrow-right text-muted"></i>
+                  <div>
+                    <div class="text-muted small">To</div>
+                    <div class="fw-bold" id="previewEnd">—</div>
+                  </div>
+                  <div class="ms-auto text-end">
+                    <div class="text-muted small">Total Days</div>
+                    <div class="fw-bold text-primary" id="previewDays">—</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Duplicate Warning -->
+            <div id="duplicateWarning" class="alert alert-warning d-none mb-4" role="alert">
+              <i class="ti ti-alert-triangle me-1"></i>
+              A payroll run already exists for this period.
+              <a id="existingRunLink" href="#" class="alert-link ms-1">View existing run &rarr;</a>
+            </div>
+
+            <div class="d-flex gap-3 mt-2">
+              <button type="submit" class="btn btn-primary flex-grow-1" id="submitBtn">
+                <i class="ti ti-calendar-check me-1"></i> Process Payroll
+              </button>
+              <a href="{% url 'payroll-run-list' %}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
 
 </div>
+
+<script>
+const PREVIEW_URL = "{% url 'payroll-period-preview' %}";
+
+function fetchPreview() {
+  const company = document.getElementById("companySelect").value;
+  const month = document.getElementById("monthPicker").value;
+  const preview = document.getElementById("periodPreview");
+  const warning = document.getElementById("duplicateWarning");
+  const submitBtn = document.getElementById("submitBtn");
+
+  if (!company || !month) {
+    preview.classList.add("d-none");
+    warning.classList.add("d-none");
+    submitBtn.disabled = false;
+    return;
+  }
+
+  fetch(`${PREVIEW_URL}?company_id=${encodeURIComponent(company)}&month=${encodeURIComponent(month)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) return;
+      document.getElementById("previewStart").textContent = data.start;
+      document.getElementById("previewEnd").textContent = data.end;
+      document.getElementById("previewDays").textContent = data.days + " days";
+      preview.classList.remove("d-none");
+
+      if (data.existing_id) {
+        document.getElementById("existingRunLink").href = "/payroll/run/" + data.existing_id + "/";
+        warning.classList.remove("d-none");
+        submitBtn.disabled = true;
+      } else {
+        warning.classList.add("d-none");
+        submitBtn.disabled = false;
+      }
+    })
+    .catch(() => {});
+}
+
+document.getElementById("companySelect").addEventListener("change", fetchPreview);
+document.getElementById("monthPicker").addEventListener("change", fetchPreview);
+</script>
 {% endblock %}

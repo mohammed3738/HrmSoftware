@@ -609,7 +609,7 @@
                       </a> {% endcomment %}
                     </li>
                     <li>
-                      <a class="dropdown-item" href="{% url 'settings-page' %}">
+                      <a class="dropdown-item" href="{% url 'company-settings-hub' %}">
                         <i class="ri-settings-4-line ri-22px me-3"></i><span class="align-middle">Settings</span>
                       </a>
                     </li>
@@ -766,7 +766,7 @@
                       </li>
 
                       <li class="menu-item">
-                        <a href="{% url 'admin-dashboard' %}" class="menu-link">
+                        <a href="{% url 'upload_attendance' %}" class="menu-link">
                           <div>Upload Attendance (Excel)</div>
                         </a>
                       </li>
@@ -861,11 +861,6 @@
                         </a>
                       </li>
 
-                      <li class="menu-item">
-                        <a href="{% url 'get_payroll_settings' %}" class="menu-link">
-                          <div>Payroll Settings</div>
-                        </a>
-                      </li>
 
                     </ul>
                   </li>
@@ -941,11 +936,11 @@
 </li>
 
 
-                  <!-- Settings -->
+                  <!-- Settings Hub -->
                   <li class="menu-item">
-                    <a href="{% url 'settings-page' %}" class="menu-link">
-                      <i class="menu-icon tf-icons ri-settings-3-line"></i>
-                      <div>Settings</div>
+                    <a href="{% url 'company-settings-hub' %}" class="menu-link">
+                      <i class="menu-icon tf-icons ri-building-4-line"></i>
+                      <div>Settings Hub</div>
                     </a>
                   </li>
 
@@ -1085,29 +1080,27 @@
       <script>
         const searchInput = document.getElementById("searchInput");
         const statusFilter = document.getElementById("statusFilter");
-      
-        function filterTable() {
-          const searchValue = searchInput.value.toLowerCase();
-          const statusValue = statusFilter.value.toLowerCase();
-          const rows = document.querySelectorAll(".table tbody tr");
-      
-          rows.forEach(row => {
-            const rowText = row.textContent.toLowerCase();
-            const statusCell = row.querySelector("td:nth-last-child(2)"); // Status is second last column
-            const status = statusCell ? statusCell.textContent.toLowerCase().trim() : "";
-      
-            const matchesSearch = rowText.includes(searchValue);
-            const matchesStatus = statusValue === "all" || status === statusValue;
-      
-            row.style.display = (matchesSearch && matchesStatus) ? "" : "none";
-          });
+        if (searchInput && statusFilter) {
+          function filterTable() {
+            const searchValue = searchInput.value.toLowerCase();
+            const statusValue = statusFilter.value.toLowerCase();
+            const rows = document.querySelectorAll(".table tbody tr");
+            rows.forEach(row => {
+              const rowText = row.textContent.toLowerCase();
+              const statusCell = row.querySelector("td:nth-last-child(2)");
+              const status = statusCell ? statusCell.textContent.toLowerCase().trim() : "";
+              const matchesSearch = rowText.includes(searchValue);
+              const matchesStatus = statusValue === "all" || status === statusValue;
+              row.style.display = (matchesSearch && matchesStatus) ? "" : "none";
+            });
+          }
+          searchInput.addEventListener("keyup", filterTable);
+          statusFilter.addEventListener("change", filterTable);
         }
-      
-        searchInput.addEventListener("keyup", filterTable);
-        statusFilter.addEventListener("change", filterTable);
       </script>
-      
-      
+
+      {% block page_scripts %}{% endblock %}
+
     </body>
   </html>
   

@@ -1,0 +1,606 @@
+{% extends "base2.html" %}
+{% load static %}
+
+{% block body %}
+<div class="container-xxl py-4">
+
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h4 class="mb-0">Company Settings Hub</h4>
+      <small class="text-muted">Manage settings for all companies from one place</small>
+    </div>
+    <a href="{% url 'settings-page' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="ri-arrow-left-line me-1"></i> My Company Settings
+    </a>
+  </div>
+
+  <div class="row g-4">
+
+    <!-- Left: Company List -->
+    <div class="col-md-3">
+      <div class="card h-100">
+        <div class="card-header py-3">
+          <h6 class="mb-0 fw-semibold">Companies</h6>
+        </div>
+        <div class="list-group list-group-flush" id="companyList">
+          {% for company in companies %}
+          <a href="?company_id={{ company.pk }}"
+             class="list-group-item list-group-item-action d-flex align-items-center gap-2
+                    {% if selected_company.pk == company.pk %}active{% endif %}">
+            <span class="badge bg-label-primary rounded-circle p-2 fs-6 fw-bold" style="min-width:36px;text-align:center;">
+              {{ company.short_name|slice:":2" }}
+            </span>
+            <div class="lh-sm flex-grow-1">
+              <div class="fw-semibold small">{{ company.name }}</div>
+              <div class="text-muted" style="font-size:0.72rem;">{{ company.short_name }}</div>
+            </div>
+            {% if company.pk not in companies_with_payroll %}
+            <span title="No payroll settings yet" class="badge bg-warning text-dark" style="font-size:.6rem;">!</span>
+            {% endif %}
+          </a>
+          {% empty %}
+          <div class="list-group-item text-muted small">No active companies found.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Settings Forms -->
+    <div class="col-md-9">
+      {% if selected_company %}
+      <div class="card">
+        <div class="card-body">
+
+          <div class="d-flex align-items-center mb-3 gap-3">
+            <span class="badge bg-primary fs-5 px-3 py-2">{{ selected_company.short_name }}</span>
+            <div>
+              <h5 class="mb-0">{{ selected_company.name }}</h5>
+              <small class="text-muted">{{ selected_company.email }}</small>
+            </div>
+          </div>
+
+          <!-- Tabs -->
+          <ul class="nav nav-tabs" id="hubTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="hub-payroll-tab" data-bs-toggle="tab"
+                      data-bs-target="#hub-payroll" type="button" role="tab">
+                Payroll Settings
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="hub-leave-tab" data-bs-toggle="tab"
+                      data-bs-target="#hub-leave" type="button" role="tab">
+                Leave Settings
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="hub-policy-tab" data-bs-toggle="tab"
+                      data-bs-target="#hub-policy" type="button" role="tab">
+                Leave Credit Policy
+              </button>
+            </li>
+          </ul>
+
+          <div class="tab-content pt-4" id="hubTabsContent">
+
+            <!-- ===== PAYROLL TAB ===== -->
+            <div class="tab-pane fade show active" id="hub-payroll" role="tabpanel">
+              <form id="hubPayrollForm" class="row g-3">
+                {% csrf_token %}
+                <input type="hidden" name="company_id" value="{{ selected_company.pk }}">
+
+                <div class="col-12">
+                  <h6 class="text-muted text-uppercase fw-semibold mb-2" style="font-size:.7rem;letter-spacing:.08em;">Payroll Cycle</h6>
+                </div>
+
+                <div class="col-md-4">
+                  <label class="form-label">Automatic Payroll Cycle</label>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="hub_is_auto" name="is_auto"
+                           {% if payroll_settings.is_auto %}checked{% endif %}>
+                    <label class="form-check-label" for="hub_is_auto">Auto</label>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">From Day</label>
+                  <input class="form-control" type="number" name="from_date" id="hub_from_date"
+                         value="{{ payroll_settings.from_date }}" placeholder="e.g. 1">
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">To Day</label>
+                  <input class="form-control" type="number" name="to_date" id="hub_to_date"
+                         value="{{ payroll_settings.to_date }}" placeholder="e.g. 31">
+                </div>
+
+                <div class="col-12 mt-2">
+                  <h6 class="text-muted text-uppercase fw-semibold mb-2" style="font-size:.7rem;letter-spacing:.08em;">Attendance & Leaves</h6>
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label">Grace Period (mins)</label>
+                  <input class="form-control" type="number" name="grace_period_minutes" id="hub_grace"
+                         value="{{ payroll_settings.grace_period_minutes }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Max Leave Balance</label>
+                  <input class="form-control" type="number" name="max_leave_balance" id="hub_max_leave"
+                         value="{{ payroll_settings.max_leave_balance }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Earned Leaves / Year</label>
+                  <input class="form-control" type="number" name="earned_leaves_per_year" id="hub_earned_leaves"
+                         value="{{ payroll_settings.earned_leaves_per_year }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Financial Year Start</label>
+                  <select class="form-select" name="financial_year_start_month" id="hub_fy_month">
+                    <option value="1"  {% if payroll_settings.financial_year_start_month == 1  %}selected{% endif %}>January</option>
+                    <option value="2"  {% if payroll_settings.financial_year_start_month == 2  %}selected{% endif %}>February</option>
+                    <option value="3"  {% if payroll_settings.financial_year_start_month == 3  %}selected{% endif %}>March</option>
+                    <option value="4"  {% if payroll_settings.financial_year_start_month == 4  %}selected{% endif %}>April (India Default)</option>
+                    <option value="5"  {% if payroll_settings.financial_year_start_month == 5  %}selected{% endif %}>May</option>
+                    <option value="6"  {% if payroll_settings.financial_year_start_month == 6  %}selected{% endif %}>June</option>
+                    <option value="7"  {% if payroll_settings.financial_year_start_month == 7  %}selected{% endif %}>July</option>
+                    <option value="8"  {% if payroll_settings.financial_year_start_month == 8  %}selected{% endif %}>August</option>
+                    <option value="9"  {% if payroll_settings.financial_year_start_month == 9  %}selected{% endif %}>September</option>
+                    <option value="10" {% if payroll_settings.financial_year_start_month == 10 %}selected{% endif %}>October</option>
+                    <option value="11" {% if payroll_settings.financial_year_start_month == 11 %}selected{% endif %}>November</option>
+                    <option value="12" {% if payroll_settings.financial_year_start_month == 12 %}selected{% endif %}>December</option>
+                  </select>
+                  <small class="text-muted">Changing this regenerates earned leave months.</small>
+                </div>
+
+                <div class="col-12 mt-2">
+                  <h6 class="text-muted text-uppercase fw-semibold mb-2" style="font-size:.7rem;letter-spacing:.08em;">Salary Components</h6>
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label">Basic % of CTC</label>
+                  <input class="form-control" type="number" step="0.01" name="basic_percentage" id="hub_basic_pct"
+                         value="{{ payroll_settings.basic_percentage }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">HRA % of Basic</label>
+                  <input class="form-control" type="number" step="0.01" name="hra_percentage" id="hub_hra_pct"
+                         value="{{ payroll_settings.hra_percentage }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Basic Cap (₹)</label>
+                  <input class="form-control" type="number" name="basic_cap" id="hub_basic_cap"
+                         value="{{ payroll_settings.basic_cap }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">PF %</label>
+                  <input class="form-control" type="number" step="0.01" name="pf_percentage" id="hub_pf"
+                         value="{{ payroll_settings.pf_percentage }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">ESIC %</label>
+                  <input class="form-control" type="number" step="0.01" name="esic_percentage" id="hub_esic"
+                         value="{{ payroll_settings.esic_percentage }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Gratuity %</label>
+                  <input class="form-control" type="number" step="0.01" name="gratuity_percentage" id="hub_gratuity"
+                         value="{{ payroll_settings.gratuity_percentage }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Bonus % (annual)</label>
+                  <input class="form-control" type="number" step="0.01" name="bonus_percentage" id="hub_bonus"
+                         value="{{ payroll_settings.bonus_percentage }}">
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Professional Tax (₹)</label>
+                  <input class="form-control" type="number" step="0.01" name="professional_tax" id="hub_prof_tax"
+                         value="{{ payroll_settings.professional_tax }}">
+                </div>
+
+                <div class="col-12 mt-2">
+                  <h6 class="text-muted text-uppercase fw-semibold mb-2" style="font-size:.7rem;letter-spacing:.08em;">Holidays & Weekends</h6>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label">Branch-Specific Holidays</label>
+                  <select class="form-select" name="branch_specific_holidays" id="hub_branch_holidays">
+                    <option value="true"  {% if payroll_settings.branch_specific_holidays %}selected{% endif %}>
+                      Yes — Regional holidays apply per branch
+                    </option>
+                    <option value="false" {% if not payroll_settings.branch_specific_holidays %}selected{% endif %}>
+                      No — All holidays apply company-wide
+                    </option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Weekend Days</label>
+                  <select class="form-select" name="weekend_days" id="hub_weekend">
+                    <option value="sat_sun" {% if payroll_settings.weekend_days == 'sat_sun' or not payroll_settings.weekend_days %}selected{% endif %}>
+                      Saturday &amp; Sunday
+                    </option>
+                    <option value="sun" {% if payroll_settings.weekend_days == 'sun' %}selected{% endif %}>
+                      Sunday Only
+                    </option>
+                  </select>
+                </div>
+
+                <div class="col-12">
+                  <div class="card border bg-light p-3">
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" role="switch"
+                             id="hub_late_marks" name="late_marks_affect_lwp"
+                             {% if payroll_settings.late_marks_affect_lwp %}checked{% endif %}>
+                      <label class="form-check-label fw-semibold" for="hub_late_marks">
+                        Late marks deduct from leave balance (LWP)
+                      </label>
+                    </div>
+                    <small class="text-muted mt-1 d-block">
+                      <b>ON</b> — After 5 late marks, every 3 additional late marks = 1 LWP day.<br>
+                      <b>OFF</b> — Late marks are recorded but never deduct from salary or leave balance.
+                    </small>
+                  </div>
+                </div>
+
+                <div class="col-12 d-flex justify-content-between align-items-center">
+                  <small class="text-muted">
+                    Last updated:
+                    {% if payroll_settings.updated_at %}
+                      {{ payroll_settings.updated_at|date:"F j, Y, g:i a" }}
+                    {% else %}Never{% endif %}
+                  </small>
+                  <button type="button" id="hubSavePayrollBtn" class="btn btn-primary">
+                    Save Payroll Settings
+                  </button>
+                </div>
+
+                <!-- Recalculate notice — shown after payroll settings are saved -->
+                <div class="col-12 d-none" id="recalc-notice">
+                  <div class="alert alert-success d-flex align-items-center justify-content-between gap-3 mb-0 py-2 px-3" role="alert">
+                    <div>
+                      <i class="ti ti-circle-check me-1"></i>
+                      <strong>Settings saved & leave balances updated.</strong>
+                      If some records still look off, click Recalculate to force a full refresh.
+                    </div>
+                    <button type="button" id="recalcNowBtn" class="btn btn-sm btn-outline-success fw-semibold text-nowrap">
+                      <i class="ti ti-refresh me-1"></i> Recalculate
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            <!-- ===== LEAVE TAB ===== -->
+            <div class="tab-pane fade" id="hub-leave" role="tabpanel">
+              <form id="hubLeaveForm" class="row g-3">
+                {% csrf_token %}
+                <input type="hidden" name="company_id" value="{{ selected_company.pk }}">
+
+                <div class="col-md-4">
+                  <label class="form-label">Carry Forward</label>
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="hub_carry_forward" name="carry_forward"
+                           {% if leave_settings.carry_forward %}checked{% endif %}>
+                    <label class="form-check-label" for="hub_carry_forward">Allow carry forward</label>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Reset Month</label>
+                  <select class="form-select" name="reset_month" id="hub_reset_month">
+                    <option value="">— No reset —</option>
+                    <option value="1"  {% if leave_settings.reset_month == 1  %}selected{% endif %}>January</option>
+                    <option value="2"  {% if leave_settings.reset_month == 2  %}selected{% endif %}>February</option>
+                    <option value="3"  {% if leave_settings.reset_month == 3  %}selected{% endif %}>March</option>
+                    <option value="4"  {% if leave_settings.reset_month == 4  %}selected{% endif %}>April</option>
+                    <option value="5"  {% if leave_settings.reset_month == 5  %}selected{% endif %}>May</option>
+                    <option value="6"  {% if leave_settings.reset_month == 6  %}selected{% endif %}>June</option>
+                    <option value="7"  {% if leave_settings.reset_month == 7  %}selected{% endif %}>July</option>
+                    <option value="8"  {% if leave_settings.reset_month == 8  %}selected{% endif %}>August</option>
+                    <option value="9"  {% if leave_settings.reset_month == 9  %}selected{% endif %}>September</option>
+                    <option value="10" {% if leave_settings.reset_month == 10 %}selected{% endif %}>October</option>
+                    <option value="11" {% if leave_settings.reset_month == 11 %}selected{% endif %}>November</option>
+                    <option value="12" {% if leave_settings.reset_month == 12 %}selected{% endif %}>December</option>
+                  </select>
+                  <small class="text-muted">Month when carry-forward resets annually.</small>
+                </div>
+
+                <div class="col-12 d-flex justify-content-between align-items-center mt-2">
+                  <small class="text-muted">
+                    Last updated:
+                    {% if leave_settings.updated_at %}
+                      {{ leave_settings.updated_at|date:"F j, Y, g:i a" }}
+                    {% else %}Never{% endif %}
+                  </small>
+                  <button type="button" id="hubSaveLeaveBtn" class="btn btn-success">
+                    Save Leave Settings
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- ===== CREDIT POLICY TAB ===== -->
+            <div class="tab-pane fade" id="hub-policy" role="tabpanel">
+              <form id="hubPolicyForm" class="row g-3">
+                {% csrf_token %}
+                <input type="hidden" name="company_id" value="{{ selected_company.pk }}">
+
+                <div class="col-12">
+                  <p class="text-muted small mb-3">
+                    Configure how many leave days are credited each month based on attendance.
+                    Employees are bucketed by days present: <b>Low ≤ Limit 1</b>, <b>Mid = between limits</b>, <b>High &gt; Limit 2</b>.
+                  </p>
+                </div>
+
+                <div class="col-md-6">
+                  <div class="card border p-3">
+                    <h6 class="fw-semibold mb-3">Attendance Thresholds</h6>
+                    <div class="row g-2">
+                      <div class="col-6">
+                        <label class="form-label small">Low Limit (days present ≤)</label>
+                        <input class="form-control" type="number" name="credit_1_limit" id="hub_credit1_limit"
+                               value="{{ credit_policy.credit_1_limit }}">
+                      </div>
+                      <div class="col-6">
+                        <label class="form-label small">High Limit (days present ≤)</label>
+                        <input class="form-control" type="number" name="credit_2_limit" id="hub_credit2_limit"
+                               value="{{ credit_policy.credit_2_limit }}">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-md-6">
+                  <div class="card border p-3">
+                    <h6 class="fw-semibold mb-3">Leave Credits</h6>
+                    <div class="row g-2">
+                      <div class="col-4">
+                        <label class="form-label small text-danger">Low Credit</label>
+                        <input class="form-control" type="number" step="0.01" name="credit_low" id="hub_credit_low"
+                               value="{{ credit_policy.credit_low }}">
+                        <small class="text-muted">≤ Limit 1</small>
+                      </div>
+                      <div class="col-4">
+                        <label class="form-label small text-warning">Mid Credit</label>
+                        <input class="form-control" type="number" step="0.01" name="credit_mid" id="hub_credit_mid"
+                               value="{{ credit_policy.credit_mid }}">
+                        <small class="text-muted">Between limits</small>
+                      </div>
+                      <div class="col-4">
+                        <label class="form-label small text-success">High Credit</label>
+                        <input class="form-control" type="number" step="0.01" name="credit_high" id="hub_credit_high"
+                               value="{{ credit_policy.credit_high }}">
+                        <small class="text-muted">&gt; Limit 2</small>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="col-12 d-flex justify-content-between align-items-center mt-2">
+                  <small class="text-muted">
+                    Last updated:
+                    {% if credit_policy.updated_at %}
+                      {{ credit_policy.updated_at|date:"F j, Y, g:i a" }}
+                    {% else %}Never{% endif %}
+                  </small>
+                  <button type="button" id="hubSavePolicyBtn" class="btn btn-info text-white">
+                    Save Credit Policy
+                  </button>
+                </div>
+              </form>
+            </div>
+
+          </div><!-- /tab-content -->
+        </div>
+      </div>
+
+      <!-- Broadcast Card -->
+      {% if total_other_companies > 0 %}
+      <div class="card mt-4 border-warning">
+        <div class="card-body">
+          <div class="d-flex align-items-start gap-3">
+            <div class="flex-shrink-0 mt-1">
+              <span class="badge bg-warning text-dark p-2 fs-5"><i class="ri-broadcast-line"></i></span>
+            </div>
+            <div class="flex-grow-1">
+              <h6 class="fw-bold mb-1">Apply to All Companies</h6>
+              <p class="text-muted small mb-2">
+                Broadcast <strong>{{ selected_company.name }}</strong>'s saved settings (Payroll, Leave, Credit Policy)
+                to all {{ total_other_companies }} other active companies. This will overwrite their existing settings.
+                {% if missing_settings_count > 0 %}
+                <span class="text-warning fw-semibold">{{ missing_settings_count }} company(ies) currently have no settings.</span>
+                {% endif %}
+              </p>
+              <div class="alert alert-info py-2 px-3 small mb-3">
+                <i class="ri-information-line me-1"></i>
+                This button <strong>saves your current settings first</strong>, then copies them to all other companies in one step — no need to click individual Save buttons beforehand.
+              </div>
+              <button type="button" id="broadcastBtn" class="btn btn-warning">
+                <i class="ri-broadcast-line me-1"></i> Save &amp; Broadcast to All {{ total_other_companies }} Companies
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% else %}
+      <div class="card">
+        <div class="card-body text-center py-5">
+          <i class="ri-building-line ri-4x text-muted mb-3 d-block"></i>
+          <h5 class="text-muted">No companies found</h5>
+          <p class="text-muted small">Create a company first to manage its settings here.</p>
+          <a href="{% url 'create-company' %}" class="btn btn-primary">Create Company</a>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+  function showSuccess(msg) {
+    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: msg, showConfirmButton: false, timer: 2500 });
+  }
+  function showError(msg) {
+    Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: msg, showConfirmButton: false, timer: 3500 });
+  }
+
+  async function hubPost(url, formData, btn) {
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+    let success = false;
+    try {
+      formData.set('csrfmiddlewaretoken', '{{ csrf_token }}');
+      const res  = await fetch(url, { method: 'POST', body: formData, headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+      const data = await res.json();
+      if (data.success) { showSuccess(data.message || 'Saved!'); success = true; }
+      else showError(data.error || 'Failed to save.');
+    } catch (e) {
+      console.error(e);
+      showError('Server error. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+    return success;
+  }
+
+  const payrollBtn = document.getElementById('hubSavePayrollBtn');
+  if (payrollBtn) {
+    payrollBtn.addEventListener('click', async () => {
+      const fd = new FormData(document.getElementById('hubPayrollForm'));
+      // FormData skips unchecked checkboxes — set them explicitly
+      fd.set('is_auto',              document.getElementById('hub_is_auto').checked    ? 'on' : '');
+      fd.set('late_marks_affect_lwp', document.getElementById('hub_late_marks').checked ? 'on' : '');
+      const ok = await hubPost("{% url 'save-payroll-settings' %}", fd, payrollBtn);
+      // Show manual recalculate option only if save succeeded
+      // (auto-recalc happens server-side; this is a fallback for manual trigger)
+      if (ok) document.getElementById('recalc-notice').classList.remove('d-none');
+    });
+  }
+
+  const recalcNowBtn = document.getElementById('recalcNowBtn');
+  if (recalcNowBtn) {
+    recalcNowBtn.addEventListener('click', async () => {
+      const original = recalcNowBtn.innerHTML;
+      recalcNowBtn.disabled = true;
+      recalcNowBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Recalculating…';
+      try {
+        const fd = new FormData();
+        fd.set('company_id', '{{ selected_company.pk }}');
+        fd.set('csrfmiddlewaretoken', '{{ csrf_token }}');
+        const res  = await fetch("{% url 'recalculate_leave_balances' %}", { method: 'POST', body: fd, headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+        const data = await res.json();
+        if (data.success) {
+          showSuccess(data.message || 'Leave balances recalculated!');
+          document.getElementById('recalc-notice').classList.add('d-none');
+        } else {
+          showError(data.message || 'Recalculation failed.');
+        }
+      } catch (e) {
+        console.error(e);
+        showError('Server error during recalculation.');
+      } finally {
+        recalcNowBtn.disabled = false;
+        recalcNowBtn.innerHTML = original;
+      }
+    });
+  }
+
+  const leaveBtn = document.getElementById('hubSaveLeaveBtn');
+  if (leaveBtn) {
+    leaveBtn.addEventListener('click', () => {
+      const fd = new FormData(document.getElementById('hubLeaveForm'));
+      fd.set('carry_forward', document.getElementById('hub_carry_forward').checked ? 'on' : '');
+      hubPost("{% url 'save-leave-settings' %}", fd, leaveBtn);
+    });
+  }
+
+  const policyBtn = document.getElementById('hubSavePolicyBtn');
+  if (policyBtn) {
+    policyBtn.addEventListener('click', () => {
+      hubPost("{% url 'save-leave-credit-policy' %}", new FormData(document.getElementById('hubPolicyForm')), policyBtn);
+    });
+  }
+
+  // Broadcast to all companies — saves current form state first, then broadcasts
+  const broadcastBtn = document.getElementById('broadcastBtn');
+  if (broadcastBtn) {
+    broadcastBtn.addEventListener('click', async () => {
+      const companyName = "{{ selected_company.name|escapejs }}";
+      const otherCount  = {{ total_other_companies }};
+
+      const result = await Swal.fire({
+        title: 'Save & Broadcast?',
+        html: `This will <strong>save your current settings</strong> for <strong>${companyName}</strong>, then
+               copy them to all <strong>${otherCount}</strong> other companies.<br><br>
+               <span class="text-danger fw-bold">This overwrites each company's existing Payroll, Leave, and Credit Policy settings.</span>`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#e8a803',
+        confirmButtonText: 'Save & Broadcast',
+        cancelButtonText: 'Cancel',
+      });
+
+      if (!result.isConfirmed) return;
+
+      const original = broadcastBtn.innerHTML;
+      broadcastBtn.disabled = true;
+      broadcastBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+
+      try {
+        // Step 1: Save all three form sections for this company first
+        const payrollFd = new FormData(document.getElementById('hubPayrollForm'));
+        payrollFd.set('is_auto',               document.getElementById('hub_is_auto').checked    ? 'on' : '');
+        payrollFd.set('late_marks_affect_lwp',  document.getElementById('hub_late_marks').checked  ? 'on' : '');
+        payrollFd.set('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        const leaveFd = new FormData(document.getElementById('hubLeaveForm'));
+        leaveFd.set('carry_forward', document.getElementById('hub_carry_forward').checked ? 'on' : '');
+        leaveFd.set('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        const policyFd = new FormData(document.getElementById('hubPolicyForm'));
+        policyFd.set('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        const [r1, r2, r3] = await Promise.all([
+          fetch("{% url 'save-payroll-settings' %}",      { method: 'POST', body: payrollFd, headers: { 'X-CSRFToken': '{{ csrf_token }}' } }),
+          fetch("{% url 'save-leave-settings' %}",        { method: 'POST', body: leaveFd,   headers: { 'X-CSRFToken': '{{ csrf_token }}' } }),
+          fetch("{% url 'save-leave-credit-policy' %}",   { method: 'POST', body: policyFd,  headers: { 'X-CSRFToken': '{{ csrf_token }}' } }),
+        ]);
+
+        const [d1, d2, d3] = await Promise.all([r1.json(), r2.json(), r3.json()]);
+        const saveErrors = [d1, d2, d3].filter(d => !d.success).map(d => d.error || d.message || 'Save failed');
+        if (saveErrors.length) {
+          showError('Could not save settings: ' + saveErrors.join('; '));
+          return;
+        }
+
+        // Step 2: Broadcast the now-saved settings to all other companies
+        broadcastBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Broadcasting…';
+        const bFd = new FormData();
+        bFd.set('source_company_id', '{{ selected_company.pk }}');
+        bFd.set('csrfmiddlewaretoken', '{{ csrf_token }}');
+        const res  = await fetch("{% url 'broadcast-settings' %}", { method: 'POST', body: bFd, headers: { 'X-CSRFToken': '{{ csrf_token }}' } });
+        const data = await res.json();
+        if (data.success) {
+          Swal.fire({ icon: 'success', title: 'Saved & Broadcast!', text: data.message, confirmButtonText: 'OK' })
+            .then(() => window.location.reload());
+        } else {
+          showError(data.error || data.message || 'Broadcast failed.');
+        }
+      } catch (e) {
+        console.error(e);
+        showError('Server error. Please try again.');
+      } finally {
+        broadcastBtn.disabled = false;
+        broadcastBtn.innerHTML = original;
+      }
+    });
+  }
+
+});
+</script>
+
+{% endblock %}

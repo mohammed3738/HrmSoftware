@@ -10,20 +10,29 @@
           <!-- Empty left side or you can add text here if needed -->
           <h5 class="card-header">Employees</h5>
         </div>
-        <div class="col-auto d-flex align-items-center">
+        <div class="col-auto d-flex align-items-center gap-2">
           <button
             type="button"
-            class="btn btn-secondary buttons-collection dropdown-toggle btn-label-primary me-4 waves-effect waves-light"
+            class="btn btn-secondary buttons-collection dropdown-toggle btn-label-primary waves-effect waves-light"
             onclick="downloadEmployees()"
           >
             Export
+          </button>
+          <a href="{% url 'employee-import-template' %}" class="btn btn-outline-success waves-effect waves-light">
+            Download Template
+          </a>
+          <button
+            type="button"
+            class="btn btn-success waves-effect waves-light"
+            data-bs-toggle="modal"
+            data-bs-target="#importEmployeeModal">
+            Import Excel
           </button>
           <button
             type="button"
             class="btn btn-secondary create-new btn-primary waves-effect waves-light"
             data-bs-toggle="modal"
-            data-bs-target="#employeeModal"
-          >
+            data-bs-target="#employeeModal">
             Add Employee
           </button>
         </div>
@@ -31,72 +40,95 @@
       <hr />
 
       <!-- Table -->
-      <div class="table-responsive text-nowrap">
-        <table class="datatable table">
-          <thead>
-            <tr>
-              <th>Employee Code</th>
-              <th>Company</th>
-              <th>First Name</th>
-              <th>Last Name</th>
-              <th>Gender</th>
-              <th>Status</th>
-              <th class="sticky-actions">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="table-border-bottom-0">
-            {% for employee in employees %}
-            <tr>
-              <td>
-                <a href="{% url 'employee_detail' employee.pk %}"
-                  >{{employee.employee_code}}</a
-                >
-              </td>
+<!-- Bulk Action Toolbar (hidden until rows are selected) -->
+<div id="bulkToolbar" style="display:none;" class="d-flex align-items-center gap-3 flex-wrap p-3 mb-3 rounded"
+     style="background:var(--bs-info-bg-subtle); border: 1px solid var(--bs-info-border-subtle);">
+  <span id="bulkCount" class="fw-bold text-primary"></span>
 
-              <td>
-                <a href="{% url 'create-company' %}">{{employee.company}}</a>
-              </td>
-              <td>{{employee.first_name}}</td>
-              <td>{{employee.last_name}}</td>
-              <td>{{employee.gender}}</td>
-              <td>
-                {% if employee.status == "Active" %}
-                <p class="mt-4" style="color: #4CBB17"><b>{{employee.status}}</b></p>
-                {% elif employee.status == "Pending" %}
-                <p class="mt-6" style="color: orange"><b>{{employee.status}}</b></p>
-                {% else %}
-                <p class="mt-6" style="color: red"><b>{{employee.status}}</b></p>
-                {% endif %}
-              </td> 
+  <div class="d-flex align-items-center gap-2">
+    <label class="text-muted small mb-0">Status:</label>
+    <select id="bulkStatus" class="form-select form-select-sm" style="width:130px">
+      <option value="">-- Status --</option>
+      <option>Active</option>
+      <option>Pending</option>
+      <option>Left</option>
+    </select>
+  </div>
 
-              <td>
-                <div class="dropdown">
-                  <button
-                    type="button"
-                    class="btn p-0 dropdown-toggle hide-arrow"
-                    data-bs-toggle="dropdown"
-                  >
-                    <i class="ri-more-2-line"></i>
-                  </button>
-                  <div class="dropdown-menu">
-<a href="{% url 'employee_edit' employee.id %}" class="dropdown-item">
-  <i class="ti ti-edit me-2"></i> Edit
-</a>
-                    <a
-                      class="dropdown-item text-danger"
-                      href="javascript:void(0);"
-                      onclick="confirmEmployeeDelete({{ employee.id }})"
-                    >
-                      <i class="ri-delete-bin-7-line me-2"></i> Delete
-                    </a>
-                  </div>
-                </div>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+  <div class="d-flex align-items-center gap-2">
+    <label class="text-muted small mb-0">Role:</label>
+    <select id="bulkRole" class="form-select form-select-sm" style="width:130px">
+      <option value="">-- Role --</option>
+      {% for group in all_groups %}
+        <option>{{ group.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <button class="btn btn-primary btn-sm" onclick="applyBulkAction()">Apply</button>
+  <button class="btn btn-outline-secondary btn-sm" onclick="clearBulkSelection()">Clear</button>
+</div>
+
+<!-- Table -->
+<div class="table-responsive text-nowrap">
+  <table class="datatable table">
+    <thead>
+      <tr>
+        <th style="width:40px">
+          <input type="checkbox" id="selectAll" class="form-check-input"
+                 onchange="toggleSelectAll(this)">
+        </th>
+        <th>Employee Code</th>
+        <th>Company</th>
+        <th>First Name</th>
+        <th>Last Name</th>
+        <th>Gender</th>
+        <th>Status</th>
+        <th class="sticky-actions">Actions</th>
+      </tr>
+    </thead>
+    <tbody class="table-border-bottom-0">
+      {% for employee in employees %}
+      <tr>
+        <td>
+          <input type="checkbox" class="form-check-input emp-checkbox"
+                 value="{{ employee.id }}" onchange="updateBulkToolbar()">
+        </td>
+        <td><a href="{% url 'employee_detail' employee.pk %}">{{ employee.employee_code }}</a></td>
+        <td><a href="{% url 'create-company' %}">{{ employee.company }}</a></td>
+        <td>{{ employee.first_name }}</td>
+        <td>{{ employee.last_name }}</td>
+        <td>{{ employee.gender }}</td>
+        <td>
+          {% if employee.status == "Active" %}
+          <p class="mt-4" style="color: #4CBB17"><b>{{ employee.status }}</b></p>
+          {% elif employee.status == "Pending" %}
+          <p class="mt-6" style="color: orange"><b>{{ employee.status }}</b></p>
+          {% else %}
+          <p class="mt-6" style="color: red"><b>{{ employee.status }}</b></p>
+          {% endif %}
+        </td>
+        <td>
+          <div class="dropdown">
+            <button type="button" class="btn p-0 dropdown-toggle hide-arrow" data-bs-toggle="dropdown">
+              <i class="ri-more-2-line"></i>
+            </button>
+            <div class="dropdown-menu">
+              <a href="{% url 'employee_edit' employee.id %}" class="dropdown-item">
+                <i class="ti ti-edit me-2"></i> Edit
+              </a>
+              <a class="dropdown-item text-danger" href="javascript:void(0);"
+                 onclick="confirmEmployeeDelete({{ employee.id }})">
+                <i class="ri-delete-bin-7-line me-2"></i> Delete
+              </a>
+            </div>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
     </div>
   </div>
 
@@ -191,12 +223,34 @@
                       {% endfor %}
                     </div>
                   </div>
+                  <!-- GROUP -->
+                <div class="col-md-4">
+                  <div class="mb-3">
+                    <label class="form-label">
+                      Role / Group <span class="text-danger">*</span>
+                    </label>
+                    <select name="employee_group" class="form-control">
+                      <option value="">-- Select Group --</option>
+                      {% for group in groups %}
+                        <option value="{{ group.id }}"
+                          {% if current_group_id == group.id %}selected{% endif %}>
+                          {{ group.name }}
+                        </option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                </div>
+
+                  <!-- SECTION: Personal Details -->
+                  <div class="col-12 mt-2 mb-1">
+                    <h6 class="text-muted fw-semibold small text-uppercase border-bottom pb-1">
+                      <i class="ri-user-line me-1"></i> Personal Details
+                    </h6>
+                  </div>
 
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Employee Code <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Employee Code <span class="text-danger">*</span></label>
                       {{ form.employee_code|add_class:"form-control" }}
                       {% for error in form.employee_code.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -330,10 +384,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Present Address
-                        <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Present Address</label>
                       {{ form.present_address|add_class:"form-control" }}
                       {% for error in form.present_address.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -342,12 +393,13 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Permanent Address
-                        <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label d-flex justify-content-between align-items-center">
+                        Permanent Address
+                        <a href="#" class="small text-primary ms-2" id="sameAddressBtn"
+                           onclick="copyPresentAddress(event)">Same as Present</a>
+                      </label>
                       {{ form.permanent_address|add_class:"form-control" }}
-                       {% for error in form.permanent_address.errors %}
+                      {% for error in form.permanent_address.errors %}
                       <div class="text-danger small">{{ error }}</div>
                       {% endfor %}
                     </div>
@@ -373,11 +425,16 @@
                       {% endfor %}
                     </div>
                   </div>
+                  <!-- SECTION: Office Details -->
+                  <div class="col-12 mt-2 mb-1">
+                    <h6 class="text-muted fw-semibold small text-uppercase border-bottom pb-1">
+                      <i class="ri-building-line me-1"></i> Office Details
+                    </h6>
+                  </div>
+
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Designation <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Designation</label>
                       {{ form.designation|add_class:"form-control" }}
                       {% for error in form.designation.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -397,21 +454,25 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Date Of Joining
-                        <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Date Of Joining</label>
                       {{ form.date_of_joining|add_class:"form-control" }}
-                       {% for error in form.date_of_joining.errors %}
+                      {% for error in form.date_of_joining.errors %}
                       <div class="text-danger small">{{ error }}</div>
                       {% endfor %}
                     </div>
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Location <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Date Of Confirmation</label>
+                      {{ form.date_of_confirmation|add_class:"form-control" }}
+                      {% for error in form.date_of_confirmation.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label class="form-label">Location</label>
                       {{ form.location|add_class:"form-control" }} 
                       {% for error in form.location.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -430,11 +491,16 @@
                       </div>
                     </div>
                   </div>
+                  <!-- SECTION: Statutory Details -->
+                  <div class="col-12 mt-2 mb-1">
+                    <h6 class="text-muted fw-semibold small text-uppercase border-bottom pb-1">
+                      <i class="ri-file-list-2-line me-1"></i> Statutory Details
+                    </h6>
+                  </div>
+
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >PAN No <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">PAN No</label>
                       {{ form.pan_no|add_class:"form-control" }}
                       {% for error in form.pan_no.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -443,9 +509,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Aadhar No <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Aadhar No</label>
                       {{ form.aadhar_no|add_class:"form-control" }}
                       {% for error in form.aadhar_no.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -454,9 +518,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Voter ID <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Voter ID</label>
                       {{ form.voter_id|add_class:"form-control" }}
                       {% for error in form.voter_id.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -465,9 +527,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Passport <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Passport</label>
                       {{ form.passport|add_class:"form-control" }}
                       {% for error in form.passport.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -476,9 +536,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >UAN No <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">UAN No</label>
                       {{ form.uan_no|add_class:"form-control" }}
                       {% for error in form.uan_no.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -487,9 +545,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >PF No <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">PF No</label>
                       {{ form.pf_no|add_class:"form-control" }}
                       {% for error in form.pf_no.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -498,21 +554,23 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >ESIC No <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">ESIC No</label>
                       {{ form.esic_no|add_class:"form-control" }}
                        {% for error in form.esic_no.errors %}
                       <div class="text-danger small">{{ error }}</div>
                       {% endfor %}
                     </div>
                   </div>
+                  <!-- SECTION: Banking Details -->
+                  <div class="col-12 mt-2 mb-1">
+                    <h6 class="text-muted fw-semibold small text-uppercase border-bottom pb-1">
+                      <i class="ri-bank-line me-1"></i> Banking Details
+                    </h6>
+                  </div>
+
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Name As Per Bank Record
-                        <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Name As Per Bank Record</label>
                       {{ form.name_as_per_bank|add_class:"form-control" }}
                       {% for error in form.name_as_per_bank.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -542,12 +600,16 @@
                       {% endfor %}
                     </div>
                   </div>
+                  <!-- SECTION: Emergency Contact Details -->
+                  <div class="col-12 mt-2 mb-1">
+                    <h6 class="text-muted fw-semibold small text-uppercase border-bottom pb-1">
+                      <i class="ri-phone-line me-1"></i> Emergency Contact Details
+                    </h6>
+                  </div>
+
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Emergency Contact Name 1
-                        <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Emergency Contact Name 1</label>
                       {{ form.emergency_contact_name1|add_class:"form-control"}}
                       {% for error in form.emergency_contact_name1.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -556,10 +618,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Emergency Contact Relation 1
-                        <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Emergency Contact Relation 1</label>
                       {{ form.emergency_contact_relation1|add_class:"form-control"}} 
                       {% for error in form.emergency_contact_relation1.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -568,10 +627,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Emergency Contact Mobile No 1
-                        <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Emergency Contact Mobile No 1</label>
                       {{ form.emergency_contact_mobile1|add_class:"form-control" }} 
                       {% for error in form.emergency_contact_mobile1.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -580,10 +636,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Emergency Contact Name 2
-                        <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Emergency Contact Name 2</label>
                       {{ form.emergency_contact_name2|add_class:"form-control" }} 
                       {% for error in form.emergency_contact_name2.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -592,10 +645,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Emergency Contact Relation 2
-                        <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Emergency Contact Relation 2</label>
                       {{ form.emergency_contact_relation2|add_class:"form-control" }} 
                       {% for error in form.emergency_contact_relation2.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -604,10 +654,7 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label"
-                        >Emergency Contact Mobile No 2
-                        <span class="text-danger">*</span></label
-                      >
+                      <label class="form-label">Emergency Contact Mobile No 2</label>
                       {{ form.emergency_contact_mobile2|add_class:"form-control" }}
                       {% for error in form.emergency_contact_mobile2.errors %}
                       <div class="text-danger small">{{ error }}</div>
@@ -931,37 +978,7 @@
 
 
 
-<!-- Delete Modal -->
-<div class="modal fade" id="delete_modal">
-  <div class="modal-dialog modal-dialog-centered modal-sm">
-    <div class="modal-content">
-      <div class="modal-body text-center">
-        <span class="avatar avatar-xl bg-transparent-danger text-danger mb-3">
-          <i class="ti ti-trash-x fs-36"></i>
-        </span>
-        <h4 class="mb-1">Confirm Delete</h4>
-        <p class="mb-3">
-          You want to delete all the marked items, this cant be undone once you
-          delete.
-        </p>
-        <div class="d-flex justify-content-center">
-          <a
-            href="javascript:void(0);"
-            class="btn btn-light me-3"
-            data-bs-dismiss="modal"
-            >Cancel</a
-          >
-          <a
-            href="https://smarthr.dreamstechnologies.com/html/template/companies.html"
-            class="btn btn-danger"
-            >Yes, Delete</a
-          >
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-<!-- /Delete Modal -->
+<!-- Delete confirmation is handled by SweetAlert in confirmEmployeeDelete() -->
 
 <form id="deleteEmployeeForm" method="POST" style="display: none">
   {% csrf_token %}
@@ -1070,6 +1087,34 @@
     const prevAddBtn = $("#addPrevRow");
     const prevTotalForms = $("#id_previous_employments-TOTAL_FORMS");
 
+    function renumberPrevRows() {
+      const rows = Array.from(prevTableBody.querySelectorAll("tr"));
+      rows.forEach((tr, newIdx) => {
+        tr.querySelectorAll("[name]").forEach(el => {
+          el.name = el.name.replace(/previous_employments-\d+-/, `previous_employments-${newIdx}-`);
+        });
+        tr.querySelectorAll("[id]").forEach(el => {
+          el.id = el.id.replace(/id_previous_employments-\d+-/, `id_previous_employments-${newIdx}-`);
+        });
+        const mdBtn = tr.querySelector(".manage-documents");
+        if (mdBtn) mdBtn.dataset.index = newIdx;
+      });
+      prevTotalForms.value = rows.length;
+    }
+
+    function renumberAttachRows() {
+      const rows = Array.from(attachTableBody ? attachTableBody.querySelectorAll("tr") : []);
+      rows.forEach((tr, newIdx) => {
+        tr.querySelectorAll("[name]").forEach(el => {
+          el.name = el.name.replace(/attachments-\d+-/, `attachments-${newIdx}-`);
+        });
+        tr.querySelectorAll("[id]").forEach(el => {
+          el.id = el.id.replace(/id_attachments-\d+-/, `id_attachments-${newIdx}-`);
+        });
+      });
+      if (attachTotalForms) attachTotalForms.value = rows.length;
+    }
+
     if (prevAddBtn && prevTableBody && prevEmptyRow && prevTotalForms) {
       prevAddBtn.addEventListener("click", () => {
         const newIndex = parseInt(prevTotalForms.value || "0", 10);
@@ -1077,13 +1122,10 @@
         const tmp = document.createElement("tbody");
         tmp.innerHTML = html;
         const tr = tmp.querySelector("tr");
-        // set data-index on manage-doc button
-        const mdBtn = tr.querySelector(".manage-documents, .open-attachment-modal, .manage-documents");
+        const mdBtn = tr.querySelector(".manage-documents");
         if (mdBtn) mdBtn.setAttribute("data-index", newIndex);
         prevTableBody.appendChild(tr);
         prevTotalForms.value = newIndex + 1;
-
-        // ensure placeholders for nested attachments exist (so add-doc works for new row)
         ensureAttachmentPlaceholders(newIndex);
       });
       prevTableBody.addEventListener("click", (ev) => {
@@ -1091,7 +1133,7 @@
         if (!rem) return;
         const tr = rem.closest("tr");
         if (tr) tr.remove();
-        prevTotalForms.value = Math.max(0, parseInt(prevTotalForms.value || "0", 10) - 1);
+        renumberPrevRows();
       });
     }
 
@@ -1122,7 +1164,7 @@
         if (!rem) return;
         const tr = rem.closest("tr");
         if (tr) tr.remove();
-        attachTotalForms.value = Math.max(0, parseInt(attachTotalForms.value || "0", 10) - 1);
+        renumberAttachRows();
       });
     }
 
@@ -1319,6 +1361,13 @@ function toggleOtherField(selectEl) {
 
 
 <script>
+  function copyPresentAddress(e) {
+    e.preventDefault();
+    const present = document.getElementById("id_present_address");
+    const permanent = document.getElementById("id_permanent_address");
+    if (present && permanent) permanent.value = present.value;
+  }
+
   function confirmEmployeeDelete(employeeId) {
     Swal.fire({
       title: "Are you sure?",
@@ -1342,7 +1391,7 @@ function toggleOtherField(selectEl) {
 
 
 
-{% if is_edit and request.method == "GET" %}
+{% if is_edit or open_modal %}
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   new bootstrap.Modal(document.getElementById("employeeModal")).show();
@@ -1385,5 +1434,197 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
+<!-- ── Employee Import Modal ─────────────────────────────────────────────── -->
+<div class="modal fade" id="importEmployeeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Import Employees from Excel</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted">
+          Download the template, fill in employee data, then upload the file below.
+          Rows with errors will be skipped — a summary will be shown after import.
+        </p>
+        <a href="{% url 'employee-import-template' %}" class="btn btn-outline-secondary btn-sm mb-3">
+          Download Excel Template
+        </a>
+        <form id="employeeImportForm" enctype="multipart/form-data">
+          {% csrf_token %}
+          <div class="mb-3">
+            <label class="form-label fw-bold">Select Excel File (.xlsx)</label>
+            <input type="file" class="form-control" id="employeeImportFile" name="employee_file" accept=".xlsx,.xls">
+          </div>
+          <div id="employeeImportProgress" class="d-none">
+            <div class="progress mb-2">
+              <div class="progress-bar progress-bar-striped progress-bar-animated w-100" style="height:6px"></div>
+            </div>
+            <small class="text-muted">Processing…</small>
+          </div>
+          <div id="employeeImportResult" class="mt-3"></div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-success" id="employeeImportBtn" onclick="submitEmployeeImport()">
+          Upload &amp; Import
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function submitEmployeeImport() {
+  const progressEl = document.getElementById("employeeImportProgress");
+  const resultEl   = document.getElementById("employeeImportResult");
+  const btnEl      = document.getElementById("employeeImportBtn");
+  const fileInput  = document.getElementById("employeeImportFile");
+
+  function showResult(html) {
+    try {
+      if (progressEl) progressEl.classList.add("d-none");
+      if (btnEl)      btnEl.disabled = false;
+      if (resultEl)   resultEl.innerHTML = html;
+    } catch(e) { console.error("showResult error:", e); }
+  }
+
+  if (!fileInput || !fileInput.files.length) {
+    alert("Please select an Excel file.");
+    return;
+  }
+
+  const formData = new FormData(document.getElementById("employeeImportForm"));
+
+  if (progressEl) progressEl.classList.remove("d-none");
+  if (resultEl)   resultEl.innerHTML = "";
+  if (btnEl)      btnEl.disabled = true;
+
+  // Abort after 60 seconds so it never hangs forever
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+
+  fetch("{% url 'import-employees' %}", {
+    method: "POST",
+    body: formData,
+    headers: { "X-CSRFToken": formData.get("csrfmiddlewaretoken") },
+    signal: controller.signal,
+  })
+  .then(function(r) {
+    clearTimeout(timer);
+    return r.text().then(function(text) {
+      return { status: r.status, text: text };
+    });
+  })
+  .then(function(res) {
+    var data;
+    try {
+      data = JSON.parse(res.text);
+    } catch (_) {
+      showResult(
+        '<div class="alert alert-danger">' +
+        'Server error (status ' + res.status + '). Check Django console.<br>' +
+        '<small><pre style="white-space:pre-wrap;max-height:200px;overflow:auto">' +
+        res.text.substring(0, 1000) + '</pre></small></div>'
+      );
+      return;
+    }
+    if (!data.success) {
+      showResult('<div class="alert alert-danger">' + (data.error || "Unknown error") + '</div>');
+      return;
+    }
+    var html = '<div class="alert alert-success"><strong>Import complete:</strong> ' +
+               data.created + ' employee(s) created, ' + data.skipped + ' skipped.</div>';
+    if (data.errors && data.errors.length) {
+      html += '<div class="alert alert-warning"><strong>Row errors:</strong><ul class="mb-0 mt-1">';
+      data.errors.forEach(function(e) {
+        html += '<li>Row ' + e.row + ': ' + e.errors.join(', ') + '</li>';
+      });
+      html += '</ul></div>';
+    }
+    showResult(html);
+    if (data.created > 0) setTimeout(function() { location.reload(); }, 2500);
+  })
+  .catch(function(err) {
+    clearTimeout(timer);
+    var msg = err.name === 'AbortError'
+      ? 'Request timed out (60s). The server may be overloaded.'
+      : (err.message || 'Network error — check that the server is running.');
+    showResult('<div class="alert alert-danger">' + msg + '</div>');
+  });
+}
+</script>
+
+
+
+
+<script>
+  function getSelectedIds() {
+  return Array.from(document.querySelectorAll('.emp-checkbox:checked'))
+              .map(cb => parseInt(cb.value));
+}
+
+function updateBulkToolbar() {
+  const ids = getSelectedIds();
+  const toolbar = document.getElementById('bulkToolbar');
+  const count   = document.getElementById('bulkCount');
+  const all     = document.getElementById('selectAll');
+  const total   = document.querySelectorAll('.emp-checkbox').length;
+
+  toolbar.style.display = ids.length > 0 ? 'flex' : 'none';
+  count.textContent = `${ids.length} employee${ids.length !== 1 ? 's' : ''} selected`;
+  all.indeterminate = ids.length > 0 && ids.length < total;
+  all.checked = ids.length === total;
+}
+
+function toggleSelectAll(el) {
+  document.querySelectorAll('.emp-checkbox').forEach(cb => cb.checked = el.checked);
+  updateBulkToolbar();
+}
+
+function clearBulkSelection() {
+  document.querySelectorAll('.emp-checkbox').forEach(cb => cb.checked = false);
+  document.getElementById('selectAll').checked = false;
+  document.getElementById('bulkStatus').value = '';
+  document.getElementById('bulkRole').value = '';
+  updateBulkToolbar();
+}
+
+function applyBulkAction() {
+  const ids    = getSelectedIds();
+  const status = document.getElementById('bulkStatus').value;
+  const role   = document.getElementById('bulkRole').value;
+
+  if (!ids.length) { alert('No employees selected.'); return; }
+  if (!status && !role) { alert('Please choose a status or role to apply.'); return; }
+
+  const summary = [
+    status ? `status → ${status}` : '',
+    role   ? `role → ${role}`     : '',
+  ].filter(Boolean).join(', ');
+
+  if (!confirm(`Apply ${summary} to ${ids.length} employee(s)?`)) return;
+
+  fetch("{% url 'bulk-employee-action' %}", {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+    },
+    body: JSON.stringify({ employee_ids: ids, status: status, role: role }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.success) {
+      alert(`Updated ${data.updated} employee(s) successfully.`);
+      location.reload();
+    } else {
+      alert('Error: ' + (data.error || 'Unknown error'));
+    }
+  })
+  .catch(() => alert('Network error. Please try again.'));
+}
+</script>
 
 {% endblock %}

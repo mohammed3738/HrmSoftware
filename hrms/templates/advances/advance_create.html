@@ -1,14 +1,156 @@
-{% extends 'advances/base1.html' %}
-{% block content %}
-<div class="card">
-  <div class="card-body">
-    <h4>Create Advance</h4>
-    <form method="post">
-      {% csrf_token %}
-      {{ form.as_p }}
-      <button class="btn btn-primary">Create</button>
-      <a href="{% url 'advances-list' %}" class="btn btn-secondary">Cancel</a>
-    </form>
+{% extends 'base2.html' %}
+{% load static %}
+{% block title %}New Advance{% endblock %}
+
+{% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h4 class="fw-bold mb-1">New Employee Advance</h4>
+      <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="#"><i class="ti ti-smart-home"></i></a></li>
+        <li class="breadcrumb-item"><a href="{% url 'advances-list' %}">Advances</a></li>
+        <li class="breadcrumb-item active">New</li>
+      </ol>
+    </div>
+    <a href="{% url 'advances-list' %}" class="btn btn-outline-secondary">
+      <i class="ti ti-arrow-left me-1"></i> Back
+    </a>
   </div>
+
+  <div class="row justify-content-center">
+    <div class="col-lg-7 col-xl-6">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header bg-transparent border-bottom fw-semibold d-flex align-items-center gap-2">
+          <i class="ti ti-file-invoice text-primary"></i> Advance Details
+        </div>
+        <div class="card-body p-4">
+          <form method="post" novalidate>
+            {% csrf_token %}
+
+            <!-- Employee -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold">
+                Employee <span class="text-danger">*</span>
+              </label>
+              {{ form.employee.errors }}
+              <select name="employee" id="id_employee" class="form-select{% if form.employee.errors %} is-invalid{% endif %}" required>
+                <option value="">— Select Employee —</option>
+                {% for val, label in form.fields.employee.choices %}
+                  {% if val %}
+                  <option value="{{ val }}" {% if form.employee.value == val|stringformat:"s" %}selected{% endif %}>
+                    {{ label }}
+                  </option>
+                  {% endif %}
+                {% endfor %}
+              </select>
+            </div>
+
+            <!-- Advance Amount -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold">
+                Advance Amount (₹) <span class="text-danger">*</span>
+              </label>
+              {{ form.advance_amount.errors }}
+              <div class="input-group">
+                <span class="input-group-text">₹</span>
+                <input type="number" name="advance_amount" id="id_advance_amount"
+                       class="form-control{% if form.advance_amount.errors %} is-invalid{% endif %}"
+                       value="{{ form.advance_amount.value|default:'' }}"
+                       min="1" placeholder="e.g. 50000" required>
+              </div>
+            </div>
+
+            <!-- Number of EMIs -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold">
+                Number of EMIs <span class="text-danger">*</span>
+              </label>
+              {{ form.default_months.errors }}
+              <input type="number" name="default_months" id="id_default_months"
+                     class="form-control{% if form.default_months.errors %} is-invalid{% endif %}"
+                     value="{{ form.default_months.value|default:'' }}"
+                     min="1" max="60" placeholder="e.g. 6" required>
+              <div class="form-text text-muted">
+                Monthly deduction: <span id="emi-preview" class="fw-semibold text-primary">—</span>
+              </div>
+            </div>
+
+            <!-- Start Date -->
+            <div class="mb-4">
+              <label class="form-label fw-semibold">
+                Start Month <span class="text-danger">*</span>
+              </label>
+              {{ form.start_date.errors }}
+              <input type="date" name="start_date" id="id_start_date"
+                     class="form-control{% if form.start_date.errors %} is-invalid{% endif %}"
+                     value="{{ form.start_date.value|default:'' }}" required>
+              <div class="form-text text-muted">First EMI deduction month.</div>
+            </div>
+
+            <!-- Preview card (shown when amount + months are filled) -->
+            <div id="preview-card" class="alert alert-light border d-none mb-4">
+              <div class="fw-semibold mb-2 text-muted small">PREVIEW</div>
+              <div class="row g-2 text-center">
+                <div class="col-4">
+                  <div class="text-muted small">Total</div>
+                  <div class="fw-bold text-primary" id="prev-total">—</div>
+                </div>
+                <div class="col-4">
+                  <div class="text-muted small">Per EMI</div>
+                  <div class="fw-bold text-success" id="prev-emi">—</div>
+                </div>
+                <div class="col-4">
+                  <div class="text-muted small">Months</div>
+                  <div class="fw-bold" id="prev-months">—</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="d-flex gap-3 mt-2">
+              <button type="submit" class="btn btn-primary flex-grow-1">
+                <i class="ti ti-circle-plus me-1"></i> Create Advance
+              </button>
+              <a href="{% url 'advances-list' %}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
+
+<script>
+  const amountInput  = document.getElementById("id_advance_amount");
+  const monthsInput  = document.getElementById("id_default_months");
+  const emiPreview   = document.getElementById("emi-preview");
+  const previewCard  = document.getElementById("preview-card");
+  const prevTotal    = document.getElementById("prev-total");
+  const prevEmi      = document.getElementById("prev-emi");
+  const prevMonths   = document.getElementById("prev-months");
+
+  function updatePreview() {
+    const amt = parseInt(amountInput.value) || 0;
+    const mos = parseInt(monthsInput.value) || 0;
+    if (amt > 0 && mos > 0) {
+      const emi = Math.ceil(amt / mos);
+      emiPreview.textContent = "₹" + emi.toLocaleString("en-IN") + " / month";
+      prevTotal.textContent  = "₹" + amt.toLocaleString("en-IN");
+      prevEmi.textContent    = "₹" + emi.toLocaleString("en-IN");
+      prevMonths.textContent = mos;
+      previewCard.classList.remove("d-none");
+    } else {
+      emiPreview.textContent = "—";
+      previewCard.classList.add("d-none");
+    }
+  }
+
+  amountInput.addEventListener("input", updatePreview);
+  monthsInput.addEventListener("input", updatePreview);
+  updatePreview();
+</script>
 {% endblock %}

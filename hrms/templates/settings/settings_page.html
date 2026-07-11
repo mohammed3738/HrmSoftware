@@ -149,9 +149,39 @@
   <small class="text-muted">National holidays always apply to all branches.</small>
 </div>
 
+<div class="col-md-4">
+  <label class="form-label">Weekend Days</label>
+  <select class="form-select" id="weekend_days" name="weekend_days">
+    <option value="sat_sun" {% if payroll_settings.weekend_days == 'sat_sun' or not payroll_settings.weekend_days %}selected{% endif %}>
+      Saturday &amp; Sunday
+    </option>
+    <option value="sun" {% if payroll_settings.weekend_days == 'sun' %}selected{% endif %}>
+      Sunday Only
+    </option>
+  </select>
+  <small class="text-muted">Which days are treated as weekends (no attendance counted).</small>
+</div>
+
+            <div class="col-12">
+              <div class="card border bg-light p-3">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" role="switch"
+                         id="late_marks_affect_lwp" name="late_marks_affect_lwp"
+                         {% if payroll_settings.late_marks_affect_lwp %}checked{% endif %}>
+                  <label class="form-check-label fw-semibold" for="late_marks_affect_lwp">
+                    Late marks deduct from leave balance (LWP)
+                  </label>
+                </div>
+                <small class="text-muted mt-1 d-block">
+                  <b>ON</b> — After 5 late marks, every 3 additional late marks = 1 LWP day (default behaviour).<br>
+                  <b>OFF</b> — Late marks are recorded but <u>never</u> deduct from salary or leave balance, regardless of count.
+                </small>
+              </div>
+            </div>
+
             <div class="col-12 text-end">
               <small class="text-muted">
-              Last updated: 
+              Last updated:
               {% if payroll_settings.updated_at %}
                 {{ payroll_settings.updated_at|date:"F j, Y, g:i a" }}
               {% else %}
@@ -160,7 +190,7 @@
             </small>
 
               <button type="button" id="savePayrollBtn" class="btn btn-primary">Save Payroll Settings</button>
-              
+
             </div>
           </form>
         </div>
@@ -221,6 +251,7 @@ document.getElementById('savePayrollBtn').addEventListener('click', async functi
     const formData = new FormData();
 
     formData.append('is_auto', document.getElementById('is_auto')?.checked ? 'on' : '');
+    formData.append('late_marks_affect_lwp', document.getElementById('late_marks_affect_lwp')?.checked ? 'on' : '');
 
     // Existing fields
     [
@@ -228,8 +259,7 @@ document.getElementById('savePayrollBtn').addEventListener('click', async functi
         'hra_percentage', 'basic_cap', 'pf_percentage', 'esic_percentage',
         'gratuity_percentage', 'bonus_percentage', 'professional_tax',
         'max_leave_balance', 'earned_leaves_per_year',
-        // ✅ NEW fields
-        'financial_year_start_month', 'branch_specific_holidays'
+        'financial_year_start_month', 'branch_specific_holidays', 'weekend_days'
     ].forEach(id => {
         const el = document.getElementById(id);
         if (el) formData.append(id, el.value);

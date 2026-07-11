@@ -52,6 +52,14 @@ BLOOD_GROUP_CHOICES = [
     ("Others", "Others"),
 ]
 
+SALUTATION_CHOICES = [
+    ("Mr.", "Mr."),
+    ("Mrs.", "Mrs."),
+    ("Ms.", "Ms."),
+    ("Dr.", "Dr."),
+    ("Prof.", "Prof."),
+]
+
 
 class Employee(models.Model):
 
@@ -67,29 +75,28 @@ class Employee(models.Model):
     # Personal Details
     company = models.ForeignKey("Company",null=True, blank=True, on_delete=models.CASCADE)
     branch = models.ForeignKey("Branch",null=True, blank=True, on_delete=models.CASCADE)
-    salutation = models.CharField(max_length=10, verbose_name="Salutation")
-    first_name = models.CharField(max_length=100, verbose_name="First Name")
-    middle_name = models.CharField(max_length=100, blank=True, verbose_name="Middle Name")
-    last_name = models.CharField(max_length=100, verbose_name="Last Name")
-    father_name = models.CharField(max_length=100, verbose_name="Father's Name")
-    gender = models.CharField(max_length=10, choices=[("Male", "Male"), ("Female", "Female")], verbose_name="Gender")
-    blood_group = models.CharField(max_length=10, verbose_name="Blood Group", choices=BLOOD_GROUP_CHOICES)
-    date_of_birth = models.DateField(verbose_name="Date of Birth")
-    place_of_birth = models.CharField(max_length=255, verbose_name="Place of Birth")
-    personal_email = models.EmailField(verbose_name="Personal Email ID")
-    present_address = models.TextField(verbose_name="Present Address")
-    permanent_address = models.TextField(verbose_name="Permanent Address")
-    personal_mobile = models.CharField(max_length=15, verbose_name="Personal Mobile No")
+    salutation = models.CharField(max_length=10, choices=SALUTATION_CHOICES, null=True, blank=True, verbose_name="Salutation")
+    first_name = models.CharField(max_length=100, null=True, blank=True, verbose_name="First Name")
+    middle_name = models.CharField(max_length=100, null=True, blank=True, verbose_name="Middle Name")
+    last_name = models.CharField(max_length=100, null=True, blank=True, verbose_name="Last Name")
+    father_name = models.CharField(max_length=100, null=True, blank=True, verbose_name="Father's Name")
+    gender = models.CharField(max_length=15, choices=[("Male", "Male"), ("Female", "Female")], null=True, blank=True, verbose_name="Gender")
+    blood_group = models.CharField(max_length=10, null=True, blank=True, verbose_name="Blood Group", choices=BLOOD_GROUP_CHOICES)
+    date_of_birth = models.DateField(null=True, blank=True, verbose_name="Date of Birth")
+    place_of_birth = models.CharField(max_length=255, null=True, blank=True, verbose_name="Place of Birth")
+    personal_email = models.EmailField(null=True, blank=True, verbose_name="Personal Email ID")
+    present_address = models.TextField(null=True, blank=True, verbose_name="Present Address")
+    permanent_address = models.TextField(null=True, blank=True, verbose_name="Permanent Address")
+    personal_mobile = models.CharField(max_length=30, null=True, blank=True, verbose_name="Personal Mobile No")
     date_of_marriage = models.DateField(blank=True, null=True, verbose_name="Date of Marriage")
 
     # ZCPL Office Details
-    employee_code = models.CharField(max_length=50, unique=True, verbose_name="Employee Code")
-    designation = models.CharField(max_length=100, verbose_name="Designation")
-    department = models.CharField(max_length=100, verbose_name="Department")
-    date_of_joining = models.DateField(verbose_name="Date of Joining")
+    employee_code = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="Employee Code")
+    designation = models.CharField(max_length=100, null=True, blank=True, verbose_name="Designation")
+    department = models.CharField(max_length=100, null=True, blank=True, verbose_name="Department")
+    date_of_joining = models.DateField(null=True, blank=True, verbose_name="Date of Joining")
     date_of_confirmation = models.DateField(blank=True, null=True, verbose_name="Date of Confirmation")
-    location = models.CharField(max_length=255, verbose_name="Location")
-    payroll_of = models.CharField(max_length=50, verbose_name="On Payroll Of", null=True, blank=True)
+    location = models.CharField(max_length=255, null=True, blank=True, verbose_name="Location")
     shift_start_time = models.TimeField(
         null=True,
         blank=True,
@@ -102,41 +109,42 @@ class Employee(models.Model):
     )
 
     # Statutory Details
-    pan_no = models.CharField(max_length=10, verbose_name="PAN No")
-    aadhar_no = models.CharField(max_length=12, verbose_name="Aadhar No")
-    voter_id = models.CharField(max_length=15, blank=True, verbose_name="Voter ID")
-    passport = models.CharField(max_length=15, blank=True, verbose_name="Passport")
-    uan_no = models.CharField(max_length=15, blank=True, verbose_name="Universal Account No. (UAN)")
-    pf_no = models.CharField(max_length=15, blank=True, verbose_name="PF No")
-    esic_no = models.CharField(max_length=15, blank=True, verbose_name="ESIC No")
+    pan_no = models.CharField(max_length=30, null=True, blank=True, verbose_name="PAN No")
+    aadhar_no = models.CharField(max_length=30, null=True, blank=True, verbose_name="Aadhar No")
+    voter_id = models.CharField(max_length=30, null=True, blank=True, verbose_name="Voter ID")
+    passport = models.CharField(max_length=30, null=True, blank=True, verbose_name="Passport")
+    uan_no = models.CharField(max_length=30, null=True, blank=True, verbose_name="Universal Account No. (UAN)")
+    pf_no = models.CharField(max_length=30, null=True, blank=True, verbose_name="PF No")
+    esic_no = models.CharField(max_length=30, null=True, blank=True, verbose_name="ESIC No")
 
     # Banking Details
-    name_as_per_bank = models.CharField(max_length=100, verbose_name="Name As Per Bank Record")
-    salary_account_number = models.CharField(max_length=20, verbose_name="Salary Account Number")
-    ifsc_code = models.CharField(max_length=11, verbose_name="IFSC Code")
+    name_as_per_bank = models.CharField(max_length=100, null=True, blank=True, verbose_name="Name As Per Bank Record")
+    salary_account_number = models.CharField(max_length=30, null=True, blank=True, verbose_name="Salary Account Number")
+    ifsc_code = models.CharField(max_length=30, null=True, blank=True, verbose_name="IFSC Code")
     # assets
     # assets = models.ManyToManyField('Asset', related_name='assigned_employees',null=True, blank=True, verbose_name="Assigned Assets")
 
     # Emergency Contact Details
-    emergency_contact_name1 = models.CharField(max_length=100, verbose_name="Emergency Contact Name 1")
+    emergency_contact_name1 = models.CharField(max_length=100, null=True, blank=True, verbose_name="Emergency Contact Name 1")
     emergency_contact_relation1 = models.CharField(
         max_length=50,
-        choices=[("Spouse", "Spouse"), ("Father", "Father"), ("Mother", "Mother"), 
-                 ("Brother", "Brother"), ("Sister", "Sister"), ("Son", "Son"), 
+        choices=[("Spouse", "Spouse"), ("Father", "Father"), ("Mother", "Mother"),
+                 ("Brother", "Brother"), ("Sister", "Sister"), ("Son", "Son"),
                  ("Daughter", "Daughter"), ("Other", "Other")],
+        null=True, blank=True,
         verbose_name="Emergency Contact Relation 1"
     )
-    emergency_contact_mobile1 = models.CharField(max_length=15, verbose_name="Emergency Contact Mobile No 1")
-    emergency_contact_name2 = models.CharField(max_length=100, blank=True, verbose_name="Emergency Contact Name 2")
+    emergency_contact_mobile1 = models.CharField(max_length=30, null=True, blank=True, verbose_name="Emergency Contact Mobile No 1")
+    emergency_contact_name2 = models.CharField(max_length=100, null=True, blank=True, verbose_name="Emergency Contact Name 2")
     emergency_contact_relation2 = models.CharField(
         max_length=50,
-        choices=[("Spouse", "Spouse"), ("Father", "Father"), ("Mother", "Mother"), 
-                 ("Brother", "Brother"), ("Sister", "Sister"), ("Son", "Son"), 
+        choices=[("Spouse", "Spouse"), ("Father", "Father"), ("Mother", "Mother"),
+                 ("Brother", "Brother"), ("Sister", "Sister"), ("Son", "Son"),
                  ("Daughter", "Daughter"), ("Other", "Other")],
-        blank=True,
+        null=True, blank=True,
         verbose_name="Emergency Contact Relation 2"
     )
-    emergency_contact_mobile2 = models.CharField(max_length=15, blank=True, verbose_name="Emergency Contact Mobile No 2")
+    emergency_contact_mobile2 = models.CharField(max_length=30, null=True, blank=True, verbose_name="Emergency Contact Mobile No 2")
     status = models.CharField(max_length=50, choices=[("Active", "Active"), ("Pending", "Pending"), ("Left", "Left")] , default='Active')
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
@@ -210,8 +218,8 @@ class Offboarding(models.Model):
     date_of_relieving = models.DateField(verbose_name="Date of Relieving")
     experience_certificate = models.FileField(upload_to="offboarding/certificates/", verbose_name="Experience Certificate", blank=True , null=True)
     relieving_letter = models.FileField(upload_to="offboarding/relieving_letters/", verbose_name="Relieving Letter", blank=True , null=True)
-    other_documents = models.FileField(upload_to="offboarding/other_documents/", blank=True, verbose_name="Other Documents")
-    fnf_documents = models.FileField(upload_to="offboarding/fnf/", blank=True, verbose_name="FNF Document")
+    other_documents = models.FileField(upload_to="offboarding/other_documents/", blank=True, null=True, verbose_name="Other Documents")
+    fnf_documents = models.FileField(upload_to="offboarding/fnf/", blank=True, null=True, verbose_name="FNF Document")
 
     def __str__(self):
         return f"Offboarding for {self.employee}"
@@ -427,6 +435,11 @@ class LeaveBalance(models.Model):
     period_from_date = models.DateField(null=True, blank=True)
     period_to_date = models.DateField(null=True, blank=True)
 
+    lwp_overridden = models.BooleanField(
+        default=False,
+        help_text="If True, LWP was manually set and recalculation will preserve it."
+    )
+
     def __str__(self):
         return f"{self.employee.first_name} {self.employee.employee_code} - Leave Balance"
 
@@ -468,6 +481,12 @@ class LeaveBalance(models.Model):
     
     def __str__(self):
         return f"{self.employee.first_name} - Balance: {self.leave_balance}"
+
+    @property
+    def total_period_days(self):
+        if self.period_from_date and self.period_to_date:
+            return (self.period_to_date - self.period_from_date).days + 1
+        return self.total_number_of_days
 
 
 """
@@ -583,10 +602,22 @@ class PayrollSettings(models.Model):
 
 
     branch_specific_holidays = models.BooleanField(
-    default=True,
-    help_text="When True, regional holidays only apply to their specific branch. "
-              "When False, all holidays apply to all branches."
-)
+        default=True,
+        help_text="When True, regional holidays only apply to their specific branch. "
+                  "When False, all holidays apply to all branches."
+    )
+
+    WEEKEND_CHOICES = [
+        ('sat_sun', 'Saturday & Sunday'),
+        ('sun', 'Sunday Only'),
+    ]
+    weekend_days = models.CharField(
+        max_length=10,
+        choices=WEEKEND_CHOICES,
+        default='sat_sun',
+        verbose_name="Weekend Days",
+        help_text="Which days count as weekends (not worked)."
+    )
 
     financial_year_start_month = models.PositiveIntegerField(
         default=4,  # April (month number 1-12)
@@ -598,7 +629,12 @@ class PayrollSettings(models.Model):
     carry_forward = models.BooleanField(default=True)
     reset_month = models.PositiveIntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(12)],
-        null=True, blank=True    
+        null=True, blank=True
+    )
+
+    late_marks_affect_lwp = models.BooleanField(
+        default=True,
+        help_text="If unchecked, late marks will never deduct from leave balance / cause LWP, regardless of count."
     )
 
     # Salary master settings
@@ -617,45 +653,45 @@ class PayrollSettings(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def get_payroll_period(self):
+        """
+        Return (from_date, to_date) for the current payroll period.
+        If from_date and to_date day numbers are set, they take priority over
+        is_auto.  is_auto is only the fallback when no day numbers are configured.
+        """
         today = date.today()
 
-        # Auto payroll: calendar month
-        if self.is_auto:
-            first_day = today.replace(day=1)
-            next_month = first_day.replace(day=28) + timedelta(days=4)
-            last_day = next_month - timedelta(days=next_month.day)
-            return first_day, last_day
+        from_day = self.from_date
+        to_day = self.to_date
 
-        # Custom payroll period
-        current_year = today.year
-        current_month = today.month
+        if from_day and to_day:
+            # Custom period (e.g. 27 → 26 cross-month, or 1 → 31 same-month)
+            if today.day >= from_day:
+                start_month = today.month
+                start_year = today.year
+            else:
+                start_month = today.month - 1
+                start_year = today.year
+                if start_month == 0:
+                    start_month = 12
+                    start_year -= 1
 
-        # Determine start month/year
-        if today.day >= self.from_date:
-            start_month = current_month
-            start_year = current_year
-        else:
-            start_month = current_month - 1
-            start_year = current_year
-            if start_month == 0:   # 🔥 FIX
-                start_month = 12
-                start_year -= 1
+            if from_day <= to_day:
+                end_month = start_month
+                end_year = start_year
+            else:
+                end_month = start_month + 1
+                end_year = start_year
+                if end_month == 13:
+                    end_month = 1
+                    end_year += 1
 
-        # Determine end month/year
-        if self.from_date <= self.to_date:
-            end_month = start_month
-            end_year = start_year
-        else:
-            end_month = start_month + 1
-            end_year = start_year
-            if end_month == 13:   # 🔥 FIX
-                end_month = 1
-                end_year += 1
+            return date(start_year, start_month, from_day), date(end_year, end_month, to_day)
 
-        from_date = date(start_year, start_month, self.from_date)
-        to_date = date(end_year, end_month, self.to_date)
-
-        return from_date, to_date
+        # Fallback: calendar month
+        first_day = today.replace(day=1)
+        next_month = first_day.replace(day=28) + timedelta(days=4)
+        last_day = next_month - timedelta(days=next_month.day)
+        return first_day, last_day
 
     def __str__(self):
         return f"Payroll Settings for {self.company.name}"
@@ -957,8 +993,8 @@ class Holiday(models.Model):
         ('emergency', 'Emergency'),
     ]
     
-    holiday_calendar = models.ForeignKey(HolidayCalendar, on_delete=models.CASCADE,
-                                        related_name='holidays')
+    holiday_calendar = models.ForeignKey(HolidayCalendar, on_delete=models.SET_NULL,
+                                        related_name='holidays', null=True, blank=True)
     holiday_date = models.DateField()
     name = models.CharField(max_length=200)  # e.g., "Pongal", "Heavy Rain"
     holiday_type = models.ForeignKey(HolidayType, on_delete=models.PROTECT)
@@ -974,24 +1010,20 @@ class Holiday(models.Model):
     created_by = models.ForeignKey(User, on_delete=models.PROTECT)
     
     class Meta:
-        unique_together = ('holiday_calendar', 'holiday_date')
         ordering = ['holiday_date']
         indexes = [
-            models.Index(fields=['holiday_calendar', 'holiday_date']),
             models.Index(fields=['holiday_date']),
+        ]
+        constraints = [
+            models.UniqueConstraint(fields=['holiday_date'], name='unique_holiday_date'),
         ]
     
     def __str__(self):
         return f"{self.name} - {self.holiday_date}"
     
     def is_applicable_to_branch(self, branch):
-        """Check if this holiday applies to a specific branch"""
-        # If national, applies to all branches
-        if self.is_national:
+        if self.is_national or self.holiday_calendar is None:
             return True
-        
-        # If not national, only applies to the branch of this calendar
-        # (because Holiday is created in a specific branch's calendar)
         return self.holiday_calendar.branch == branch
 
 
@@ -1139,8 +1171,8 @@ class HalfDayScenario(models.Model):
         ('other', 'Other'),
     ]
     
-    branch = models.ForeignKey('Branch', on_delete=models.CASCADE,
-                              related_name='half_day_scenarios')
+    branch = models.ForeignKey('Branch', on_delete=models.SET_NULL,
+                              related_name='half_day_scenarios', null=True, blank=True)
     scenario_date = models.DateField()
     scenario_type = models.CharField(max_length=30, choices=SCENARIO_TYPES)
     description = models.TextField(help_text="e.g., Heavy rain, Election voting")
@@ -1158,15 +1190,27 @@ class HalfDayScenario(models.Model):
                                    related_name='approved_half_day_scenarios')
     
     class Meta:
-        unique_together = ('branch', 'scenario_date')
         ordering = ['-scenario_date']
         indexes = [
-            models.Index(fields=['branch', 'scenario_date']),
-            models.Index(fields=['is_approved', 'scenario_date']),
+            models.Index(fields=['branch', 'scenario_date'], name='hal_branch_scenario_idx'),
+            models.Index(fields=['is_approved', 'scenario_date'], name='website_hal_is_appr_7f6ba9_idx'),
         ]
-    
+        constraints = [
+            models.UniqueConstraint(
+                fields=['branch', 'scenario_date'],
+                condition=models.Q(branch__isnull=False),
+                name='unique_branch_scenario_date',
+            ),
+            models.UniqueConstraint(
+                fields=['scenario_date'],
+                condition=models.Q(branch__isnull=True),
+                name='unique_allbranch_scenario_date',
+            ),
+        ]
+
     def __str__(self):
-        return f"{self.branch.branch_name} - {self.scenario_date}: {self.scenario_type}"
+        branch_name = self.branch.branch_name if self.branch else 'All Branches'
+        return f"{branch_name} - {self.scenario_date}: {self.scenario_type}"
 
 
 class Attendance(models.Model):
@@ -1198,13 +1242,13 @@ class Attendance(models.Model):
     is_half_day = models.BooleanField(default=False)
     half_day_scenario = models.ForeignKey(HalfDayScenario, null=True, blank=True, on_delete=models.SET_NULL)
 
-    
     class Meta:
+        unique_together = [('employee', 'date')]
         indexes = [
             models.Index(fields=["employee", "date"]),
             models.Index(fields=["date"]),
         ]
-    
+
     def __str__(self):
         return f"{self.employee.first_name} {self.employee.employee_code} - {self.date}"
     
@@ -1228,52 +1272,21 @@ class Attendance(models.Model):
 
 
     def get_applicable_holiday(self, branch):
-        '''Get applicable holiday for employee's branch on this date'''
-        
-        # Get payroll settings to check branch_specific_holidays flag
+        '''Get the first holiday on this date that applies to the given branch.'''
         from django.apps import apps
         PayrollSettings = apps.get_model('website', 'PayrollSettings')
-        
+
         try:
-            payroll_settings = PayrollSettings.objects.filter(
-                company=branch.company if hasattr(branch, 'company') else None
-            ).first() or PayrollSettings.objects.first()
-            branch_specific = getattr(payroll_settings, 'branch_specific_holidays', True)
+            _company = branch.company if hasattr(branch, 'company') else None
+            ps = PayrollSettings.objects.filter(company=_company).first() if _company else None
+            branch_specific = getattr(ps, 'branch_specific_holidays', True) if ps else True
         except Exception:
             branch_specific = True
-        
-        try:
-            holiday_calendar = HolidayCalendar.objects.get(
-                branch=branch,
-                year=self.date.year,
-                is_active=True
-            )
-        except HolidayCalendar.DoesNotExist:
-            if not branch_specific:
-                # When branch-specific is OFF, check ALL calendars for this date
-                holiday = Holiday.objects.filter(
-                    holiday_date=self.date
-                ).first()
+
+        for holiday in Holiday.objects.filter(holiday_date=self.date).select_related('holiday_calendar__branch'):
+            if not branch_specific or holiday.is_applicable_to_branch(branch):
                 return holiday
-            return None
-        
-        holiday = Holiday.objects.filter(
-            holiday_calendar=holiday_calendar,
-            holiday_date=self.date
-        ).first()
-        
-        if not holiday:
-            return None
-        
-        # When branch_specific is OFF — all holidays apply to all branches
-        if not branch_specific:
-            return holiday
-        
-        # When branch_specific is ON — use existing branch matching
-        if holiday.is_applicable_to_branch(branch):
-            return holiday
-        
-        return None    
+        return None
 
     def get_half_day_scenario(self, branch):
         '''Get half-day scenario for this branch on this date'''
@@ -1289,10 +1302,17 @@ class Attendance(models.Model):
             """
             Calculate attendance status with branch-aware holidays and half-days
             """
-            # STEP 0: Check if weekend
-            if self.date.weekday() >= 6:  # Saturday=5, Sunday=6
+            # STEP 0: Check if weekend — respects PayrollSettings.weekend_days
+            try:
+                ps = PayrollSettings.objects.filter(company=self.employee.company).first()
+                sunday_only = ps is not None and ps.weekend_days == 'sun'
+            except Exception:
+                sunday_only = False
+
+            is_weekend = (self.date.weekday() == 6) if sunday_only else (self.date.weekday() >= 5)
+            if is_weekend:
                 self.status = "Weekend"
-                self.count = Decimal("1.00")
+                self.count = Decimal("0.00")
                 self.late = 0
                 return
             

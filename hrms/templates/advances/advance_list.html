@@ -3,97 +3,169 @@
 {% block title %}Employee Advances{% endblock %}
 
 {% block body %}
-
 <div class="container-xxl flex-grow-1 container-p-y">
 
-    <!-- Page Header -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h2 class="fw-bold mb-1">Employee Advances</h2>
-            <ol class="breadcrumb mb-0">
-                <li class="breadcrumb-item">
-                    <a href="#"><i class="ti ti-smart-home"></i></a>
-                </li>
-                <li class="breadcrumb-item">Application</li>
-                <li class="breadcrumb-item active" aria-current="page">Advances</li>
-            </ol>
-        </div>
-
-        <div>
-            <a href="{% url 'create-advance' %}" class="btn btn-primary d-flex align-items-center">
-                <i class="ti ti-circle-plus me-2"></i> Add New Advance
-            </a>
-        </div>
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h4 class="fw-bold mb-1">Employee Advances</h4>
+      <ol class="breadcrumb mb-0">
+        <li class="breadcrumb-item"><a href="#"><i class="ti ti-smart-home"></i></a></li>
+        <li class="breadcrumb-item active">Advances</li>
+      </ol>
     </div>
+    <a href="{% url 'create-advance' %}" class="btn btn-primary">
+      <i class="ti ti-plus me-1"></i> New Advance
+    </a>
+  </div>
 
-    <!-- Advances Card Grid -->
-    <div class="row g-4">
-        {% for adv in advances %}
-        <div class="col-xl-3 col-lg-4 col-md-6">
-
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body p-3">
-
-                    <!-- Title (Amount) -->
-                    <h4 class="fw-bold text-primary mb-2">
-                        ₹{{ adv.advance_amount }}
-                    </h4>
-
-                    <!-- Employee -->
-                    <p class="text-muted mb-1">
-                        <span class="fw-semibold">Employee:</span> {{ adv.employee }}
-                    </p>
-
-                    <!-- Outstanding -->
-                    <div class="mt-2 mb-3">
-                        <div class="d-flex justify-content-between small text-muted">
-                            <span>Outstanding</span>
-                            <span>₹{{ adv.outstanding_amount }}</span>
-                        </div>
-
-                        <div class="progress mt-1" style="height: 6px;">
-                            <div class="progress-bar 
-                                {% if adv.status == 'completed' %} bg-success 
-                                {% else %} bg-info 
-                                {% endif %}"
-                                role="progressbar"
-                                style="width: {{ adv.progress }}%;">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Status Badge -->
-                    <span class="
-                        badge 
-                        {% if adv.status == 'completed' %}
-                            bg-success
-                        {% else %}
-                            bg-info
-                        {% endif %}
-                        rounded-pill px-3 py-2
-                    ">
-                        {{ adv.status|title }}
-                    </span>
-
-                    <!-- Button -->
-                    <div class="mt-3">
-                        <a href="{% url 'advance-detail' adv.id %}" 
-                           class="btn btn-outline-primary w-100 d-flex align-items-center justify-content-center">
-                            <i class="ti ti-eye me-2"></i> View Details
-                        </a>
-                    </div>
-
-                </div>
-            </div>
-
+  <!-- Stats -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-primary rounded">
+            <i class="ti ti-file-invoice ti-md"></i>
+          </div>
+          <div>
+            <div class="text-muted small">Total Advances</div>
+            <div class="fw-bold fs-5">{{ stats.total }}</div>
+          </div>
         </div>
-        {% empty %}
-        <div class="col-12">
-            <div class="alert alert-warning text-center">No advances found.</div>
-        </div>
-        {% endfor %}
+      </div>
     </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-warning rounded">
+            <i class="ti ti-clock ti-md"></i>
+          </div>
+          <div>
+            <div class="text-muted small">Active</div>
+            <div class="fw-bold fs-5 text-warning">{{ stats.active }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-success rounded">
+            <i class="ti ti-circle-check ti-md"></i>
+          </div>
+          <div>
+            <div class="text-muted small">Completed</div>
+            <div class="fw-bold fs-5 text-success">{{ stats.completed }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-danger rounded">
+            <i class="ti ti-cash ti-md"></i>
+          </div>
+          <div>
+            <div class="text-muted small">Total Outstanding</div>
+            <div class="fw-bold fs-5 text-danger">₹{{ stats.outstanding }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body py-2 px-3 d-flex flex-wrap align-items-center gap-3">
+      <div class="btn-group btn-group-sm">
+        <a href="?{% if search %}q={{ search }}&{% endif %}status="
+           class="btn {% if not status_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+        <a href="?{% if search %}q={{ search }}&{% endif %}status=active"
+           class="btn {% if status_filter == 'active' %}btn-warning text-dark{% else %}btn-outline-secondary{% endif %}">Active</a>
+        <a href="?{% if search %}q={{ search }}&{% endif %}status=completed"
+           class="btn {% if status_filter == 'completed' %}btn-success{% else %}btn-outline-secondary{% endif %}">Completed</a>
+      </div>
+      <form method="get" class="d-flex gap-2 ms-auto">
+        {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+        <input type="text" name="q" value="{{ search }}" placeholder="Search employee…"
+               class="form-control form-control-sm" style="min-width:200px;">
+        <button class="btn btn-sm btn-primary">Search</button>
+        {% if search %}
+        <a href="?{% if status_filter %}status={{ status_filter }}{% endif %}" class="btn btn-sm btn-outline-secondary">✕ Clear</a>
+        {% endif %}
+      </form>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card border-0 shadow-sm">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Employee</th>
+            <th class="text-end">Total Amount</th>
+            <th class="text-end">Paid</th>
+            <th class="text-end">Outstanding</th>
+            <th style="min-width:140px;">Repayment</th>
+            <th class="text-center">EMIs</th>
+            <th>Start Date</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for adv in advances %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ adv.employee.first_name }} {{ adv.employee.last_name }}</div>
+              <small class="text-muted">{{ adv.employee.employee_code }}</small>
+            </td>
+            <td class="text-end fw-semibold">₹{{ adv.advance_amount }}</td>
+            <td class="text-end text-success">₹{{ adv.paid_amount }}</td>
+            <td class="text-end {% if adv.outstanding_amount > 0 %}text-danger fw-semibold{% else %}text-success{% endif %}">
+              ₹{{ adv.outstanding_amount }}
+            </td>
+            <td>
+              <div class="progress mb-1" style="height:6px;">
+                <div class="progress-bar {% if adv.status == 'completed' %}bg-success{% else %}bg-primary{% endif %}"
+                     style="width:{{ adv.progress }}%;"></div>
+              </div>
+              <small class="text-muted">{{ adv.progress }}% repaid</small>
+            </td>
+            <td class="text-center">
+              <span class="badge bg-label-secondary">{{ adv.schedules_paid }}/{{ adv.default_months }}</span>
+            </td>
+            <td><small class="text-muted">{{ adv.start_date|date:"d M Y" }}</small></td>
+            <td>
+              {% if adv.status == 'completed' %}
+                <span class="badge bg-success">Completed</span>
+              {% else %}
+                <span class="badge bg-label-warning text-warning">Active</span>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{% url 'advance-detail' adv.id %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                <i class="ti ti-eye"></i>
+              </a>
+            </td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="9" class="text-center py-5">
+              <i class="ti ti-inbox" style="font-size:2.5rem;color:#adb5bd;display:block;margin-bottom:.5rem;"></i>
+              <div class="text-muted">No advances found.</div>
+              <a href="{% url 'create-advance' %}" class="btn btn-sm btn-primary mt-2">
+                <i class="ti ti-plus me-1"></i> Create First Advance
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 
 </div>
-
 {% endblock %}

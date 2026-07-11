@@ -43,9 +43,8 @@ def get_monthly_earned_leaves(payroll_settings, month, year):
         )
         return Decimal(str(monthly_leave.earned_leaves))
     except MonthlyEarnedLeaves.DoesNotExist:
-        # Fallback: If not found, return 0
-        # This shouldn't happen if admin set up MonthlyEarnedLeaves correctly
-        return Decimal('0.00')
+        # Fallback: divide annual leaves evenly across 12 months
+        return (Decimal(str(payroll_settings.earned_leaves_per_year)) / Decimal('12')).quantize(Decimal('0.01'))
 
 
 def calculate_leave_balance(employee, payroll_settings, target_date=None):
@@ -100,16 +99,25 @@ def calculate_leave_balance(employee, payroll_settings, target_date=None):
     # Get attendance records for this payroll period
     # ✅ EXCLUDE HOLIDAYS (is_holiday=False)
     # ============================================
+    # Determine weekend exclusion (Django week_day: 1=Sunday, 7=Saturday)
+    if getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun':
+        weekend_exclude = [1]       # Sunday only
+    else:
+        weekend_exclude = [1, 7]    # Saturday & Sunday
+
     attendance_records = Attendance.objects.filter(
         employee=employee,
         date__gte=from_date,
         date__lte=to_date,
-        is_holiday=False  # ✅ Don't count holidays as working days
-    )
-    
-    # Total days in period (Column I)
-    total_days = attendance_records.count()
-    
+        is_holiday=False,
+    ).exclude(date__week_day__in=weekend_exclude)
+
+    # Total days = actual calendar days in the payroll period (from_date to to_date inclusive)
+    total_days = (to_date - from_date).days + 1
+
+    # Working days (excluding weekends/holidays) for leave taken calculation
+    working_days = attendance_records.count()
+
     # ============================================
     # STEP 3: Calculate Paid Days (Column H)
     # SUM the count field (1.0 for full day, 0.5 for half day, 0.0 for absent)
@@ -118,26 +126,40 @@ def calculate_leave_balance(employee, payroll_settings, target_date=None):
         total=Sum("count")
     )["total"]
     paid_days = paid_days_sum if paid_days_sum else Decimal("0.00")
-    
+
+    # Count weekend days in the period — they are always treated as present
+    sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
+    weekend_day_count = 0
+    d = from_date
+    while d <= to_date:
+        is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
+        if is_weekend:
+            weekend_day_count += 1
+        d += timedelta(days=1)
+
+    # Days present shown in leave balance = actual paid working days + all weekends
+    days_present = paid_days + Decimal(str(weekend_day_count))
+
     # ============================================
     # STEP 4: Leave Taken (Column D)
-    # Excel: =Total Days - Paid Days
+    # Based on working days only — weekends are never counted as leave taken
     # ============================================
-    leave_taken = Decimal(str(total_days)) - paid_days
+    leave_taken = Decimal(str(working_days)) - paid_days
     if leave_taken < 0:
         leave_taken = Decimal("0.00")
     
     # ============================================
-    # STEP 5: Late Minutes to Days (Column E)
-    # Convert late minutes to days (assuming 480 minutes = 1 day of 8 hours)
+    # STEP 5: Late Count (Column E)
+    # Count attendance records marked as "Late Present".
+    # If late_marks_affect_lwp is False in settings, late marks are tracked
+    # but never converted to LWP deductions.
     # ============================================
-    total_late_minutes = attendance_records.aggregate(
-        total=Sum("late")
-    )["total"]
-    total_late_minutes = total_late_minutes if total_late_minutes else 0
-    
-    # Convert late minutes to days
-    late_days = Decimal(str(total_late_minutes)) / Decimal("480")
+    late_count = attendance_records.filter(status="Late Present").count()
+    if getattr(payroll_settings, 'late_marks_affect_lwp', True):
+        # Grace: first 5 late marks are free. Every 3 marks after that = 1 day deducted.
+        late_days = Decimal(str((late_count - 5) // 3)) if late_count > 5 else Decimal("0")
+    else:
+        late_days = Decimal("0")
     
     # ============================================
     # STEP 6: Approved Comp-Off (Column F)
@@ -156,28 +178,46 @@ def calculate_leave_balance(employee, payroll_settings, target_date=None):
     
     # ============================================
     # STEP 7: Calculate LWP (Column G)
-    # Excel: =IF((C4+F4)<(D4+E4),(C4+F4)-(D4+E4),0)
-    # If (opening + compoff) < (leave taken + late), balance goes negative = LWP
+    # If this period's record has a manual LWP override, preserve it.
+    # Otherwise calculate normally.
     # ============================================
-    balance_before_credit = opening_balance + compoff_total - leave_taken - late_days
-    
-    if balance_before_credit < 0:
-        leave_without_pay = abs(balance_before_credit)
-        leave_balance = Decimal("0.00")
+    existing_lb = LeaveBalance.objects.filter(
+        employee=employee,
+        period_from_date=from_date,
+        period_to_date=to_date,
+        lwp_overridden=True,
+    ).first()
+
+    if existing_lb:
+        leave_without_pay = existing_lb.leave_without_pay
+        balance_after_lwp = opening_balance + compoff_total - leave_taken - late_days - leave_without_pay
+        leave_balance = max(Decimal("0.00"), balance_after_lwp)
     else:
-        leave_without_pay = Decimal("0.00")
-        leave_balance = balance_before_credit
+        balance_before_credit = opening_balance + compoff_total - leave_taken - late_days
+        if balance_before_credit < 0:
+            leave_without_pay = abs(balance_before_credit)
+            leave_balance = Decimal("0.00")
+        else:
+            leave_without_pay = Decimal("0.00")
+            leave_balance = balance_before_credit
     
     # ============================================
-    # STEP 8: ✅ UPDATED - Get Monthly Credit from Database
-    # Instead of: earned_leaves_per_year / 12
-    # Now: Read from MonthlyEarnedLeaves table
+    # STEP 8: Monthly Leave Credit via LeaveCreditPolicy
+    # Credit depends on how many days the employee was present this period.
     # ============================================
-    monthly_credit = get_monthly_earned_leaves(
-        payroll_settings, 
-        to_date.month,      # Month of period end date
-        to_date.year        # Year of period end date
-    )
+    try:
+        policy = employee.company.leave_credit_policy
+        present_for_credit = int(days_present)
+        if present_for_credit <= policy.credit_1_limit:
+            monthly_credit = Decimal(str(policy.credit_low))
+        elif present_for_credit <= policy.credit_2_limit:
+            monthly_credit = Decimal(str(policy.credit_mid))
+        else:
+            monthly_credit = Decimal(str(policy.credit_high))
+        monthly_cap = Decimal(str(payroll_settings.earned_leaves_per_year)) / Decimal('12')
+        monthly_credit = min(monthly_credit, monthly_cap)
+    except Exception:
+        monthly_credit = Decimal("1.00")
     
     # ============================================
     # STEP 9: Closing Balance (Column K)
@@ -195,16 +235,16 @@ def calculate_leave_balance(employee, payroll_settings, target_date=None):
     # STEP 10: Save Record (Prevent Duplicates)
     # Use update_or_create to avoid duplicate records
     # ============================================
-    leave_record, created = LeaveBalance.objects.update_or_create(
+    LeaveBalance.objects.update_or_create(
         employee=employee,
         period_from_date=from_date,
         period_to_date=to_date,
         defaults={
             'opening_balance': opening_balance,
             'leave_taken': leave_taken,
-            'number_of_days_present': paid_days,
+            'number_of_days_present': days_present,
             'total_number_of_days': total_days,
-            'late': total_late_minutes,  # Store raw minutes
+            'late': late_count,
             'compoff': compoff_total,
             'leave_without_pay': leave_without_pay,
             'leave_balance': leave_balance,  # Column J
@@ -216,7 +256,7 @@ def calculate_leave_balance(employee, payroll_settings, target_date=None):
     return final_leave_balance
 
 
-def get_employee_leave_summary(employee, payroll_settings):
+def get_employee_leave_summary(employee):
     """
     Get current leave balance summary for an employee
     Useful for display purposes
@@ -260,10 +300,55 @@ def get_employee_leave_summary(employee, payroll_settings):
 
 def get_payroll_period_for_date(payroll_settings, target_date=None):
     """
-    Get payroll period for a specific date
-    Wrapper around payroll_settings.get_payroll_period()
+    Get payroll period that contains target_date.
+    If from_date and to_date (day numbers) are explicitly configured, they always
+    take priority over the is_auto flag.  is_auto is only used as a fallback when
+    neither day number is set.
     """
     if target_date is None:
         target_date = date.today()
-    
-    return payroll_settings.get_payroll_period()
+
+    from_day = payroll_settings.from_date
+    to_day = payroll_settings.to_date
+
+    if from_day and to_day:
+        if from_day <= to_day:
+            # Same-month period (e.g. 1 → 31)
+            if target_date.day >= from_day:
+                from_d = date(target_date.year, target_date.month, from_day)
+                to_d = date(target_date.year, target_date.month, to_day)
+            else:
+                prev_month = target_date.month - 1
+                prev_year = target_date.year
+                if prev_month == 0:
+                    prev_month = 12
+                    prev_year -= 1
+                from_d = date(prev_year, prev_month, from_day)
+                to_d = date(prev_year, prev_month, to_day)
+        else:
+            # Cross-month period (e.g. 27 → 26)
+            if target_date.day >= from_day:
+                from_d = date(target_date.year, target_date.month, from_day)
+                next_month = target_date.month + 1
+                next_year = target_date.year
+                if next_month > 12:
+                    next_month = 1
+                    next_year += 1
+                to_d = date(next_year, next_month, to_day)
+            else:
+                prev_month = target_date.month - 1
+                prev_year = target_date.year
+                if prev_month == 0:
+                    prev_month = 12
+                    prev_year -= 1
+                from_d = date(prev_year, prev_month, from_day)
+                to_d = date(target_date.year, target_date.month, to_day)
+        return from_d, to_d
+
+    # Fallback: calendar month
+    first_day = target_date.replace(day=1)
+    if target_date.month == 12:
+        last_day = date(target_date.year + 1, 1, 1) - timedelta(days=1)
+    else:
+        last_day = date(target_date.year, target_date.month + 1, 1) - timedelta(days=1)
+    return first_day, last_day

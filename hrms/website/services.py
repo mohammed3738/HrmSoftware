@@ -280,8 +280,16 @@ def generate_records_for_month(run: PayrollRun):
         att = get_attendance_summary(emp, run.start_date, run.end_date)
         advance_amt = get_advance_for_employee_month(emp, run.start_date, run.end_date)
 
-        # Get LeaveBalance for the run month, if exists (use leave_without_pay)
-        lb = LeaveBalance.objects.filter(employee=emp).first()
+        # Get LeaveBalance for this specific payroll period
+        lb = (
+            LeaveBalance.objects.filter(employee=emp, period_to_date=run.end_date).first()
+            or LeaveBalance.objects.filter(
+                employee=emp,
+                period_from_date__lte=run.end_date,
+                period_to_date__gte=run.start_date,
+                period_to_date__isnull=False
+            ).order_by('-period_to_date').first()
+        )
         lwop = money_d(lb.leave_without_pay) if lb else money_d(0)
 
         rec = PayrollRecord.objects.create(

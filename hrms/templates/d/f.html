@@ -90,6 +90,9 @@
         <button id="openUploadModal" class="btn btn-primary btn-sm">
           <i class="ti ti-upload me-1"></i> Upload Attendance
         </button>
+        <button id="openRecalcModal" class="btn btn-outline-warning btn-sm">
+          <i class="ti ti-refresh me-1"></i> Recalculate Attendance
+        </button>
         <button onclick="downloadEmployees()" class="btn btn-outline-danger btn-sm">
           <i class="ti ti-users me-1"></i> Download All Employees
         </button>
@@ -511,6 +514,38 @@
 </div>
 
 
+<!-- ═══════════ RECALCULATE ATTENDANCE MODAL ═══════════ -->
+<div id="recalcModal"
+     style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+            background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:1050;">
+  <div style="background:#fff; padding:24px; border-radius:12px; width:440px; position:relative; z-index:1100;">
+    <h5 class="mb-2"><i class="ri-refresh-line me-2 text-warning"></i>Recalculate Attendance</h5>
+    <p class="text-muted small mb-3">
+      Re-runs status/lateness calculation on already-uploaded attendance records using the
+      current settings — no need to delete and re-upload the Excel file. Leave dates blank to recalculate everything.
+    </p>
+    <div class="row g-2">
+      <div class="col-6">
+        <label class="form-label small mb-1">From Date</label>
+        <input type="date" id="recalcFrom" class="form-control form-control-sm">
+      </div>
+      <div class="col-6">
+        <label class="form-label small mb-1">To Date</label>
+        <input type="date" id="recalcTo" class="form-control form-control-sm">
+      </div>
+    </div>
+    <div class="d-flex gap-2 mt-3">
+      <button type="button" id="startRecalcBtn" class="btn btn-warning btn-sm">Start Recalculation</button>
+      <button type="button" id="closeRecalcModal" class="btn btn-secondary btn-sm">Close</button>
+    </div>
+    <div class="progress mt-3" id="recalcProgressWrap" style="height:22px; display:none;">
+      <div id="recalcProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-warning" role="progressbar" style="width:0%">0%</div>
+    </div>
+    <p id="recalcResponseMessage" class="mt-2 small text-muted"></p>
+  </div>
+</div>
+
+
 <!-- ═══════════ ATTENDANCE CORRECTION MODAL ═══════════ -->
 <div class="modal fade" id="approvalModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
@@ -619,6 +654,85 @@ document.addEventListener("DOMContentLoaded", function () {
   const modal = document.getElementById("attendanceModal");
   document.getElementById("openUploadModal").addEventListener("click", () => modal.style.display = "flex");
   document.getElementById("closeUploadModal").addEventListener("click", () => modal.style.display = "none");
+});
+
+// Recalculate attendance modal
+document.addEventListener("DOMContentLoaded", function () {
+  const modal = document.getElementById("recalcModal");
+  document.getElementById("openRecalcModal").addEventListener("click", () => modal.style.display = "flex");
+  document.getElementById("closeRecalcModal").addEventListener("click", () => modal.style.display = "none");
+});
+
+document.getElementById("startRecalcBtn").addEventListener("click", function () {
+  const btn = this;
+  const bar = document.getElementById("recalcProgressBar");
+  const wrap = document.getElementById("recalcProgressWrap");
+  const msg = document.getElementById("recalcResponseMessage");
+  const dateFrom = document.getElementById("recalcFrom").value;
+  const dateTo = document.getElementById("recalcTo").value;
+  const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]").value;
+
+  btn.disabled = true;
+  wrap.style.display = "block";
+  bar.style.width = "0%"; bar.innerText = "0%";
+  msg.innerText = "Counting matching records...";
+
+  function buildParams(extra) {
+    const p = new URLSearchParams();
+    if (dateFrom) p.append("date_from", dateFrom);
+    if (dateTo) p.append("date_to", dateTo);
+    if (extra) Object.keys(extra).forEach(k => p.append(k, extra[k]));
+    return p;
+  }
+
+  function fail(text) {
+    msg.innerText = text;
+    btn.disabled = false;
+  }
+
+  function processFrom(offset, total) {
+    fetch("/recalculate-attendance/chunk/", {
+      method: "POST",
+      headers: { "X-CSRFToken": csrfToken },
+      body: buildParams({ offset: offset }),
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (!data.success) { fail(data.error || "Recalculation failed."); return; }
+
+      const newOffset = offset + data.processed_in_chunk;
+      const pct = total === 0 ? 100 : Math.min(100, Math.round(newOffset / total * 100));
+      bar.style.width = pct + "%"; bar.innerText = pct + "%";
+      msg.innerText = `${Math.min(newOffset, total)} / ${total} records recalculated`;
+
+      if (data.processed_in_chunk === 0 || newOffset >= total) {
+        bar.style.width = "100%"; bar.innerText = "100%";
+        msg.innerText = `Done! ${Math.min(newOffset, total)} / ${total} records recalculated.`;
+        btn.disabled = false;
+      } else {
+        processFrom(newOffset, total);
+      }
+    })
+    .catch(() => fail("Error during recalculation."));
+  }
+
+  fetch("/recalculate-attendance/init/", {
+    method: "POST",
+    headers: { "X-CSRFToken": csrfToken },
+    body: buildParams(),
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (!data.success) { fail(data.error || "Failed to start recalculation."); return; }
+    if (data.total === 0) {
+      bar.style.width = "100%"; bar.innerText = "100%";
+      msg.innerText = "No matching attendance records found.";
+      btn.disabled = false;
+      return;
+    }
+    processFrom(0, data.total);
+  })
+  .catch(() => fail("Error starting recalculation."));
 });
 
 document.getElementById("attendanceUploadForm").addEventListener("submit", function(e) {

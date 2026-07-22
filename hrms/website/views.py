@@ -418,13 +418,21 @@ def _parse_excel_time(val):
     return None
 
 
+def _excel_engine_for(uploaded_file):
+    """Pick the right pandas engine from the filename extension: legacy
+    .xls needs xlrd, modern .xlsx/.xlsm needs openpyxl."""
+    filename = (getattr(uploaded_file, "name", "") or "").lower()
+    return "xlrd" if filename.endswith(".xls") else "openpyxl"
+
+
 def _normalize_attendance_excel(uploaded_file):
     """Parse an uploaded attendance Excel file into a cleaned DataFrame with
     detected/normalized headers. Raises ValueError with a user-facing message
     on failure."""
+    engine = _excel_engine_for(uploaded_file)
     try:
         # Read without assuming a header row — check if row 0 is the header
-        df_raw = pd.read_excel(uploaded_file, engine="openpyxl", header=None)
+        df_raw = pd.read_excel(uploaded_file, engine=engine, header=None)
     except Exception as e:
         raise ValueError(f"Cannot read file: {e}")
 
@@ -441,7 +449,7 @@ def _normalize_attendance_excel(uploaded_file):
     if header_row is not None:
         # Re-read using the detected header row
         uploaded_file.seek(0)  # rewind file pointer
-        df = pd.read_excel(uploaded_file, engine="openpyxl", header=header_row)
+        df = pd.read_excel(uploaded_file, engine=engine, header=header_row)
     else:
         df = df_raw
 
@@ -656,6 +664,63 @@ def upload_attendance_chunk(request, upload_id):
         "skipped": upload.skipped_count,
         "errors": upload.errors,
     })
+
+
+ATTENDANCE_RECALC_CHUNK_SIZE = 200
+
+
+def _recalculate_attendance_queryset(request):
+    """Build the (optionally date-filtered, company-scoped) Attendance
+    queryset shared by the recalculate init/chunk endpoints."""
+    qs = Attendance.objects.all()
+    company = get_company_filter(request.user)
+    if company:
+        qs = qs.filter(employee__company=company)
+
+    date_from = request.POST.get("date_from")
+    date_to = request.POST.get("date_to")
+    if date_from:
+        qs = qs.filter(date__gte=date_from)
+    if date_to:
+        qs = qs.filter(date__lte=date_to)
+    return qs.order_by("id")
+
+
+@login_required
+@group_required("Admin", "HR")
+@require_http_methods(["POST"])
+def recalculate_attendance_init(request):
+    """Step 1: report how many existing Attendance rows match the (optional)
+    date range, without touching any of them yet."""
+    total = _recalculate_attendance_queryset(request).count()
+    return JsonResponse({
+        "success": True,
+        "total": total,
+        "chunk_size": ATTENDANCE_RECALC_CHUNK_SIZE,
+    })
+
+
+@login_required
+@group_required("Admin", "HR")
+@require_http_methods(["POST"])
+def recalculate_attendance_chunk(request):
+    """Step 2: re-run calculate_status()/calculate_lateness() on the next
+    batch of existing Attendance rows (via their normal .save(), so any
+    calculation-logic fix takes effect immediately without deleting and
+    re-uploading the Excel file). Offset-driven and stateless — the caller
+    just keeps advancing `offset` by however many rows this returned until
+    processed_in_chunk comes back as 0."""
+    try:
+        offset = int(request.POST.get("offset", 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    qs = _recalculate_attendance_queryset(request)
+    chunk = list(qs[offset: offset + ATTENDANCE_RECALC_CHUNK_SIZE])
+    for attendance in chunk:
+        attendance.save()  # triggers calculate_status() via Attendance.save()
+
+    return JsonResponse({"success": True, "processed_in_chunk": len(chunk)})
 
 
 @login_required

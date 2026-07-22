@@ -104,3 +104,35 @@ class ChunkedAttendanceUploadTest(TestCase):
         self.assertTrue(data2["done"])
         self.assertEqual(data2["created"], 5)
         self.assertEqual(Attendance.objects.count(), 5)
+
+    def test_legacy_xls_format_is_accepted(self):
+        """The upload must accept legacy .xls (not just .xlsx) — pandas needs
+        the xlrd engine for .xls, openpyxl can't read it."""
+        try:
+            import xlwt
+        except ImportError:
+            self.skipTest("xlwt not installed — only needed to author .xls test fixtures")
+
+        wb = xlwt.Workbook()
+        ws = wb.add_sheet("attendance_file")
+        for col, header in enumerate(["Employee Code", "In Time", "Out Time", "AttendanceDate"]):
+            ws.write(0, col, header)
+        ws.write(1, 0, "EMP001")
+        ws.write(1, 1, "09:00")
+        ws.write(1, 2, "18:00")
+        ws.write(1, 3, "2026-08-01")
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        buf.name = "attendance.xls"
+
+        resp = self.client.post(reverse("upload_attendance_init"), {"attendance_file": buf})
+        data = resp.json()
+        self.assertTrue(data["success"], data)
+        self.assertEqual(data["total_rows"], 1)
+
+        resp = self.client.post(reverse("upload_attendance_chunk", args=[data["upload_id"]]))
+        chunk_data = resp.json()
+        self.assertTrue(chunk_data["success"], chunk_data)
+        self.assertEqual(chunk_data["created"], 1)
+        self.assertEqual(Attendance.objects.count(), 1)

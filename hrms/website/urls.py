@@ -51,6 +51,9 @@ urlpatterns = [
     path("upload-attendance/<int:upload_id>/chunk/", views.upload_attendance_chunk, name="upload_attendance_chunk"),
 
     path("attendance-progress/<int:upload_id>/", views.attendance_upload_progress, name="attendance_upload_progress"),
+
+    path("recalculate-attendance/init/", views.recalculate_attendance_init, name="recalculate_attendance_init"),
+    path("recalculate-attendance/chunk/", views.recalculate_attendance_chunk, name="recalculate_attendance_chunk"),
     path("attendance/", views.attendance_list, name="attendance"),
     path("attendance/<int:employee_id>/", views.employee_attendance_detail, name="employee_attendance_detail"),
     path("ajax/employees/search/", views.employee_search, name="employee_search"),

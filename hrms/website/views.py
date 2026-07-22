@@ -448,13 +448,14 @@ def _normalize_attendance_excel(uploaded_file):
     df.columns = df.columns.str.strip()
 
     # ── Normalize column names ────────────────────────────────────────────────
-    # Handle variants: "Att. Date", "Att.Date", "Date", "Attendance Date"
+    # Handle variants: "Att. Date", "Att.Date", "Date", "Attendance Date", "AttendanceDate"
     col_aliases = {
         "emp code":        "Emp Code",
         "employee code":   "Emp Code",
         "att. date":       "Att.Date",
         "att.date":        "Att.Date",
         "attendance date": "Att.Date",
+        "attendancedate":  "Att.Date",
         "date":            "Att.Date",
         "in time":         "In Time",
         "out time":        "Out Time",
@@ -5709,9 +5710,9 @@ def download_empty_excel(request):
     # (Optional) Add headers only
     headers = [
         "Employee Code",
-        "Date",
         "In Time",
         "Out Time",
+        "AttendanceDate",
     ]
 
     ws.append(headers)  # comment this line if you want 100% empty

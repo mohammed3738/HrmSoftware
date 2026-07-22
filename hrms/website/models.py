@@ -1252,23 +1252,40 @@ class Attendance(models.Model):
     def __str__(self):
         return f"{self.employee.first_name} {self.employee.employee_code} - {self.date}"
     
-    def calculate_lateness(self):
-        """Calculate lateness based on shift start time"""
-        if not self.in_time:
+    def get_grace_period_minutes(self):
+        """Company-configured grace period (PayrollSettings.grace_period_minutes), defaulting to 15."""
+        from django.apps import apps
+        PayrollSettings = apps.get_model('website', 'PayrollSettings')
+        try:
+            ps = PayrollSettings.objects.filter(company=self.employee.company).first()
+            return ps.grace_period_minutes if ps else 15
+        except Exception:
+            return 15
+
+    def calculate_lateness(self, grace_period_minutes=None):
+        """
+        Flexible/floating shift: duty is expected to run 9 hours from actual
+        check-in time (e.g. in at 10:00 -> out by 19:00; in at 09:00 -> out by
+        18:00). Returns how many minutes short of that 9-hour mark the
+        employee left, or 0 if they met it or fell within the grace period.
+        """
+        if not self.in_time or not self.out_time:
             return 0
-        
-        shift_start = self.employee.shift_start_time
-        if not shift_start:
-            return 0
-        
+
         in_dt = datetime.datetime.combine(self.date, self.in_time)
-        shift_dt = datetime.datetime.combine(self.date, shift_start)
-        
-        lateness = (in_dt - shift_dt).total_seconds() // 60
-        grace = getattr(settings, "GRACE_PERIOD_MINUTES", 15)
-        
-        return int(lateness) if lateness > grace else 0
-    
+        out_dt = datetime.datetime.combine(self.date, self.out_time)
+        if out_dt <= in_dt:
+            out_dt += datetime.timedelta(days=1)
+
+        expected_out_dt = in_dt + datetime.timedelta(hours=9)
+
+        if grace_period_minutes is None:
+            grace_period_minutes = self.get_grace_period_minutes()
+
+        shortfall = (expected_out_dt - out_dt).total_seconds() / 60
+
+        return int(shortfall) if shortfall > grace_period_minutes else 0
+
 
 
     def get_applicable_holiday(self, branch):
@@ -1305,9 +1322,9 @@ class Attendance(models.Model):
             # STEP 0: Check if weekend — respects PayrollSettings.weekend_days
             try:
                 ps = PayrollSettings.objects.filter(company=self.employee.company).first()
-                sunday_only = ps is not None and ps.weekend_days == 'sun'
             except Exception:
-                sunday_only = False
+                ps = None
+            sunday_only = ps is not None and ps.weekend_days == 'sun'
 
             is_weekend = (self.date.weekday() == 6) if sunday_only else (self.date.weekday() >= 5)
             if is_weekend:
@@ -1358,33 +1375,39 @@ class Attendance(models.Model):
             
             # Calculate total hours worked
             worked_hours = Decimal((out_dt - in_dt).total_seconds()) / Decimal("3600")
-            
-            # Calculate lateness (for Late Present status)
-            self.late = self.calculate_lateness()
-            
+
+            # Flexible/floating duty: expected checkout = check-in + 9 hours,
+            # regardless of any fixed shift start time. Company-configured
+            # grace period (PayrollSettings.grace_period_minutes) covers
+            # falling short of that 9-hour mark.
+            grace_period_minutes = ps.grace_period_minutes if ps else 15
+            grace_hours = Decimal(grace_period_minutes) / Decimal("60")
+
+            self.late = self.calculate_lateness(grace_period_minutes)
+
             # Define expected hours (9 hours)
             expected_hours = Decimal("9.0")
-            
+
             # Apply rules based on hours worked
-            if worked_hours >= expected_hours:
-                # Worked 9+ hours
-                self.status = "Present" if self.late == 0 else "Late Present"
+            if worked_hours >= expected_hours - grace_hours:
+                # Worked the full 9 hours, or fell short only within the grace period
+                self.status = "Present"
                 self.count = Decimal("1.00")
-            
+
             elif worked_hours >= expected_hours * Decimal("0.7"):
-                # Worked 6.3+ hours (70% of 9 hours)
+                # Worked 6.3+ hours (70% of 9 hours) but beyond the grace period
                 self.status = "Late Present"
                 self.count = Decimal("1.00")
-            
+
             elif worked_hours >= expected_hours * Decimal("0.5"):
                 # Worked 4.5+ hours (50% of 9 hours)
                 self.status = "Half Day"
                 self.count = Decimal("0.50")
-            
+
             else:
                 # Worked less than 4.5 hours
                 self.status = "Absent"
-                self.count = Decimal("0.00")    
+                self.count = Decimal("0.00")
 
     def save(self, *args, **kwargs):
         # Always calculate status before saving
@@ -1495,6 +1518,9 @@ class AttendanceUpload(models.Model):
     file = models.FileField(upload_to="attendance_uploads/")
     total_rows = models.IntegerField(default=0)
     processed_rows = models.IntegerField(default=0)
+    created_count = models.IntegerField(default=0)
+    skipped_count = models.IntegerField(default=0)
+    errors = models.JSONField(default=list, blank=True)
     status = models.CharField(
         max_length=20,
         choices=[
@@ -1505,7 +1531,7 @@ class AttendanceUpload(models.Model):
         default="processing"
     )
     created_at = models.DateTimeField(auto_now_add=True)
-        
+
 
 class AttendanceCorrectionRequest(models.Model):
     attendance = models.ForeignKey(Attendance, on_delete=models.CASCADE, related_name="correction_requests")

@@ -87,11 +87,17 @@
 						<h5>Upload Attendance Excel</h5>
 						<form id="attendanceUploadForm" enctype="multipart/form-data">
 							{% csrf_token %}
-							<input type="file" name="attendance_file" id="attendance_file" 
+							<input type="file" name="attendance_file" id="attendance_file"
 								accept=".xlsx, .xls" required class="form-control" />
-							<button type="submit" class="btn btn-success mt-3">Submit</button>
+							<button type="submit" id="attendanceUploadSubmitBtn" class="btn btn-success mt-3">Submit</button>
 							<button type="button" id="closeUploadModal" class="btn btn-secondary mt-3">Close</button>
 						</form>
+						<div id="attendanceUploadProgressWrap" class="mt-3" style="display:none;">
+							<div class="progress" style="height:20px;">
+								<div id="attendanceUploadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+									role="progressbar" style="width:0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+							</div>
+						</div>
 						<p id="responseMessage" class="mt-2"></p>
 					</div>
 				</div>
@@ -1950,35 +1956,93 @@ document.addEventListener("DOMContentLoaded", function () {
         modal.style.display = "none";
     });
 
-    // Handle form submit
+    // Handle form submit — chunked upload with progress bar so large files
+    // (2000+ rows) never sit inside one long HTTP request.
     document.getElementById("attendanceUploadForm").addEventListener("submit", function(event) {
         event.preventDefault();
 
-        let formData = new FormData();
-        formData.append("attendance_file", document.getElementById("attendance_file").files[0]);
+        const file = document.getElementById("attendance_file").files[0];
+        if (!file) return;
 
-        fetch("{% url 'upload_attendance' %}", {
+        const submitBtn = document.getElementById("attendanceUploadSubmitBtn");
+        const responseMessage = document.getElementById("responseMessage");
+        const progressWrap = document.getElementById("attendanceUploadProgressWrap");
+        const progressBar = document.getElementById("attendanceUploadProgressBar");
+
+        submitBtn.disabled = true;
+        responseMessage.innerText = "";
+        progressWrap.style.display = "block";
+        progressBar.style.width = "0%";
+        progressBar.innerText = "0%";
+
+        function setProgress(pct) {
+            progressBar.style.width = pct + "%";
+            progressBar.innerText = pct + "%";
+        }
+
+        function fail(msg) {
+            responseMessage.innerText = "❌ Error: " + msg;
+            responseMessage.style.color = "red";
+            submitBtn.disabled = false;
+        }
+
+        function processNextChunk(uploadId, totalRows) {
+            fetch(`/upload-attendance/${uploadId}/chunk/`, {
+                method: "POST",
+                headers: { "X-CSRFToken": "{{ csrf_token }}" },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    fail(data.error || "Upload failed.");
+                    return;
+                }
+                const pct = totalRows === 0 ? 100 : Math.round((data.processed_rows / totalRows) * 100);
+                setProgress(pct);
+
+                if (data.done) {
+                    responseMessage.innerText =
+                        `✅ Upload complete! Created: ${data.created}, Skipped: ${data.skipped}` +
+                        (data.errors && data.errors.length ? ` (${data.errors.length} row error(s), see console)` : "");
+                    responseMessage.style.color = "green";
+                    if (data.errors && data.errors.length) console.warn("Attendance upload row errors:", data.errors);
+                    submitBtn.disabled = false;
+                } else {
+                    processNextChunk(uploadId, totalRows);
+                }
+            })
+            .catch(error => {
+                console.error(error);
+                fail("Something went wrong while processing the upload.");
+            });
+        }
+
+        let formData = new FormData();
+        formData.append("attendance_file", file);
+
+        fetch("{% url 'upload_attendance_init' %}", {
             method: "POST",
-            headers: {
-                "X-CSRFToken": "{{ csrf_token }}",
-            },
+            headers: { "X-CSRFToken": "{{ csrf_token }}" },
             body: formData
         })
         .then(response => response.json())
         .then(data => {
-            let responseMessage = document.getElementById("responseMessage");
-            if (data.success) {
-                responseMessage.innerText = "✅ File uploaded successfully!";
-                responseMessage.style.color = "green";
-            } else {
-                responseMessage.innerText = "❌ Error: " + (data.message || data.error);
-                responseMessage.style.color = "red";
+            if (!data.success) {
+                fail(data.error || "Upload failed.");
+                return;
             }
+            if (data.total_rows === 0) {
+                setProgress(100);
+                responseMessage.innerText = "⚠️ No data rows found in the file.";
+                responseMessage.style.color = "orange";
+                submitBtn.disabled = false;
+                return;
+            }
+            processNextChunk(data.upload_id, data.total_rows);
         })
         .catch(error => {
-            document.getElementById("responseMessage").innerText = "⚠️ Something went wrong!";
-            document.getElementById("responseMessage").style.color = "red";
             console.error(error);
+            fail("Something went wrong while uploading the file.");
         });
     });
 });

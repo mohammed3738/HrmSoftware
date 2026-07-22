@@ -47,21 +47,25 @@ urlpatterns = [
     path("download-employees/", views.download_employees_excel, name="download_employees"),
     path("download-leave/", views.download_leave_excel, name="download_leave"),
     path("upload-attendance/", views.upload_attendance_excel, name="upload_attendance"),
+    path("upload-attendance/init/", views.upload_attendance_init, name="upload_attendance_init"),
+    path("upload-attendance/<int:upload_id>/chunk/", views.upload_attendance_chunk, name="upload_attendance_chunk"),
 
-    path("attendance-progress/<int:upload_id>/", views.attendance_upload_progress),
+    path("attendance-progress/<int:upload_id>/", views.attendance_upload_progress, name="attendance_upload_progress"),
     path("attendance/", views.attendance_list, name="attendance"),
     path("attendance/<int:employee_id>/", views.employee_attendance_detail, name="employee_attendance_detail"),
     path("ajax/employees/search/", views.employee_search, name="employee_search"),
 
     path("submit-correction-request/", views.submit_correction_request, name="submit_correction_request"),
     path("approve-correction/<int:request_id>/", views.approve_correction_request, name="approve_correction"),
-    path("reject-correction/<int:request_id>/", views.reject_correction_request, name="reject_correction"),  
+    path("reject-correction/<int:request_id>/", views.reject_correction_request, name="reject_correction"),
+    path("bulk-approve-correction/", views.bulk_approve_correction, name="bulk_approve_correction"),
 
     path("leave-balance/", views.leave_balance_view, name="leave_balance"),
     path("employees/<int:employee_id>/compoffs/", views.employee_compoff_details, name="employee-compoff-details"),
     path("employees/<int:employee_id>/leave-history/", views.employee_leave_history, name="employee_leave_history"),
     path('approve-compoff/<int:compoff_id>/', views.approve_compoff, name='approve_compoff'),
     path('reject-compoff/<int:compoff_id>/', views.reject_compoff, name='reject_compoff'),
+    path('bulk-approve-compoff/', views.bulk_approve_compoff, name='bulk_approve_compoff'),
     path("submit-comp-off-request/", views.submit_comp_off_request, name="submit_comp_off_request"),
     
     
@@ -109,6 +113,7 @@ urlpatterns = [
     path("leave-apply/", views.leave_apply_view, name="leave_apply"),
     path("approve-leave/<int:leave_id>/", views.approve_leave, name="approve_leave"),
     path("reject-leave/<int:leave_id>/", views.reject_leave, name="reject_leave"),
+    path("bulk-approve-leave/", views.bulk_approve_leave, name="bulk_approve_leave"),
 
 
     path("leave-credit-policy/update/", views.update_leave_credit_policy, name="update_leave_credit_policy"),

@@ -39,6 +39,7 @@ from .utils.payroll_lock import (
     lock_response,
     build_date_locked_cache,
     date_in_cache,
+    _lock_message,
 )
 from django.forms.models import model_to_dict
 from django.contrib.auth.decorators import login_required
@@ -357,13 +358,17 @@ def fill_holiday_attendance_for_month(year, month):
 #             {"success": False, "message": str(e)}
 #         )
 
+ATTENDANCE_UPLOAD_CHUNK_SIZE = 200
+
+
 @login_required
 @group_required("Admin", "HR")
 def upload_attendance_excel(request):
     if request.method == "GET":
         return render(request, "attendance/attendance_upload.html")
 
-    # POST — process synchronously
+    # Legacy single-shot POST — kept for backward compatibility with any
+    # external callers, but the UI now uses the chunked init/chunk flow below.
     try:
         return _do_import_attendance(request)
     except Exception as e:
@@ -413,16 +418,15 @@ def _parse_excel_time(val):
     return None
 
 
-def _do_import_attendance(request):
-    uploaded_file = request.FILES.get("file") or request.FILES.get("attendance_file")
-    if not uploaded_file:
-        return JsonResponse({"success": False, "error": "No file uploaded."})
-
+def _normalize_attendance_excel(uploaded_file):
+    """Parse an uploaded attendance Excel file into a cleaned DataFrame with
+    detected/normalized headers. Raises ValueError with a user-facing message
+    on failure."""
     try:
         # Read without assuming a header row — check if row 0 is the header
         df_raw = pd.read_excel(uploaded_file, engine="openpyxl", header=None)
     except Exception as e:
-        return JsonResponse({"success": False, "error": f"Cannot read file: {e}"})
+        raise ValueError(f"Cannot read file: {e}")
 
     # ── Auto-detect header row ────────────────────────────────────────────────
     # Some exports put the header in row 0 as data (columns become Unnamed).
@@ -461,14 +465,17 @@ def _do_import_attendance(request):
     required = ["Emp Code", "Att.Date"]
     missing = [c for c in required if c not in df.columns]
     if missing:
-        return JsonResponse({
-            "success": False,
-            "error": (
-                f"Missing column(s): {', '.join(missing)}. "
-                f"Columns found after normalizing: {', '.join(df.columns.tolist())}"
-            )
-        })
+        raise ValueError(
+            f"Missing column(s): {', '.join(missing)}. "
+            f"Columns found after normalizing: {', '.join(df.columns.tolist())}"
+        )
 
+    return df
+
+
+def _process_attendance_rows(df_chunk):
+    """Process a slice of the normalized attendance DataFrame.
+    Returns (created_count, skipped_count, errors)."""
     created_count = 0
     skipped_count = 0
     errors = []
@@ -476,7 +483,7 @@ def _do_import_attendance(request):
     # Build the lock cache lazily — we'll add company ids as we discover them
     _lock_cache = {}
 
-    for row_idx, row in df.iterrows():
+    for row_idx, row in df_chunk.iterrows():
         row_num = row_idx + 2
         try:
             emp_code_raw = row.get("Emp Code")
@@ -535,6 +542,21 @@ def _do_import_attendance(request):
             errors.append(f"Row {row_num}: {e}")
             skipped_count += 1
 
+    return created_count, skipped_count, errors
+
+
+def _do_import_attendance(request):
+    uploaded_file = request.FILES.get("file") or request.FILES.get("attendance_file")
+    if not uploaded_file:
+        return JsonResponse({"success": False, "error": "No file uploaded."})
+
+    try:
+        df = _normalize_attendance_excel(uploaded_file)
+    except ValueError as e:
+        return JsonResponse({"success": False, "error": str(e)})
+
+    created_count, skipped_count, errors = _process_attendance_rows(df)
+
     return JsonResponse({
         "success": True,
         "created": created_count,
@@ -543,9 +565,100 @@ def _do_import_attendance(request):
         "errors": errors[:50],  # cap at 50 so response doesn't get huge
     })
 
+
+@login_required
+@group_required("Admin", "HR")
+@require_http_methods(["POST"])
+def upload_attendance_init(request):
+    """
+    Step 1 of the chunked upload flow: save the file and report how many
+    rows it has, without processing any of them yet. The frontend then
+    calls upload_attendance_chunk repeatedly to process it in small batches,
+    so a single large file never has to be handled inside one long-running
+    request (which is what caused uploads of 2000+ rows to fail/time out).
+    """
+    uploaded_file = request.FILES.get("file") or request.FILES.get("attendance_file")
+    if not uploaded_file:
+        return JsonResponse({"success": False, "error": "No file uploaded."})
+
+    try:
+        df = _normalize_attendance_excel(uploaded_file)
+    except ValueError as e:
+        return JsonResponse({"success": False, "error": str(e)})
+
+    uploaded_file.seek(0)
+    upload = AttendanceUpload.objects.create(
+        file=uploaded_file,
+        total_rows=len(df),
+        processed_rows=0,
+        status="processing" if len(df) else "completed",
+    )
+
+    return JsonResponse({
+        "success": True,
+        "upload_id": upload.id,
+        "total_rows": upload.total_rows,
+        "chunk_size": ATTENDANCE_UPLOAD_CHUNK_SIZE,
+    })
+
+
+@login_required
+@group_required("Admin", "HR")
+@require_http_methods(["POST"])
+def upload_attendance_chunk(request, upload_id):
+    """Step 2 of the chunked upload flow: process the next batch of rows
+    for a previously-initialized upload and report cumulative progress."""
+    upload = get_object_or_404(AttendanceUpload, id=upload_id)
+
+    if upload.status == "completed":
+        return JsonResponse({
+            "success": True, "done": True,
+            "upload_id": upload.id,
+            "processed_rows": upload.processed_rows,
+            "total_rows": upload.total_rows,
+            "created": upload.created_count,
+            "skipped": upload.skipped_count,
+            "errors": upload.errors,
+        })
+
+    try:
+        upload.file.open("rb")
+        try:
+            df = _normalize_attendance_excel(upload.file)
+        finally:
+            upload.file.close()
+    except ValueError as e:
+        upload.status = "failed"
+        upload.save(update_fields=["status"])
+        return JsonResponse({"success": False, "error": str(e)})
+
+    offset = upload.processed_rows
+    chunk = df.iloc[offset: offset + ATTENDANCE_UPLOAD_CHUNK_SIZE]
+    created_count, skipped_count, errors = _process_attendance_rows(chunk)
+
+    upload.processed_rows = min(offset + len(chunk), upload.total_rows)
+    upload.created_count += created_count
+    upload.skipped_count += skipped_count
+    if errors:
+        upload.errors = ((upload.errors or []) + errors)[:50]  # cap so it never grows unbounded
+    done = upload.processed_rows >= upload.total_rows
+    upload.status = "completed" if done else "processing"
+    upload.save(update_fields=["processed_rows", "created_count", "skipped_count", "errors", "status"])
+
+    return JsonResponse({
+        "success": True,
+        "done": done,
+        "upload_id": upload.id,
+        "processed_rows": upload.processed_rows,
+        "total_rows": upload.total_rows,
+        "created": upload.created_count,
+        "skipped": upload.skipped_count,
+        "errors": upload.errors,
+    })
+
+
 @login_required
 def attendance_upload_progress(request, upload_id):
-    # Kept for backward compat — not used by new sync flow
     try:
         upload = AttendanceUpload.objects.get(id=upload_id)
         progress = 0 if upload.total_rows == 0 else int((upload.processed_rows / upload.total_rows) * 100)
@@ -687,32 +800,53 @@ def submit_correction_request(request):
 
 
 # approval
-@login_required
-def approve_correction_request(request, request_id):
-    correction_request = get_object_or_404(AttendanceCorrectionRequest, id=request_id)
-
-    # Block approval if the attendance date falls in a finalized payroll run
+def _approve_correction_item(correction_request):
+    """Approve a single AttendanceCorrectionRequest and write the corrected
+    times onto its Attendance record. Returns an error message string on
+    failure (e.g. payroll lock), or None on success."""
     attendance = correction_request.attendance
     locking_run = get_locking_run(attendance.employee.company, attendance.date)
     if locking_run:
-        return lock_response(locking_run, action="approve this correction")
+        return _lock_message(locking_run, action="approve this correction")
 
-    # Update attendance record
     attendance.in_time = correction_request.new_in_time
     attendance.out_time = correction_request.new_out_time
     attendance.save()
 
-    # Mark request as approved\
-    
-    # if correction_request.status == "Approved":
     correction_request.status = "Approved"
-    # elif correction_request.status == "Rejected":
-    #     correction_request.status = "Rejected"
-    # correction_request.reviewed_by = request.user
     correction_request.reviewed_at = now()
     correction_request.save()
+    return None
 
+
+@login_required
+def approve_correction_request(request, request_id):
+    correction_request = get_object_or_404(AttendanceCorrectionRequest, id=request_id)
+
+    error = _approve_correction_item(correction_request)
+    if error:
+        return JsonResponse({"success": False, "error": error}, status=400)
     return JsonResponse({"message": "Correction Approved!"})
+
+
+@login_required
+@group_required("Admin", "HR", "Manager")
+@require_http_methods(["POST"])
+def bulk_approve_correction(request):
+    ids = _extract_bulk_ids(request)
+    approved, failed = [], []
+    for req_id in ids:
+        try:
+            correction_request = AttendanceCorrectionRequest.objects.get(id=req_id)
+        except AttendanceCorrectionRequest.DoesNotExist:
+            failed.append({"id": req_id, "error": "Request not found."})
+            continue
+        error = _approve_correction_item(correction_request)
+        if error:
+            failed.append({"id": req_id, "error": error})
+        else:
+            approved.append(req_id)
+    return JsonResponse({"success": True, "approved": approved, "failed": failed})
 
 
 @login_required
@@ -1186,17 +1320,20 @@ def admin_dashboard(request):
         date_of_joining__isnull=False,
     ).exclude(date_of_joining__year=today.year).order_by('date_of_joining__day')[:5]
 
+    # Capped at 50 (rather than showing every pending row) so the dashboard
+    # stays fast, while still being generous enough that "select all" in the
+    # bulk-approve UI covers realistic pending queues, not just a handful.
     leave_requests = (
         LeaveApplication.objects.select_related('employee')
-        .filter(employee__in=active_qs, status='Pending').order_by('-id')[:8]
+        .filter(employee__in=active_qs, status='Pending').order_by('-id')[:50]
     )
     compoff_requests = (
         CompOffRequest.objects.select_related('employee')
-        .filter(employee__in=active_qs, status='Pending').order_by('-id')[:8]
+        .filter(employee__in=active_qs, status='Pending').order_by('-id')[:50]
     )
     correction_requests = (
         AttendanceCorrectionRequest.objects.select_related('attendance__employee')
-        .filter(attendance__employee__in=active_qs, status='Pending').order_by('-id')[:8]
+        .filter(attendance__employee__in=active_qs, status='Pending').order_by('-id')[:50]
     )
     upcoming_offboarding = (
         Offboarding.objects.select_related('employee')
@@ -1233,24 +1370,72 @@ def admin_dashboard(request):
     })
 
 
+def _approve_compoff_item(compoff):
+    """Approve a single CompOffRequest. Returns an error message string on
+    failure (e.g. payroll lock), or None on success."""
+    locking_run = get_locking_run_for_period(
+        compoff.employee.company, compoff.from_date, compoff.to_date
+    )
+    if locking_run:
+        return _lock_message(locking_run, action="approve this comp-off")
+
+    compoff.status = "Approved"
+    compoff.save()
+    return None
+
+
+def _extract_bulk_ids(request):
+    """Read a list of ids from a bulk-action POST — accepts a JSON body
+    ({"ids": [...]}) or a regular form POST with repeated 'ids' fields."""
+    if request.content_type == "application/json":
+        try:
+            data = json.loads(request.body or "{}")
+        except ValueError:
+            data = {}
+        raw_ids = data.get("ids", [])
+    else:
+        raw_ids = request.POST.getlist("ids")
+    ids = []
+    for raw in raw_ids:
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
 @login_required
 @group_required("Admin", "HR", "Manager")
 def approve_compoff(request, compoff_id):
     try:
         compoff = CompOffRequest.objects.get(id=compoff_id)
-
-        # Block approval if the comp-off period overlaps a finalized payroll run
-        locking_run = get_locking_run_for_period(
-            compoff.employee.company, compoff.from_date, compoff.to_date
-        )
-        if locking_run:
-            return lock_response(locking_run, action="approve this comp-off")
-
-        compoff.status = "Approved"
-        compoff.save()
-        return JsonResponse({"message": "CompOff request approved successfully!"})
     except CompOffRequest.DoesNotExist:
         return JsonResponse({"message": "Request not found!"}, status=404)
+
+    error = _approve_compoff_item(compoff)
+    if error:
+        return JsonResponse({"success": False, "error": error}, status=400)
+    return JsonResponse({"message": "CompOff request approved successfully!"})
+
+
+@login_required
+@group_required("Admin", "HR", "Manager")
+@require_http_methods(["POST"])
+def bulk_approve_compoff(request):
+    ids = _extract_bulk_ids(request)
+    approved, failed = [], []
+    for compoff_id in ids:
+        try:
+            compoff = CompOffRequest.objects.get(id=compoff_id)
+        except CompOffRequest.DoesNotExist:
+            failed.append({"id": compoff_id, "error": "Request not found."})
+            continue
+        error = _approve_compoff_item(compoff)
+        if error:
+            failed.append({"id": compoff_id, "error": error})
+        else:
+            approved.append(compoff_id)
+    return JsonResponse({"success": True, "approved": approved, "failed": failed})
 
 # @csrf_exempt
 # def reject_compoff(request, compoff_id):
@@ -2676,9 +2861,8 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     
     # ============================================
     # STEP 5: Late
-    # Count "Late Present" records directly — Attendance.late (minutes) is
-    # only set when shift_start_time is configured, so Sum("late") would be
-    # 0 for all employees without a configured shift time.
+    # Count "Late Present" records directly rather than summing
+    # Attendance.late (minutes short of the flexible 9-hour duty).
     # ============================================
     late_count = attendance_records.filter(status="Late Present").count()
     if getattr(payroll_settings, 'late_marks_affect_lwp', True):
@@ -3416,26 +3600,53 @@ def leave_apply_view(request):
     })
 
 
+def _approve_leave_item(leave):
+    """Approve a single LeaveApplication. Returns an error message string on
+    failure (e.g. payroll lock), or None on success."""
+    locking_run = get_locking_run_for_period(
+        leave.employee.company, leave.start_date, leave.end_date
+    )
+    if locking_run:
+        return _lock_message(locking_run, action="approve this leave")
+
+    leave.status = "Approved"
+    leave.save()
+    return None
+
+
 @login_required
 @group_required("Admin", "HR", "Manager")
 @require_POST
 def approve_leave(request, leave_id):
     try:
         leave = LeaveApplication.objects.get(id=leave_id)
-
-        # Block approval if leave overlaps a finalized payroll period
-        locking_run = get_locking_run_for_period(
-            leave.employee.company, leave.start_date, leave.end_date
-        )
-        if locking_run:
-            return lock_response(locking_run, action="approve this leave")
-
-        leave.status = "Approved"
-        leave.save()
-
-        return JsonResponse({"message": "Leave Approved Successfully!"})
     except LeaveApplication.DoesNotExist:
         return JsonResponse({"message": "Leave not found"}, status=404)
+
+    error = _approve_leave_item(leave)
+    if error:
+        return JsonResponse({"success": False, "error": error}, status=400)
+    return JsonResponse({"message": "Leave Approved Successfully!"})
+
+
+@login_required
+@group_required("Admin", "HR", "Manager")
+@require_POST
+def bulk_approve_leave(request):
+    ids = _extract_bulk_ids(request)
+    approved, failed = [], []
+    for leave_id in ids:
+        try:
+            leave = LeaveApplication.objects.get(id=leave_id)
+        except LeaveApplication.DoesNotExist:
+            failed.append({"id": leave_id, "error": "Leave not found."})
+            continue
+        error = _approve_leave_item(leave)
+        if error:
+            failed.append({"id": leave_id, "error": error})
+        else:
+            approved.append(leave_id)
+    return JsonResponse({"success": True, "approved": approved, "failed": failed})
 
 
 @login_required

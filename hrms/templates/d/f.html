@@ -18,6 +18,7 @@
 .table-sm td, .table-sm th { padding: .45rem .6rem; font-size:.85rem; }
 .action-btn { padding: 2px 8px; font-size:.78rem; }
 .avatar-sm { width:36px; height:36px; font-size:.8rem; }
+.pending-table-scroll { max-height: 320px; overflow-y: auto; }
 </style>
 
 <div class="container-xxl flex-grow-1 container-p-y" style="padding-top: 100px !important;">
@@ -235,10 +236,18 @@
           <h6 class="mb-0"><i class="ri-calendar-event-line me-1 text-primary"></i> Pending Leave Requests</h6>
           <a href="{% url 'leave_apply' %}" class="btn btn-sm btn-outline-primary action-btn">View All</a>
         </div>
-        <div class="table-responsive">
+        {% if leave_requests %}
+        <div class="d-flex align-items-center gap-2 px-3 pt-2">
+          <button type="button" class="btn btn-sm btn-success" id="leaveBulkApproveBtn" disabled onclick="bulkApprove('leave')">
+            <i class="ri-checkbox-multiple-line me-1"></i>Approve Selected (<span id="leaveSelCount">0</span>)
+          </button>
+        </div>
+        {% endif %}
+        <div class="table-responsive pending-table-scroll">
           <table class="table table-sm table-hover mb-0">
             <thead class="table-light">
               <tr>
+                <th style="width:32px;"><input type="checkbox" class="form-check-input" id="leaveSelectAll" onchange="toggleSelectAll('leave', this.checked)"></th>
                 <th>Employee</th>
                 <th>Type</th>
                 <th>Dates</th>
@@ -249,6 +258,7 @@
             <tbody>
               {% for l in leave_requests %}
               <tr>
+                <td><input type="checkbox" class="form-check-input leave-check" value="{{ l.id }}" onchange="updateBulkSelection('leave')"></td>
                 <td class="fw-medium">{{ l.employee.first_name }} {{ l.employee.last_name }}</td>
                 <td><span class="badge bg-label-primary">{{ l.get_leave_type_display }}</span></td>
                 <td class="text-muted">{{ l.start_date|date:"d M" }} – {{ l.end_date|date:"d M" }}</td>
@@ -261,7 +271,7 @@
                 </td>
               </tr>
               {% empty %}
-              <tr><td colspan="5" class="text-center text-muted py-3">No pending leave requests</td></tr>
+              <tr><td colspan="6" class="text-center text-muted py-3">No pending leave requests</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -276,10 +286,18 @@
           <h6 class="mb-0"><i class="ri-time-line me-1 text-info"></i> Pending Comp-Off Requests</h6>
           <a href="{% url 'comp_off_requests_list' %}" class="btn btn-sm btn-outline-info action-btn">View All</a>
         </div>
-        <div class="table-responsive">
+        {% if compoff_requests %}
+        <div class="d-flex align-items-center gap-2 px-3 pt-2">
+          <button type="button" class="btn btn-sm btn-success" id="compoffBulkApproveBtn" disabled onclick="bulkApprove('compoff')">
+            <i class="ri-checkbox-multiple-line me-1"></i>Approve Selected (<span id="compoffSelCount">0</span>)
+          </button>
+        </div>
+        {% endif %}
+        <div class="table-responsive pending-table-scroll">
           <table class="table table-sm table-hover mb-0">
             <thead class="table-light">
               <tr>
+                <th style="width:32px;"><input type="checkbox" class="form-check-input" id="compoffSelectAll" onchange="toggleSelectAll('compoff', this.checked)"></th>
                 <th>Employee</th>
                 <th>From</th>
                 <th>To</th>
@@ -289,6 +307,7 @@
             <tbody>
               {% for c in compoff_requests %}
               <tr>
+                <td><input type="checkbox" class="form-check-input compoff-check" value="{{ c.id }}" onchange="updateBulkSelection('compoff')"></td>
                 <td class="fw-medium">{{ c.employee.first_name }} {{ c.employee.last_name }}</td>
                 <td class="text-muted">{{ c.from_date|date:"d M Y" }}</td>
                 <td class="text-muted">{{ c.to_date|date:"d M Y" }}</td>
@@ -300,7 +319,7 @@
                 </td>
               </tr>
               {% empty %}
-              <tr><td colspan="4" class="text-center text-muted py-3">No pending comp-off requests</td></tr>
+              <tr><td colspan="5" class="text-center text-muted py-3">No pending comp-off requests</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -319,10 +338,18 @@
           <h6 class="mb-0"><i class="ri-edit-box-line me-1 text-danger"></i> Pending Corrections</h6>
           <a href="{% url 'attendance_correction_requests_list' %}" class="btn btn-sm btn-outline-danger action-btn">View All</a>
         </div>
-        <div class="table-responsive">
+        {% if correction_requests %}
+        <div class="d-flex align-items-center gap-2 px-3 pt-2">
+          <button type="button" class="btn btn-sm btn-success" id="correctionBulkApproveBtn" disabled onclick="bulkApprove('correction')">
+            <i class="ri-checkbox-multiple-line me-1"></i>Approve Selected (<span id="correctionSelCount">0</span>)
+          </button>
+        </div>
+        {% endif %}
+        <div class="table-responsive pending-table-scroll">
           <table class="table table-sm table-hover mb-0">
             <thead class="table-light">
               <tr>
+                <th style="width:32px;"><input type="checkbox" class="form-check-input" id="correctionSelectAll" onchange="toggleSelectAll('correction', this.checked)"></th>
                 <th>Employee</th>
                 <th>Date</th>
                 <th>Old In/Out</th>
@@ -332,6 +359,7 @@
             <tbody>
               {% for req in correction_requests %}
               <tr>
+                <td><input type="checkbox" class="form-check-input correction-check" value="{{ req.id }}" onchange="updateBulkSelection('correction')"></td>
                 <td class="fw-medium">{{ req.attendance.employee.first_name }}</td>
                 <td class="text-muted">{{ req.attendance.date|date:"d M Y" }}</td>
                 <td class="text-muted small">{{ req.attendance.in_time|default:"–" }} / {{ req.attendance.out_time|default:"–" }}</td>
@@ -343,7 +371,7 @@
                 </td>
               </tr>
               {% empty %}
-              <tr><td colspan="4" class="text-center text-muted py-3">No pending correction requests</td></tr>
+              <tr><td colspan="5" class="text-center text-muted py-3">No pending correction requests</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -595,37 +623,69 @@ document.addEventListener("DOMContentLoaded", function () {
 
 document.getElementById("attendanceUploadForm").addEventListener("submit", function(e) {
   e.preventDefault();
+
+  const bar = document.getElementById("progressBar");
+  const msg = document.getElementById("responseMessage");
+  const submitBtn = this.querySelector('button[type="submit"]');
+
+  submitBtn.disabled = true;
+  bar.style.width = "0%"; bar.innerText = "0%";
+  msg.innerText = "Uploading file...";
+
+  const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]").value;
   let formData = new FormData(this);
-  document.getElementById("responseMessage").innerText = "Uploading...";
-  fetch("/upload-attendance/", {
+
+  // Step 1: upload the file, find out how many rows it has.
+  fetch("/upload-attendance/init/", {
     method: "POST",
     body: formData,
-    headers: { "X-CSRFToken": document.querySelector("[name=csrfmiddlewaretoken]").value }
+    headers: { "X-CSRFToken": csrfToken },
   })
   .then(res => res.json())
   .then(data => {
-    if (!data.success) { document.getElementById("responseMessage").innerText = "Upload failed"; return; }
-    checkProgress(data.upload_id);
+    if (!data.success) { fail(data.error || "Upload failed."); return; }
+    if (data.total_rows === 0) {
+      bar.style.width = "100%"; bar.innerText = "100%";
+      msg.innerText = "No data rows found in the file.";
+      submitBtn.disabled = false;
+      return;
+    }
+    processNextChunk(data.upload_id, data.total_rows);
   })
-  .catch(() => { document.getElementById("responseMessage").innerText = "Error uploading file"; });
-});
+  .catch(() => fail("Error uploading file."));
 
-function checkProgress(uploadId) {
-  let bar = document.getElementById("progressBar");
-  let interval = setInterval(() => {
-    fetch(`/attendance-progress/${uploadId}/`)
-    .then(r => r.json())
+  function fail(text) {
+    msg.innerText = text;
+    submitBtn.disabled = false;
+  }
+
+  // Step 2: process the file in small batches so large uploads (2000+ rows)
+  // never sit inside a single long-running request.
+  function processNextChunk(uploadId, totalRows) {
+    fetch(`/upload-attendance/${uploadId}/chunk/`, {
+      method: "POST",
+      headers: { "X-CSRFToken": csrfToken },
+    })
+    .then(res => res.json())
     .then(data => {
-      let p = data.progress || 0;
-      bar.style.width = p + "%"; bar.innerText = p + "%";
-      if (data.status === "completed") {
-        bar.style.width = "100%"; bar.innerText = "Completed";
-        document.getElementById("responseMessage").innerText = "Upload Completed";
-        clearInterval(interval);
+      if (!data.success) { fail(data.error || "Upload failed."); return; }
+
+      const pct = totalRows === 0 ? 100 : Math.round((data.processed_rows / totalRows) * 100);
+      bar.style.width = pct + "%"; bar.innerText = pct + "%";
+      msg.innerText = `${data.processed_rows} / ${totalRows} rows processed`;
+
+      if (data.done) {
+        msg.innerText = `Upload complete! Created: ${data.created}, Skipped: ${data.skipped}` +
+          (data.errors && data.errors.length ? ` (${data.errors.length} row error(s), see console)` : "");
+        if (data.errors && data.errors.length) console.warn("Attendance upload row errors:", data.errors);
+        submitBtn.disabled = false;
+      } else {
+        processNextChunk(uploadId, totalRows);
       }
-    });
-  }, 2000);
-}
+    })
+    .catch(() => fail("Error while processing the upload."));
+  }
+});
 
 function downloadEmployees() {
   window.location.href = "{% url 'download_employees' %}";
@@ -634,6 +694,72 @@ function downloadEmployees() {
 // ── CSRF helper ──────────────────────────────────────────────────────
 function getCSRFToken() {
   return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
+}
+
+// ── Bulk approve (Leave / Comp-Off / Attendance Correction) ───────────
+const BULK_APPROVE_CONFIG = {
+  leave:      { checkClass: 'leave-check',      url: '/bulk-approve-leave/',      selectAllId: 'leaveSelectAll',      countId: 'leaveSelCount',      btnId: 'leaveBulkApproveBtn',      label: 'leave request(s)' },
+  compoff:    { checkClass: 'compoff-check',    url: '/bulk-approve-compoff/',    selectAllId: 'compoffSelectAll',    countId: 'compoffSelCount',    btnId: 'compoffBulkApproveBtn',    label: 'comp-off request(s)' },
+  correction: { checkClass: 'correction-check', url: '/bulk-approve-correction/', selectAllId: 'correctionSelectAll', countId: 'correctionSelCount', btnId: 'correctionBulkApproveBtn', label: 'correction request(s)' },
+};
+
+function toggleSelectAll(type, checked) {
+  const cfg = BULK_APPROVE_CONFIG[type];
+  document.querySelectorAll('.' + cfg.checkClass).forEach(cb => { cb.checked = checked; });
+  updateBulkSelection(type);
+}
+
+function updateBulkSelection(type) {
+  const cfg = BULK_APPROVE_CONFIG[type];
+  const all = document.querySelectorAll('.' + cfg.checkClass);
+  const checked = document.querySelectorAll('.' + cfg.checkClass + ':checked');
+  document.getElementById(cfg.countId).innerText = checked.length;
+  document.getElementById(cfg.btnId).disabled = checked.length === 0;
+  const selectAll = document.getElementById(cfg.selectAllId);
+  if (selectAll) selectAll.checked = all.length > 0 && checked.length === all.length;
+}
+
+function bulkApprove(type) {
+  const cfg = BULK_APPROVE_CONFIG[type];
+  const ids = Array.from(document.querySelectorAll('.' + cfg.checkClass + ':checked')).map(cb => cb.value);
+  if (ids.length === 0) return;
+
+  Swal.fire({
+    title: `Approve ${ids.length} ${cfg.label}?`,
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#28a745',
+    confirmButtonText: 'Yes, Approve All',
+  }).then(r => {
+    if (!r.isConfirmed) return;
+    fetch(cfg.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken() },
+      body: JSON.stringify({ ids }),
+    })
+    .then(res => res.json().then(data => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        Swal.fire('Error', data.error || 'Bulk approval failed.', 'error');
+        return;
+      }
+      const approvedCount = data.approved.length;
+      const failedCount = data.failed.length;
+      if (failedCount === 0) {
+        Swal.fire({ icon: 'success', title: 'Approved!', text: `${approvedCount} request(s) approved.`, timer: 1800, showConfirmButton: false });
+        setTimeout(() => location.reload(), 1800);
+      } else {
+        const reasons = data.failed.map(f => `#${f.id}: ${f.error}`).join('\n');
+        Swal.fire({
+          icon: 'warning',
+          title: 'Partially Approved',
+          html: `Approved: ${approvedCount} &nbsp;|&nbsp; Failed: ${failedCount}<br><pre style="text-align:left;white-space:pre-wrap;font-size:.8rem;">${reasons}</pre>`,
+        });
+        setTimeout(() => location.reload(), 4000);
+      }
+    })
+    .catch(() => Swal.fire('Error', 'Something went wrong during bulk approval.', 'error'));
+  });
 }
 
 // ── Attendance Correction ────────────────────────────────────────────
@@ -657,8 +783,17 @@ function approveRequest(id) {
   Swal.fire({ title:'Approve?', icon:'question', showCancelButton:true, confirmButtonColor:'#28a745', confirmButtonText:'Yes, Approve' })
   .then(r => { if (r.isConfirmed) {
     fetch(`/approve-correction/${id}/`, { method:"POST", headers:{"X-CSRFToken": getCSRFToken()} })
-    .then(res => res.json())
-    .then(data => { Swal.fire('Approved!', data.message, 'success'); setTimeout(() => location.reload(), 1500); });
+    .then(res => res.json().then(data => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (ok) {
+        Swal.fire('Approved!', data.message || 'Correction approved.', 'success');
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        // e.g. blocked because the date falls inside a finalized payroll run
+        Swal.fire('Cannot Approve', data.error || data.message || 'This request could not be approved.', 'error');
+      }
+    })
+    .catch(() => Swal.fire('Error', 'Something went wrong while approving.', 'error'));
   }});
 }
 
@@ -669,8 +804,16 @@ function rejectRequest(id) {
     preConfirm: v => { if (!v) return Swal.showValidationMessage("Reason required!"); return v; }
   }).then(r => { if (r.isConfirmed) {
     fetch(`/reject-correction/${id}/`, { method:"POST", headers:{"Content-Type":"application/json","X-CSRFToken":getCSRFToken()}, body:JSON.stringify({reason:r.value}) })
-    .then(res => res.json())
-    .then(data => { Swal.fire('Rejected!', data.message, 'info'); setTimeout(() => location.reload(), 1500); });
+    .then(res => res.json().then(data => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (ok) {
+        Swal.fire('Rejected!', data.message || 'Correction rejected.', 'info');
+        setTimeout(() => location.reload(), 1500);
+      } else {
+        Swal.fire('Error', data.error || data.message || 'This request could not be rejected.', 'error');
+      }
+    })
+    .catch(() => Swal.fire('Error', 'Something went wrong while rejecting.', 'error'));
   }});
 }
 

@@ -27,6 +27,14 @@
             </button>
           </form>
 
+          <div id="uploadProgressWrap" class="mt-4" style="display:none;">
+            <div class="progress" style="height:24px;">
+              <div id="uploadProgressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                role="progressbar" style="width:0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+            </div>
+            <div id="uploadProgressLabel" class="form-text mt-1"></div>
+          </div>
+
           <div id="uploadResult" class="mt-4"></div>
 
         </div>
@@ -46,6 +54,22 @@ function showResult(html) {
   if (el) el.innerHTML = html;
 }
 
+function setUploadProgress(pct, label) {
+  var wrap = document.getElementById("uploadProgressWrap");
+  var bar = document.getElementById("uploadProgressBar");
+  var lbl = document.getElementById("uploadProgressLabel");
+  wrap.style.display = "block";
+  bar.style.width = pct + "%";
+  bar.innerText = pct + "%";
+  if (lbl) lbl.innerText = label || "";
+}
+
+function resetUploadButton() {
+  var btn = document.getElementById("uploadBtn");
+  btn.disabled = false;
+  btn.innerHTML = '<i class="ri-upload-2-line me-1"></i> Upload';
+}
+
 function submitAttendanceUpload() {
   var fileInput = document.getElementById("attendanceFile");
   if (!fileInput.files.length) {
@@ -56,41 +80,66 @@ function submitAttendanceUpload() {
   var btn = document.getElementById("uploadBtn");
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Processing...';
-  showResult('<div class="alert alert-info"><i class="ri-loader-4-line me-1"></i> Uploading and processing, please wait...</div>');
+  showResult("");
+  setUploadProgress(0, "Uploading file...");
 
+  var csrfToken = document.querySelector('#attendanceUploadForm [name=csrfmiddlewaretoken]').value;
   var formData = new FormData(document.getElementById("attendanceUploadForm"));
-  var controller = new AbortController();
-  var timer = setTimeout(function() { controller.abort(); }, 120000);
 
-  fetch("{% url 'upload_attendance' %}", {
+  // Step 1: upload the file and find out how many rows it has.
+  fetch("{% url 'upload_attendance_init' %}", {
     method: "POST",
     body: formData,
-    headers: { "X-CSRFToken": formData.get("csrfmiddlewaretoken") },
-    signal: controller.signal,
+    headers: { "X-CSRFToken": csrfToken },
   })
-  .then(function(r) {
-    return r.text().then(function(text) { return { status: r.status, text: text }; });
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (!data.success) {
+      resetUploadButton();
+      showResult('<div class="alert alert-danger"><i class="ri-error-warning-line me-1"></i><strong>Error:</strong> ' + (data.error || 'Unknown error') + '</div>');
+      return;
+    }
+    if (data.total_rows === 0) {
+      resetUploadButton();
+      setUploadProgress(100, "");
+      showResult('<div class="alert alert-warning">No data rows found in the file.</div>');
+      return;
+    }
+    processNextChunk(data.upload_id, data.total_rows, csrfToken);
   })
-  .then(function(res) {
-    clearTimeout(timer);
-    btn.disabled = false;
-    btn.innerHTML = '<i class="ri-upload-2-line me-1"></i> Upload';
+  .catch(function(err) {
+    resetUploadButton();
+    showResult('<div class="alert alert-danger"><i class="ri-wifi-off-line me-1"></i> ' + err.message + '</div>');
+  });
+}
 
-    var data;
-    try {
-      data = JSON.parse(res.text);
-    } catch (err) {
-      showResult('<div class="alert alert-danger"><strong>Server Error:</strong><pre class="mt-2 small">' + res.text.substring(0, 1000) + '</pre></div>');
+// Step 2: process the file in small batches so a large upload (2000+ rows)
+// never has to complete inside a single request — each chunk call reports
+// cumulative progress, which drives the progress bar.
+function processNextChunk(uploadId, totalRows, csrfToken) {
+  fetch("/upload-attendance/" + uploadId + "/chunk/", {
+    method: "POST",
+    headers: { "X-CSRFToken": csrfToken },
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (!data.success) {
+      resetUploadButton();
+      showResult('<div class="alert alert-danger"><i class="ri-error-warning-line me-1"></i><strong>Error:</strong> ' + (data.error || 'Unknown error') + '</div>');
       return;
     }
 
-    if (data.success) {
+    var pct = totalRows === 0 ? 100 : Math.round((data.processed_rows / totalRows) * 100);
+    setUploadProgress(pct, data.processed_rows + " / " + totalRows + " rows processed");
+
+    if (data.done) {
+      resetUploadButton();
       var html = '<div class="alert alert-success">'
         + '<i class="ri-checkbox-circle-line me-1"></i>'
         + '<strong>Upload successful!</strong><br>'
         + 'Created: <strong>' + data.created + '</strong> &nbsp;|&nbsp; '
         + 'Skipped: <strong>' + data.skipped + '</strong> &nbsp;|&nbsp; '
-        + 'Total rows: <strong>' + data.total_rows + '</strong>'
+        + 'Total rows: <strong>' + totalRows + '</strong>'
         + '</div>';
 
       if (data.errors && data.errors.length) {
@@ -102,17 +151,12 @@ function submitAttendanceUpload() {
       }
       showResult(html);
     } else {
-      showResult('<div class="alert alert-danger"><i class="ri-error-warning-line me-1"></i><strong>Error:</strong> ' + (data.error || 'Unknown error') + '</div>');
+      processNextChunk(uploadId, totalRows, csrfToken);
     }
   })
   .catch(function(err) {
-    clearTimeout(timer);
-    btn.disabled = false;
-    btn.innerHTML = '<i class="ri-upload-2-line me-1"></i> Upload';
-    var msg = err.name === 'AbortError'
-      ? 'Request timed out (120s). The server may be processing a large file.'
-      : err.message;
-    showResult('<div class="alert alert-danger"><i class="ri-wifi-off-line me-1"></i> ' + msg + '</div>');
+    resetUploadButton();
+    showResult('<div class="alert alert-danger"><i class="ri-wifi-off-line me-1"></i> ' + err.message + '</div>');
   });
 }
 </script>

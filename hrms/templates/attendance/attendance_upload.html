@@ -9,7 +9,7 @@
         <div class="card-body p-4">
 
           <p class="text-muted mb-3">
-            Upload an Excel file with the following columns:
+            Upload an Excel or CSV file with the following columns:
             <strong>Emp Code</strong>, <strong>Att.Date</strong>,
             <strong>In Time</strong>, <strong>Out Time</strong>
           </p>
@@ -17,9 +17,9 @@
           <form id="attendanceUploadForm" enctype="multipart/form-data">
             {% csrf_token %}
             <div class="mb-3">
-              <label class="form-label fw-semibold">Excel File <span class="text-danger">*</span></label>
-              <input type="file" class="form-control" id="attendanceFile" name="file" accept=".xlsx,.xls" required>
-              <div class="form-text">Accepted formats: .xlsx, .xls</div>
+              <label class="form-label fw-semibold">Excel/CSV File <span class="text-danger">*</span></label>
+              <input type="file" class="form-control" id="attendanceFile" name="file" accept=".xlsx,.xls,.csv" required>
+              <div class="form-text">Accepted formats: .xlsx, .xls, .csv</div>
             </div>
 
             <button type="submit" class="btn btn-primary" id="uploadBtn">

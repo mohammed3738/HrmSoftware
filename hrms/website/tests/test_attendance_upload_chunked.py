@@ -136,3 +136,25 @@ class ChunkedAttendanceUploadTest(TestCase):
         self.assertTrue(chunk_data["success"], chunk_data)
         self.assertEqual(chunk_data["created"], 1)
         self.assertEqual(Attendance.objects.count(), 1)
+
+    def test_csv_format_is_accepted(self):
+        """The upload must also accept .csv, not just Excel formats."""
+        csv_content = (
+            "Employee Code,In Time,Out Time,AttendanceDate\r\n"
+            "EMP001,09:00,18:00,2026-08-02\r\n"
+            "EMP002,09:15,18:15,2026-08-02\r\n"
+        )
+        buf = io.BytesIO(csv_content.encode("utf-8"))
+        buf.name = "attendance.csv"
+
+        resp = self.client.post(reverse("upload_attendance_init"), {"attendance_file": buf})
+        data = resp.json()
+        self.assertTrue(data["success"], data)
+        self.assertEqual(data["total_rows"], 2)
+
+        resp = self.client.post(reverse("upload_attendance_chunk", args=[data["upload_id"]]))
+        chunk_data = resp.json()
+        self.assertTrue(chunk_data["success"], chunk_data)
+        self.assertEqual(chunk_data["created"], 1)  # EMP002 doesn't exist in this test's DB
+        self.assertEqual(chunk_data["skipped"], 1)
+        self.assertEqual(Attendance.objects.count(), 1)

@@ -425,14 +425,24 @@ def _excel_engine_for(uploaded_file):
     return "xlrd" if filename.endswith(".xls") else "openpyxl"
 
 
-def _normalize_attendance_excel(uploaded_file):
-    """Parse an uploaded attendance Excel file into a cleaned DataFrame with
-    detected/normalized headers. Raises ValueError with a user-facing message
-    on failure."""
+def _read_attendance_table(uploaded_file, header):
+    """Read the uploaded attendance file into a DataFrame, dispatching to
+    pandas' CSV or Excel reader based on the filename extension. `header` is
+    the row index to use as column names, or None to read every row as data."""
+    filename = (getattr(uploaded_file, "name", "") or "").lower()
+    if filename.endswith(".csv"):
+        return pd.read_csv(uploaded_file, header=header)
     engine = _excel_engine_for(uploaded_file)
+    return pd.read_excel(uploaded_file, engine=engine, header=header)
+
+
+def _normalize_attendance_excel(uploaded_file):
+    """Parse an uploaded attendance file (.xlsx, .xls, or .csv) into a
+    cleaned DataFrame with detected/normalized headers. Raises ValueError
+    with a user-facing message on failure."""
     try:
         # Read without assuming a header row — check if row 0 is the header
-        df_raw = pd.read_excel(uploaded_file, engine=engine, header=None)
+        df_raw = _read_attendance_table(uploaded_file, header=None)
     except Exception as e:
         raise ValueError(f"Cannot read file: {e}")
 
@@ -449,7 +459,7 @@ def _normalize_attendance_excel(uploaded_file):
     if header_row is not None:
         # Re-read using the detected header row
         uploaded_file.seek(0)  # rewind file pointer
-        df = pd.read_excel(uploaded_file, engine=engine, header=header_row)
+        df = _read_attendance_table(uploaded_file, header=header_row)
     else:
         df = df_raw
 

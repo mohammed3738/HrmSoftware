@@ -733,6 +733,19 @@ def recalculate_attendance_chunk(request):
     return JsonResponse({"success": True, "processed_in_chunk": len(chunk)})
 
 
+LATE_REVIEW_SORT_FIELDS = {
+    "employee": "employee__first_name",
+    "code": "employee__employee_code",
+    "date": "date",
+    "in_time": "in_time",
+    "out_time": "out_time",
+    # No stored "hours worked" field, but for Late Present rows the shortfall
+    # (late minutes) is a direct 1:1 inverse of hours worked, so it's sorted
+    # via the existing `late` column with the direction flipped (see below).
+    "worked": "late",
+}
+
+
 @login_required
 @group_required("Admin", "HR", "Manager")
 def late_attendance_review(request):
@@ -801,7 +814,20 @@ def late_attendance_review(request):
         .values_list("employee_id", "late_count")
     )
 
-    qs = qs.order_by("employee__first_name", "employee__last_name", "date")
+    sort_key = request.GET.get("sort", "")
+    sort_dir = request.GET.get("dir", "asc")
+    if sort_key in LATE_REVIEW_SORT_FIELDS:
+        field = LATE_REVIEW_SORT_FIELDS[sort_key]
+        effective_dir = sort_dir
+        if sort_key == "worked":
+            # "Hours Worked" ascending should mean fewest hours worked, which
+            # is the MOST late-minutes — so the DB sort direction is inverted.
+            effective_dir = "desc" if sort_dir == "asc" else "asc"
+        order_field = field if effective_dir == "asc" else f"-{field}"
+        qs = qs.order_by(order_field, "employee__first_name", "date")
+    else:
+        sort_key, sort_dir = "", "asc"
+        qs = qs.order_by("employee__first_name", "employee__last_name", "date")
 
     paginator = Paginator(qs, 50)
     records = paginator.get_page(request.GET.get("page"))
@@ -814,6 +840,8 @@ def late_attendance_review(request):
         "selected_year": selected_year,
         "selected_month": selected_month,
         "employee_search": employee_search,
+        "sort_key": sort_key,
+        "sort_dir": sort_dir,
     })
 
 

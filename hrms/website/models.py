@@ -1292,6 +1292,25 @@ class Attendance(models.Model):
 
         return int(shortfall) if shortfall > grace_period_minutes else 0
 
+    def get_worked_minutes(self):
+        """Total minutes actually worked (out_time - in_time, handling
+        overnight shifts), or None if either time is missing."""
+        if not self.in_time or not self.out_time:
+            return None
+        in_dt = datetime.datetime.combine(self.date, self.in_time)
+        out_dt = datetime.datetime.combine(self.date, self.out_time)
+        if out_dt <= in_dt:
+            out_dt += datetime.timedelta(days=1)
+        return int((out_dt - in_dt).total_seconds() // 60)
+
+    def get_worked_duration_display(self):
+        """Human-readable worked duration, e.g. '8h 10m'. Empty string if
+        either time is missing."""
+        total_minutes = self.get_worked_minutes()
+        if total_minutes is None:
+            return ""
+        hours, minutes = divmod(total_minutes, 60)
+        return f"{hours}h {minutes}m"
 
 
     def get_applicable_holiday(self, branch):

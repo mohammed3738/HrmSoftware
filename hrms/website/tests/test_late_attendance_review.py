@@ -167,6 +167,57 @@ class LateAttendanceReviewTest(TestCase):
         resp = self.client.get(reverse("late_attendance_review"), {"employee": "Nobody"})
         self.assertEqual(len(resp.context["records"]), 0)
 
+    def test_worked_duration_display_matches_hours_and_minutes_worked(self):
+        """The user's exact example: in 9:00, out 17:10 -> late=50min (9h -
+        50min short), which should display as '8h 10m' worked, not '50 min late'."""
+        att = Attendance.objects.create(
+            employee=self.employee, date=date(2026, 8, 6),
+            in_time=time(9, 0), out_time=time(17, 10),
+        )
+        att.refresh_from_db()
+        self.assertEqual(att.late, 50)
+        self.assertEqual(att.get_worked_duration_display(), "8h 10m")
+
+        resp = self.client.get(reverse("late_attendance_review"), {"year": "2026", "month": "8"})
+        self.assertContains(resp, "8h 10m")
+        self.assertNotContains(resp, "50 min")
+
+    def test_sort_by_hours_worked(self):
+        """Ascending 'worked' sort should list the employee who worked the
+        fewest hours first (i.e. the MOST late minutes first)."""
+        second_employee = Employee.objects.create(
+            company=self.company,
+            salutation="Ms", first_name="Amy", last_name="Smith",
+            father_name="Robert Smith", gender="Female", blood_group="O+",
+            date_of_birth=date(1990, 1, 1), place_of_birth="Test City",
+            personal_email="amy@test.com", present_address="123 Test St",
+            permanent_address="123 Test St", personal_mobile="1234567891",
+            employee_code="EMP002", designation="Developer", department="IT",
+            date_of_joining=date(2020, 1, 1), location="Test Location",
+            pan_no="ABCDE1235F", aadhar_no="123456789013",
+            name_as_per_bank="Amy Smith", salary_account_number="1234567891",
+            ifsc_code="TEST0001234", emergency_contact_name1="Jane Doe",
+            emergency_contact_relation1="Spouse", emergency_contact_mobile1="0987654322",
+            status="Active",
+        )
+        # Worked only 7h (much shorter than self.late_rows' 8h50m)
+        Attendance.objects.create(
+            employee=second_employee, date=date(2026, 8, 3),
+            in_time=time(9, 0), out_time=time(16, 0),
+        )
+
+        resp = self.client.get(reverse("late_attendance_review"), {
+            "year": "2026", "month": "8", "sort": "worked", "dir": "asc",
+        })
+        records = list(resp.context["records"])
+        self.assertEqual(records[0].employee_id, second_employee.id)  # fewest hours worked first
+
+        resp = self.client.get(reverse("late_attendance_review"), {
+            "year": "2026", "month": "8", "sort": "worked", "dir": "desc",
+        })
+        records = list(resp.context["records"])
+        self.assertEqual(records[0].employee_id, self.employee.id)  # most hours worked first
+
     def test_requires_login(self):
         anon_client = Client()
         resp = anon_client.get(reverse("late_attendance_review"))

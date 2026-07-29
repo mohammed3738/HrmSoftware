@@ -1242,6 +1242,12 @@ class Attendance(models.Model):
     is_half_day = models.BooleanField(default=False)
     half_day_scenario = models.ForeignKey(HalfDayScenario, null=True, blank=True, on_delete=models.SET_NULL)
 
+    status_overridden = models.BooleanField(
+        default=False,
+        help_text="If True, status/count was manually set (e.g. payroll late-day forgiveness) "
+                   "and calculate_status() will preserve it instead of recomputing from in/out time.",
+    )
+
     class Meta:
         unique_together = [('employee', 'date')]
         indexes = [
@@ -1319,6 +1325,11 @@ class Attendance(models.Model):
             """
             Calculate attendance status with branch-aware holidays and half-days
             """
+            # Manager manually overrode status/count (e.g. forgiving a late day
+            # at payroll time) — preserve it instead of recomputing.
+            if self.status_overridden:
+                return
+
             # STEP 0: Check if weekend — respects PayrollSettings.weekend_days
             try:
                 ps = PayrollSettings.objects.filter(company=self.employee.company).first()

@@ -734,6 +734,143 @@ def recalculate_attendance_chunk(request):
 
 
 @login_required
+@group_required("Admin", "HR", "Manager")
+def late_attendance_review(request):
+    """
+    Payroll-time review of every 'Late Present' day for the selected month,
+    with a per-row dropdown letting a manager convert a late day into
+    Present / Half Day / Holiday (i.e. forgive it) or leave it as Late
+    Present. Also reports each employee's total late-day count for the
+    selected period, so a manager can decide e.g. "forgive 5 of this
+    person's 10 late days this month."
+    """
+    company_filter = get_company_filter(request.user)
+
+    base_qs = Attendance.objects.filter(status="Late Present").select_related("employee")
+    if company_filter:
+        base_qs = base_qs.filter(employee__company=company_filter)
+
+    years = base_qs.dates("date", "year", order="DESC")
+    raw_months_all = base_qs.dates("date", "month", order="DESC")
+    seen_months = set()
+    months = []
+    for m in raw_months_all:
+        if m.month not in seen_months:
+            seen_months.add(m.month)
+            months.append(m)
+
+    # Show everything by default (no year/month filter) — a silent
+    # "current month" default previously hid all data whenever the current
+    # month had no late records, while the dropdown still rendered as if
+    # "All Months" was selected, making the page look broken.
+    selected_year = request.GET.get("year", "").strip()
+    selected_month = request.GET.get("month", "").strip()
+
+    qs = base_qs
+    if selected_year:
+        try:
+            qs = qs.filter(date__year=int(selected_year))
+        except ValueError:
+            pass
+    if selected_month:
+        try:
+            qs = qs.filter(date__month=int(selected_month))
+        except ValueError:
+            pass
+
+    employee_search = request.GET.get("employee", "").strip()
+    if employee_search:
+        from django.db.models import Value
+        from django.db.models.functions import Concat
+        # Match first name, last name, "First Last" combined (autocomplete
+        # fills the full name), or employee code.
+        qs = qs.annotate(
+            full_name=Concat("employee__first_name", Value(" "), "employee__last_name")
+        ).filter(
+            Q(full_name__icontains=employee_search) |
+            Q(employee__employee_code__icontains=employee_search)
+        )
+
+    # Late-day count per employee within the current filters, so the table
+    # can show "X late this period" next to each employee. Computed from an
+    # unordered copy — order_by() fields leak into GROUP BY otherwise, which
+    # would fragment the count down to one row per (employee, date).
+    late_counts = dict(
+        qs.order_by().values("employee_id")
+        .annotate(late_count=Count("id"))
+        .values_list("employee_id", "late_count")
+    )
+
+    qs = qs.order_by("employee__first_name", "employee__last_name", "date")
+
+    paginator = Paginator(qs, 50)
+    records = paginator.get_page(request.GET.get("page"))
+
+    return render(request, "attendance/late_attendance_review.html", {
+        "records": records,
+        "late_counts": late_counts,
+        "years": years,
+        "months": months,
+        "selected_year": selected_year,
+        "selected_month": selected_month,
+        "employee_search": employee_search,
+    })
+
+
+ATTENDANCE_OVERRIDE_STATUS_MAP = {
+    "Present":  Decimal("1.00"),
+    "Half Day": Decimal("0.50"),
+    "Holiday":  Decimal("1.00"),
+}
+
+
+@login_required
+@group_required("Admin", "HR", "Manager")
+@require_http_methods(["POST"])
+def override_attendance_status(request):
+    """Manually convert a single Attendance record's status — used on the
+    late-attendance review page to forgive/reclassify late days at payroll
+    time. Choosing 'Late Present' clears any prior override and lets the
+    normal calculate_status() logic run again."""
+    attendance_id = request.POST.get("attendance_id")
+    new_status = request.POST.get("new_status", "").strip()
+
+    valid_statuses = {"Present", "Half Day", "Holiday", "Late Present"}
+    if new_status not in valid_statuses:
+        return JsonResponse({"success": False, "error": "Invalid status choice."}, status=400)
+
+    attendance = get_object_or_404(
+        Attendance.objects.select_related("employee__company"), id=attendance_id
+    )
+
+    company_filter = get_company_filter(request.user)
+    if company_filter and attendance.employee.company_id != company_filter.id:
+        return JsonResponse({"success": False, "error": "Permission denied."}, status=403)
+
+    locking_run = get_locking_run(attendance.employee.company, attendance.date)
+    if locking_run:
+        return lock_response(locking_run, action="change this attendance status")
+
+    if new_status == "Late Present":
+        attendance.status_overridden = False
+        attendance.save()
+    else:
+        attendance.status_overridden = True
+        attendance.status = new_status
+        attendance.count = ATTENDANCE_OVERRIDE_STATUS_MAP[new_status]
+        attendance.is_holiday = (new_status == "Holiday")
+        attendance.is_half_day = (new_status == "Half Day")
+        attendance.save()
+
+    return JsonResponse({
+        "success": True,
+        "attendance_id": attendance.id,
+        "status": attendance.status,
+        "count": str(attendance.count),
+    })
+
+
+@login_required
 def attendance_upload_progress(request, upload_id):
     try:
         upload = AttendanceUpload.objects.get(id=upload_id)

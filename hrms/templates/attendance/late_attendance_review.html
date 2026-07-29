@@ -1,0 +1,227 @@
+{% extends 'base2.html' %}
+{% load custom_filters %}
+{% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="card shadow p-3 rounded-4">
+    <h4 class="m-2 fw-bold"><i class="ri-time-line me-2 text-warning"></i>Late Attendance Review</h4>
+    <p class="text-muted small px-2">
+      Review everyone who came in late during the selected period. Use the dropdown on each row to
+      forgive a late day — convert it to Full Day, Half Day, or Holiday — before running payroll.
+      Leaving a row as "Late Present" keeps it unchanged.
+    </p>
+
+    <form method="GET" class="row g-2 align-items-end mb-3 px-2">
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Year</label>
+        <select name="year" class="form-select form-select-sm">
+          <option value="" {% if not selected_year %}selected{% endif %}>All Years</option>
+          {% for year in years %}
+          <option value="{{ year.year }}" {% if selected_year == year.year|stringformat:"s" %}selected{% endif %}>
+            {{ year.year }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Month</label>
+        <select name="month" class="form-select form-select-sm">
+          <option value="" {% if not selected_month %}selected{% endif %}>All Months</option>
+          {% for month in months %}
+          <option value="{{ month.month }}" {% if selected_month == month.month|stringformat:"s" %}selected{% endif %}>
+            {{ month|date:"F" }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Employee</label>
+        <div class="position-relative">
+          <input
+            type="text"
+            id="employeeSearch"
+            name="employee"
+            value="{{ employee_search }}"
+            class="form-control form-control-sm"
+            placeholder="Name or code"
+            autocomplete="off"
+          >
+          <ul
+            id="employeeDropdown"
+            class="list-group position-absolute w-100 shadow"
+            style="z-index: 1000; display: none; max-height: 250px; overflow-y: auto; background-color: white; cursor: pointer;"
+          ></ul>
+        </div>
+      </div>
+
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-sm btn-primary">
+          <i class="ri-filter-2-line me-1"></i> Filter
+        </button>
+        <a href="{% url 'late_attendance_review' %}" class="btn btn-sm btn-outline-secondary">Reset</a>
+      </div>
+    </form>
+
+    {% if records %}
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Employee</th>
+            <th>Emp Code</th>
+            <th>Date</th>
+            <th>In Time</th>
+            <th>Out Time</th>
+            <th>Late By</th>
+            <th>Late Days (this filter)</th>
+            <th>Status</th>
+            <th style="width:190px;">Convert To</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for att in records %}
+          <tr id="att-row-{{ att.id }}">
+            <td class="fw-medium">{{ att.employee.first_name }} {{ att.employee.last_name }}</td>
+            <td>{{ att.employee.employee_code }}</td>
+            <td>{{ att.date|date:"d M Y" }}</td>
+            <td>{{ att.in_time|default:"—" }}</td>
+            <td>{{ att.out_time|default:"—" }}</td>
+            <td>{{ att.late }} min</td>
+            <td><span class="badge bg-label-danger">{{ late_counts|get_item:att.employee_id }}</span></td>
+            <td id="att-status-{{ att.id }}"><span class="badge bg-warning text-dark">{{ att.status }}</span></td>
+            <td>
+              <select class="form-select form-select-sm status-override-select" data-attendance-id="{{ att.id }}" onchange="convertLateStatus(this)">
+                <option value="Late Present" selected>Late Present (no change)</option>
+                <option value="Present">Full Day</option>
+                <option value="Half Day">Half Day</option>
+                <option value="Holiday">Holiday</option>
+              </select>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if records.has_other_pages %}
+    <div class="d-flex justify-content-between align-items-center mt-3 px-2">
+      <span class="text-muted small">Page {{ records.number }} of {{ records.paginator.num_pages }}</span>
+      <div>
+        {% if records.has_previous %}
+        <a href="?page={{ records.previous_page_number }}&year={{ selected_year }}&month={{ selected_month }}&employee={{ employee_search }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+        {% endif %}
+        {% if records.has_next %}
+        <a href="?page={{ records.next_page_number }}&year={{ selected_year }}&month={{ selected_month }}&employee={{ employee_search }}" class="btn btn-sm btn-outline-primary">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="alert alert-success text-center mt-3 mx-2">
+      No late attendance records found for the selected filters.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function getCSRFToken() {
+  return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
+}
+
+// ── Employee autocomplete ──────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", function () {
+  const input = document.getElementById("employeeSearch");
+  const dropdown = document.getElementById("employeeDropdown");
+  let controller = null;
+
+  input.addEventListener("input", async function () {
+    const query = this.value.trim();
+
+    if (query.length < 1) {
+      dropdown.style.display = "none";
+      dropdown.innerHTML = "";
+      return;
+    }
+
+    if (controller) controller.abort();
+    controller = new AbortController();
+
+    try {
+      const res = await fetch(
+        `/ajax/employees/search/?q=${encodeURIComponent(query)}`,
+        { signal: controller.signal }
+      );
+      const data = await res.json();
+
+      dropdown.innerHTML = "";
+
+      if (data.length === 0) {
+        dropdown.innerHTML = `<li class="list-group-item text-muted">No employees found</li>`;
+      } else {
+        data.forEach(emp => {
+          const li = document.createElement("li");
+          li.className = "list-group-item list-group-item-action";
+          li.innerHTML = `<strong>${emp.name}</strong> <small class="text-muted ms-1">(${emp.code})</small>`;
+          li.onclick = () => {
+            input.value = emp.code;
+            dropdown.style.display = "none";
+            input.form.submit();
+          };
+          dropdown.appendChild(li);
+        });
+      }
+
+      dropdown.style.display = "block";
+    } catch (err) {
+      if (err.name !== "AbortError") console.error("Employee search failed", err);
+    }
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = "none";
+    }
+  });
+});
+
+function convertLateStatus(selectEl) {
+  const attendanceId = selectEl.dataset.attendanceId;
+  const newStatus = selectEl.value;
+  const statusCell = document.getElementById('att-status-' + attendanceId);
+  const row = document.getElementById('att-row-' + attendanceId);
+
+  selectEl.disabled = true;
+
+  fetch("{% url 'override_attendance_status' %}", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-CSRFToken": getCSRFToken(),
+    },
+    body: new URLSearchParams({ attendance_id: attendanceId, new_status: newStatus }),
+  })
+  .then(res => res.json().then(data => ({ ok: res.ok, data })))
+  .then(({ ok, data }) => {
+    selectEl.disabled = false;
+    if (!ok) {
+      alert(data.error || "Could not update this record.");
+      selectEl.value = "Late Present";
+      return;
+    }
+    const badgeClass = data.status === "Late Present" ? "bg-warning text-dark" : "bg-success";
+    statusCell.innerHTML = `<span class="badge ${badgeClass}">${data.status}</span>`;
+    if (data.status !== "Late Present" && row) {
+      row.classList.add("table-success");
+    }
+  })
+  .catch(() => {
+    selectEl.disabled = false;
+    selectEl.value = "Late Present";
+    alert("Something went wrong while updating this record.");
+  });
+}
+</script>
+{% endblock %}

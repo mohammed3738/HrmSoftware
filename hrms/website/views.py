@@ -23,7 +23,7 @@ from decimal import Decimal
 from django.core.paginator import Paginator
 from dateutil.relativedelta import relativedelta
 from django.template.loader import render_to_string
-from django.utils import timezone
+from django.utils import timezone    
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Sum
 # from .signals import recalculate_leave_balance_for_employee
@@ -955,23 +955,41 @@ def attendance_list(request):
 def employee_attendance_detail(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
 
-    selected_year = request.GET.get("year")
-    selected_month = request.GET.get("month")
-
     attendance_records = Attendance.objects.filter(employee=employee)
 
-    if selected_year:
-        attendance_records = attendance_records.filter(date__year=selected_year)
-    if selected_month:
-        attendance_records = attendance_records.filter(date__month=selected_month)
+    # If the company has a custom payroll cycle configured (e.g. 27th to
+    # 26th), filter by that actual payroll period instead of the naive
+    # calendar month — "June" should mean 27 May - 26 Jun, not 1-30 Jun.
+    payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
+    uses_custom_period = bool(payroll_settings and payroll_settings.from_date and payroll_settings.to_date)
+
+    selected_year = request.GET.get("year")
+    selected_month = request.GET.get("month")
+    selected_period = request.GET.get("period", "")
+    years = months = []
+    payroll_periods = []
+
+    if uses_custom_period:
+        payroll_periods = get_all_payroll_periods_from_attendance(employee.company, payroll_settings)
+        if selected_period:
+            for p in payroll_periods:
+                if p["to_date"].isoformat() == selected_period:
+                    attendance_records = attendance_records.filter(
+                        date__gte=p["from_date"], date__lte=p["to_date"]
+                    )
+                    break
+    else:
+        dates_qs = Attendance.objects.filter(employee=employee)
+        years = dates_qs.dates("date", "year", order="DESC")
+        months = dates_qs.dates("date", "month", order="DESC")
+        if selected_year:
+            attendance_records = attendance_records.filter(date__year=selected_year)
+        if selected_month:
+            attendance_records = attendance_records.filter(date__month=selected_month)
 
     attendance_records = attendance_records.only(
         "date", "in_time", "out_time", "status"
     ).order_by("-date")
-
-    dates_qs = Attendance.objects.filter(employee=employee)
-    years = dates_qs.dates("date", "year", order="DESC")
-    months = dates_qs.dates("date", "month", order="DESC")
 
     paginator = Paginator(attendance_records, 30)
     page = request.GET.get("page")
@@ -984,6 +1002,10 @@ def employee_attendance_detail(request, employee_id):
         "months": months,
         "selected_year": selected_year,
         "selected_month": selected_month,
+        "uses_custom_period": uses_custom_period,
+        "payroll_periods": payroll_periods,
+        "selected_period": selected_period,
+        "payroll_settings": payroll_settings,
     }
     return render(request, "attendance/employee_attendance_detail.html", context)
 

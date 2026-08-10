@@ -15,6 +15,20 @@
 
         <!-- Filter Section -->
         <form method="GET" class="row g-2 align-items-end mb-3">
+            {% if uses_custom_period %}
+            <div class="col-md-5">
+                <label class="form-label fw-semibold">Payroll Period</label>
+                <select name="period" class="form-select form-select-sm">
+                    <option value="" {% if not selected_period %}selected{% endif %}>All Periods</option>
+                    {% for period in payroll_periods %}
+                    <option value="{{ period.to_date|date:'Y-m-d' }}" {% if selected_period == period.to_date|date:'Y-m-d' %}selected{% endif %}>
+                        {{ period.label }}
+                    </option>
+                    {% endfor %}
+                </select>
+                <div class="form-text">Matches this company's configured payroll cycle (day {{ payroll_settings.from_date|default:"" }} to day {{ payroll_settings.to_date|default:"" }} of each month).</div>
+            </div>
+            {% else %}
             <div class="col-md-3">
                 <label class="form-label fw-semibold">Year</label>
                 <select name="year" class="form-select form-select-sm">
@@ -38,6 +52,7 @@
                     {% endfor %}
                 </select>
             </div>
+            {% endif %}
 
             <div class="col-md-3 d-flex gap-2">
                 <button type="submit" class="btn btn-sm btn-primary mt-auto">

@@ -790,7 +790,7 @@ document.getElementById("attendanceUploadForm").addEventListener("submit", funct
       msg.innerText = `${data.processed_rows} / ${totalRows} rows processed`;
 
       if (data.done) {
-        msg.innerText = `Upload complete! Created: ${data.created}, Skipped: ${data.skipped}` +
+        msg.innerText = `Upload complete! Created: ${data.created}, Updated: ${data.updated}, Skipped: ${data.skipped}` +
           (data.errors && data.errors.length ? ` (${data.errors.length} row error(s), see console)` : "");
         if (data.errors && data.errors.length) console.warn("Attendance upload row errors:", data.errors);
         submitBtn.disabled = false;

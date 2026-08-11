@@ -452,7 +452,7 @@ def _normalize_attendance_excel(uploaded_file):
     header_row = None
     for i in range(min(5, len(df_raw))):  # check first 5 rows
         row_vals = [str(v).strip().lower() for v in df_raw.iloc[i].tolist()]
-        if "emp code" in row_vals or "employee code" in row_vals:
+        if "emp code" in row_vals or "employee code" in row_vals or "employee" in row_vals:
             header_row = i
             break
 
@@ -463,20 +463,26 @@ def _normalize_attendance_excel(uploaded_file):
     else:
         df = df_raw
 
-    df.columns = df.columns.str.strip()
+    # Coerce to str before stripping — if header detection above found
+    # nothing, df's columns fall back to a plain 0..N RangeIndex (integers),
+    # and pandas' .str accessor raises on non-string column dtypes.
+    df.columns = [str(c).strip() for c in df.columns]
 
     # ── Normalize column names ────────────────────────────────────────────────
     # Handle variants: "Att. Date", "Att.Date", "Date", "Attendance Date", "AttendanceDate"
     col_aliases = {
         "emp code":        "Emp Code",
         "employee code":   "Emp Code",
+        "employee":        "Emp Code",
         "att. date":       "Att.Date",
         "att.date":        "Att.Date",
         "attendance date": "Att.Date",
         "attendancedate":  "Att.Date",
         "date":            "Att.Date",
         "in time":         "In Time",
+        "intime":          "In Time",
         "out time":        "Out Time",
+        "outtime":         "Out Time",
     }
     df.rename(columns={c: col_aliases.get(c.strip().lower(), c) for c in df.columns}, inplace=True)
 
@@ -494,8 +500,9 @@ def _normalize_attendance_excel(uploaded_file):
 
 def _process_attendance_rows(df_chunk):
     """Process a slice of the normalized attendance DataFrame.
-    Returns (created_count, skipped_count, errors)."""
+    Returns (created_count, updated_count, skipped_count, errors)."""
     created_count = 0
+    updated_count = 0
     skipped_count = 0
     errors = []
 
@@ -542,18 +549,34 @@ def _process_attendance_rows(df_chunk):
             in_time  = _parse_excel_time(row.get("In Time"))
             out_time = _parse_excel_time(row.get("Out Time"))
 
-            _, created = Attendance.objects.get_or_create(
-                employee=employee,
-                date=att_date,
-                defaults={
-                    'in_time': in_time,
-                    'out_time': out_time,
-                }
-            )
+            # A re-upload of the same employee/date must overwrite the punch
+            # times with the latest source data — get_or_create only applies
+            # its defaults when creating a NEW row, so a previously-blank
+            # row (e.g. left that way by a parsing bug) would never get
+            # fixed by a corrected re-upload. Deliberately NOT using
+            # Django's update_or_create() here: on the update path it calls
+            # save(update_fields=<only the defaults keys>), which silently
+            # drops status/count/late — calculate_status() computes them
+            # in-memory but update_fields excludes them from the SQL UPDATE,
+            # so the stale status would never actually persist. A plain
+            # full .save() (no update_fields) writes every field. A manual
+            # status override (status_overridden) is still preserved either
+            # way — calculate_status() skips recomputation for those rows
+            # regardless of what in/out time gets written here.
+            try:
+                attendance = Attendance.objects.get(employee=employee, date=att_date)
+                created = False
+            except Attendance.DoesNotExist:
+                attendance = Attendance(employee=employee, date=att_date)
+                created = True
+            attendance.in_time = in_time
+            attendance.out_time = out_time
+            attendance.save()
+
             if created:
                 created_count += 1
             else:
-                skipped_count += 1
+                updated_count += 1
 
         except Exception as e:
             import traceback
@@ -561,7 +584,7 @@ def _process_attendance_rows(df_chunk):
             errors.append(f"Row {row_num}: {e}")
             skipped_count += 1
 
-    return created_count, skipped_count, errors
+    return created_count, updated_count, skipped_count, errors
 
 
 def _do_import_attendance(request):
@@ -574,11 +597,12 @@ def _do_import_attendance(request):
     except ValueError as e:
         return JsonResponse({"success": False, "error": str(e)})
 
-    created_count, skipped_count, errors = _process_attendance_rows(df)
+    created_count, updated_count, skipped_count, errors = _process_attendance_rows(df)
 
     return JsonResponse({
         "success": True,
         "created": created_count,
+        "updated": updated_count,
         "skipped": skipped_count,
         "total_rows": len(df),
         "errors": errors[:50],  # cap at 50 so response doesn't get huge
@@ -636,6 +660,7 @@ def upload_attendance_chunk(request, upload_id):
             "processed_rows": upload.processed_rows,
             "total_rows": upload.total_rows,
             "created": upload.created_count,
+            "updated": upload.updated_count,
             "skipped": upload.skipped_count,
             "errors": upload.errors,
         })
@@ -653,16 +678,17 @@ def upload_attendance_chunk(request, upload_id):
 
     offset = upload.processed_rows
     chunk = df.iloc[offset: offset + ATTENDANCE_UPLOAD_CHUNK_SIZE]
-    created_count, skipped_count, errors = _process_attendance_rows(chunk)
+    created_count, updated_count, skipped_count, errors = _process_attendance_rows(chunk)
 
     upload.processed_rows = min(offset + len(chunk), upload.total_rows)
     upload.created_count += created_count
+    upload.updated_count += updated_count
     upload.skipped_count += skipped_count
     if errors:
         upload.errors = ((upload.errors or []) + errors)[:50]  # cap so it never grows unbounded
     done = upload.processed_rows >= upload.total_rows
     upload.status = "completed" if done else "processing"
-    upload.save(update_fields=["processed_rows", "created_count", "skipped_count", "errors", "status"])
+    upload.save(update_fields=["processed_rows", "created_count", "updated_count", "skipped_count", "errors", "status"])
 
     return JsonResponse({
         "success": True,
@@ -671,6 +697,7 @@ def upload_attendance_chunk(request, upload_id):
         "processed_rows": upload.processed_rows,
         "total_rows": upload.total_rows,
         "created": upload.created_count,
+        "updated": upload.updated_count,
         "skipped": upload.skipped_count,
         "errors": upload.errors,
     })
@@ -804,10 +831,9 @@ def late_attendance_review(request):
             Q(employee__employee_code__icontains=employee_search)
         )
 
-    # Late-day count per employee within the current filters, so the table
-    # can show "X late this period" next to each employee. Computed from an
-    # unordered copy — order_by() fields leak into GROUP BY otherwise, which
-    # would fragment the count down to one row per (employee, date).
+    # Late-day count per employee within the current filters. Computed from
+    # an unordered copy — order_by() fields leak into GROUP BY otherwise,
+    # which would fragment the count down to one row per (employee, date).
     late_counts = dict(
         qs.order_by().values("employee_id")
         .annotate(late_count=Count("id"))

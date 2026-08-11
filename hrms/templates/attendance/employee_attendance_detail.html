@@ -98,8 +98,10 @@
                                 <span class="badge bg-success">Present</span>
                             {% elif record.status == "Absent" %}
                                 <span class="badge bg-danger">Absent</span>
-                            {% elif record.status == "Half-day" %}
-                                <span class="badge bg-warning text-dark">Half-day</span>
+                            {% elif record.status == "Half Day" or record.status == "Present (Half-Day)" %}
+                                <span class="badge bg-info text-dark">{{ record.status }}</span>
+                            {% elif record.status == "Late Present" %}
+                                <span class="badge bg-warning text-dark">Late Present</span>
                             {% else %}
                                 <span class="badge bg-secondary">{{ record.status }}</span>
                             {% endif %}

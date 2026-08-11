@@ -158,3 +158,80 @@ class ChunkedAttendanceUploadTest(TestCase):
         self.assertEqual(chunk_data["created"], 1)  # EMP002 doesn't exist in this test's DB
         self.assertEqual(chunk_data["skipped"], 1)
         self.assertEqual(Attendance.objects.count(), 1)
+
+    def test_alternate_header_names_are_recognized_and_times_are_saved(self):
+        """Regression test: a real-world export using 'Employee' / 'InTime' /
+        'OutTime' (no 'Code' suffix, no spaces) previously crashed header
+        detection entirely (it only recognized 'Emp Code'/'Employee Code'),
+        which meant the fallback path tried to .str.strip() an integer
+        column index and raised AttributeError — so in/out times never made
+        it into the Attendance record at all."""
+        self.employee.employee_code = "2"
+        self.employee.save()
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["Employee", "InTime", "OutTime", "AttendanceDate"])
+        ws.append([2, "11:44", "23:55", "2026-08-08"])
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        buf.name = "attendance.xlsx"
+
+        resp = self.client.post(reverse("upload_attendance_init"), {"attendance_file": buf})
+        data = resp.json()
+        self.assertTrue(data["success"], data)
+        self.assertEqual(data["total_rows"], 1)
+
+        resp = self.client.post(reverse("upload_attendance_chunk", args=[data["upload_id"]]))
+        chunk_data = resp.json()
+        self.assertTrue(chunk_data["success"], chunk_data)
+        self.assertEqual(chunk_data["created"], 1)
+
+        att = Attendance.objects.get(employee=self.employee, date=date(2026, 8, 8))
+        self.assertEqual(att.in_time.strftime("%H:%M"), "11:44")
+        self.assertEqual(att.out_time.strftime("%H:%M"), "23:55")
+
+    def test_reupload_updates_existing_blank_attendance_row(self):
+        """Regression test: re-uploading a file must UPDATE an existing
+        Attendance row's in/out time, not silently leave it untouched.
+        get_or_create only applies its `defaults` when creating a brand new
+        row — if a row already exists for that employee/date (e.g. left
+        blank by an earlier parsing bug, exactly what the user hit), a
+        corrected re-upload previously did nothing because the row already
+        existed and only got 'skipped'. Also uses the user's real column
+        format (Employee Code / InTime / OutTime / AttendanceDate) with a
+        'D-Mon-YY' date and single-digit hour times ('9:52', '0:00')."""
+        self.employee.employee_code = "5"
+        self.employee.save()
+
+        # Simulates the pre-fix corrupted state: a blank Attendance row
+        # already exists for this employee/date.
+        stale = Attendance.objects.create(
+            employee=self.employee, date=date(2026, 8, 4), in_time=None, out_time=None,
+        )
+        self.assertEqual(stale.status, "Absent")
+
+        csv_content = (
+            "Employee Code,InTime,OutTime,AttendanceDate\r\n"
+            "5,9:52,23:55,4-Aug-26\r\n"
+        )
+        buf = io.BytesIO(csv_content.encode("utf-8"))
+        buf.name = "attendance.csv"
+
+        resp = self.client.post(reverse("upload_attendance_init"), {"attendance_file": buf})
+        data = resp.json()
+        self.assertTrue(data["success"], data)
+        self.assertEqual(data["total_rows"], 1)
+
+        resp = self.client.post(reverse("upload_attendance_chunk", args=[data["upload_id"]]))
+        chunk_data = resp.json()
+        self.assertTrue(chunk_data["success"], chunk_data)
+        self.assertEqual(chunk_data["created"], 0)
+        self.assertEqual(chunk_data["updated"], 1)
+        self.assertEqual(Attendance.objects.count(), 1)  # updated in place, not duplicated
+
+        stale.refresh_from_db()
+        self.assertEqual(stale.in_time.strftime("%H:%M"), "09:52")
+        self.assertEqual(stale.out_time.strftime("%H:%M"), "23:55")
+        self.assertNotEqual(stale.status, "Absent")

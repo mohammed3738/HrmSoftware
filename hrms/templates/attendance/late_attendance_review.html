@@ -1,5 +1,4 @@
 {% extends 'base2.html' %}
-{% load custom_filters %}
 {% block body %}
 <div class="container-xxl flex-grow-1 container-p-y">
   <div class="card shadow p-3 rounded-4">
@@ -104,7 +103,6 @@
                 {% if sort_key == 'worked' %}<i class="ri-arrow-{% if sort_dir == 'asc' %}up{% else %}down{% endif %}-s-line"></i>{% endif %}
               </a>
             </th>
-            <th>Late Days (this filter)</th>
             <th>Status</th>
             <th style="width:190px;">Convert To</th>
           </tr>
@@ -118,7 +116,6 @@
             <td>{{ att.in_time|default:"—" }}</td>
             <td>{{ att.out_time|default:"—" }}</td>
             <td>{{ att.get_worked_duration_display|default:"—" }}</td>
-            <td><span class="badge bg-label-danger">{{ late_counts|get_item:att.employee_id }}</span></td>
             <td id="att-status-{{ att.id }}"><span class="badge bg-warning text-dark">{{ att.status }}</span></td>
             <td>
               <select class="form-select form-select-sm status-override-select" data-attendance-id="{{ att.id }}" onchange="convertLateStatus(this)">
@@ -241,10 +238,17 @@ function convertLateStatus(selectEl) {
       selectEl.value = "Late Present";
       return;
     }
-    const badgeClass = data.status === "Late Present" ? "bg-warning text-dark" : "bg-success";
-    statusCell.innerHTML = `<span class="badge ${badgeClass}">${data.status}</span>`;
-    if (data.status !== "Late Present" && row) {
-      row.classList.add("table-success");
+    const STATUS_STYLES = {
+      "Late Present": { badge: "bg-warning text-dark", row: null },
+      "Present":      { badge: "bg-success",           row: "table-success" },
+      "Half Day":     { badge: "bg-info text-dark",     row: "table-info" },
+      "Holiday":      { badge: "bg-primary",            row: "table-primary" },
+    };
+    const style = STATUS_STYLES[data.status] || { badge: "bg-secondary", row: null };
+    statusCell.innerHTML = `<span class="badge ${style.badge}">${data.status}</span>`;
+    if (row) {
+      row.classList.remove("table-success", "table-info", "table-primary");
+      if (style.row) row.classList.add(style.row);
     }
   })
   .catch(() => {

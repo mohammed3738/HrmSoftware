@@ -1549,6 +1549,7 @@ class AttendanceUpload(models.Model):
     total_rows = models.IntegerField(default=0)
     processed_rows = models.IntegerField(default=0)
     created_count = models.IntegerField(default=0)
+    updated_count = models.IntegerField(default=0)
     skipped_count = models.IntegerField(default=0)
     errors = models.JSONField(default=list, blank=True)
     status = models.CharField(

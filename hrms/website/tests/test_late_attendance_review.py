@@ -182,6 +182,33 @@ class LateAttendanceReviewTest(TestCase):
         self.assertContains(resp, "8h 10m")
         self.assertNotContains(resp, "50 min")
 
+    def test_working_hours_property_matches_screenshot_example(self):
+        """Regression test: the employee attendance detail page's 'Working
+        Hours' column referenced a non-existent `record.working_hours`
+        attribute, which Django templates silently render as blank —
+        showing just 'hrs' with no number (e.g. in 11:26 a.m., out 11:55
+        p.m. showed only 'hrs'). Attendance.working_hours must resolve to
+        a real numeric value, and working_hours_display must show clock-style
+        'H:MM' (the user's example: 8h 30m worked -> '8:30', not '8.5')."""
+        att = Attendance.objects.create(
+            employee=self.employee, date=date(2026, 8, 8),
+            in_time=time(11, 26), out_time=time(23, 55),
+        )
+        self.assertEqual(att.working_hours, 12.48)
+        self.assertEqual(att.working_hours_display, "12:29")
+
+        eight_thirty = Attendance.objects.create(
+            employee=self.employee, date=date(2026, 8, 9),
+            in_time=time(9, 0), out_time=time(17, 30),
+        )
+        self.assertEqual(eight_thirty.working_hours_display, "8:30")
+
+        att_no_times = Attendance.objects.create(
+            employee=self.employee, date=date(2026, 8, 10),
+        )
+        self.assertIsNone(att_no_times.working_hours)
+        self.assertEqual(att_no_times.working_hours_display, "")
+
     def test_sort_by_hours_worked(self):
         """Ascending 'worked' sort should list the employee who worked the
         fewest hours first (i.e. the MOST late minutes first)."""

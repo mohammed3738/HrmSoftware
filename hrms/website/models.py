@@ -1312,6 +1312,25 @@ class Attendance(models.Model):
         hours, minutes = divmod(total_minutes, 60)
         return f"{hours}h {minutes}m"
 
+    @property
+    def working_hours(self):
+        """Numeric hours worked (e.g. 8.17), or None if either time is
+        missing."""
+        total_minutes = self.get_worked_minutes()
+        if total_minutes is None:
+            return None
+        return round(total_minutes / 60, 2)
+
+    @property
+    def working_hours_display(self):
+        """Worked duration as 'H:MM' (clock style), e.g. 8h30m -> '8:30'.
+        Empty string if either time is missing."""
+        total_minutes = self.get_worked_minutes()
+        if total_minutes is None:
+            return ""
+        hours, minutes = divmod(total_minutes, 60)
+        return f"{hours}:{minutes:02d}"
+
 
     def get_applicable_holiday(self, branch):
         '''Get the first holiday on this date that applies to the given branch.'''

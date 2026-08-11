@@ -88,7 +88,7 @@
                         <td>{{ record.out_time|default:"—" }}</td>
                         <td>
                             {% if record.in_time and record.out_time %}
-                                {{ record.working_hours|floatformat:2 }} hrs
+                                {{ record.working_hours_display }}
                             {% else %}
                                 —
                             {% endif %}

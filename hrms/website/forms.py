@@ -439,7 +439,7 @@ class HolidayForm(forms.ModelForm):
     
     class Meta:
         model = Holiday
-        fields = ['holiday_date', 'name', 'holiday_type', 'status', 'description', 'is_national']
+        fields = ['holiday_date', 'name', 'holiday_type', 'status', 'description', 'is_national', 'applies_to_all_employees']
         widgets = {
             'holiday_date': forms.DateInput(attrs={
                 'type': 'date',
@@ -462,6 +462,9 @@ class HolidayForm(forms.ModelForm):
                 'placeholder': 'Add any additional details...',
             }),
             'is_national': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+            }),
+            'applies_to_all_employees': forms.CheckboxInput(attrs={
                 'class': 'form-check-input',
             }),
         }

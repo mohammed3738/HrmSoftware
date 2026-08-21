@@ -878,32 +878,19 @@ ATTENDANCE_OVERRIDE_STATUS_MAP = {
 }
 
 
-@login_required
-@group_required("Admin", "HR", "Manager")
-@require_http_methods(["POST"])
-def override_attendance_status(request):
-    """Manually convert a single Attendance record's status — used on the
-    late-attendance review page to forgive/reclassify late days at payroll
-    time. Choosing 'Late Present' clears any prior override and lets the
-    normal calculate_status() logic run again."""
-    attendance_id = request.POST.get("attendance_id")
-    new_status = request.POST.get("new_status", "").strip()
+ATTENDANCE_OVERRIDE_VALID_STATUSES = {"Present", "Half Day", "Holiday", "Late Present"}
 
-    valid_statuses = {"Present", "Half Day", "Holiday", "Late Present"}
-    if new_status not in valid_statuses:
-        return JsonResponse({"success": False, "error": "Invalid status choice."}, status=400)
 
-    attendance = get_object_or_404(
-        Attendance.objects.select_related("employee__company"), id=attendance_id
-    )
-
-    company_filter = get_company_filter(request.user)
+def _override_attendance_status_item(attendance, new_status, company_filter=None):
+    """Apply a single status conversion to one Attendance record. Returns an
+    error message string on failure (permission/payroll lock), or None on
+    success. Shared by the single-record and bulk override endpoints."""
     if company_filter and attendance.employee.company_id != company_filter.id:
-        return JsonResponse({"success": False, "error": "Permission denied."}, status=403)
+        return "Permission denied."
 
     locking_run = get_locking_run(attendance.employee.company, attendance.date)
     if locking_run:
-        return lock_response(locking_run, action="change this attendance status")
+        return _lock_message(locking_run, action="change this attendance status")
 
     if new_status == "Late Present":
         attendance.status_overridden = False
@@ -915,6 +902,32 @@ def override_attendance_status(request):
         attendance.is_holiday = (new_status == "Holiday")
         attendance.is_half_day = (new_status == "Half Day")
         attendance.save()
+    return None
+
+
+@login_required
+@group_required("Admin", "HR", "Manager")
+@require_http_methods(["POST"])
+def override_attendance_status(request):
+    """Manually convert a single Attendance record's status — used on the
+    late-attendance review page to forgive/reclassify late days at payroll
+    time. Choosing 'Late Present' clears any prior override and lets the
+    normal calculate_status() logic run again."""
+    attendance_id = request.POST.get("attendance_id")
+    new_status = request.POST.get("new_status", "").strip()
+
+    if new_status not in ATTENDANCE_OVERRIDE_VALID_STATUSES:
+        return JsonResponse({"success": False, "error": "Invalid status choice."}, status=400)
+
+    attendance = get_object_or_404(
+        Attendance.objects.select_related("employee__company"), id=attendance_id
+    )
+
+    company_filter = get_company_filter(request.user)
+    error = _override_attendance_status_item(attendance, new_status, company_filter)
+    if error:
+        status_code = 403 if error == "Permission denied." else 400
+        return JsonResponse({"success": False, "error": error}, status=status_code)
 
     return JsonResponse({
         "success": True,
@@ -922,6 +935,44 @@ def override_attendance_status(request):
         "status": attendance.status,
         "count": str(attendance.count),
     })
+
+
+@login_required
+@group_required("Admin", "HR", "Manager")
+@require_http_methods(["POST"])
+def bulk_override_attendance_status(request):
+    """Convert a batch of Attendance records to the same status in one
+    action — the 'select multiple, apply one status' option on the
+    late-attendance review page."""
+    new_status = request.POST.get("new_status", "").strip()
+    if request.content_type == "application/json":
+        try:
+            new_status = new_status or json.loads(request.body or "{}").get("new_status", "").strip()
+        except ValueError:
+            pass
+
+    if new_status not in ATTENDANCE_OVERRIDE_VALID_STATUSES:
+        return JsonResponse({"success": False, "error": "Invalid status choice."}, status=400)
+
+    ids = _extract_bulk_ids(request)
+    company_filter = get_company_filter(request.user)
+
+    updated, failed = [], []
+    attendances = Attendance.objects.select_related("employee__company").filter(id__in=ids)
+    attendances_by_id = {a.id: a for a in attendances}
+
+    for att_id in ids:
+        attendance = attendances_by_id.get(att_id)
+        if not attendance:
+            failed.append({"id": att_id, "error": "Record not found."})
+            continue
+        error = _override_attendance_status_item(attendance, new_status, company_filter)
+        if error:
+            failed.append({"id": att_id, "error": error})
+        else:
+            updated.append(att_id)
+
+    return JsonResponse({"success": True, "status": new_status, "updated": updated, "failed": failed})
 
 
 @login_required
@@ -995,13 +1046,19 @@ def employee_attendance_detail(request, employee_id):
     years = months = []
     payroll_periods = []
 
+    # Bounds of the currently selected range, if any — used both to filter
+    # the attendance table and to scope the leave-taken summary below to
+    # the same window (a payroll period, a calendar month/year, or "all time").
+    range_start = range_end = None
+
     if uses_custom_period:
         payroll_periods = get_all_payroll_periods_from_attendance(employee.company, payroll_settings)
         if selected_period:
             for p in payroll_periods:
                 if p["to_date"].isoformat() == selected_period:
+                    range_start, range_end = p["from_date"], p["to_date"]
                     attendance_records = attendance_records.filter(
-                        date__gte=p["from_date"], date__lte=p["to_date"]
+                        date__gte=range_start, date__lte=range_end
                     )
                     break
     else:
@@ -1012,6 +1069,27 @@ def employee_attendance_detail(request, employee_id):
             attendance_records = attendance_records.filter(date__year=selected_year)
         if selected_month:
             attendance_records = attendance_records.filter(date__month=selected_month)
+        if selected_year and selected_month:
+            range_start = date(int(selected_year), int(selected_month), 1)
+            range_end = (range_start + relativedelta(months=1)) - timedelta(days=1)
+        elif selected_year:
+            range_start = date(int(selected_year), 1, 1)
+            range_end = date(int(selected_year), 12, 31)
+
+    # ── Summary counters (Present / Late / Half Day / Leaves Taken) ────────
+    days_present_count = attendance_records.filter(status__in=["Present", "Late Present"]).count()
+    late_remarks_count = attendance_records.filter(status="Late Present").count()
+    half_days_count = attendance_records.filter(status__in=["Half Day", "Present (Half-Day)"]).count()
+
+    leaves_qs = LeaveApplication.objects.filter(employee=employee, status="Approved")
+    if range_start and range_end:
+        leaves_qs = leaves_qs.filter(start_date__lte=range_end, end_date__gte=range_start)
+        leaves_taken = sum(
+            (min(leave.end_date, range_end) - max(leave.start_date, range_start)).days + 1
+            for leave in leaves_qs
+        )
+    else:
+        leaves_taken = sum(leave.total_days() for leave in leaves_qs)
 
     attendance_records = attendance_records.only(
         "date", "in_time", "out_time", "status"
@@ -1032,6 +1110,10 @@ def employee_attendance_detail(request, employee_id):
         "payroll_periods": payroll_periods,
         "selected_period": selected_period,
         "payroll_settings": payroll_settings,
+        "days_present_count": days_present_count,
+        "late_remarks_count": late_remarks_count,
+        "half_days_count": half_days_count,
+        "leaves_taken": leaves_taken,
     }
     return render(request, "attendance/employee_attendance_detail.html", context)
 
@@ -6421,14 +6503,23 @@ def add_holiday(request):
             if holiday.holiday_type and holiday.holiday_type.type_category == "national":
                 holiday.is_national = True
             holiday.save()
-            
+
+            # Religious/optional holidays scoped to specific employees only
+            # (e.g. Eid for Muslim employees) — not part of the ModelForm
+            # since it's driven by a searchable picker, not a plain field.
+            if not holiday.applies_to_all_employees:
+                employee_ids = request.POST.getlist('specific_employees')
+                holiday.specific_employees.set(employee_ids)
+            else:
+                holiday.specific_employees.clear()
+
             # Show success message
             messages.success(
                 request,
                 f'✓ Holiday "{holiday.name}" ({holiday.holiday_date.strftime("%b %d, %Y")}) '
                 f'added successfully!'
             )
-            
+
             return redirect('holiday-calendar')
         else:
             # Form has errors - show them
@@ -6469,14 +6560,20 @@ def edit_holiday(request, holiday_id):
         
         if form.is_valid():
             # Save updates
-            form.save()
-            
+            holiday = form.save()
+
+            if not holiday.applies_to_all_employees:
+                employee_ids = request.POST.getlist('specific_employees')
+                holiday.specific_employees.set(employee_ids)
+            else:
+                holiday.specific_employees.clear()
+
             # Show success message
             messages.success(
                 request,
                 f'✓ Holiday "{holiday.name}" updated successfully!'
             )
-            
+
             return redirect('holiday-calendar')
         else:
             # Form has errors
@@ -6908,8 +7005,17 @@ def api_get_holiday(request, holiday_id):
             'status': holiday.status,
             'description': holiday.description or '',
             'is_national': holiday.is_national,
+            'applies_to_all_employees': holiday.applies_to_all_employees,
+            'specific_employees': [
+                {
+                    'id': emp.id,
+                    'name': f'{emp.first_name} {emp.last_name}',
+                    'code': emp.employee_code,
+                }
+                for emp in holiday.specific_employees.all()
+            ],
         }
-        
+
         return JsonResponse(data)
     
     except Holiday.DoesNotExist:

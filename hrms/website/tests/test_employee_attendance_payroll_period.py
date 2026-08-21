@@ -10,7 +10,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase, Client
 from django.urls import reverse
 
-from website.models import Company, Employee, Attendance, PayrollSettings
+from website.models import Company, Employee, Attendance, PayrollSettings, LeaveApplication
 
 
 class EmployeeAttendancePayrollPeriodTest(TestCase):
@@ -97,3 +97,55 @@ class EmployeeAttendancePayrollPeriodTest(TestCase):
 
         resp = self.client.get(reverse("employee_attendance_detail", args=[other_employee.id]))
         self.assertFalse(resp.context["uses_custom_period"])
+
+    def test_summary_stats_scoped_to_selected_payroll_period(self):
+        """Days Present / Late Remarks / Half Days / Leaves Taken must be
+        computed only from the currently selected payroll period, and a
+        leave that only partially overlaps the period must be counted by
+        its overlapping days, not its full length."""
+        Attendance.objects.create(
+            employee=self.employee, date=date(2026, 6, 5), in_time=time(9, 0), out_time=time(15, 0),
+        )  # 6h worked -> Half Day
+        Attendance.objects.create(
+            employee=self.employee, date=date(2026, 6, 12), in_time=time(9, 0), out_time=time(16, 0),
+        )  # 7h worked -> Late Present
+
+        LeaveApplication.objects.create(
+            employee=self.employee, leave_type="CL", start_date=date(2026, 6, 15),
+            end_date=date(2026, 6, 17), reason="test", status="Approved",
+        )  # 3 days, fully inside the 27 May - 26 Jun period
+
+        LeaveApplication.objects.create(
+            employee=self.employee, leave_type="CL", start_date=date(2026, 5, 25),
+            end_date=date(2026, 5, 28), reason="test", status="Approved",
+        )  # starts before the period; only 27-28 May (2 days) overlap it
+
+        LeaveApplication.objects.create(
+            employee=self.employee, leave_type="CL", start_date=date(2026, 4, 1),
+            end_date=date(2026, 4, 3), reason="test", status="Approved",
+        )  # entirely outside the period -> must not be counted
+
+        resp = self.client.get(
+            reverse("employee_attendance_detail", args=[self.employee.id]),
+            {"period": "2026-06-26"},
+        )
+        # Present (baseline): 27 May, 10 Jun, 26 Jun + the new Late Present (12 Jun) = 4
+        self.assertEqual(resp.context["days_present_count"], 4)
+        self.assertEqual(resp.context["late_remarks_count"], 1)
+        self.assertEqual(resp.context["half_days_count"], 1)
+        self.assertEqual(resp.context["leaves_taken"], 5)  # 3 + 2 (partial overlap), excludes the April leave
+
+    def test_summary_stats_unfiltered_covers_all_time(self):
+        """With no period/year/month selected, the summary must cover the
+        employee's whole history, not just one period."""
+        LeaveApplication.objects.create(
+            employee=self.employee, leave_type="CL", start_date=date(2026, 4, 1),
+            end_date=date(2026, 4, 3), reason="test", status="Approved",
+        )
+
+        resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]))
+        # 4 of the 5 setUp records are "Present" (9h worked each); the 5th
+        # (27 Jun 2026) falls on a Saturday, so it's "Weekend" regardless of
+        # its punch times — weekend status takes priority in calculate_status().
+        self.assertEqual(resp.context["days_present_count"], 4)
+        self.assertEqual(resp.context["leaves_taken"], 3)

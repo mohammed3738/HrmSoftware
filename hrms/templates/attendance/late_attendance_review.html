@@ -63,10 +63,26 @@
     </form>
 
     {% if records %}
+    <div class="d-flex align-items-center gap-2 px-2 pb-2 flex-wrap">
+      <button type="button" class="btn btn-sm btn-outline-secondary" id="lateSelectAllBtn" onclick="toggleSelectAllLate()">
+        <i class="ri-checkbox-multiple-line me-1"></i>Select All
+      </button>
+      <span class="text-muted small" id="lateSelCount">0 selected</span>
+      <select class="form-select form-select-sm" id="lateBulkStatus" style="width:auto;">
+        <option value="Present">Full Day</option>
+        <option value="Half Day">Half Day</option>
+        <option value="Holiday">Holiday</option>
+        <option value="Late Present">Late Present (no change)</option>
+      </select>
+      <button type="button" class="btn btn-sm btn-warning" id="lateBulkApplyBtn" disabled onclick="bulkConvertLateStatus()">
+        Apply to Selected
+      </button>
+    </div>
     <div class="table-responsive">
       <table class="table table-sm table-bordered align-middle mb-0">
         <thead class="table-light">
           <tr>
+            <th style="width:32px;"><input type="checkbox" class="form-check-input" id="lateSelectAllCheckbox" onchange="toggleSelectAllLate(this.checked)"></th>
             <th>
               <a href="?year={{ selected_year }}&month={{ selected_month }}&employee={{ employee_search }}&sort=employee&dir={% if sort_key == 'employee' and sort_dir == 'asc' %}desc{% else %}asc{% endif %}" class="text-dark text-decoration-none">
                 Employee
@@ -110,6 +126,7 @@
         <tbody>
           {% for att in records %}
           <tr id="att-row-{{ att.id }}">
+            <td><input type="checkbox" class="form-check-input late-check" value="{{ att.id }}" onchange="updateLateSelectionCount()"></td>
             <td class="fw-medium">{{ att.employee.first_name }} {{ att.employee.last_name }}</td>
             <td>{{ att.employee.employee_code }}</td>
             <td>{{ att.date|date:"d M Y" }}</td>
@@ -214,11 +231,27 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 });
 
+const LATE_STATUS_STYLES = {
+  "Late Present": { badge: "bg-warning text-dark", row: null },
+  "Present":      { badge: "bg-success",           row: "table-success" },
+  "Half Day":     { badge: "bg-info text-dark",     row: "table-info" },
+  "Holiday":      { badge: "bg-primary",            row: "table-primary" },
+};
+
+function applyLateStatusStyle(attendanceId, status) {
+  const statusCell = document.getElementById('att-status-' + attendanceId);
+  const row = document.getElementById('att-row-' + attendanceId);
+  const style = LATE_STATUS_STYLES[status] || { badge: "bg-secondary", row: null };
+  if (statusCell) statusCell.innerHTML = `<span class="badge ${style.badge}">${status}</span>`;
+  if (row) {
+    row.classList.remove("table-success", "table-info", "table-primary");
+    if (style.row) row.classList.add(style.row);
+  }
+}
+
 function convertLateStatus(selectEl) {
   const attendanceId = selectEl.dataset.attendanceId;
   const newStatus = selectEl.value;
-  const statusCell = document.getElementById('att-status-' + attendanceId);
-  const row = document.getElementById('att-row-' + attendanceId);
 
   selectEl.disabled = true;
 
@@ -238,23 +271,82 @@ function convertLateStatus(selectEl) {
       selectEl.value = "Late Present";
       return;
     }
-    const STATUS_STYLES = {
-      "Late Present": { badge: "bg-warning text-dark", row: null },
-      "Present":      { badge: "bg-success",           row: "table-success" },
-      "Half Day":     { badge: "bg-info text-dark",     row: "table-info" },
-      "Holiday":      { badge: "bg-primary",            row: "table-primary" },
-    };
-    const style = STATUS_STYLES[data.status] || { badge: "bg-secondary", row: null };
-    statusCell.innerHTML = `<span class="badge ${style.badge}">${data.status}</span>`;
-    if (row) {
-      row.classList.remove("table-success", "table-info", "table-primary");
-      if (style.row) row.classList.add(style.row);
-    }
+    applyLateStatusStyle(attendanceId, data.status);
   })
   .catch(() => {
     selectEl.disabled = false;
     selectEl.value = "Late Present";
     alert("Something went wrong while updating this record.");
+  });
+}
+
+// ── Multi-select + bulk status conversion ──────────────────────────────
+function toggleSelectAllLate(checked) {
+  if (checked === undefined) {
+    // "Select All" button — toggle based on current header checkbox state
+    const headerCb = document.getElementById("lateSelectAllCheckbox");
+    checked = !headerCb.checked;
+    headerCb.checked = checked;
+  }
+  document.querySelectorAll(".late-check").forEach(cb => { cb.checked = checked; });
+  updateLateSelectionCount();
+}
+
+function updateLateSelectionCount() {
+  const all = document.querySelectorAll(".late-check");
+  const checked = document.querySelectorAll(".late-check:checked");
+  document.getElementById("lateSelCount").innerText = `${checked.length} selected`;
+  document.getElementById("lateBulkApplyBtn").disabled = checked.length === 0;
+  const headerCb = document.getElementById("lateSelectAllCheckbox");
+  if (headerCb) headerCb.checked = all.length > 0 && checked.length === all.length;
+}
+
+function bulkConvertLateStatus() {
+  const ids = Array.from(document.querySelectorAll(".late-check:checked")).map(cb => cb.value);
+  if (ids.length === 0) return;
+
+  const newStatus = document.getElementById("lateBulkStatus").value;
+  const label = { "Present": "Full Day", "Half Day": "Half Day", "Holiday": "Holiday", "Late Present": "Late Present" }[newStatus];
+  const btn = document.getElementById("lateBulkApplyBtn");
+
+  if (!confirm(`Convert ${ids.length} selected record(s) to "${label}"?`)) return;
+
+  btn.disabled = true;
+
+  const params = new URLSearchParams();
+  params.append("new_status", newStatus);
+  ids.forEach(id => params.append("ids", id));
+
+  fetch("{% url 'bulk_override_attendance_status' %}", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-CSRFToken": getCSRFToken(),
+    },
+    body: params,
+  })
+  .then(res => res.json().then(data => ({ ok: res.ok, data })))
+  .then(({ ok, data }) => {
+    btn.disabled = false;
+    if (!ok) {
+      alert(data.error || "Bulk update failed.");
+      return;
+    }
+    data.updated.forEach(id => {
+      applyLateStatusStyle(id, data.status);
+      const cb = document.querySelector(`.late-check[value="${id}"]`);
+      if (cb) cb.checked = false;
+    });
+    updateLateSelectionCount();
+
+    if (data.failed && data.failed.length) {
+      const reasons = data.failed.map(f => `#${f.id}: ${f.error}`).join('\n');
+      alert(`Updated: ${data.updated.length}. Failed: ${data.failed.length}\n${reasons}`);
+    }
+  })
+  .catch(() => {
+    btn.disabled = false;
+    alert("Something went wrong during the bulk update.");
   });
 }
 </script>

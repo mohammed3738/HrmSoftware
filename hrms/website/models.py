@@ -1004,7 +1004,20 @@ class Holiday(models.Model):
     # Applicability (BRANCH-BASED ONLY)
     is_national = models.BooleanField(default=False,
                                      help_text="True = all branches get this")
-    
+
+    # Applicability (EMPLOYEE-BASED) — for religious/optional holidays like
+    # Eid or Ganesh Chaturthi that only some employees observe. When False,
+    # only the employees in `specific_employees` get this holiday; the
+    # branch-based applicability above still applies on top of this.
+    applies_to_all_employees = models.BooleanField(
+        default=True,
+        help_text="False = only the manually selected employees get this holiday.",
+    )
+    specific_employees = models.ManyToManyField(
+        'Employee', blank=True, related_name='specific_holidays',
+        help_text="Employees who get this holiday, when 'Applies to all employees' is off.",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.PROTECT)
@@ -1025,6 +1038,11 @@ class Holiday(models.Model):
         if self.is_national or self.holiday_calendar is None:
             return True
         return self.holiday_calendar.branch == branch
+
+    def is_applicable_to_employee(self, employee):
+        if self.applies_to_all_employees:
+            return True
+        return self.specific_employees.filter(id=employee.id).exists()
 
 
 # ============================================
@@ -1333,7 +1351,10 @@ class Attendance(models.Model):
 
 
     def get_applicable_holiday(self, branch):
-        '''Get the first holiday on this date that applies to the given branch.'''
+        '''Get the first holiday on this date that applies to the given
+        branch AND to this attendance record's employee (religious/optional
+        holidays like Eid or Ganesh Chaturthi may be scoped to only the
+        employees HR manually selected).'''
         from django.apps import apps
         PayrollSettings = apps.get_model('website', 'PayrollSettings')
 
@@ -1346,7 +1367,8 @@ class Attendance(models.Model):
 
         for holiday in Holiday.objects.filter(holiday_date=self.date).select_related('holiday_calendar__branch'):
             if not branch_specific or holiday.is_applicable_to_branch(branch):
-                return holiday
+                if holiday.is_applicable_to_employee(self.employee):
+                    return holiday
         return None
 
     def get_half_day_scenario(self, branch):

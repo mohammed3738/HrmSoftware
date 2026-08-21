@@ -149,6 +149,65 @@ class LateAttendanceReviewTest(TestCase):
         self.assertEqual(target.status, "Late Present")
         self.assertFalse(target.status_overridden)
 
+    def test_bulk_override_converts_all_selected_records(self):
+        """Multi-select: converting several selected late records to Full
+        Day in one action must update every one of them."""
+        ids = [r.id for r in self.late_rows]
+        resp = self.client.post(reverse("bulk_override_attendance_status"), {
+            "new_status": "Present",
+            "ids": ids,
+        })
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["success"], data)
+        self.assertEqual(sorted(data["updated"]), sorted(ids))
+        self.assertEqual(data["failed"], [])
+
+        for r in self.late_rows:
+            r.refresh_from_db()
+            self.assertEqual(r.status, "Present")
+            self.assertTrue(r.status_overridden)
+
+    def test_bulk_override_partial_failure_still_updates_the_rest(self):
+        """One selected record falls inside a finalized payroll period; the
+        others must still convert, with the blocked one reported separately."""
+        PayrollRun.objects.create(
+            company=self.company, month=date(2026, 8, 1),
+            start_date=date(2026, 8, 3), end_date=date(2026, 8, 3),
+            status=PayrollRun.STATUS_FINALIZED,
+        )
+        blocked, ok1, ok2 = self.late_rows
+
+        resp = self.client.post(reverse("bulk_override_attendance_status"), {
+            "new_status": "Half Day",
+            "ids": [blocked.id, ok1.id, ok2.id],
+        })
+        data = resp.json()
+        self.assertTrue(data["success"], data)
+        self.assertEqual(sorted(data["updated"]), sorted([ok1.id, ok2.id]))
+        self.assertEqual(len(data["failed"]), 1)
+        self.assertEqual(data["failed"][0]["id"], blocked.id)
+
+        blocked.refresh_from_db()
+        ok1.refresh_from_db()
+        ok2.refresh_from_db()
+        self.assertEqual(blocked.status, "Late Present")
+        self.assertEqual(ok1.status, "Half Day")
+        self.assertEqual(ok2.status, "Half Day")
+
+    def test_bulk_override_requires_manager_group(self):
+        plain_user = User.objects.create_user("plain", "plain@test.com", "pass12345")
+        client = Client()
+        client.force_login(plain_user, backend="django.contrib.auth.backends.ModelBackend")
+
+        resp = client.post(reverse("bulk_override_attendance_status"), {
+            "new_status": "Present",
+            "ids": [self.late_rows[0].id],
+        })
+        self.assertEqual(resp.status_code, 403)
+        self.late_rows[0].refresh_from_db()
+        self.assertEqual(self.late_rows[0].status, "Late Present")
+
     def test_employee_search_matches_full_name(self):
         """Regression test: searching 'John Doe' (first + last name combined,
         as the autocomplete fills in, or as a manager might just type) must

@@ -22,7 +22,7 @@
                     <option value="" {% if not selected_period %}selected{% endif %}>All Periods</option>
                     {% for period in payroll_periods %}
                     <option value="{{ period.to_date|date:'Y-m-d' }}" {% if selected_period == period.to_date|date:'Y-m-d' %}selected{% endif %}>
-                        {{ period.label }}
+                        {{ period.to_date|date:"F Y" }} ({{ period.from_date|date:"d M" }} - {{ period.to_date|date:"d M" }})
                     </option>
                     {% endfor %}
                 </select>
@@ -63,8 +63,44 @@
                 </a>
                 
             </div>
-                 
+
         </form>
+
+        <!-- Summary Stats (scoped to the selected period/year/month above) -->
+        <div class="row g-3 mb-3">
+            <div class="col-6 col-md-3">
+                <div class="card border-success h-100">
+                    <div class="card-body text-center py-2">
+                        <div class="fs-4 fw-bold text-success">{{ days_present_count }}</div>
+                        <div class="text-muted small">Days Present</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-warning h-100">
+                    <div class="card-body text-center py-2">
+                        <div class="fs-4 fw-bold text-warning">{{ late_remarks_count }}</div>
+                        <div class="text-muted small">Late Remarks</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-info h-100">
+                    <div class="card-body text-center py-2">
+                        <div class="fs-4 fw-bold text-info">{{ half_days_count }}</div>
+                        <div class="text-muted small">Half Days</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="card border-danger h-100">
+                    <div class="card-body text-center py-2">
+                        <div class="fs-4 fw-bold text-danger">{{ leaves_taken }}</div>
+                        <div class="text-muted small">Leaves Taken</div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Attendance Table -->
         <div class="table-responsive">

@@ -1574,6 +1574,22 @@
                         </label>
                     </div>
                     <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                            <input type="checkbox" id="addAppliesToAll" name="applies_to_all_employees" checked onchange="toggleEmployeeSelection('add')"> Applies to All Employees
+                        </label>
+                        <small style="color:#6b7280; display:block; margin-top:0.25rem;">
+                            Turn off for religious/optional holidays only some employees observe (e.g. Eid, Ganesh Chaturthi) and pick exactly who gets it.
+                        </small>
+                    </div>
+                    <div id="addEmployeeSelection" style="display:none;">
+                        <label>Select Specific Employees</label>
+                        <div style="position:relative;">
+                            <input type="text" id="addEmployeeSearchInput" placeholder="Search employee by name or code..." autocomplete="off" class="form-control">
+                            <ul id="addEmployeeSearchDropdown" style="position:absolute; z-index:1000; display:none; max-height:200px; overflow-y:auto; background:white; width:100%; border:1px solid #e5e7eb; border-radius:6px; list-style:none; margin:4px 0 0; padding:0;"></ul>
+                        </div>
+                        <div id="addSelectedEmployeesList" style="margin-top:0.5rem; display:flex; flex-wrap:wrap; gap:0.4rem;"></div>
+                    </div>
+                    <div class="form-group">
                         <label>Description</label>
                         <textarea name="description" placeholder="Add any additional details..."></textarea>
                     </div>
@@ -1619,6 +1635,22 @@
                             <option value="optional">Optional</option>
                             <option value="emergency">Emergency</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+                            <input type="checkbox" id="editAppliesToAll" name="applies_to_all_employees" onchange="toggleEmployeeSelection('edit')"> Applies to All Employees
+                        </label>
+                        <small style="color:#6b7280; display:block; margin-top:0.25rem;">
+                            Turn off for religious/optional holidays only some employees observe (e.g. Eid, Ganesh Chaturthi) and pick exactly who gets it.
+                        </small>
+                    </div>
+                    <div id="editEmployeeSelection" style="display:none;">
+                        <label>Select Specific Employees</label>
+                        <div style="position:relative;">
+                            <input type="text" id="editEmployeeSearchInput" placeholder="Search employee by name or code..." autocomplete="off" class="form-control">
+                            <ul id="editEmployeeSearchDropdown" style="position:absolute; z-index:1000; display:none; max-height:200px; overflow-y:auto; background:white; width:100%; border:1px solid #e5e7eb; border-radius:6px; list-style:none; margin:4px 0 0; padding:0;"></ul>
+                        </div>
+                        <div id="editSelectedEmployeesList" style="margin-top:0.5rem; display:flex; flex-wrap:wrap; gap:0.4rem;"></div>
                     </div>
                     <div class="form-group">
                         <label>Description</label>
@@ -1862,10 +1894,100 @@
         function openAddHolidayModal(dateStr) {
             const dateInput = document.querySelector('#addHolidayForm input[name="holiday_date"]');
             if (dateInput && dateStr) dateInput.value = dateStr;
+            selectedEmployees.add = {};
+            renderSelectedEmployees('add');
+            document.getElementById('addAppliesToAll').checked = true;
+            toggleEmployeeSelection('add');
             openModal('addHolidayModal');
         }
 
         function openAddHalfDayModal() { openModal('addHalfDayModal'); }
+
+        /* ----- Specific-employee picker (religious/optional holidays) -----
+           Shared by the Add and Edit holiday modals, keyed by prefix
+           ('add' / 'edit') since both modals live on the same page. */
+        let selectedEmployees = { add: {}, edit: {} };
+
+        function toggleEmployeeSelection(prefix) {
+            const appliesToAll = document.getElementById(prefix + 'AppliesToAll').checked;
+            document.getElementById(prefix + 'EmployeeSelection').style.display = appliesToAll ? 'none' : 'block';
+        }
+
+        function renderSelectedEmployees(prefix) {
+            const container = document.getElementById(prefix + 'SelectedEmployeesList');
+            container.innerHTML = '';
+            Object.entries(selectedEmployees[prefix]).forEach(([id, emp]) => {
+                const chip = document.createElement('span');
+                chip.style.cssText = 'display:inline-flex; align-items:center; gap:6px; background:#eff6ff; border:1px solid #93c5fd; color:#1e40af; padding:0.3rem 0.6rem; border-radius:20px; font-size:0.8rem;';
+                chip.innerHTML = `${emp.name} (${emp.code}) <span style="cursor:pointer; font-weight:700;" onclick="removeSelectedEmployee('${prefix}', '${id}')">&times;</span>`;
+                const hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = 'specific_employees';
+                hidden.value = id;
+                chip.appendChild(hidden);
+                container.appendChild(chip);
+            });
+        }
+
+        function removeSelectedEmployee(prefix, id) {
+            delete selectedEmployees[prefix][id];
+            renderSelectedEmployees(prefix);
+        }
+
+        function initEmployeeAutocomplete(prefix) {
+            const input = document.getElementById(prefix + 'EmployeeSearchInput');
+            const dropdown = document.getElementById(prefix + 'EmployeeSearchDropdown');
+            let controller = null;
+
+            input.addEventListener('input', async function () {
+                const query = this.value.trim();
+                if (query.length < 1) {
+                    dropdown.style.display = 'none';
+                    dropdown.innerHTML = '';
+                    return;
+                }
+                if (controller) controller.abort();
+                controller = new AbortController();
+                try {
+                    const res = await fetch(`/ajax/employees/search/?q=${encodeURIComponent(query)}`, { signal: controller.signal });
+                    const data = await res.json();
+                    dropdown.innerHTML = '';
+                    const results = data.filter(emp => !selectedEmployees[prefix][emp.id]);
+                    if (results.length === 0) {
+                        dropdown.innerHTML = '<li style="padding:0.5rem 0.75rem; color:#6b7280;">No employees found</li>';
+                    } else {
+                        results.forEach(emp => {
+                            const li = document.createElement('li');
+                            li.style.cssText = 'padding:0.5rem 0.75rem; cursor:pointer;';
+                            li.innerHTML = `<strong>${emp.name}</strong> <small style="color:#6b7280;">(${emp.code})</small>`;
+                            li.onmouseover = () => { li.style.background = '#f0f7ff'; };
+                            li.onmouseout = () => { li.style.background = 'white'; };
+                            li.onclick = () => {
+                                selectedEmployees[prefix][emp.id] = { name: emp.name, code: emp.code };
+                                renderSelectedEmployees(prefix);
+                                input.value = '';
+                                dropdown.style.display = 'none';
+                            };
+                            dropdown.appendChild(li);
+                        });
+                    }
+                    dropdown.style.display = 'block';
+                } catch (err) {
+                    if (err.name !== 'AbortError') console.error('Employee search failed', err);
+                }
+            });
+
+            document.addEventListener('click', function (e) {
+                if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.style.display = 'none';
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            initEmployeeAutocomplete('add');
+            initEmployeeAutocomplete('edit');
+        });
 
         /* ----- Edit Holiday ----- */
         function editHoliday(id) {
@@ -1878,6 +2000,15 @@
                     document.getElementById('editHolidayStatus').value = data.status;
                     document.getElementById('editHolidayDesc').value   = data.description || '';
                     document.getElementById('editHolidayForm').action  = `/holiday/${id}/edit/`;
+
+                    document.getElementById('editAppliesToAll').checked = data.applies_to_all_employees;
+                    selectedEmployees.edit = {};
+                    (data.specific_employees || []).forEach(emp => {
+                        selectedEmployees.edit[emp.id] = { name: emp.name, code: emp.code };
+                    });
+                    renderSelectedEmployees('edit');
+                    toggleEmployeeSelection('edit');
+
                     openModal('editHolidayModal');
                 })
                 .catch(err => alert('Could not load holiday: ' + err));
@@ -1974,6 +2105,7 @@
             editHalfDay,
             editEarnedLeaves,
             resetHolidaySettings,
+            toggleEmployeeSelection, removeSelectedEmployee,
         });
     })();
     </script>

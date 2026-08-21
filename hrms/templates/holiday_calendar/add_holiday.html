@@ -451,6 +451,23 @@
                         </label>
                     </div>
                 </div>
+
+                <div class="form-group" style="margin-top: 1.5rem;">
+                    <label class="checkbox-group">
+                        <input type="checkbox" id="applies_to_all_employees" name="applies_to_all_employees" checked onchange="toggleEmployeeSelection()">
+                        <label for="applies_to_all_employees" style="margin: 0;">Applies to All Employees</label>
+                    </label>
+                    <span class="form-hint">Turn this off for religious/optional holidays only some employees observe (e.g. Eid, Ganesh Chaturthi) — you'll pick exactly who gets it.</span>
+                </div>
+
+                <div id="employee-selection" style="display: none;">
+                    <label style="display: block; margin-bottom: 0.75rem; font-weight: 600;">Select Specific Employees:</label>
+                    <div style="position: relative;">
+                        <input type="text" id="employeeSearchInput" placeholder="Search employee by name or code..." autocomplete="off">
+                        <ul id="employeeSearchDropdown" style="position: absolute; z-index: 1000; display: none; max-height: 220px; overflow-y: auto; background: white; width: 100%; border: 2px solid var(--border); border-radius: 8px; list-style: none; margin: 4px 0 0; padding: 0;"></ul>
+                    </div>
+                    <div id="selectedEmployeesList" style="margin-top: 0.75rem; display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
+                </div>
             </div>
 
             <!-- Additional Details Section -->
@@ -482,6 +499,85 @@
             const branchSelection = document.getElementById('branch-selection');
             branchSelection.style.display = isNational ? 'none' : 'block';
         }
+
+        // ── Specific-employee picker (religious/optional holidays) ──────────
+        let selectedEmployees = {}; // id -> {name, code}
+
+        function toggleEmployeeSelection() {
+            const appliesToAll = document.getElementById('applies_to_all_employees').checked;
+            document.getElementById('employee-selection').style.display = appliesToAll ? 'none' : 'block';
+        }
+
+        function renderSelectedEmployees() {
+            const container = document.getElementById('selectedEmployeesList');
+            container.innerHTML = '';
+            Object.entries(selectedEmployees).forEach(([id, emp]) => {
+                const chip = document.createElement('span');
+                chip.style.cssText = 'display:inline-flex;align-items:center;gap:6px;background:#eff6ff;border:1px solid #93c5fd;color:#1e40af;padding:0.4rem 0.7rem;border-radius:20px;font-size:0.85rem;';
+                chip.innerHTML = `${emp.name} (${emp.code}) <span style="cursor:pointer;font-weight:700;" onclick="removeSelectedEmployee('${id}')">&times;</span>`;
+                const hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = 'specific_employees';
+                hidden.value = id;
+                chip.appendChild(hidden);
+                container.appendChild(chip);
+            });
+        }
+
+        function removeSelectedEmployee(id) {
+            delete selectedEmployees[id];
+            renderSelectedEmployees();
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const input = document.getElementById('employeeSearchInput');
+            const dropdown = document.getElementById('employeeSearchDropdown');
+            let controller = null;
+
+            input.addEventListener('input', async function () {
+                const query = this.value.trim();
+                if (query.length < 1) {
+                    dropdown.style.display = 'none';
+                    dropdown.innerHTML = '';
+                    return;
+                }
+                if (controller) controller.abort();
+                controller = new AbortController();
+                try {
+                    const res = await fetch(`/ajax/employees/search/?q=${encodeURIComponent(query)}`, { signal: controller.signal });
+                    const data = await res.json();
+                    dropdown.innerHTML = '';
+                    if (data.length === 0) {
+                        dropdown.innerHTML = '<li style="padding:0.5rem 0.75rem;color:#6b7280;">No employees found</li>';
+                    } else {
+                        data.forEach(emp => {
+                            if (selectedEmployees[emp.id]) return;
+                            const li = document.createElement('li');
+                            li.style.cssText = 'padding:0.5rem 0.75rem;cursor:pointer;';
+                            li.innerHTML = `<strong>${emp.name}</strong> <small style="color:#6b7280;">(${emp.code})</small>`;
+                            li.onmouseover = () => { li.style.background = '#f0f7ff'; };
+                            li.onmouseout = () => { li.style.background = 'white'; };
+                            li.onclick = () => {
+                                selectedEmployees[emp.id] = { name: emp.name, code: emp.code };
+                                renderSelectedEmployees();
+                                input.value = '';
+                                dropdown.style.display = 'none';
+                            };
+                            dropdown.appendChild(li);
+                        });
+                    }
+                    dropdown.style.display = 'block';
+                } catch (err) {
+                    if (err.name !== 'AbortError') console.error('Employee search failed', err);
+                }
+            });
+
+            document.addEventListener('click', function (e) {
+                if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.style.display = 'none';
+                }
+            });
+        });
 
         // Form validation
         document.querySelector('form').addEventListener('submit', function(e) {

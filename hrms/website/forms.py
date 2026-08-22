@@ -53,6 +53,7 @@ class EmployeeForm(forms.ModelForm):
             'personal_email', 'present_address', 'permanent_address', 'personal_mobile',
             'date_of_marriage', 'employee_code', 'designation', 'department',
             'date_of_joining', 'date_of_confirmation', 'location', 'shift_start_time', 'shift_end_time',
+            'week_off_day',
             'pan_no', 'aadhar_no', 'voter_id', 'passport', 'uan_no', 'pf_no', 'esic_no',
             'name_as_per_bank', 'salary_account_number', 'ifsc_code',
             'emergency_contact_name1', 'emergency_contact_relation1', 'emergency_contact_mobile1',

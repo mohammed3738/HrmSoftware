@@ -107,6 +107,17 @@ class Employee(models.Model):
         blank=True,
         verbose_name="Shift End Time"
     )
+    WEEKDAY_CHOICES = [
+        (0, 'Monday'), (1, 'Tuesday'), (2, 'Wednesday'), (3, 'Thursday'),
+        (4, 'Friday'), (5, 'Saturday'), (6, 'Sunday'),
+    ]
+    week_off_day = models.IntegerField(
+        null=True, blank=True, choices=WEEKDAY_CHOICES,
+        verbose_name="Weekly Off Day",
+        help_text="Overrides the company's default weekly off (e.g. Saturday for "
+                   "night-shift staff instead of the usual Sunday). Leave blank to "
+                   "use the company default.",
+    )
 
     # Statutory Details
     pan_no = models.CharField(max_length=30, null=True, blank=True, verbose_name="PAN No")
@@ -1390,14 +1401,20 @@ class Attendance(models.Model):
             if self.status_overridden:
                 return
 
-            # STEP 0: Check if weekend — respects PayrollSettings.weekend_days
+            # STEP 0: Check if weekend — respects PayrollSettings.weekend_days,
+            # unless this employee has their own weekly-off day set (e.g. a
+            # night-shift employee whose off day is Saturday instead of the
+            # company's usual Sunday), which takes priority.
             try:
                 ps = PayrollSettings.objects.filter(company=self.employee.company).first()
             except Exception:
                 ps = None
-            sunday_only = ps is not None and ps.weekend_days == 'sun'
 
-            is_weekend = (self.date.weekday() == 6) if sunday_only else (self.date.weekday() >= 5)
+            if self.employee.week_off_day is not None:
+                is_weekend = (self.date.weekday() == self.employee.week_off_day)
+            else:
+                sunday_only = ps is not None and ps.weekend_days == 'sun'
+                is_weekend = (self.date.weekday() == 6) if sunday_only else (self.date.weekday() >= 5)
             if is_weekend:
                 self.status = "Weekend"
                 self.count = Decimal("0.00")
@@ -1603,6 +1620,51 @@ class AttendanceUpload(models.Model):
         default="processing"
     )
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ShiftAssignment(models.Model):
+    """
+    A roster entry: which shift an employee is on for a given date range
+    (e.g. "Night Shift, 22:00-07:00, 1 Aug - 7 Aug" for a rotating employee).
+
+    This is purely for HR to plan/track who's on which shift — the actual
+    attendance status calculation (Attendance.calculate_status()) is already
+    flexible/check-in-time-based and does not depend on this model at all.
+    """
+    employee = models.ForeignKey('Employee', on_delete=models.CASCADE, related_name='shift_assignments')
+    shift_name = models.CharField(max_length=100, help_text="e.g. Day Shift, Night Shift")
+    start_date = models.DateField()
+    end_date = models.DateField()
+    shift_start_time = models.TimeField(null=True, blank=True, help_text="Optional, for reference only")
+    shift_end_time = models.TimeField(null=True, blank=True, help_text="Optional, for reference only")
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-start_date']
+        indexes = [
+            models.Index(fields=['employee', 'start_date', 'end_date']),
+        ]
+
+    def __str__(self):
+        return f"{self.employee} - {self.shift_name} ({self.start_date} to {self.end_date})"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.start_date and self.end_date and self.end_date < self.start_date:
+            raise ValidationError("End date cannot be before start date.")
+        if self.employee_id and self.start_date and self.end_date:
+            overlapping = ShiftAssignment.objects.filter(
+                employee_id=self.employee_id,
+                start_date__lte=self.end_date,
+                end_date__gte=self.start_date,
+            ).exclude(pk=self.pk)
+            if overlapping.exists():
+                raise ValidationError(
+                    f"{self.employee} already has a shift assignment overlapping this date range."
+                )
 
 
 class AttendanceCorrectionRequest(models.Model):

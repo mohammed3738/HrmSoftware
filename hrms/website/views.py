@@ -976,6 +976,176 @@ def bulk_override_attendance_status(request):
 
 
 @login_required
+@group_required("Admin", "HR", "Manager")
+def shift_roster_list(request):
+    """List/filter shift roster assignments — 'who's on which shift, and
+    when' at a glance, for planning day/night/rotational shifts. Purely a
+    scheduling record; does not feed attendance calculation."""
+    company_filter = get_company_filter(request.user)
+
+    base_qs = ShiftAssignment.objects.select_related("employee")
+    if company_filter:
+        base_qs = base_qs.filter(employee__company=company_filter)
+
+    qs = base_qs
+
+    employee_search = request.GET.get("employee", "").strip()
+    if employee_search:
+        from django.db.models import Value
+        from django.db.models.functions import Concat
+        qs = qs.annotate(
+            full_name=Concat("employee__first_name", Value(" "), "employee__last_name")
+        ).filter(
+            Q(full_name__icontains=employee_search) |
+            Q(employee__employee_code__icontains=employee_search)
+        )
+
+    shift_name = request.GET.get("shift_name", "").strip()
+    if shift_name:
+        qs = qs.filter(shift_name=shift_name)
+
+    date_from = request.GET.get("date_from", "").strip()
+    date_to = request.GET.get("date_to", "").strip()
+    if date_from:
+        qs = qs.filter(end_date__gte=date_from)
+    if date_to:
+        qs = qs.filter(start_date__lte=date_to)
+
+    shift_names = list(
+        base_qs.order_by("shift_name").values_list("shift_name", flat=True).distinct()
+    )
+
+    qs = qs.order_by("-start_date", "employee__first_name")
+    paginator = Paginator(qs, 50)
+    assignments = paginator.get_page(request.GET.get("page"))
+
+    today = now().date()
+    week_start = today - timedelta(days=today.weekday())
+    week_end = week_start + timedelta(days=6)
+
+    return render(request, "attendance/shift_roster.html", {
+        "assignments": assignments,
+        "employee_search": employee_search,
+        "shift_name": shift_name,
+        "date_from": date_from,
+        "date_to": date_to,
+        "shift_names": shift_names,
+        "week_start": week_start.isoformat(),
+        "week_end": week_end.isoformat(),
+    })
+
+
+@login_required
+@group_required("Admin", "HR", "Manager")
+@require_http_methods(["POST"])
+def add_shift_assignment(request):
+    """Assign one shift (name + date range) to one or more employees at
+    once — HR typically rosters a whole team's rotation in one action."""
+    from django.core.exceptions import ValidationError
+
+    employee_ids = request.POST.getlist("employee_ids")
+    shift_name = request.POST.get("shift_name", "").strip()
+    start_date = request.POST.get("start_date", "").strip()
+    end_date = request.POST.get("end_date", "").strip()
+    shift_start_time = request.POST.get("shift_start_time", "").strip() or None
+    shift_end_time = request.POST.get("shift_end_time", "").strip() or None
+    notes = request.POST.get("notes", "").strip()
+
+    if not employee_ids:
+        return JsonResponse({"success": False, "error": "Select at least one employee."}, status=400)
+    if not shift_name or not start_date or not end_date:
+        return JsonResponse({"success": False, "error": "Shift name, start date, and end date are required."}, status=400)
+
+    company_filter = get_company_filter(request.user)
+    created, failed = [], []
+
+    for emp_id in employee_ids:
+        try:
+            employee = Employee.objects.get(id=emp_id)
+        except (Employee.DoesNotExist, ValueError):
+            failed.append({"employee_id": emp_id, "error": "Employee not found."})
+            continue
+        if company_filter and employee.company_id != company_filter.id:
+            failed.append({"employee_id": emp_id, "employee": str(employee), "error": "Permission denied."})
+            continue
+
+        assignment = ShiftAssignment(
+            employee=employee, shift_name=shift_name,
+            start_date=start_date, end_date=end_date,
+            shift_start_time=shift_start_time, shift_end_time=shift_end_time,
+            notes=notes, created_by=request.user,
+        )
+        try:
+            assignment.full_clean()
+            assignment.save()
+            created.append(assignment.id)
+        except ValidationError as e:
+            failed.append({
+                "employee_id": emp_id, "employee": str(employee),
+                "error": "; ".join(e.messages),
+            })
+
+    return JsonResponse({"success": True, "created": created, "failed": failed})
+
+
+@login_required
+@group_required("Admin", "HR", "Manager")
+@require_http_methods(["POST"])
+def edit_shift_assignment(request, pk):
+    from django.core.exceptions import ValidationError
+
+    assignment = get_object_or_404(ShiftAssignment.objects.select_related("employee"), id=pk)
+
+    company_filter = get_company_filter(request.user)
+    if company_filter and assignment.employee.company_id != company_filter.id:
+        return JsonResponse({"success": False, "error": "Permission denied."}, status=403)
+
+    assignment.shift_name = request.POST.get("shift_name", "").strip()
+    assignment.start_date = request.POST.get("start_date", "").strip()
+    assignment.end_date = request.POST.get("end_date", "").strip()
+    assignment.shift_start_time = request.POST.get("shift_start_time", "").strip() or None
+    assignment.shift_end_time = request.POST.get("shift_end_time", "").strip() or None
+    assignment.notes = request.POST.get("notes", "").strip()
+
+    try:
+        assignment.full_clean()
+        assignment.save()
+    except ValidationError as e:
+        return JsonResponse({"success": False, "error": "; ".join(e.messages)}, status=400)
+
+    return JsonResponse({"success": True})
+
+
+@login_required
+@group_required("Admin", "HR", "Manager")
+@require_http_methods(["POST"])
+def delete_shift_assignment(request, pk):
+    assignment = get_object_or_404(ShiftAssignment.objects.select_related("employee"), id=pk)
+    company_filter = get_company_filter(request.user)
+    if company_filter and assignment.employee.company_id != company_filter.id:
+        return JsonResponse({"success": False, "error": "Permission denied."}, status=403)
+    assignment.delete()
+    return JsonResponse({"success": True})
+
+
+@login_required
+def api_get_shift_assignment(request, pk):
+    assignment = get_object_or_404(ShiftAssignment.objects.select_related("employee"), id=pk)
+    return JsonResponse({
+        "id": assignment.id,
+        "employee_id": assignment.employee_id,
+        "employee_name": f"{assignment.employee.first_name} {assignment.employee.last_name}",
+        "employee_code": assignment.employee.employee_code,
+        "shift_name": assignment.shift_name,
+        "start_date": assignment.start_date.isoformat(),
+        "end_date": assignment.end_date.isoformat(),
+        "shift_start_time": assignment.shift_start_time.strftime("%H:%M") if assignment.shift_start_time else "",
+        "shift_end_time": assignment.shift_end_time.strftime("%H:%M") if assignment.shift_end_time else "",
+        "notes": assignment.notes,
+    })
+
+
+@login_required
 def attendance_upload_progress(request, upload_id):
     try:
         upload = AttendanceUpload.objects.get(id=upload_id)

@@ -1,0 +1,380 @@
+{% extends 'base2.html' %}
+{% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="card shadow p-3 rounded-4">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 m-2">
+      <div>
+        <h4 class="fw-bold mb-1"><i class="ri-moon-clear-line me-2 text-primary"></i>Shift Roster</h4>
+        <p class="text-muted small mb-0">
+          Plan and track who's on which shift — day, night, or rotational — for a given date range.
+          This is a scheduling record only; attendance is still calculated from each employee's actual
+          check-in/out time, not from what's assigned here.
+        </p>
+      </div>
+      <button type="button" class="btn btn-primary" onclick="openAddShiftModal()">
+        <i class="ri-add-line me-1"></i> Assign Shift
+      </button>
+    </div>
+
+    <form method="GET" class="row g-2 align-items-end mb-3 px-2">
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Employee</label>
+        <div class="position-relative">
+          <input type="text" id="filterEmployeeSearch" name="employee" value="{{ employee_search }}"
+                 class="form-control form-control-sm" placeholder="Name or code" autocomplete="off">
+          <ul id="filterEmployeeDropdown" class="list-group position-absolute w-100 shadow"
+              style="z-index:1000; display:none; max-height:220px; overflow-y:auto; background:white; cursor:pointer;"></ul>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Shift Name</label>
+        <select name="shift_name" class="form-select form-select-sm">
+          <option value="" {% if not shift_name %}selected{% endif %}>All Shifts</option>
+          {% for name in shift_names %}
+          <option value="{{ name }}" {% if shift_name == name %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-semibold">From</label>
+        <input type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-semibold">To</label>
+        <input type="date" name="date_to" value="{{ date_to }}" class="form-control form-control-sm">
+      </div>
+      <div class="col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="ri-filter-2-line me-1"></i>Filter</button>
+        <a href="{% url 'shift_roster_list' %}" class="btn btn-sm btn-outline-secondary">Reset</a>
+      </div>
+    </form>
+    <div class="px-2 mb-3">
+      <a href="?date_from={{ week_start }}&date_to={{ week_end }}" class="btn btn-sm btn-outline-primary">
+        <i class="ri-calendar-check-line me-1"></i> This Week ({{ week_start }} to {{ week_end }})
+      </a>
+    </div>
+
+    {% if assignments %}
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Employee</th>
+            <th>Emp Code</th>
+            <th>Shift Name</th>
+            <th>Start Date</th>
+            <th>End Date</th>
+            <th>Shift Timing</th>
+            <th>Notes</th>
+            <th style="width:140px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in assignments %}
+          <tr>
+            <td class="fw-medium">{{ a.employee.first_name }} {{ a.employee.last_name }}</td>
+            <td>{{ a.employee.employee_code }}</td>
+            <td><span class="badge bg-label-primary">{{ a.shift_name }}</span></td>
+            <td>{{ a.start_date|date:"d M Y" }}</td>
+            <td>{{ a.end_date|date:"d M Y" }}</td>
+            <td>
+              {% if a.shift_start_time and a.shift_end_time %}
+                {{ a.shift_start_time|time:"H:i" }} - {{ a.shift_end_time|time:"H:i" }}
+              {% else %}—{% endif %}
+            </td>
+            <td class="small text-muted">{{ a.notes|default:"—"|truncatechars:40 }}</td>
+            <td>
+              <button class="btn btn-sm btn-outline-secondary" onclick="openEditShiftModal({{ a.id }})">Edit</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="deleteShiftAssignment({{ a.id }})">Delete</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if assignments.has_other_pages %}
+    <div class="d-flex justify-content-between align-items-center mt-3 px-2">
+      <span class="text-muted small">Page {{ assignments.number }} of {{ assignments.paginator.num_pages }}</span>
+      <div>
+        {% if assignments.has_previous %}
+        <a href="?page={{ assignments.previous_page_number }}&employee={{ employee_search }}&shift_name={{ shift_name }}&date_from={{ date_from }}&date_to={{ date_to }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+        {% endif %}
+        {% if assignments.has_next %}
+        <a href="?page={{ assignments.next_page_number }}&employee={{ employee_search }}&shift_name={{ shift_name }}&date_from={{ date_from }}&date_to={{ date_to }}" class="btn btn-sm btn-outline-primary">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="alert alert-info text-center mt-3 mx-2">No shift assignments found for the selected filters.</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ═══════════ ASSIGN SHIFT MODAL ═══════════ -->
+<div class="modal fade" id="addShiftModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content rounded-4">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold"><i class="ri-moon-clear-line me-2 text-primary"></i>Assign Shift</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="addShiftForm">
+        {% csrf_token %}
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Employees</label>
+            <div class="position-relative">
+              <input type="text" id="addShiftEmployeeSearch" class="form-control" placeholder="Search employee by name or code..." autocomplete="off">
+              <ul id="addShiftEmployeeDropdown" class="list-group position-absolute w-100 shadow"
+                  style="z-index:1000; display:none; max-height:220px; overflow-y:auto; background:white; cursor:pointer;"></ul>
+            </div>
+            <div id="addShiftSelectedEmployees" class="mt-2 d-flex flex-wrap gap-2"></div>
+            <div class="form-text">Select one or more employees to assign the same shift to (e.g. an entire rotating team).</div>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Shift Name</label>
+              <input type="text" name="shift_name" class="form-control" list="shiftNameSuggestions"
+                     placeholder="e.g. Night Shift, Day Shift, Rotation A" required>
+              <datalist id="shiftNameSuggestions">
+                {% for name in shift_names %}<option value="{{ name }}">{% endfor %}
+              </datalist>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">Start Date</label>
+              <input type="date" name="start_date" class="form-control" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label fw-semibold">End Date</label>
+              <input type="date" name="end_date" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Shift Start Time <span class="text-muted small">(optional, for reference)</span></label>
+              <input type="time" name="shift_start_time" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Shift End Time <span class="text-muted small">(optional, for reference)</span></label>
+              <input type="time" name="shift_end_time" class="form-control">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Notes</label>
+              <textarea name="notes" class="form-control" rows="2"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Assign Shift</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ EDIT SHIFT MODAL ═══════════ -->
+<div class="modal fade" id="editShiftModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content rounded-4">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold"><i class="ri-edit-line me-2 text-primary"></i>Edit Shift Assignment</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="editShiftForm">
+        {% csrf_token %}
+        <input type="hidden" id="editShiftId">
+        <div class="modal-body">
+          <p class="mb-3"><strong id="editShiftEmployeeLabel"></strong></p>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Shift Name</label>
+            <input type="text" id="editShiftName" name="shift_name" class="form-control" required>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Start Date</label>
+              <input type="date" id="editShiftStartDate" name="start_date" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">End Date</label>
+              <input type="date" id="editShiftEndDate" name="end_date" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Shift Start Time</label>
+              <input type="time" id="editShiftStartTime" name="shift_start_time" class="form-control">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Shift End Time</label>
+              <input type="time" id="editShiftEndTime" name="shift_end_time" class="form-control">
+            </div>
+            <div class="col-12">
+              <label class="form-label">Notes</label>
+              <textarea id="editShiftNotes" name="notes" class="form-control" rows="2"></textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function getCSRFToken() {
+  return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
+}
+
+// ── Filter-form employee autocomplete ──────────────────────────────────
+function wireEmployeeAutocomplete(inputId, dropdownId, onSelect) {
+  const input = document.getElementById(inputId);
+  const dropdown = document.getElementById(dropdownId);
+  let controller = null;
+
+  input.addEventListener('input', async function () {
+    const query = this.value.trim();
+    if (query.length < 1) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; return; }
+    if (controller) controller.abort();
+    controller = new AbortController();
+    try {
+      const res = await fetch(`/ajax/employees/search/?q=${encodeURIComponent(query)}`, { signal: controller.signal });
+      const data = await res.json();
+      dropdown.innerHTML = '';
+      if (data.length === 0) {
+        dropdown.innerHTML = '<li class="list-group-item text-muted">No employees found</li>';
+      } else {
+        data.forEach(emp => {
+          const li = document.createElement('li');
+          li.className = 'list-group-item list-group-item-action';
+          li.innerHTML = `<strong>${emp.name}</strong> <small class="text-muted ms-1">(${emp.code})</small>`;
+          li.onclick = () => { onSelect(emp); dropdown.style.display = 'none'; input.value = ''; };
+          dropdown.appendChild(li);
+        });
+      }
+      dropdown.style.display = 'block';
+    } catch (err) {
+      if (err.name !== 'AbortError') console.error('Employee search failed', err);
+    }
+  });
+
+  document.addEventListener('click', function (e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display = 'none';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  wireEmployeeAutocomplete('filterEmployeeSearch', 'filterEmployeeDropdown', emp => {
+    document.getElementById('filterEmployeeSearch').value = emp.code;
+    document.getElementById('filterEmployeeSearch').form.submit();
+  });
+  wireEmployeeAutocomplete('addShiftEmployeeSearch', 'addShiftEmployeeDropdown', emp => {
+    selectedShiftEmployees[emp.id] = { name: emp.name, code: emp.code };
+    renderSelectedShiftEmployees();
+  });
+});
+
+// ── Assign Shift modal: multi-employee picker ───────────────────────────
+let selectedShiftEmployees = {};
+
+function renderSelectedShiftEmployees() {
+  const container = document.getElementById('addShiftSelectedEmployees');
+  container.innerHTML = '';
+  Object.entries(selectedShiftEmployees).forEach(([id, emp]) => {
+    const chip = document.createElement('span');
+    chip.className = 'badge bg-label-primary d-inline-flex align-items-center gap-2 py-2 px-3';
+    chip.innerHTML = `${emp.name} (${emp.code}) <span style="cursor:pointer;font-weight:700;" onclick="removeSelectedShiftEmployee('${id}')">&times;</span>`;
+    container.appendChild(chip);
+  });
+}
+
+function removeSelectedShiftEmployee(id) {
+  delete selectedShiftEmployees[id];
+  renderSelectedShiftEmployees();
+}
+
+function openAddShiftModal() {
+  selectedShiftEmployees = {};
+  renderSelectedShiftEmployees();
+  document.getElementById('addShiftForm').reset();
+  new bootstrap.Modal(document.getElementById('addShiftModal')).show();
+}
+
+document.getElementById('addShiftForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const ids = Object.keys(selectedShiftEmployees);
+  if (ids.length === 0) { alert('Select at least one employee.'); return; }
+
+  const formData = new FormData(this);
+  ids.forEach(id => formData.append('employee_ids', id));
+
+  fetch("{% url 'add_shift_assignment' %}", {
+    method: 'POST',
+    headers: { 'X-CSRFToken': getCSRFToken() },
+    body: formData,
+  })
+  .then(res => res.json().then(data => ({ ok: res.ok, data })))
+  .then(({ ok, data }) => {
+    if (!ok || !data.success) { alert((data && data.error) || 'Could not assign shift.'); return; }
+    if (data.failed && data.failed.length) {
+      const reasons = data.failed.map(f => `${f.employee || f.employee_id}: ${f.error}`).join('\n');
+      alert(`Assigned to ${data.created.length} employee(s). ${data.failed.length} failed:\n${reasons}`);
+    }
+    location.reload();
+  })
+  .catch(() => alert('Something went wrong while assigning the shift.'));
+});
+
+// ── Edit Shift modal ─────────────────────────────────────────────────────
+function openEditShiftModal(id) {
+  fetch(`/api/shift-roster/${id}/`)
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('editShiftId').value = data.id;
+      document.getElementById('editShiftEmployeeLabel').innerText = `${data.employee_name} (${data.employee_code})`;
+      document.getElementById('editShiftName').value = data.shift_name;
+      document.getElementById('editShiftStartDate').value = data.start_date;
+      document.getElementById('editShiftEndDate').value = data.end_date;
+      document.getElementById('editShiftStartTime').value = data.shift_start_time;
+      document.getElementById('editShiftEndTime').value = data.shift_end_time;
+      document.getElementById('editShiftNotes').value = data.notes;
+      new bootstrap.Modal(document.getElementById('editShiftModal')).show();
+    })
+    .catch(() => alert('Could not load this shift assignment.'));
+}
+
+document.getElementById('editShiftForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const id = document.getElementById('editShiftId').value;
+  const formData = new FormData(this);
+
+  fetch(`/attendance/shift-roster/${id}/edit/`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': getCSRFToken() },
+    body: formData,
+  })
+  .then(res => res.json().then(data => ({ ok: res.ok, data })))
+  .then(({ ok, data }) => {
+    if (!ok || !data.success) { alert((data && data.error) || 'Could not save changes.'); return; }
+    location.reload();
+  })
+  .catch(() => alert('Something went wrong while saving.'));
+});
+
+function deleteShiftAssignment(id) {
+  if (!confirm('Delete this shift assignment?')) return;
+  fetch(`/attendance/shift-roster/${id}/delete/`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': getCSRFToken() },
+  })
+  .then(res => res.json().then(data => ({ ok: res.ok, data })))
+  .then(({ ok, data }) => {
+    if (!ok || !data.success) { alert((data && data.error) || 'Could not delete.'); return; }
+    location.reload();
+  })
+  .catch(() => alert('Something went wrong while deleting.'));
+}
+</script>
+{% endblock %}

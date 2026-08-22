@@ -140,7 +140,12 @@
             <li class="d-flex align-items-center mb-4">
               <i class="ri-time-line ri-24px"></i
               ><span class="fw-medium mx-2">Shift:</span>
-              <span>{{ employee.shift_start_time }} - {{ employee.shift_end_time }}</span>               
+              <span>{{ employee.shift_start_time }} - {{ employee.shift_end_time }}</span>
+            </li>
+            <li class="d-flex align-items-center mb-4">
+              <i class="ri-calendar-close-line ri-24px"></i
+              ><span class="fw-medium mx-2">Weekly Off:</span>
+              <span>{% if employee.week_off_day is not None %}{{ employee.get_week_off_day_display }}{% else %}Company default{% endif %}</span>
             </li>
             <li class="d-flex align-items-center mb-4">
               <i class="ri-check-line ri-24px"></i

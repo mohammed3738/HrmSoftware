@@ -57,6 +57,12 @@ urlpatterns = [
     path("attendance/late-review/", views.late_attendance_review, name="late_attendance_review"),
     path("attendance/override-status/", views.override_attendance_status, name="override_attendance_status"),
     path("attendance/bulk-override-status/", views.bulk_override_attendance_status, name="bulk_override_attendance_status"),
+
+    path("attendance/shift-roster/", views.shift_roster_list, name="shift_roster_list"),
+    path("attendance/shift-roster/add/", views.add_shift_assignment, name="add_shift_assignment"),
+    path("attendance/shift-roster/<int:pk>/edit/", views.edit_shift_assignment, name="edit_shift_assignment"),
+    path("attendance/shift-roster/<int:pk>/delete/", views.delete_shift_assignment, name="delete_shift_assignment"),
+    path("api/shift-roster/<int:pk>/", views.api_get_shift_assignment, name="api_get_shift_assignment"),
     path("attendance/", views.attendance_list, name="attendance"),
     path("attendance/<int:employee_id>/", views.employee_attendance_detail, name="employee_attendance_detail"),
     path("ajax/employees/search/", views.employee_search, name="employee_search"),

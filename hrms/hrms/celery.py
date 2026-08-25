@@ -32,6 +32,11 @@ app.conf.beat_schedule = {
         'schedule': crontab(hour=23, minute=55, day_of_month=25),  # ✅ Fixed: 25 not '25'
     },
 
+    'backfill-holiday-attendance-daily': {
+        'task': 'website.tasks.backfill_holiday_attendance_task',
+        'schedule': crontab(hour=1, minute=0),
+    },
+
 }
 
 

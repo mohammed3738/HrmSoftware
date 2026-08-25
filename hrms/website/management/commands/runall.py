@@ -7,6 +7,14 @@ class Command(BaseCommand):
     help = "Run Django, Celery Worker, Celery Beat & Flower using the active virtual environment."
 
     def handle(self, *args, **options):
+        # Windows terminals often default to a legacy codepage (e.g. cp1252)
+        # that can't encode emoji, which crashed this command before it ever
+        # got to spawn a single subprocess. Force UTF-8 with a safe fallback
+        # so the messages below never take the whole command down.
+        for stream in (sys.stdout, sys.stderr):
+            if hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+
         self.stdout.write(self.style.SUCCESS("🚀 Starting Django + Celery Worker + Beat + Flower...\n"))
 
         base_dir = os.getcwd()

@@ -975,6 +975,41 @@ def bulk_override_attendance_status(request):
     return JsonResponse({"success": True, "status": new_status, "updated": updated, "failed": failed})
 
 
+def _current_payroll_period(company):
+    """Return (period_from, period_to) for the payroll cycle containing
+    today, for the given company — falls back to the calendar month if no
+    custom cycle is configured, or (None, None) if there's no company/settings."""
+    if not company:
+        return None, None
+    payroll_settings = PayrollSettings.objects.filter(company=company).first()
+    if not payroll_settings:
+        return None, None
+    return get_payroll_period_for_date(payroll_settings, now().date())
+
+
+def _validate_shift_dates_within_current_period(company, start_date_str, end_date_str):
+    """Shift assignments may only be scheduled from today through the end of
+    the current payroll period — not in the past, and not beyond the period
+    that's currently running. Returns an error message, or None if OK (or if
+    the company has no payroll cycle configured, in which case it doesn't block)."""
+    period_from, period_to = _current_payroll_period(company)
+    if not period_to:
+        return None
+
+    today = now().date()
+    try:
+        start = date.fromisoformat(start_date_str)
+        end = date.fromisoformat(end_date_str)
+    except (TypeError, ValueError):
+        return "Invalid date."
+
+    if start < today:
+        return f"Start date cannot be before today ({today.strftime('%d %b %Y')})."
+    if end > period_to:
+        return f"End date cannot be after the current payroll period ends ({period_to.strftime('%d %b %Y')})."
+    return None
+
+
 @login_required
 @group_required("Admin", "HR", "Manager")
 def shift_roster_list(request):
@@ -983,7 +1018,7 @@ def shift_roster_list(request):
     scheduling record; does not feed attendance calculation."""
     company_filter = get_company_filter(request.user)
 
-    base_qs = ShiftAssignment.objects.select_related("employee")
+    base_qs = ShiftAssignment.objects.select_related("employee", "created_by")
     if company_filter:
         base_qs = base_qs.filter(employee__company=company_filter)
 
@@ -1023,6 +1058,12 @@ def shift_roster_list(request):
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
 
+    # Bounds for the Assign/Edit date pickers: today through the end of the
+    # current payroll period. Based on the logged-in user's own company when
+    # scoped; for global-access users this is just a UI hint — the actual
+    # enforcement in add/edit happens per employee's own company.
+    _, period_to = _current_payroll_period(company_filter or get_user_company(request.user))
+
     return render(request, "attendance/shift_roster.html", {
         "assignments": assignments,
         "employee_search": employee_search,
@@ -1032,6 +1073,8 @@ def shift_roster_list(request):
         "shift_names": shift_names,
         "week_start": week_start.isoformat(),
         "week_end": week_end.isoformat(),
+        "roster_min_date": today.isoformat(),
+        "roster_max_date": period_to.isoformat() if period_to else "",
     })
 
 
@@ -1069,6 +1112,11 @@ def add_shift_assignment(request):
             failed.append({"employee_id": emp_id, "employee": str(employee), "error": "Permission denied."})
             continue
 
+        window_error = _validate_shift_dates_within_current_period(employee.company, start_date, end_date)
+        if window_error:
+            failed.append({"employee_id": emp_id, "employee": str(employee), "error": window_error})
+            continue
+
         assignment = ShiftAssignment(
             employee=employee, shift_name=shift_name,
             start_date=start_date, end_date=end_date,
@@ -1100,9 +1148,17 @@ def edit_shift_assignment(request, pk):
     if company_filter and assignment.employee.company_id != company_filter.id:
         return JsonResponse({"success": False, "error": "Permission denied."}, status=403)
 
+    new_start_date = request.POST.get("start_date", "").strip()
+    new_end_date = request.POST.get("end_date", "").strip()
+    window_error = _validate_shift_dates_within_current_period(
+        assignment.employee.company, new_start_date, new_end_date
+    )
+    if window_error:
+        return JsonResponse({"success": False, "error": window_error}, status=400)
+
     assignment.shift_name = request.POST.get("shift_name", "").strip()
-    assignment.start_date = request.POST.get("start_date", "").strip()
-    assignment.end_date = request.POST.get("end_date", "").strip()
+    assignment.start_date = new_start_date
+    assignment.end_date = new_end_date
     assignment.shift_start_time = request.POST.get("shift_start_time", "").strip() or None
     assignment.shift_end_time = request.POST.get("shift_end_time", "").strip() or None
     assignment.notes = request.POST.get("notes", "").strip()
@@ -1130,7 +1186,9 @@ def delete_shift_assignment(request, pk):
 
 @login_required
 def api_get_shift_assignment(request, pk):
-    assignment = get_object_or_404(ShiftAssignment.objects.select_related("employee"), id=pk)
+    assignment = get_object_or_404(
+        ShiftAssignment.objects.select_related("employee", "created_by"), id=pk
+    )
     return JsonResponse({
         "id": assignment.id,
         "employee_id": assignment.employee_id,
@@ -1142,6 +1200,8 @@ def api_get_shift_assignment(request, pk):
         "shift_start_time": assignment.shift_start_time.strftime("%H:%M") if assignment.shift_start_time else "",
         "shift_end_time": assignment.shift_end_time.strftime("%H:%M") if assignment.shift_end_time else "",
         "notes": assignment.notes,
+        "created_by": assignment.created_by.get_full_name() or assignment.created_by.username if assignment.created_by else "—",
+        "created_at": assignment.created_at.strftime("%d %b %Y, %I:%M %p"),
     })
 
 
@@ -5414,6 +5474,7 @@ def get_payroll_settings(request):
         'basic_percentage':     float(settings.basic_percentage),
         'hra_percentage':       float(settings.hra_percentage),
         'basic_cap':            float(settings.basic_cap),
+        'pf_wage_ceiling':      float(settings.pf_wage_ceiling),
     })
 
 
@@ -5476,6 +5537,7 @@ def save_payroll_settings(request):
         settings.basic_percentage    = float(request.POST.get("basic_percentage",    50))
         settings.hra_percentage      = float(request.POST.get("hra_percentage",      60))
         settings.basic_cap           = float(request.POST.get("basic_cap",        21000))
+        settings.pf_wage_ceiling     = float(request.POST.get("pf_wage_ceiling",   15000))
         settings.pf_percentage       = float(request.POST.get("pf_percentage",       12))
         settings.esic_percentage     = float(request.POST.get("esic_percentage",   3.67))
         settings.gratuity_percentage = float(request.POST.get("gratuity_percentage", 4.61))
@@ -5977,7 +6039,7 @@ def _compute_payroll_dates(ps, year, m):
 
 @login_required
 def payroll_run_create(request):
-    companies = Company.objects.all()
+    companies = Company.objects.filter(status="active").order_by("name")
     if request.method == "POST":
         company_id = request.POST.get("company")
         month = request.POST.get("month")  # "YYYY-MM"
@@ -5985,13 +6047,40 @@ def payroll_run_create(request):
             messages.error(request, "Company and month are required.")
             return render(request, "payroll/run_create.html", {"companies": companies})
 
-        company = get_object_or_404(Company, id=company_id)
         try:
             year, m = map(int, month.split("-"))
         except ValueError:
             messages.error(request, "Invalid month format.")
             return render(request, "payroll/run_create.html", {"companies": companies})
 
+        if company_id == "all":
+            created, skipped = [], []
+            for company in companies:
+                ps = PayrollSettings.objects.filter(company=company).first()
+                month_start, month_end = _compute_payroll_dates(ps, year, m)
+                if PayrollRun.objects.filter(company=company, start_date=month_start, end_date=month_end).exists():
+                    skipped.append(company.name)
+                    continue
+                create_payroll_run(company, month_start, month_end)
+                created.append(company.name)
+
+            if created:
+                messages.success(
+                    request,
+                    f"Payroll runs created for {len(created)} compan{'y' if len(created) == 1 else 'ies'}: "
+                    f"{', '.join(created)}."
+                )
+            if skipped:
+                messages.warning(
+                    request,
+                    f"Skipped {len(skipped)} compan{'y' if len(skipped) == 1 else 'ies'} that already had a run "
+                    f"for this period: {', '.join(skipped)}."
+                )
+            if not created and not skipped:
+                messages.error(request, "No active companies found.")
+            return redirect("payroll-run-list")
+
+        company = get_object_or_404(Company, id=company_id)
         ps = PayrollSettings.objects.filter(company=company).first()
         month_start, month_end = _compute_payroll_dates(ps, year, m)
 
@@ -6683,12 +6772,19 @@ def add_holiday(request):
             else:
                 holiday.specific_employees.clear()
 
+            # Auto-generate 'Holiday' attendance for anyone who doesn't
+            # already have a record on this date — covers the case where
+            # nobody uploads attendance for a day everyone knows is a holiday.
+            backfilled = holiday.backfill_attendance()
+
             # Show success message
-            messages.success(
-                request,
+            success_msg = (
                 f'✓ Holiday "{holiday.name}" ({holiday.holiday_date.strftime("%b %d, %Y")}) '
                 f'added successfully!'
             )
+            if backfilled:
+                success_msg += f' Auto-generated attendance for {backfilled} employee(s).'
+            messages.success(request, success_msg)
 
             return redirect('holiday-calendar')
         else:
@@ -6738,11 +6834,13 @@ def edit_holiday(request, holiday_id):
             else:
                 holiday.specific_employees.clear()
 
+            backfilled = holiday.backfill_attendance()
+
             # Show success message
-            messages.success(
-                request,
-                f'✓ Holiday "{holiday.name}" updated successfully!'
-            )
+            success_msg = f'✓ Holiday "{holiday.name}" updated successfully!'
+            if backfilled:
+                success_msg += f' Auto-generated attendance for {backfilled} employee(s).'
+            messages.success(request, success_msg)
 
             return redirect('holiday-calendar')
         else:

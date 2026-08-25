@@ -423,7 +423,7 @@ document.addEventListener("DOMContentLoaded", function () {
 let payrollSettings = {
   pf_percentage: 0, esic_percentage: 0, gratuity_percentage: 0,
   professional_tax: 0, bonus_percentage: 0, basic_percentage: 0,
-  hra_percentage: 0, basic_cap: 0
+  hra_percentage: 0, basic_cap: 0, pf_wage_ceiling: 15000
 };
 
 let userInteracted = false; // Track if user has touched the modal
@@ -518,9 +518,10 @@ function calculateSalary() {
     ? Math.round(7000 * payrollSettings.bonus_percentage / 100)
     : 0;
 
-  /* PF(er) = IF(pfEnabled, MIN(Basic × pf_pct%, 1800), 0) */
+  /* PF(er) = IF(pfEnabled, MIN(Basic, pf_wage_ceiling) × pf_pct%, 0) */
+  const pfWage = Math.min(basic, payrollSettings.pf_wage_ceiling);
   const pfEr = pfEnabled
-    ? Math.min(basic * payrollSettings.pf_percentage / 100, 1800)
+    ? pfWage * payrollSettings.pf_percentage / 100
     : 0;
   const pfEe = pfEr;
 

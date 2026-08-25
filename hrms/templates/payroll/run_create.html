@@ -44,10 +44,12 @@
               <label class="form-label fw-semibold">Company <span class="text-danger">*</span></label>
               <select class="form-select" name="company" id="companySelect" required>
                 <option value="">— Select Company —</option>
+                <option value="all">— All Companies —</option>
                 {% for c in companies %}
                 <option value="{{ c.id }}">{{ c.name }}</option>
                 {% endfor %}
               </select>
+              <div class="form-text text-muted">Choose "All Companies" to process payroll for every active company at once, instead of one at a time.</div>
             </div>
 
             <!-- Month -->
@@ -86,9 +88,16 @@
               <a id="existingRunLink" href="#" class="alert-link ms-1">View existing run &rarr;</a>
             </div>
 
+            <!-- All Companies Note -->
+            <div id="allCompaniesNote" class="alert alert-info d-none mb-4" role="alert">
+              <i class="ti ti-info-circle me-1"></i>
+              A payroll run will be created for every active company for the selected month. Companies that already
+              have a run for that period will be skipped automatically.
+            </div>
+
             <div class="d-flex gap-3 mt-2">
               <button type="submit" class="btn btn-primary flex-grow-1" id="submitBtn">
-                <i class="ti ti-calendar-check me-1"></i> Process Payroll
+                <i class="ti ti-calendar-check me-1"></i> <span id="submitBtnLabel">Process Payroll</span>
               </button>
               <a href="{% url 'payroll-run-list' %}" class="btn btn-outline-secondary">Cancel</a>
             </div>
@@ -108,14 +117,30 @@ function fetchPreview() {
   const month = document.getElementById("monthPicker").value;
   const preview = document.getElementById("periodPreview");
   const warning = document.getElementById("duplicateWarning");
+  const allNote = document.getElementById("allCompaniesNote");
   const submitBtn = document.getElementById("submitBtn");
+  const submitBtnLabel = document.getElementById("submitBtnLabel");
 
   if (!company || !month) {
     preview.classList.add("d-none");
     warning.classList.add("d-none");
+    allNote.classList.add("d-none");
     submitBtn.disabled = false;
+    submitBtnLabel.textContent = "Process Payroll";
     return;
   }
+
+  if (company === "all") {
+    preview.classList.add("d-none");
+    warning.classList.add("d-none");
+    allNote.classList.remove("d-none");
+    submitBtn.disabled = false;
+    submitBtnLabel.textContent = "Process Payroll for All Companies";
+    return;
+  }
+
+  allNote.classList.add("d-none");
+  submitBtnLabel.textContent = "Process Payroll";
 
   fetch(`${PREVIEW_URL}?company_id=${encodeURIComponent(company)}&month=${encodeURIComponent(month)}`)
     .then(r => r.json())

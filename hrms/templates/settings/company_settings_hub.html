@@ -169,6 +169,13 @@
                   <label class="form-label">Basic Cap (₹)</label>
                   <input class="form-control" type="number" name="basic_cap" id="hub_basic_cap"
                          value="{{ payroll_settings.basic_cap }}">
+                  <small class="text-muted">Max Basic pay allowed when deriving it from Gross CTC.</small>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">PF Wage Ceiling (₹)</label>
+                  <input class="form-control" type="number" name="pf_wage_ceiling" id="hub_pf_wage_ceiling"
+                         value="{{ payroll_settings.pf_wage_ceiling }}">
+                  <small class="text-muted">PF is calculated on MIN(Basic, this). Statutory default: 15000.</small>
                 </div>
                 <div class="col-md-3">
                   <label class="form-label">PF %</label>

@@ -786,4 +786,24 @@ def process_attendance_file(upload_id):
     except Exception:
         upload.status = "failed"
         upload.save(update_fields=["status"])
-        raise
+
+
+@shared_task
+def backfill_holiday_attendance_task():
+    """Daily safety net: make sure every recent holiday has 'Holiday'
+    attendance rows for the employees it applies to, in case that day's
+    attendance file was never uploaded (nobody expected to punch in on a
+    holiday) or new employees joined after the holiday was created. Holiday
+    creation/edit already does this immediately (see Holiday.backfill_attendance
+    and views.add_holiday/edit_holiday) — this just catches anything missed."""
+    window_start = now().date() - timedelta(days=90)
+    holidays = Holiday.objects.filter(holiday_date__gte=window_start, holiday_date__lte=now().date())
+
+    total_created = 0
+    for holiday in holidays:
+        try:
+            total_created += holiday.backfill_attendance()
+        except Exception as e:
+            print(f"[backfill_holiday_attendance_task] Holiday {holiday.id} failed: {e}")
+
+    return total_created

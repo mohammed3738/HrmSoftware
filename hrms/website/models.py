@@ -657,7 +657,16 @@ class PayrollSettings(models.Model):
 
     basic_percentage = models.FloatField(default=50.0)
     hra_percentage = models.FloatField(default=60.0)
-    basic_cap = models.FloatField(default=21000.0)
+    basic_cap = models.FloatField(
+        default=21000.0,
+        help_text="Ceiling used when deriving Basic from Gross CTC during salary structuring "
+                  "(Basic = MIN(Gross CTC x Basic %, this cap)). Not used for PF."
+    )
+    pf_wage_ceiling = models.FloatField(
+        default=15000.0,
+        help_text="Statutory PF wage ceiling. Employee/employer PF contribution is "
+                  "PF % of MIN(Basic, this ceiling) — e.g. 15000 x 12% = 1800."
+    )
 
     # 🕒 Timestamp fields
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1054,6 +1063,44 @@ class Holiday(models.Model):
         if self.applies_to_all_employees:
             return True
         return self.specific_employees.filter(id=employee.id).exists()
+
+    def backfill_attendance(self):
+        """Create a 'Holiday' Attendance row for every employee this holiday
+        applies to, for whichever of them don't already have an Attendance
+        record on this date — e.g. because nobody expected to need to
+        upload punch data for a holiday, so the day's file was never
+        uploaded. Existing rows (real punches, corrections, etc.) are never
+        touched or overwritten. Returns the number of rows created."""
+        from django.apps import apps
+        Employee = apps.get_model('website', 'Employee')
+        Attendance = apps.get_model('website', 'Attendance')
+        PayrollSettings = apps.get_model('website', 'PayrollSettings')
+
+        employees = Employee.objects.filter(
+            status='Active', date_of_joining__lte=self.holiday_date,
+        ).select_related('branch', 'company')
+
+        # One PayrollSettings lookup per company, not per employee.
+        branch_specific_cache = {}
+        created = 0
+
+        for employee in employees:
+            company_id = employee.company_id
+            if company_id not in branch_specific_cache:
+                ps = PayrollSettings.objects.filter(company_id=company_id).first()
+                branch_specific_cache[company_id] = getattr(ps, 'branch_specific_holidays', True) if ps else True
+            branch_specific = branch_specific_cache[company_id]
+
+            if branch_specific and not self.is_applicable_to_branch(employee.branch):
+                continue
+            if not self.is_applicable_to_employee(employee):
+                continue
+
+            _, was_created = Attendance.objects.get_or_create(employee=employee, date=self.holiday_date)
+            if was_created:
+                created += 1
+
+        return created
 
 
 # ============================================

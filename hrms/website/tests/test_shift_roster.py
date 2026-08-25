@@ -4,13 +4,13 @@ shift (day/night/rotational) for a date range, without it affecting the
 actual (flexible, check-in-time-based) attendance calculation.
 Run with: python manage.py test website.tests.test_shift_roster
 """
-from datetime import date, time
+from datetime import date, time, timedelta
 
 from django.contrib.auth.models import User
 from django.test import TestCase, Client
 from django.urls import reverse
 
-from website.models import Company, Employee, ShiftAssignment
+from website.models import Company, Employee, ShiftAssignment, PayrollSettings
 
 
 class ShiftRosterTest(TestCase):
@@ -175,3 +175,113 @@ class ShiftRosterTest(TestCase):
         })
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(ShiftAssignment.objects.count(), 0)
+
+
+class ShiftRosterDateWindowTest(TestCase):
+    """When a company has a payroll cycle configured, shift dates must fall
+    between today and the end of the current payroll period — not in the
+    past, and not beyond the period that's currently running."""
+
+    def setUp(self):
+        self.company = Company.objects.create(name="Window Co", short_name="WINCO")
+        # No custom from_date/to_date -> get_payroll_period_for_date() falls
+        # back to the calendar month containing today.
+        PayrollSettings.objects.create(company=self.company)
+
+        self.employee = Employee.objects.create(
+            company=self.company,
+            salutation="Mr", first_name="Carl", last_name="Doe",
+            father_name="Robert Doe", gender="Male", blood_group="O+",
+            date_of_birth=date(1990, 1, 1), place_of_birth="Test City",
+            personal_email="carl@test.com", present_address="123 Test St",
+            permanent_address="123 Test St", personal_mobile="1234567890",
+            employee_code="EMP003", designation="Developer", department="IT",
+            date_of_joining=date(2020, 1, 1), location="Test Location",
+            pan_no="ABCDE1234F", aadhar_no="123456789012",
+            name_as_per_bank="Carl", salary_account_number="1234567890",
+            ifsc_code="TEST0001234", emergency_contact_name1="Jane Doe",
+            emergency_contact_relation1="Spouse", emergency_contact_mobile1="0987654321",
+            status="Active",
+        )
+
+        self.user = User.objects.create_superuser("windowadmin", "wa@test.com", "pass12345")
+        self.client = Client()
+        self.client.force_login(self.user, backend="django.contrib.auth.backends.ModelBackend")
+
+    def test_start_date_before_today_is_rejected(self):
+        yesterday = date.today() - timedelta(days=1)
+        resp = self.client.post(reverse("add_shift_assignment"), {
+            "employee_ids": [self.employee.id], "shift_name": "Night Shift",
+            "start_date": yesterday.isoformat(),
+            "end_date": (date.today() + timedelta(days=1)).isoformat(),
+        })
+        data = resp.json()
+        self.assertEqual(data["created"], [])
+        self.assertEqual(len(data["failed"]), 1)
+        self.assertIn("before today", data["failed"][0]["error"])
+        self.assertEqual(ShiftAssignment.objects.count(), 0)
+
+    def test_end_date_beyond_current_period_is_rejected(self):
+        far_future = date.today() + timedelta(days=90)  # guaranteed outside the current calendar month
+        resp = self.client.post(reverse("add_shift_assignment"), {
+            "employee_ids": [self.employee.id], "shift_name": "Night Shift",
+            "start_date": date.today().isoformat(),
+            "end_date": far_future.isoformat(),
+        })
+        data = resp.json()
+        self.assertEqual(data["created"], [])
+        self.assertEqual(len(data["failed"]), 1)
+        self.assertIn("current payroll period", data["failed"][0]["error"])
+        self.assertEqual(ShiftAssignment.objects.count(), 0)
+
+    def test_dates_within_current_period_succeed(self):
+        resp = self.client.post(reverse("add_shift_assignment"), {
+            "employee_ids": [self.employee.id], "shift_name": "Night Shift",
+            "start_date": date.today().isoformat(),
+            "end_date": date.today().isoformat(),
+        })
+        data = resp.json()
+        self.assertEqual(len(data["created"]), 1)
+        self.assertEqual(data["failed"], [])
+
+    def test_edit_also_enforces_the_window(self):
+        assignment = ShiftAssignment.objects.create(
+            employee=self.employee, shift_name="Day Shift",
+            start_date=date.today(), end_date=date.today(),
+        )
+        far_future = date.today() + timedelta(days=90)
+        resp = self.client.post(reverse("edit_shift_assignment", args=[assignment.id]), {
+            "shift_name": "Day Shift",
+            "start_date": date.today().isoformat(),
+            "end_date": far_future.isoformat(),
+        })
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json()["success"])
+        assignment.refresh_from_db()
+        self.assertEqual(assignment.end_date, date.today())  # unchanged
+
+    def test_no_payroll_settings_does_not_block(self):
+        """A company with no PayrollSettings row at all -> no window
+        constraint, matching the original ShiftRosterTest suite's behavior."""
+        no_settings_company = Company.objects.create(name="No Settings Co", short_name="NOSET")
+        employee = Employee.objects.create(
+            company=no_settings_company,
+            salutation="Mr", first_name="Dana", last_name="Doe",
+            father_name="Robert Doe", gender="Male", blood_group="O+",
+            date_of_birth=date(1990, 1, 1), place_of_birth="Test City",
+            personal_email="dana@test.com", present_address="123 Test St",
+            permanent_address="123 Test St", personal_mobile="1234567890",
+            employee_code="EMP004", designation="Developer", department="IT",
+            date_of_joining=date(2020, 1, 1), location="Test Location",
+            pan_no="ABCDE1234F", aadhar_no="123456789012",
+            name_as_per_bank="Dana", salary_account_number="1234567890",
+            ifsc_code="TEST0001234", emergency_contact_name1="Jane Doe",
+            emergency_contact_relation1="Spouse", emergency_contact_mobile1="0987654321",
+            status="Active",
+        )
+        resp = self.client.post(reverse("add_shift_assignment"), {
+            "employee_ids": [employee.id], "shift_name": "Night Shift",
+            "start_date": "2020-01-01", "end_date": "2020-01-07",  # far in the past, no constraint applies
+        })
+        data = resp.json()
+        self.assertEqual(len(data["created"]), 1)

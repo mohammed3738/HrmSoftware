@@ -66,6 +66,8 @@
             <th>End Date</th>
             <th>Shift Timing</th>
             <th>Notes</th>
+            <th>Created By</th>
+            <th>Created At</th>
             <th style="width:140px;">Actions</th>
           </tr>
         </thead>
@@ -83,6 +85,8 @@
               {% else %}—{% endif %}
             </td>
             <td class="small text-muted">{{ a.notes|default:"—"|truncatechars:40 }}</td>
+            <td class="small text-muted">{% if a.created_by %}{{ a.created_by.get_full_name|default:a.created_by.username }}{% else %}—{% endif %}</td>
+            <td class="small text-muted">{{ a.created_at|date:"d M Y, h:i A" }}</td>
             <td>
               <button class="btn btn-sm btn-outline-secondary" onclick="openEditShiftModal({{ a.id }})">Edit</button>
               <button class="btn btn-sm btn-outline-danger" onclick="deleteShiftAssignment({{ a.id }})">Delete</button>
@@ -145,12 +149,19 @@
             </div>
             <div class="col-md-3">
               <label class="form-label fw-semibold">Start Date</label>
-              <input type="date" name="start_date" class="form-control" required>
+              <input type="date" name="start_date" class="form-control"
+                     min="{{ roster_min_date }}" {% if roster_max_date %}max="{{ roster_max_date }}"{% endif %} required>
             </div>
             <div class="col-md-3">
               <label class="form-label fw-semibold">End Date</label>
-              <input type="date" name="end_date" class="form-control" required>
+              <input type="date" name="end_date" class="form-control"
+                     min="{{ roster_min_date }}" {% if roster_max_date %}max="{{ roster_max_date }}"{% endif %} required>
             </div>
+            {% if roster_max_date %}
+            <div class="col-12">
+              <div class="form-text">Dates must fall within the current payroll period: {{ roster_min_date }} to {{ roster_max_date }}.</div>
+            </div>
+            {% endif %}
             <div class="col-md-6">
               <label class="form-label">Shift Start Time <span class="text-muted small">(optional, for reference)</span></label>
               <input type="time" name="shift_start_time" class="form-control">
@@ -186,7 +197,8 @@
         {% csrf_token %}
         <input type="hidden" id="editShiftId">
         <div class="modal-body">
-          <p class="mb-3"><strong id="editShiftEmployeeLabel"></strong></p>
+          <p class="mb-1"><strong id="editShiftEmployeeLabel"></strong></p>
+          <p class="text-muted small mb-3">Created by <span id="editShiftCreatedBy"></span> on <span id="editShiftCreatedAt"></span></p>
           <div class="mb-3">
             <label class="form-label fw-semibold">Shift Name</label>
             <input type="text" id="editShiftName" name="shift_name" class="form-control" required>
@@ -194,12 +206,19 @@
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label fw-semibold">Start Date</label>
-              <input type="date" id="editShiftStartDate" name="start_date" class="form-control" required>
+              <input type="date" id="editShiftStartDate" name="start_date" class="form-control"
+                     min="{{ roster_min_date }}" {% if roster_max_date %}max="{{ roster_max_date }}"{% endif %} required>
             </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">End Date</label>
-              <input type="date" id="editShiftEndDate" name="end_date" class="form-control" required>
+              <input type="date" id="editShiftEndDate" name="end_date" class="form-control"
+                     min="{{ roster_min_date }}" {% if roster_max_date %}max="{{ roster_max_date }}"{% endif %} required>
             </div>
+            {% if roster_max_date %}
+            <div class="col-12">
+              <div class="form-text">Dates must fall within the current payroll period: {{ roster_min_date }} to {{ roster_max_date }}.</div>
+            </div>
+            {% endif %}
             <div class="col-md-6">
               <label class="form-label">Shift Start Time</label>
               <input type="time" id="editShiftStartTime" name="shift_start_time" class="form-control">
@@ -340,6 +359,8 @@ function openEditShiftModal(id) {
       document.getElementById('editShiftStartTime').value = data.shift_start_time;
       document.getElementById('editShiftEndTime').value = data.shift_end_time;
       document.getElementById('editShiftNotes').value = data.notes;
+      document.getElementById('editShiftCreatedBy').innerText = data.created_by;
+      document.getElementById('editShiftCreatedAt').innerText = data.created_at;
       new bootstrap.Modal(document.getElementById('editShiftModal')).show();
     })
     .catch(() => alert('Could not load this shift assignment.'));

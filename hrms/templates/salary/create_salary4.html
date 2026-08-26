@@ -428,6 +428,13 @@ let payrollSettings = {
 
 let userInteracted = false; // Track if user has touched the modal
 
+// When editing an existing salary structure, Basic/HRA/Stat Bonus/Special
+// Allowance should keep showing (and stay freely editable as) the saved
+// values instead of being silently recomputed from Gross CTC — see
+// EDIT_LOCKED_FIELDS usage in the show.bs.modal handler below.
+const IS_EDIT_MODE = {{ salary_obj|yesno:"true,false" }};
+const EDIT_LOCKED_FIELDS = ["basic", "hra", "statBonus", "specialAllowance"];
+
 /* =====================================================
    HELPERS
 ===================================================== */
@@ -599,6 +606,21 @@ function markManual(e) {
    INIT
 ===================================================== */
 document.addEventListener("DOMContentLoaded", () => {
+  // Do this BEFORE loadPayrollSettings() kicks off its fetch: on the
+  // auto-opened edit modal (triggered by an earlier DOMContentLoaded
+  // listener above, before this one's show.bs.modal handler further down
+  // even gets attached), calculateSalary() ends up firing from
+  // loadPayrollSettings()'s async response, not from show.bs.modal — so
+  // the lock has to be in place before that fetch resolves, not only
+  // inside the show.bs.modal handler (which still re-applies it if the
+  // modal gets closed and reopened later in the same page session).
+  if (IS_EDIT_MODE) {
+    EDIT_LOCKED_FIELDS.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.dataset.manual = "true";
+    });
+  }
+
   loadPayrollSettings();
 
   // Re-fetch settings scoped to the selected employee's company whenever it changes
@@ -625,6 +647,18 @@ document.addEventListener("DOMContentLoaded", () => {
       delete el.dataset.manual;
       el.classList.remove("border-warning");
     });
+
+    // Editing an existing salary: keep Basic/HRA/Stat Bonus/Special
+    // Allowance showing the saved values and freely editable from the
+    // first keystroke, instead of getting silently recomputed from Gross
+    // CTC a moment after the modal opens (and having every first keystroke
+    // discarded by the auto-calc listener before markManual could protect it).
+    if (IS_EDIT_MODE) {
+      EDIT_LOCKED_FIELDS.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.dataset.manual = "true";
+      });
+    }
 
     // Small delay to let DOM settle, then calculate
     setTimeout(() => {

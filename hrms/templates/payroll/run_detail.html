@@ -526,14 +526,13 @@ function computeRow(tr) {
   tr.querySelector(".a2-proc").textContent    = fmt(a2_p);
   tr.querySelector(".gross-proc").textContent = fmt(gross);
 
-  // PF auto-calc unless manually overridden. Cap the full monthly basic
-  // against the PF wage ceiling FIRST, then pro-rate the capped wage for
-  // LWP the same as every other component (capping the already pro-rated
-  // "bp" instead pins PF to a flat amount that never drops for LWP days).
+  // PF auto-calc unless manually overridden: 12% of the basic actually
+  // earned this period (bp, already pro-rated for LWP), capped at the flat
+  // statutory contribution (pf_wage_ceiling x pf_percentage, e.g. 1800).
   const pfInput = tr.querySelector(".pf-emp");
   if (pfInput && tr.dataset.optedPf === "true" && !pfInput.dataset.manual) {
-    const pfWageProc = money(Math.min(basic, psettings.pf_wage_ceiling) * factor);
-    pfInput.value = money(pfWageProc * psettings.pf_percentage / 100).toFixed(2);
+    const pfFlatCap = money(psettings.pf_wage_ceiling * psettings.pf_percentage / 100);
+    pfInput.value = Math.min(money(bp * psettings.pf_percentage / 100), pfFlatCap).toFixed(2);
   }
   // ESIC auto-calc unless manually overridden
   const esicInput = tr.querySelector(".esic-emp");
@@ -589,13 +588,23 @@ async function saveRow(tr) {
   const payload = {
     present_days:      tr.querySelector(".present-days")?.value,
     leave_without_pay: tr.querySelector(".lwp")?.value,
-    pf_employee:       tr.querySelector(".pf-emp")?.value,
     professional_tax:  tr.querySelector(".prof-tax")?.value,
     advance:           tr.querySelector(".advance")?.value,
-    esic_employee:     tr.querySelector(".esic-emp")?.value,
     tds:               tr.querySelector(".tds")?.value,
     other_deductions:  tr.querySelector(".other-ded")?.value
   };
+  // Only lock PF/ESIC as a manual override if the user actually typed into
+  // them (dataset.manual, set by the input listener above). Otherwise leave
+  // them out of the payload so the backend keeps auto-calculating PF/ESIC
+  // from Basic/LWP on every save — sending them unconditionally would freeze
+  // both fields as "manual" on every save, even when only e.g. present_days
+  // was edited, and Recalculate would then never touch them again.
+  const pfInput = tr.querySelector(".pf-emp");
+  const esicInput = tr.querySelector(".esic-emp");
+  payload.pf_employee_manual = !!pfInput?.dataset.manual;
+  if (payload.pf_employee_manual) payload.pf_employee = pfInput.value;
+  payload.esic_employee_manual = !!esicInput?.dataset.manual;
+  if (payload.esic_employee_manual) payload.esic_employee = esicInput.value;
 
   try {
     const res  = await fetch(tr.dataset.updateUrl, {
@@ -605,8 +614,8 @@ async function saveRow(tr) {
     });
     const json = await res.json();
     if (json.success) {
+      applyServerRecalc(tr, json.record);
       showToast("Saved & recalculated.", "success");
-      computeRow(tr);
     } else {
       showToast(json.error || "Save failed.", "danger");
     }
@@ -615,6 +624,43 @@ async function saveRow(tr) {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-device-floppy"></i> Save'; }
   }
+}
+
+// Populate a row's processed/deduction cells straight from the server's
+// authoritative recalculation (the same breakdown Recalculate/Finalize
+// produce), instead of re-deriving them with the client-side preview
+// formulas — guarantees what's shown after Save always matches what was
+// actually persisted, even if the two formulas ever drift apart.
+function applyServerRecalc(tr, record) {
+  const b    = record.calculation_breakdown || {};
+  const comp = b.components  || {};
+  const ded  = b.deductions  || {};
+
+  const setText  = (sel, val) => { const el = tr.querySelector(sel); if (el && val !== undefined) el.textContent = fmt(val); };
+  const setInput = (sel, val) => { const el = tr.querySelector(sel); if (el && val !== undefined) el.value = Number(val).toFixed(2); };
+
+  setText(".basic-proc", comp.basic_processed);
+  setText(".hra-proc",   comp.hra_processed);
+  setText(".sp-proc",    comp.sp_processed);
+  setText(".stat-proc",  comp.stat_processed);
+  setText(".a1-proc",    comp.a1_processed);
+  setText(".a2-proc",    comp.a2_processed);
+  setText(".gross-proc", comp.gross_processed);
+
+  setInput(".pf-emp",     ded.pf_employee);
+  setInput(".esic-emp",   ded.esic_employee);
+  setInput(".prof-tax",   ded.professional_tax);
+  setInput(".advance",    ded.advance);
+  setInput(".tds",        ded.tds);
+  setInput(".other-ded",  ded.other);
+
+  const lwpInput = tr.querySelector(".lwp");
+  if (lwpInput && b.attendance && b.attendance.LWP !== undefined) lwpInput.value = Number(b.attendance.LWP).toFixed(2);
+
+  tr.querySelector(".total-ded").textContent = fmt(record.total_deductions);
+  tr.querySelector(".net-pay").textContent   = fmt(record.net_salary);
+
+  updateSummary();
 }
 
 document.addEventListener("click", e => {

@@ -6147,7 +6147,7 @@ def payroll_record_update(request, record_id):
         return HttpResponseBadRequest("Invalid JSON")
 
     # apply edits to record fields
-    editable = ["present_days", "leave_without_pay", "pf_employee", "professional_tax", "advance", "tds", "other_deductions", "esic_employee"]
+    editable = ["present_days", "leave_without_pay", "professional_tax", "advance", "tds", "other_deductions"]
     manual = {}
     for k in editable:
         if k in payload:
@@ -6157,6 +6157,23 @@ def payroll_record_update(request, record_id):
                 val = Decimal(0)
             setattr(record, k, val)
             manual[k] = float(val)
+
+    # PF/ESIC auto-calculate from Basic/LWP unless the frontend says the
+    # user actually typed into that field (see the *_manual flags from
+    # run_detail.html). Only then do we lock it in as a manual override —
+    # and if a field was manually set on some earlier save but isn't this
+    # time, clear that stale override so it goes back to auto-calculating
+    # instead of silently resurrecting on the next Recalculate/Finalize.
+    for auto_field in ("pf_employee", "esic_employee"):
+        if payload.get(f"{auto_field}_manual"):
+            try:
+                val = Decimal(payload.get(auto_field, 0))
+            except Exception:
+                val = Decimal(0)
+            setattr(record, auto_field, val)
+            manual[auto_field] = float(val)
+        elif auto_field in (record.manual_override or {}):
+            del record.manual_override[auto_field]
 
     # save then recalc authoritative
     record.save()

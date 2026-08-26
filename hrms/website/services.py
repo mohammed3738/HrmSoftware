@@ -440,14 +440,14 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
         # (pf_wage_ceiling, default 15000) so PF matches what the salary
         # structure editor shows (e.g. 15000 x 12% = 1800), not basic_cap.
         pf_wage_ceiling = Decimal(str(getattr(payroll_settings, "pf_wage_ceiling", None) or 15000))
-        # Cap the full monthly wage first, then pro-rate the capped amount for
-        # LWP the same way every other component is pro-rated. Capping the
-        # already-pro-rated basic (the old order) pinned PF to the flat
-        # capped amount for anyone whose LWP-adjusted basic still exceeded
-        # the cap, so their PF never went down even when they took LWP days.
-        pf_wage_pm = min(Decimal(record.basic_pm or 0), pf_wage_ceiling)
-        pf_wage_proc = calculate_pro_rata(pf_wage_pm, TD, LWP)
-        pf_emp = money_d(pf_wage_proc * (pf_percentage / Decimal(100)))
+        # PF = 12% of the basic actually earned this period (pro-rated for
+        # LWP), capped at the flat statutory contribution (ceiling x pf%,
+        # e.g. 15000 x 12% = 1800). So a small LWP for a high earner still
+        # leaves PF at the flat cap — only once LWP is heavy enough that
+        # even their full earned basic's 12% drops below the flat cap does
+        # PF start coming down below it.
+        pf_flat_cap = money_d(pf_wage_ceiling * (pf_percentage / Decimal(100)))
+        pf_emp = min(money_d(basic_proc * (pf_percentage / Decimal(100))), pf_flat_cap)
 
     # ESIC calc (employee)
     esic_emp = Decimal(0)

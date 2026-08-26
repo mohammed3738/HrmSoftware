@@ -1,18 +1,16 @@
 """
 Regression tests for employee PF deduction calculation in payroll runs.
 
-Two bugs, fixed together:
+The rule (per business confirmation): PF = 12% of the basic actually earned
+this period (i.e. basic_processed, already pro-rated for LWP), capped at the
+flat statutory contribution (pf_wage_ceiling x pf_percentage, e.g.
+15000 x 12% = 1800). So a small LWP for a high earner still leaves PF at the
+flat 1800 cap — PF only starts coming down once LWP is heavy enough that
+even the full earned basic's 12% drops below 1800.
 
-1. Order-of-operations bug: PF was calculated by pro-rating the basic salary
-   for LWP (leave without pay) FIRST, then capping the result against the PF
-   wage ceiling. Once an employee's LWP-adjusted basic still exceeded the
-   ceiling (true for most earners above it unless they took a lot of LWP),
-   PF was pinned at the flat capped amount and never went down for the LWP
-   days they actually took. Fixed by capping the full monthly wage first,
-   then pro-rating the *capped* wage for LWP, exactly like every other
-   salary component.
+Two bugs fixed to get here:
 
-2. Wrong cap field: the payroll run engine capped PF wage using
+1. Wrong cap field: the payroll run engine originally capped PF wage using
    PayrollSettings.basic_cap (default 21000), which is actually meant to cap
    the Basic component when deriving it from Gross CTC during salary
    structuring — not PF. The Salary Structure editor (create_salary4.html)
@@ -21,6 +19,12 @@ Two bugs, fixed together:
    2520, salary structure showed 1800, for the same employee). Fixed by
    adding a dedicated, configurable PayrollSettings.pf_wage_ceiling field
    (default 15000) and using it consistently in both places.
+
+2. A short-lived attempt to also cap the wage BEFORE pro-rating for LWP
+   (instead of after) was reverted: business confirmed PF should be 12% of
+   the *earned* basic capped at the flat 1800, not the capped wage pro-rated
+   for LWP — e.g. 1 day of LWP for a high earner should NOT quietly reduce
+   PF below the flat 1800 cap.
 
 Run with: python manage.py test website.tests.test_payroll_pf_calculation
 """
@@ -73,16 +77,22 @@ class PayrollPFCalculationTest(TestCase):
         recalc_and_save_record(rec, manual_overrides={})
         self.assertEqual(rec.pf_employee, Decimal("1800.00"))  # 15000 * 12%, matches Salary Structure editor
 
-    def test_pf_scales_down_with_lwp_when_basic_above_ceiling(self):
-        # basic (33600) is above the 15000 ceiling; 3 LWP days out of 31.
-        rec = self.make_record(33600, 31, 3)
+    def test_pf_stays_flat_capped_for_a_small_lwp(self):
+        # This is the exact case reported live: basic 21000, 1 day LWP out
+        # of 31. A small LWP for a high earner must NOT quietly reduce PF
+        # below the flat cap -- 12% of the earned basic (still ~20322) is
+        # well above 1800, so the flat cap wins either way.
+        rec = self.make_record(21000, 31, 1)
         recalc_and_save_record(rec, manual_overrides={})
+        self.assertEqual(rec.pf_employee, Decimal("1800.00"))
 
-        # Old (buggy) behaviour pinned this at 15000 * 12% = 1800.00
-        # regardless of LWP. Correct: cap first (15000), then pro-rate for
-        # LWP the same as every other component: 15000 * 28/31 * 12%.
-        expected = (Decimal("15000") * Decimal(28) / Decimal(31) * Decimal("0.12")).quantize(Decimal("0.01"))
-        self.assertEqual(rec.pf_employee, expected)
+    def test_pf_drops_below_flat_cap_once_lwp_is_heavy_enough(self):
+        # basic 30000, 20 days LWP out of 30 -> earned basic = 10000,
+        # 12% of that (1200) is below the flat 1800 cap, so PF must follow
+        # the earned amount instead of staying pinned at the cap.
+        rec = self.make_record(30000, 30, 20)
+        recalc_and_save_record(rec, manual_overrides={})
+        self.assertEqual(rec.pf_employee, Decimal("1200.00"))
         self.assertLess(rec.pf_employee, Decimal("1800.00"))
 
     def test_pf_is_flat_capped_amount_when_no_lwp(self):

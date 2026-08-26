@@ -31,6 +31,10 @@
         <i class="ti ti-file-text me-1"></i> PDF
       </a>
       {% if run.status != "finalized" %}
+      <button id="btnRecalculate" class="btn btn-sm btn-outline-primary"
+              data-bs-toggle="modal" data-bs-target="#recalculateModal">
+        <i class="ti ti-refresh me-1"></i> Recalculate
+      </button>
       <button id="btnFinalize" class="btn btn-sm btn-warning"
               data-bs-toggle="modal" data-bs-target="#finalizeModal">
         <i class="ti ti-lock me-1"></i> Finalize
@@ -325,9 +329,10 @@
      data-csrf="{{ csrf_token }}"
      data-pf-pct="{{ settings.pf_percentage|default:'12' }}"
      data-esic-pct="{{ settings.esic_percentage|default:'0' }}"
-     data-basic-cap="{{ settings.basic_cap|default:'15000' }}"
+     data-pf-wage-ceiling="{{ settings.pf_wage_ceiling|default:'15000' }}"
      data-prof-tax="{{ settings.professional_tax|default:'0' }}"
      data-finalize-url="{% url 'payroll-run-finalize' run.id %}"
+     {% if run.status != "finalized" %}data-recalculate-url="{% url 'payroll-run-recalculate' run.id %}"{% endif %}
      data-total-records="{{ records|length }}">
 </div>
 
@@ -337,6 +342,40 @@
     <div class="d-flex">
       <div class="toast-body fw-semibold" id="toastMsg">Saved!</div>
       <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+    </div>
+  </div>
+</div>
+
+<!-- Recalculate Confirmation Modal -->
+<div class="modal fade" id="recalculateModal" tabindex="-1" aria-labelledby="recalculateModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header">
+        <h5 class="modal-title fw-bold" id="recalculateModalLabel">
+          <i class="ti ti-refresh me-2"></i>Recalculate Payroll Run
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body py-4">
+        <p class="mb-3">This will refresh every record in this run from the current attendance, approved leave,
+          advance, and salary data, then recompute PF/ESIC/deductions and net pay.</p>
+        <div class="text-muted small">
+          <i class="ti ti-info-circle text-primary me-1"></i>
+          <ul class="mt-1 mb-0 ps-3">
+            <li>Any field you've already manually edited on a record is <strong>kept as-is</strong>, not overwritten</li>
+            <li>Employees hired since this run was generated will be added</li>
+            <li>Use this if attendance/leave was corrected, or payroll settings changed, after this run was created</li>
+          </ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+          <i class="ti ti-x me-1"></i> Cancel
+        </button>
+        <button type="button" class="btn btn-primary fw-semibold" id="btnConfirmRecalculate">
+          <i class="ti ti-refresh me-1"></i> Yes, Recalculate
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -394,7 +433,7 @@ const psettings = {
   pf_percentage:    parseFloat(_meta.pfPct)   || 12,
   esic_percentage:  parseFloat(_meta.esicPct) || 0,
   esic_threshold:   21000,
-  basic_cap:        parseFloat(_meta.basicCap) || 15000,
+  pf_wage_ceiling:  parseFloat(_meta.pfWageCeiling) || 15000,
   professional_tax: parseFloat(_meta.profTax) || 0,
 };
 
@@ -487,10 +526,14 @@ function computeRow(tr) {
   tr.querySelector(".a2-proc").textContent    = fmt(a2_p);
   tr.querySelector(".gross-proc").textContent = fmt(gross);
 
-  // PF auto-calc unless manually overridden
+  // PF auto-calc unless manually overridden. Cap the full monthly basic
+  // against the PF wage ceiling FIRST, then pro-rate the capped wage for
+  // LWP the same as every other component (capping the already pro-rated
+  // "bp" instead pins PF to a flat amount that never drops for LWP days).
   const pfInput = tr.querySelector(".pf-emp");
   if (pfInput && tr.dataset.optedPf === "true" && !pfInput.dataset.manual) {
-    pfInput.value = money(Math.min(bp, psettings.basic_cap) * psettings.pf_percentage / 100).toFixed(2);
+    const pfWageProc = money(Math.min(basic, psettings.pf_wage_ceiling) * factor);
+    pfInput.value = money(pfWageProc * psettings.pf_percentage / 100).toFixed(2);
   }
   // ESIC auto-calc unless manually overridden
   const esicInput = tr.querySelector(".esic-emp");
@@ -577,6 +620,56 @@ async function saveRow(tr) {
 document.addEventListener("click", e => {
   if (e.target.closest(".save-btn")) saveRow(e.target.closest("tr.payrow"));
 });
+
+// ── Recalculate ───────────────────────────────────────────────────────────────
+const btnRecalculate       = document.getElementById("btnRecalculate");
+const btnConfirmRecalc     = document.getElementById("btnConfirmRecalculate");
+const recalculateModalEl   = document.getElementById("recalculateModal");
+
+function _hideRecalculateModal() {
+  try {
+    if (typeof bootstrap !== "undefined" && bootstrap.Modal) {
+      const m = bootstrap.Modal.getInstance(recalculateModalEl);
+      if (m) m.hide();
+    }
+  } catch (_) {}
+}
+
+if (btnConfirmRecalc) {
+  btnConfirmRecalc.addEventListener("click", async () => {
+    btnConfirmRecalc.disabled = true;
+    btnConfirmRecalc.innerHTML = '<i class="ti ti-loader-2 me-1"></i> Recalculating…';
+    if (btnRecalculate) { btnRecalculate.disabled = true; btnRecalculate.innerHTML = '<i class="ti ti-loader-2 me-1"></i> Recalculating…'; }
+    _hideRecalculateModal();
+
+    try {
+      const res  = await fetch(_meta.recalculateUrl, {
+        method: "POST",
+        headers: { "X-CSRFToken": CSRF }
+      });
+      let json = {};
+      try { json = await res.json(); } catch (_) {}
+      if (res.ok && json.success) {
+        const parts = [`${json.refreshed} refreshed`];
+        if (json.added)   parts.push(`${json.added} added`);
+        if (json.skipped) parts.push(`${json.skipped} skipped`);
+        showToast(`Recalculated — ${parts.join(", ")}. Page will refresh…`, "success");
+        setTimeout(() => location.reload(), 1800);
+      } else {
+        const errMsg = json.error || (res.status === 403 ? "Permission denied." : "Recalculate failed.");
+        showToast(errMsg, "danger");
+        btnConfirmRecalc.disabled = false;
+        btnConfirmRecalc.innerHTML = '<i class="ti ti-refresh me-1"></i> Yes, Recalculate';
+        if (btnRecalculate) { btnRecalculate.disabled = false; btnRecalculate.innerHTML = '<i class="ti ti-refresh me-1"></i> Recalculate'; }
+      }
+    } catch {
+      showToast("Network error — recalculate failed.", "danger");
+      btnConfirmRecalc.disabled = false;
+      btnConfirmRecalc.innerHTML = '<i class="ti ti-refresh me-1"></i> Yes, Recalculate';
+      if (btnRecalculate) { btnRecalculate.disabled = false; btnRecalculate.innerHTML = '<i class="ti ti-refresh me-1"></i> Recalculate'; }
+    }
+  });
+}
 
 // ── Finalize ──────────────────────────────────────────────────────────────────
 // The Finalize button opens the modal via data-bs-toggle/data-bs-target (no JS needed).

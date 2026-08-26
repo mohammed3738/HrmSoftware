@@ -4,7 +4,7 @@ company's configured payroll cycle (e.g. 27th to 26th) instead of the naive
 calendar month, when one is configured.
 Run with: python manage.py test website.tests.test_employee_attendance_payroll_period
 """
-from datetime import date, time
+from datetime import date, time, timedelta
 
 from django.contrib.auth.models import User
 from django.test import TestCase, Client
@@ -134,6 +134,41 @@ class EmployeeAttendancePayrollPeriodTest(TestCase):
         self.assertEqual(resp.context["late_remarks_count"], 1)
         self.assertEqual(resp.context["half_days_count"], 1)
         self.assertEqual(resp.context["leaves_taken"], 5)  # 3 + 2 (partial overlap), excludes the April leave
+
+    def test_period_filter_shows_all_days_on_one_page_without_pagination(self):
+        """A payroll period (27 May - 26 Jun 2026 = 31 days) used to be
+        split across pages 30-at-a-time. Selecting a specific period should
+        show every day of it on one page with no 'Next' link."""
+        # Fill in every remaining day of the 31-day period so all 31 days
+        # have an Attendance row (5 already exist from setUp).
+        existing_dates = {self.before_period.date, self.period_start.date, self.mid_period.date,
+                           self.period_end.date, self.after_period.date}
+        d = date(2026, 5, 27)
+        while d <= date(2026, 6, 26):
+            if d not in existing_dates:
+                Attendance.objects.create(
+                    employee=self.employee, date=d, in_time=time(9, 0), out_time=time(18, 0),
+                )
+            d += timedelta(days=1)
+
+        resp = self.client.get(
+            reverse("employee_attendance_detail", args=[self.employee.id]),
+            {"period": "2026-06-26"},
+        )
+        dates_shown = {r.date for r in resp.context["attendance_records"]}
+        self.assertEqual(len(dates_shown), 31)
+        self.assertFalse(hasattr(resp.context["attendance_records"], "has_other_pages"))
+
+    def test_unfiltered_view_still_paginates(self):
+        """Without a period/year/month filter selected, the 'all time' view
+        (which can span years) should still be paginated."""
+        for i in range(35):
+            Attendance.objects.create(
+                employee=self.employee, date=date(2020, 1, 1) + timedelta(days=i),
+                in_time=time(9, 0), out_time=time(18, 0),
+            )
+        resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]))
+        self.assertTrue(resp.context["attendance_records"].has_other_pages())
 
     def test_summary_stats_unfiltered_covers_all_time(self):
         """With no period/year/month selected, the summary must cover the

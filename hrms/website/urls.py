@@ -157,6 +157,7 @@ urlpatterns = [
     path("payroll/run/<int:run_id>/", views.payroll_run_detail, name="payroll-run-detail"),
     path("payroll/record/<int:record_id>/update/", views.payroll_record_update, name="payroll-record-update"),
     path("payroll/record/<int:record_id>/salary-slip/", views.salary_slip_view, name="salary-slip"),
+    path("payroll/run/<int:run_id>/recalculate/", views.payroll_run_recalculate, name="payroll-run-recalculate"),
     path("payroll/run/<int:run_id>/finalize/", views.payroll_run_finalize, name="payroll-run-finalize"),
 
 

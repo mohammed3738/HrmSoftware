@@ -221,62 +221,113 @@ def create_payroll_run(company, month_start, month_end, create_records=True):
     return run
 
 
+def _build_record_snapshot(emp, salary, run):
+    """Everything a PayrollRecord pulls from source data (employee master,
+    salary master, attendance, leave balance, advance schedule) as of right
+    now for this run's period. Shared by generate_records_for_month (first
+    creation) and recalculate_payroll_run (refresh before finalizing)."""
+    att = get_attendance_summary(emp, run.start_date, run.end_date)
+    advance_amt = get_advance_for_employee_month(emp, run.start_date, run.end_date)
+
+    # Get LeaveBalance for this specific payroll period
+    lb = (
+        LeaveBalance.objects.filter(employee=emp, period_to_date=run.end_date).first()
+        or LeaveBalance.objects.filter(
+            employee=emp,
+            period_from_date__lte=run.end_date,
+            period_to_date__gte=run.start_date,
+            period_to_date__isnull=False
+        ).order_by('-period_to_date').first()
+    )
+    lwop = money_d(lb.leave_without_pay) if lb else money_d(0)
+
+    first = emp.first_name or ""
+    last = emp.last_name or ""
+    full_name = f"{first} {last}".strip() or emp.employee_code or "Unknown"
+
+    return {
+        "employee_code": emp.employee_code or "",
+        "employee_name": full_name,
+        "company_name": emp.company.name if emp.company else "",
+        "designation": emp.designation or "",
+        "branch_name": emp.branch.branch_name if emp.branch else "",
+        "date_of_joining": emp.date_of_joining,
+        "month_display": run.month.strftime("%b %Y"),
+
+        "gross_ctc": money_d(salary.gross_ctc_pm or 0),
+        "opted_for_pf": bool(salary.pf_deducted),
+        "basic_pm": money_d(salary.basic_pm or 0),
+        "hra_pm": money_d(salary.hra_pm or 0),
+        "sp_allowance_pm": money_d(salary.sp_allowance_pm or 0),
+        "stat_bonus_pm": money_d(salary.stat_bonus_pm or 0),
+        "allowance1_pm": money_d(salary.allowance1_pm or 0),
+        "allowance2_pm": money_d(salary.allowance2_pm or 0),
+        "total_gross_salary": money_d(salary.gross_ctc_pm or 0),
+
+        "total_days": att["total_days"],
+        "present_days": att["present_days"],
+        "leave_taken": att["leave_taken"],
+        "leave_without_pay": lwop,
+
+        "advance": advance_amt,
+    }
+
+
 def generate_records_for_month(run: PayrollRun):
-    settings = PayrollSettings.objects.filter(company=run.company).first()
     employees = Employee.objects.filter(company=run.company, status="Active")
     for emp in employees:
         salary = SalaryMaster.objects.filter(employee=emp, is_active=True).first()
         if not salary:
             continue
-        att = get_attendance_summary(emp, run.start_date, run.end_date)
-        advance_amt = get_advance_for_employee_month(emp, run.start_date, run.end_date)
-
-        # Get LeaveBalance for this specific payroll period
-        lb = (
-            LeaveBalance.objects.filter(employee=emp, period_to_date=run.end_date).first()
-            or LeaveBalance.objects.filter(
-                employee=emp,
-                period_from_date__lte=run.end_date,
-                period_to_date__gte=run.start_date,
-                period_to_date__isnull=False
-            ).order_by('-period_to_date').first()
-        )
-        lwop = money_d(lb.leave_without_pay) if lb else money_d(0)
-
-        first = emp.first_name or ""
-        last = emp.last_name or ""
-        full_name = f"{first} {last}".strip() or emp.employee_code or "Unknown"
-
-        rec = PayrollRecord.objects.create(
-            payroll=run,
-            employee=emp,
-            employee_code=emp.employee_code or "",
-            employee_name=full_name,
-            company_name=emp.company.name if emp.company else "",
-            designation=emp.designation or "",
-            branch_name=emp.branch.branch_name if emp.branch else "",
-            date_of_joining=emp.date_of_joining,
-            month_display=run.month.strftime("%b %Y"),
-
-            gross_ctc=money_d(salary.gross_ctc_pm or 0),
-            opted_for_pf=bool(salary.pf_deducted),
-            basic_pm=money_d(salary.basic_pm or 0),
-            hra_pm=money_d(salary.hra_pm or 0),
-            sp_allowance_pm=money_d(salary.sp_allowance_pm or 0),
-            stat_bonus_pm=money_d(salary.stat_bonus_pm or 0),
-            allowance1_pm=money_d(salary.allowance1_pm or 0),
-            allowance2_pm=money_d(salary.allowance2_pm or 0),
-            total_gross_salary=money_d(salary.gross_ctc_pm or 0),
-
-            total_days=att["total_days"],
-            present_days=att["present_days"],
-            leave_taken=att["leave_taken"],
-            leave_without_pay=lwop,
-
-            advance=advance_amt
-        )
-
+        rec = PayrollRecord.objects.create(payroll=run, employee=emp, **_build_record_snapshot(emp, salary, run))
         recalc_and_save_record(rec, manual_overrides={})
+
+
+@transaction.atomic
+def recalculate_payroll_run(run: PayrollRun):
+    """Refresh every record in a draft payroll run from current attendance,
+    leave, advance and salary master data, then recompute PF/ESIC/deductions
+    and net pay. Use this before finalizing to pick up attendance
+    corrections, leave approvals, advance changes, or payroll-settings
+    updates made after the run was first generated.
+
+    Fields a user already manually overrode on a record (via the per-record
+    edit modal) are preserved rather than clobbered by the refresh. Active
+    employees with a salary who aren't in the run yet (e.g. hired after it
+    was first generated) get a new record added. Existing records for
+    employees who are no longer Active, or who no longer have an active
+    SalaryMaster, are left untouched rather than refreshed or removed.
+    """
+    existing = {r.employee_id: r for r in run.records.all()}
+    active_employee_ids = set()
+    refreshed = added = 0
+
+    employees = Employee.objects.filter(company=run.company, status="Active")
+    for emp in employees:
+        salary = SalaryMaster.objects.filter(employee=emp, is_active=True).first()
+        if not salary:
+            continue
+        active_employee_ids.add(emp.id)
+        snapshot = _build_record_snapshot(emp, salary, run)
+
+        rec = existing.get(emp.id)
+        if rec is None:
+            rec = PayrollRecord(payroll=run, employee=emp)
+            added += 1
+        else:
+            refreshed += 1
+
+        manual = rec.manual_override or {}
+        for field, value in snapshot.items():
+            if field in manual:
+                continue  # a manually-edited field (e.g. advance) wins over the refreshed value
+            setattr(rec, field, value)
+        rec.save()
+
+        recalc_and_save_record(rec, manual_overrides=manual)
+
+    skipped = sum(1 for emp_id in existing if emp_id not in active_employee_ids)
+    return {"refreshed": refreshed, "added": added, "skipped": skipped}
 
 
 def calculate_pro_rata(component_pm, total_days, leave_without_pay):

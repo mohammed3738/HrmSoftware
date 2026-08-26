@@ -1325,9 +1325,14 @@ def employee_attendance_detail(request, employee_id):
         "date", "in_time", "out_time", "status"
     ).order_by("-date")
 
-    paginator = Paginator(attendance_records, 30)
-    page = request.GET.get("page")
-    attendance_records = paginator.get_page(page)
+    # A specific payroll period / month has a bounded, known number of days
+    # (at most ~31), so show it all on one page instead of splitting it
+    # across "Next" pages. Only paginate the unfiltered "all time" view,
+    # which can span years of records.
+    if not (range_start and range_end):
+        paginator = Paginator(attendance_records, 30)
+        page = request.GET.get("page")
+        attendance_records = paginator.get_page(page)
 
     context = {
         "employee": employee,
@@ -6166,6 +6171,17 @@ def payroll_record_update(request, record_id):
             "calculation_breakdown": record.calculation_breakdown
         }
     })
+
+@login_required
+@group_required("Admin", "HR")
+@require_POST
+def payroll_run_recalculate(request, run_id):
+    run = get_object_or_404(PayrollRun, id=run_id)
+    if run.status == PayrollRun.STATUS_FINALIZED:
+        return JsonResponse({"success": False, "error": "This payroll run is already finalized."}, status=400)
+    result = recalculate_payroll_run(run)
+    return JsonResponse({"success": True, **result})
+
 
 @login_required
 @group_required("Admin", "HR")

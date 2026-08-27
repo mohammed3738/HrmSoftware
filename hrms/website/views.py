@@ -1339,6 +1339,24 @@ def employee_attendance_detail(request, employee_id):
         page = request.GET.get("page")
         attendance_records = paginator.get_page(page)
 
+    # ── Calendar tab: a day -> status map for whichever range the filter
+    # above currently selects (period, or year+month), or the current
+    # calendar month when nothing is selected -- same range the List tab
+    # is scoped to, so the one filter control drives both tabs.
+    if range_start and range_end:
+        calendar_start, calendar_end = range_start, range_end
+    else:
+        today = date.today()
+        calendar_start = today.replace(day=1)
+        calendar_end = (calendar_start + relativedelta(months=1)) - timedelta(days=1)
+
+    calendar_attendance = {
+        a.date.isoformat(): a.status
+        for a in Attendance.objects.filter(
+            employee=employee, date__gte=calendar_start, date__lte=calendar_end
+        ).only("date", "status")
+    }
+
     context = {
         "employee": employee,
         "attendance_records": attendance_records,
@@ -1354,6 +1372,9 @@ def employee_attendance_detail(request, employee_id):
         "late_remarks_count": late_remarks_count,
         "half_days_count": half_days_count,
         "leaves_taken": leaves_taken,
+        "calendar_start": calendar_start,
+        "calendar_end": calendar_end,
+        "calendar_attendance_json": json.dumps(calendar_attendance),
     }
     return render(request, "attendance/employee_attendance_detail.html", context)
 
@@ -6625,11 +6646,18 @@ def login_view(request):
             if user.groups.filter(name__in=["Admin", "HR","Manager"]).exists():
                 return redirect("admin-dashboard")
 
-            # EMPLOYEE → Employee Dashboard
-            elif user.groups.filter(name="Employee").exists():
+            # EMPLOYEE, or no recognized group but still linked to an
+            # Employee record (e.g. a login provisioned before a role was
+            # explicitly assigned) → Employee Dashboard, since that's the
+            # one page they're guaranteed to have access to either way.
+            # admin-dashboard requires Admin/HR permission, so routing a
+            # group-less user there 403'd them on their very first login.
+            elif user.groups.filter(name="Employee").exists() or hasattr(user, "employee_profile"):
                 return redirect("employee-dashboard")
 
-            # fallback for users with no group assigned
+            # fallback: no group, no employee profile (e.g. a bare
+            # superuser/staff account) -- superuser/staff bypass every
+            # feature_required check, so admin-dashboard is always reachable.
             return redirect("admin-dashboard")
 
         else:

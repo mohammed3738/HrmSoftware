@@ -103,7 +103,7 @@ from datetime import date
 # signals.py
 from django.db.models.signals import post_save
 from django.dispatch import receiver
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 # from .models import Employee
 
 @receiver(post_save, sender=Employee)
@@ -116,6 +116,14 @@ def sync_user(sender, instance, created, **kwargs):
             last_name=instance.last_name,
             password="Temp@123"
         )
+        # Give every auto-provisioned login a baseline role immediately --
+        # without this, the account has no group at all until someone
+        # separately assigns one via the employee form, and in the
+        # meantime login_view's fallback sends them to admin-dashboard,
+        # which they have no permission for -> 403 on first login. HR can
+        # still upgrade them to HR/Admin/Manager later as usual.
+        employee_group, _ = Group.objects.get_or_create(name="Employee")
+        user.groups.add(employee_group)
         instance.user = user
         instance.force_password_change = True
         instance.save()

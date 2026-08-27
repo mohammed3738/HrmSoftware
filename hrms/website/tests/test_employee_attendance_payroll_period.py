@@ -184,3 +184,81 @@ class EmployeeAttendancePayrollPeriodTest(TestCase):
         # its punch times — weekend status takes priority in calculate_status().
         self.assertEqual(resp.context["days_present_count"], 4)
         self.assertEqual(resp.context["leaves_taken"], 3)
+
+
+class EmployeeAttendanceCalendarTabTest(TestCase):
+    """The Calendar tab's day->status map must track whatever range the
+    existing period/year/month filter currently selects, same as the List
+    tab -- one filter control drives both. Standalone TestCase (not a
+    subclass of EmployeeAttendancePayrollPeriodTest) so its test_* methods
+    don't get re-run a second time under this class too."""
+
+    def setUp(self):
+        self.company = Company.objects.create(name="Calendar Tab Test Co")
+        PayrollSettings.objects.create(company=self.company, from_date=27, to_date=26)
+        self.employee = Employee.objects.create(
+            company=self.company,
+            salutation="Mr", first_name="Cal", last_name="Tab",
+            father_name="Robert Doe", gender="Male", blood_group="O+",
+            date_of_birth=date(1990, 1, 1), place_of_birth="Test City",
+            personal_email="caltab@test.com", present_address="123 Test St",
+            permanent_address="123 Test St", personal_mobile="1234567890",
+            employee_code="CALTAB1", designation="Developer", department="IT",
+            date_of_joining=date(2020, 1, 1), location="Test Location",
+            pan_no="ABCDE1234F", aadhar_no="123456789012",
+            name_as_per_bank="Cal Tab", salary_account_number="1234567890",
+            ifsc_code="TEST0001234", emergency_contact_name1="Jane Doe",
+            emergency_contact_relation1="Spouse", emergency_contact_mobile1="0987654321",
+            status="Active",
+        )
+        self.before_period = Attendance.objects.create(
+            employee=self.employee, date=date(2026, 5, 26), in_time=time(9, 0), out_time=time(18, 0),
+        )
+        self.period_start = Attendance.objects.create(
+            employee=self.employee, date=date(2026, 5, 27), in_time=time(9, 0), out_time=time(18, 0),
+        )
+        self.mid_period = Attendance.objects.create(
+            employee=self.employee, date=date(2026, 6, 10), in_time=time(9, 0), out_time=time(18, 0),
+        )
+        self.period_end = Attendance.objects.create(
+            employee=self.employee, date=date(2026, 6, 26), in_time=time(9, 0), out_time=time(18, 0),
+        )
+        self.after_period = Attendance.objects.create(
+            employee=self.employee, date=date(2026, 6, 27), in_time=time(9, 0), out_time=time(18, 0),
+        )
+        self.user = User.objects.create_superuser("caltab_admin", "caltab_admin@test.com", "pass12345")
+        self.client = Client()
+        self.client.force_login(self.user, backend="django.contrib.auth.backends.ModelBackend")
+
+    def test_calendar_range_matches_selected_payroll_period(self):
+        resp = self.client.get(
+            reverse("employee_attendance_detail", args=[self.employee.id]),
+            {"period": "2026-06-26"},
+        )
+        self.assertEqual(resp.context["calendar_start"], date(2026, 5, 27))
+        self.assertEqual(resp.context["calendar_end"], date(2026, 6, 26))
+
+    def test_calendar_data_contains_only_dates_within_selected_period(self):
+        import json
+        resp = self.client.get(
+            reverse("employee_attendance_detail", args=[self.employee.id]),
+            {"period": "2026-06-26"},
+        )
+        data = json.loads(resp.context["calendar_attendance_json"])
+        self.assertIn("2026-05-27", data)
+        self.assertIn("2026-06-10", data)
+        self.assertIn("2026-06-26", data)
+        # Outside the selected period -> must not leak in.
+        self.assertNotIn("2026-05-26", data)
+        self.assertNotIn("2026-06-27", data)
+
+    def test_calendar_defaults_to_current_month_when_no_filter_selected(self):
+        from datetime import date as _date
+        resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]))
+        calendar_start = resp.context["calendar_start"]
+        calendar_end = resp.context["calendar_end"]
+        today = _date.today()
+        self.assertEqual(calendar_start, today.replace(day=1))
+        self.assertEqual(calendar_start.year, calendar_end.year)
+        self.assertEqual(calendar_start.month, calendar_end.month)
+        self.assertEqual((calendar_end + timedelta(days=1)).day, 1)  # last day of that month

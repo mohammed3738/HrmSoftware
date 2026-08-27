@@ -3330,6 +3330,23 @@ def user_has_global_access(user):
     return user.groups.filter(name__in=['Admin', 'HR', 'Manager']).exists()
 
 
+def role_based_dashboard_url(user):
+    """Which dashboard URL name a just-authenticated (or just-updated) user
+    should land on. Admin/HR/Manager -> admin-dashboard. Employee, or any
+    user still linked to an Employee record but with no recognized group
+    (e.g. a login provisioned before a role was explicitly assigned) ->
+    employee-dashboard, since that's the one page they're guaranteed to
+    have access to. Anyone else (a bare superuser/staff account with no
+    Employee link) falls back to admin-dashboard, which they can always
+    reach via the superuser/staff bypass. Shared by login_view and
+    change_password so the "route by role" logic can't drift apart."""
+    if user.groups.filter(name__in=["Admin", "HR", "Manager"]).exists():
+        return "admin-dashboard"
+    if user.groups.filter(name="Employee").exists() or hasattr(user, "employee_profile"):
+        return "employee-dashboard"
+    return "admin-dashboard"
+
+
 def get_company_filter(user):
     """
     Returns the company to scope data queries to.
@@ -6641,24 +6658,7 @@ def login_view(request):
 
         if user:
             login(request, user)
-
-            # ADMIN or HR → Admin Dashboard
-            if user.groups.filter(name__in=["Admin", "HR","Manager"]).exists():
-                return redirect("admin-dashboard")
-
-            # EMPLOYEE, or no recognized group but still linked to an
-            # Employee record (e.g. a login provisioned before a role was
-            # explicitly assigned) → Employee Dashboard, since that's the
-            # one page they're guaranteed to have access to either way.
-            # admin-dashboard requires Admin/HR permission, so routing a
-            # group-less user there 403'd them on their very first login.
-            elif user.groups.filter(name="Employee").exists() or hasattr(user, "employee_profile"):
-                return redirect("employee-dashboard")
-
-            # fallback: no group, no employee profile (e.g. a bare
-            # superuser/staff account) -- superuser/staff bypass every
-            # feature_required check, so admin-dashboard is always reachable.
-            return redirect("admin-dashboard")
+            return redirect(role_based_dashboard_url(user))
 
         else:
             messages.error(request, "Invalid username or password")
@@ -6729,12 +6729,17 @@ def change_password(request):
             user = form.save()
             update_session_auth_hash(request, user)
 
-            employee = request.user.employee_profile
-            employee.force_password_change = False
-            employee.save()
+            if hasattr(request.user, "employee_profile"):
+                employee = request.user.employee_profile
+                employee.force_password_change = False
+                employee.save()
 
             messages.success(request, "✅ Password updated successfully.")
-            return redirect("admin-dashboard")
+
+            # Route by role, same as login_view -- redirecting everyone to
+            # admin-dashboard unconditionally 403'd an Employee doing their
+            # required first-time password change immediately afterward.
+            return redirect(role_based_dashboard_url(user))
 
         else:
             # 🔴 IMPORTANT: show WHY it failed

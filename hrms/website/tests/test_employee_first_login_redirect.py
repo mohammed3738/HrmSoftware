@@ -95,3 +95,58 @@ class EmployeeFirstLoginRedirectTest(TestCase):
         # This user has no permissions at all, so admin-dashboard itself
         # correctly 403s them -- only the redirect *target* is under test here.
         self.assertRedirects(resp, reverse("admin-dashboard"), target_status_code=403)
+
+
+class ChangePasswordRedirectTest(TestCase):
+    """change_password used to redirect everyone to admin-dashboard
+    unconditionally on success -- 403ing an Employee doing their required
+    first-time password change immediately after they'd just been correctly
+    routed to employee-dashboard by login_view."""
+
+    def setUp(self):
+        self.company = Company.objects.create(
+            short_name="CPR", name="Change Password Redirect Co", phone="1", email="cpr@test.com", address="Addr",
+        )
+
+    def make_employee_without_user(self, code="CPR001"):
+        return Employee.objects.create(
+            company=self.company, salutation="Mr", first_name="New", last_name="Hire",
+            father_name="Father", gender="Male", blood_group="O+", date_of_birth=date(1990, 1, 1),
+            place_of_birth="City", personal_email=f"{code}@test.com", present_address="Addr",
+            permanent_address="Addr", personal_mobile="1234567890", employee_code=code,
+            designation="Dev", department="IT", date_of_joining=date(2020, 1, 1), location="City",
+            pan_no="ABCDE1234F", aadhar_no="123456789012", name_as_per_bank="New",
+            salary_account_number="1234567890", ifsc_code="TEST0001234",
+            emergency_contact_name1="Jane", emergency_contact_relation1="Spouse",
+            emergency_contact_mobile1="0987654321", status="Active",
+        )
+
+    def test_employee_first_time_password_change_redirects_to_employee_dashboard(self):
+        employee = self.make_employee_without_user()
+        client = Client()
+        client.login(username=employee.user.username, password="Temp@123")
+
+        resp = client.post(reverse("change-password"), {
+            "old_password": "Temp@123",
+            "new_password1": "NewStrongPass!456",
+            "new_password2": "NewStrongPass!456",
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.url, reverse("employee-dashboard"))
+
+        employee.refresh_from_db()
+        self.assertFalse(employee.force_password_change)
+
+    def test_admin_password_change_still_redirects_to_admin_dashboard(self):
+        admin = User.objects.create_user(username="cpr_admin", password="OldPass!123")
+        admin.groups.add(Group.objects.get(name="Admin"))
+        client = Client()
+        client.login(username="cpr_admin", password="OldPass!123")
+
+        resp = client.post(reverse("change-password"), {
+            "old_password": "OldPass!123",
+            "new_password1": "NewStrongPass!456",
+            "new_password2": "NewStrongPass!456",
+        })
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.url, reverse("admin-dashboard"))

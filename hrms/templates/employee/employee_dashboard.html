@@ -1,0 +1,181 @@
+{% extends 'base2.html' %}
+{% load static %}
+{% block title %}My Dashboard{% endblock %}
+
+{% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+
+  <!-- Header -->
+  <div class="card mb-4">
+    <div class="user-profile-header d-flex flex-column flex-sm-row text-sm-start text-center">
+      <div class="flex-shrink-0 mt-n2 mx-sm-0 mx-auto">
+        <img src="{% static 'assets/img/avatars/1.png' %}" alt="profile"
+             class="d-block h-auto ms-0 ms-sm-5 rounded-4 user-profile-img">
+      </div>
+      <div class="flex-grow-1 mt-4 mt-sm-5 mb-4">
+        <div class="mx-5">
+          <h4 class="mb-1">{{ employee.first_name }} {{ employee.last_name }}</h4>
+          <ul class="list-inline mb-0 d-flex align-items-center flex-wrap justify-content-sm-start justify-content-center gap-4">
+            <li class="list-inline-item">
+              <i class="ri-user-3-line me-2"></i><span class="fw-medium">{{ employee.designation }}</span>
+            </li>
+            <li class="list-inline-item">
+              <i class="ri-building-2-line me-2"></i><span class="fw-medium">{{ employee.department }}</span>
+            </li>
+            <li class="list-inline-item">
+              <i class="ri-hashtag me-2"></i><span class="fw-medium">{{ employee.employee_code }}</span>
+            </li>
+            {% if employee.branch %}
+            <li class="list-inline-item">
+              <i class="ri-map-pin-line me-2"></i><span class="fw-medium">{{ employee.branch.branch_name }}</span>
+            </li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick stats -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-{% if today_attendance.status == 'Present' %}success{% elif today_attendance.status == 'Late Present' %}warning{% elif today_attendance.status == 'Holiday' or today_attendance.status == 'Weekend' %}info{% elif today_attendance.status %}danger{% else %}secondary{% endif %} rounded">
+            <i class="ri-time-line ri-lg"></i>
+          </div>
+          <div>
+            <div class="text-muted small">Today's Status</div>
+            <div class="fw-bold fs-6">{{ today_attendance.status|default:"Not marked" }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-primary rounded"><i class="ri-calendar-check-line ri-lg"></i></div>
+          <div>
+            <div class="text-muted small">Days Present (this period)</div>
+            <div class="fw-bold fs-6">{{ days_present }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-warning rounded"><i class="ri-alarm-warning-line ri-lg"></i></div>
+          <div>
+            <div class="text-muted small">Late Marks (this period)</div>
+            <div class="fw-bold fs-6">{{ days_late }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="avatar avatar-md bg-label-info rounded"><i class="ri-suitcase-line ri-lg"></i></div>
+          <div>
+            <div class="text-muted small">Leave Balance</div>
+            <div class="fw-bold fs-6">
+              {% if leave_balance %}{{ leave_balance.final_leave_balance }} days{% else %}—{% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+
+    <!-- Attendance summary -->
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h6 class="mb-0 fw-semibold">Attendance This Period</h6>
+          <small class="text-muted">{{ period_from|date:"d M" }} – {{ period_to|date:"d M Y" }}</small>
+        </div>
+        <div class="card-body">
+          <div class="row text-center g-3 mb-3">
+            <div class="col-4">
+              <div class="fw-bold fs-4 text-success">{{ days_present }}</div>
+              <div class="text-muted small">Present</div>
+            </div>
+            <div class="col-4">
+              <div class="fw-bold fs-4 text-warning">{{ days_late }}</div>
+              <div class="text-muted small">Late</div>
+            </div>
+            <div class="col-4">
+              <div class="fw-bold fs-4 text-info">{{ days_half }}</div>
+              <div class="text-muted small">Half Day</div>
+            </div>
+          </div>
+          <a href="{% url 'employee_attendance_detail' employee.id %}" class="btn btn-sm btn-outline-primary w-100">
+            <i class="ri-eye-line me-1"></i> View Full Attendance History
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Upcoming holidays -->
+    <div class="col-lg-6">
+      <div class="card h-100">
+        <div class="card-header">
+          <h6 class="mb-0 fw-semibold">Upcoming Holidays</h6>
+        </div>
+        <div class="list-group list-group-flush">
+          {% for holiday in upcoming_holidays %}
+          <div class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <div class="fw-semibold">{{ holiday.name }}</div>
+              <div class="text-muted small">{{ holiday.holiday_type.name }}</div>
+            </div>
+            <span class="badge bg-label-primary">{{ holiday.holiday_date|date:"d M Y" }}</span>
+          </div>
+          {% empty %}
+          <div class="list-group-item text-muted text-center py-4">No upcoming holidays.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent payslips -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header">
+          <h6 class="mb-0 fw-semibold">Recent Payslips</h6>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th class="text-end">Net Salary</th>
+                <th class="text-end">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for record in recent_payslips %}
+              <tr>
+                <td>{{ record.month_display }}</td>
+                <td class="text-end">₹ {{ record.net_salary }}</td>
+                <td class="text-end">
+                  <a href="{% url 'salary-slip' record.id %}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                    <i class="ri-file-text-line me-1"></i>View Slip
+                  </a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="3" class="text-muted text-center py-4">No finalized payslips yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

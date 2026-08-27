@@ -2,6 +2,7 @@
 
 <!DOCTYPE html>
 {% load static %}
+{% load custom_filters %}
 
 <html
   lang="en"
@@ -277,7 +278,7 @@
                           <span class="dropdown-shortcuts-icon rounded-circle mb-3">
                             <i class="ri-computer-line ri-26px text-heading"></i>
                           </span>
-                          <a href="app-access-roles.html" class="stretched-link">Role Management</a>
+                          <a href="{% url 'roles-permissions-hub' %}" class="stretched-link">Role Management</a>
                           <small class="mb-0">Permission</small>
                         </div>
                       </div>
@@ -286,7 +287,7 @@
                           <span class="dropdown-shortcuts-icon rounded-circle mb-3">
                             <i class="ri-pie-chart-2-line ri-26px text-heading"></i>
                           </span>
-                          <a href="index.html" class="stretched-link">Dashboard</a>
+                          <a href="{% if request.user|is_employee_role %}{% url 'employee-dashboard' %}{% else %}{% url 'admin-dashboard' %}{% endif %}" class="stretched-link">Dashboard</a>
                           <small class="mb-0">Analytics</small>
                         </div>
                         <div class="dropdown-shortcuts-item col">
@@ -574,21 +575,21 @@
                 <li class="nav-item navbar-dropdown dropdown-user dropdown">
                   <a class="nav-link dropdown-toggle hide-arrow" href="javascript:void(0);" data-bs-toggle="dropdown">
                     <div class="avatar avatar-online">
-                      <img src="../../assets/img/avatars/1.png" alt class="rounded-circle" />
+                      <img src="{% static 'assets/img/avatars/1.png' %}" alt class="rounded-circle" />
                     </div>
                   </a>
                   <ul class="dropdown-menu dropdown-menu-end">
                     <li>
-                      <a class="dropdown-item" href="pages-account-settings-account.html">
+                      <a class="dropdown-item" href="{% url 'my_profile' %}">
                         <div class="d-flex">
                           <div class="flex-shrink-0 me-2">
                             <div class="avatar avatar-online">
-                              <img src="../../assets/img/avatars/1.png" alt class="rounded-circle" />
+                              <img src="{% static 'assets/img/avatars/1.png' %}" alt class="rounded-circle" />
                             </div>
                           </div>
                           <div class="flex-grow-1">
-                            <span class="fw-medium d-block small">John Doe</span>
-                            <small class="text-muted">Admin</small>
+                            <span class="fw-medium d-block small">{{ request.user.get_full_name|default:request.user.username }}</span>
+                            <small class="text-muted">{% if request.user.is_superuser %}Superuser{% else %}{{ request.user.groups.first.name|default:"User" }}{% endif %}</small>
                           </div>
                         </div>
                       </a>
@@ -596,49 +597,27 @@
                     <li>
                       <div class="dropdown-divider"></div>
                     </li>
+                    {% if request.user.is_authenticated and request.user.employee_profile %}
                     <li>
-                      {% if request.user.is_authenticated and request.user.employee_profile %}
-    <a class="dropdown-item" href="{% url 'my_profile' %}">
-        <i class="ri-user-3-line ri-22px me-3"></i>
-        <span class="align-middle">My Profile</span>
-    </a>
-{% endif %}
-
-                      {% comment %} <a class="dropdown-item" href="pages-profile-user.html">
-                        <i class="ri-user-3-line ri-22px me-3"></i><span class="align-middle">My Profile {{ user.id }}</span>
-                      </a> {% endcomment %}
+                      <a class="dropdown-item" href="{% url 'my_profile' %}">
+                        <i class="ri-user-3-line ri-22px me-3"></i>
+                        <span class="align-middle">My Profile</span>
+                      </a>
                     </li>
+                    {% endif %}
+                    {% if not request.user|is_employee_role %}
                     <li>
                       <a class="dropdown-item" href="{% url 'company-settings-hub' %}">
                         <i class="ri-settings-4-line ri-22px me-3"></i><span class="align-middle">Settings</span>
                       </a>
                     </li>
-                    <li>
-                      <a class="dropdown-item" href="pages-account-settings-billing.html">
-                        <span class="d-flex align-items-center align-middle">
-                          <i class="flex-shrink-0 ri-file-text-line ri-22px me-3"></i>
-                          <span class="flex-grow-1 align-middle">Billing</span>
-                          <span class="flex-shrink-0 badge badge-center rounded-pill bg-danger">4</span>
-                        </span>
-                      </a>
-                    </li>
+                    {% endif %}
                     <li>
                       <div class="dropdown-divider"></div>
                     </li>
                     <li>
-                      <a class="dropdown-item" href="pages-pricing.html">
-                        <i class="ri-money-dollar-circle-line ri-22px me-3"></i
-                        ><span class="align-middle">Pricing</span>
-                      </a>
-                    </li>
-                    <li>
-                      <a class="dropdown-item" href="pages-faq.html">
-                        <i class="ri-question-line ri-22px me-3"></i><span class="align-middle">FAQ</span>
-                      </a>
-                    </li>
-                    <li>
                       <div class="d-grid px-4 pt-2 pb-1">
-                        <a class="btn btn-sm btn-danger d-flex" href="auth-login-cover.html" target="_blank">
+                        <a class="btn btn-sm btn-danger d-flex" href="{% url 'logout' %}">
                           <small class="align-middle">Logout</small>
                           <i class="ri-logout-box-r-line ms-2 ri-16px"></i>
                         </a>
@@ -675,7 +654,7 @@
 
                   <!-- Dashboards -->
                   <li class="menu-item active">
-                    <a href="{% url 'admin-dashboard' %}" class="menu-link">
+                    <a href="{% if request.user|is_employee_role %}{% url 'employee-dashboard' %}{% else %}{% url 'admin-dashboard' %}{% endif %}" class="menu-link">
                       <div>Dashboards</div>
                     </a>
                     {% comment %} <ul class="menu-sub">
@@ -947,6 +926,7 @@
 </li>
 
 
+                  {% if not request.user|is_employee_role %}
                   <!-- Settings Hub -->
                   <li class="menu-item">
                     <a href="{% url 'company-settings-hub' %}" class="menu-link">
@@ -954,6 +934,15 @@
                       <div>Settings Hub</div>
                     </a>
                   </li>
+
+                  <!-- Roles & Permissions -->
+                  <li class="menu-item">
+                    <a href="{% url 'roles-permissions-hub' %}" class="menu-link">
+                      <i class="menu-icon tf-icons ri-shield-user-line"></i>
+                      <div>Roles &amp; Permissions</div>
+                    </a>
+                  </li>
+                  {% endif %}
 
                 </ul>
               </div>

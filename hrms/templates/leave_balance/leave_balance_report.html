@@ -675,7 +675,7 @@
               <td class="lb-numeric">{% if lb.late > 0 %}{{ lb.late }}{% else %}—{% endif %}</td>
               <td class="lb-numeric">{{ lb.compoff|floatformat:2 }}</td>
 
-              <!-- LWP cell with inline override -->
+              <!-- LWP cell with inline override (Admin/HR only -- LWP directly affects pay) -->
               <td class="lb-numeric lwp-cell">
                 <div class="lwp-display">
                   {% if lb.leave_without_pay > 0 %}
@@ -683,8 +683,11 @@
                   {% else %}
                     <span class="lwp-value">{{ lb.leave_without_pay|floatformat:2 }}</span>
                   {% endif %}
+                  {% if can_edit_lwp %}
                   <button class="lwp-edit-btn" title="Override LWP" onclick="startLwpEdit(this)">✏️</button>
+                  {% endif %}
                 </div>
+                {% if can_edit_lwp %}
                 <div class="lwp-edit" style="display:none;">
                   <input type="number" class="lwp-input" step="0.01" min="0"
                          value="{{ lb.leave_without_pay|floatformat:2 }}"
@@ -692,6 +695,7 @@
                   <button class="lwp-save-btn" onclick="saveLwp(this)" title="Save">✔</button>
                   <button class="lwp-cancel-btn" onclick="cancelLwpEdit(this)" title="Cancel">✖</button>
                 </div>
+                {% endif %}
               </td>
 
               <td class="lb-numeric">{{ lb.number_of_days_present|floatformat:2 }}</td>

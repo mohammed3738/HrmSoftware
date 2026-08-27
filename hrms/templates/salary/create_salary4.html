@@ -308,7 +308,7 @@
                     </div>
                     <div class="col-6">
                       <label class="form-label">PF (Employee)</label>
-                      <input type="number" id="pfEe" class="form-control" name="pf_ee_cont_pm" readonly >
+                      <input type="number" id="pfEe" class="form-control editable-calc" name="pf_ee_cont_pm" step="0.01" value="{{ salary_obj.pf_ee_cont_pm|default_if_none:'' }}">
                     </div>
                     <div class="col-6">
                       <label class="form-label">ESIC (Employer)</label>
@@ -428,12 +428,16 @@ let payrollSettings = {
 
 let userInteracted = false; // Track if user has touched the modal
 
-// When editing an existing salary structure, Basic/HRA/Stat Bonus/Special
-// Allowance should keep showing (and stay freely editable as) the saved
-// values instead of being silently recomputed from Gross CTC — see
-// EDIT_LOCKED_FIELDS usage in the show.bs.modal handler below.
+// When editing an existing salary structure, every field except the two
+// pure derived totals (Guaranteed Cash, CTC) should keep showing (and stay
+// freely editable as) the saved values instead of being silently
+// recomputed from Gross CTC — see EDIT_LOCKED_FIELDS usage in the
+// show.bs.modal handler below.
 const IS_EDIT_MODE = {{ salary_obj|yesno:"true,false" }};
-const EDIT_LOCKED_FIELDS = ["basic", "hra", "statBonus", "specialAllowance"];
+const EDIT_LOCKED_FIELDS = [
+  "basic", "hra", "statBonus", "specialAllowance",
+  "pfEr", "pfEe", "esicEr", "esicEe", "gratuity", "netSalary",
+];
 
 /* =====================================================
    HELPERS
@@ -564,19 +568,23 @@ function calculateSalary() {
   const costToCompany = guaranteedCash + pfEr + esicEr;
   const netSalary = guaranteedCash - pfEe - esicEe - profTax;
 
-  /* Write to UI */
+  /* Write to UI. guaranteedCash and costToCompany are pure derived totals
+     (sums of the other fields) and always get overwritten -- everything
+     else goes through setVal() so a manually-edited value (dataset.manual)
+     is left alone instead of being silently overwritten on every
+     recalculation, same as basic/hra/statBonus/specialAllowance. */
   setVal("basic", basic);
   setVal("hra", hra);
   setVal("statBonus", statBonus);
   setVal("specialAllowance", specialAllowance);
   document.getElementById("guaranteedCash").value  = guaranteedCash.toFixed(2);
-  document.getElementById("pfEr").value            = pfEr.toFixed(2);
-  document.getElementById("pfEe").value            = pfEe.toFixed(2);
-  document.getElementById("esicEr").value          = esicEr.toFixed(2);
-  document.getElementById("esicEe").value          = esicEe.toFixed(2);
-  document.getElementById("gratuity").value        = gratuity.toFixed(2);
+  setVal("pfEr", pfEr);
+  setVal("pfEe", pfEe);
+  setVal("esicEr", esicEr);
+  setVal("esicEe", esicEe);
+  setVal("gratuity", gratuity);
   document.getElementById("costToCompany").value   = costToCompany.toFixed(2);
-  document.getElementById("netSalary").value       = netSalary.toFixed(2);
+  setVal("netSalary", netSalary);
 
   /* Annual × 12 */
   [
@@ -633,7 +641,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   // Mark manual only for calculated fields (not grossCTC/allowances which are inputs)
-  const calcFields = ["basic","hra","statBonus","specialAllowance","pfEr","esicEr","esicEe","gratuity","netSalary"];
+  const calcFields = ["basic","hra","statBonus","specialAllowance","pfEr","pfEe","esicEr","esicEe","gratuity","netSalary"];
   calcFields.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener("input", markManual);

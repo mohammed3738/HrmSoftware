@@ -386,3 +386,18 @@ class MonthlyEarnedLeavesAdmin(admin.ModelAdmin):
     list_display = ['payroll_settings', 'year', 'month', 'earned_leaves', 'is_auto_generated']
     list_filter = ['year', 'payroll_settings__company', 'is_auto_generated']
     search_fields = ['payroll_settings__company__name']
+
+
+@admin.register(Feature)
+class FeatureAdmin(admin.ModelAdmin):
+    list_display = ['name', 'key', 'category', 'has_view', 'has_edit', 'has_approve', 'sort_order', 'is_active']
+    list_filter = ['category', 'is_active']
+    search_fields = ['name', 'key']
+    ordering = ['category', 'sort_order']
+
+
+@admin.register(RoleFeaturePermission)
+class RoleFeaturePermissionAdmin(admin.ModelAdmin):
+    list_display = ['role', 'feature', 'can_view', 'can_edit', 'can_approve', 'updated_at', 'updated_by']
+    list_filter = ['role', 'feature__category']
+    search_fields = ['role__name', 'feature__name']

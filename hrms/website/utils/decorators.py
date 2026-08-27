@@ -17,3 +17,26 @@ def group_required(*group_names):
             raise PermissionDenied
         return _wrapped_view
     return decorator
+
+
+def feature_required(feature_key, action="view"):
+    """Database-driven replacement for group_required: checks the
+    RoleFeaturePermission matrix (see website/models.py, managed from the
+    Roles & Permissions settings page) instead of a hardcoded group-name
+    list. Superuser/staff bypass and the not-authenticated redirect are
+    identical to group_required, so migrating a view from one decorator to
+    the other never changes behavior for those accounts."""
+    def decorator(view_func):
+        @wraps(view_func)
+        def _wrapped_view(request, *args, **kwargs):
+            if not request.user.is_authenticated:
+                from django.contrib.auth.views import redirect_to_login
+                return redirect_to_login(request.get_full_path(), settings.LOGIN_URL)
+            if request.user.is_superuser or request.user.is_staff:
+                return view_func(request, *args, **kwargs)
+            from .permissions import has_feature_permission
+            if has_feature_permission(request.user, feature_key, action):
+                return view_func(request, *args, **kwargs)
+            raise PermissionDenied
+        return _wrapped_view
+    return decorator

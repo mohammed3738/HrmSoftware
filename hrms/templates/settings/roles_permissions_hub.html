@@ -1,0 +1,331 @@
+{% extends "base2.html" %}
+{% load static %}
+
+{% block body %}
+<script src="{% static 'assets/js/settings_hub_common.js' %}"></script>
+<div class="container-xxl py-4">
+
+  <!-- Header -->
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h4 class="mb-0">Roles &amp; Permissions</h4>
+      <small class="text-muted">Manage roles and control which pages each role can view, edit, or approve</small>
+    </div>
+    <a href="{% url 'company-settings-hub' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="ri-arrow-left-line me-1"></i> Company Settings Hub
+    </a>
+  </div>
+
+  <div class="row g-4">
+
+    <!-- Left: Role List -->
+    <div class="col-md-3">
+      <div class="card h-100">
+        <div class="card-header py-3">
+          <h6 class="mb-0 fw-semibold">Roles</h6>
+        </div>
+        <div class="list-group list-group-flush" id="roleList">
+          {% for role in roles %}
+          <a href="?role_id={{ role.pk }}"
+             class="list-group-item list-group-item-action d-flex align-items-center justify-content-between gap-2
+                    {% if selected_role.pk == role.pk %}active{% endif %}">
+            <div class="lh-sm">
+              <div class="fw-semibold small">{{ role.name }}</div>
+              <div class="text-muted" style="font-size:0.72rem;">{{ role.user_set.count }} user(s)</div>
+            </div>
+            {% if role.name in system_roles %}
+            <span class="badge bg-label-secondary" style="font-size:.6rem;" title="System role — cannot be renamed or deleted">System</span>
+            {% endif %}
+          </a>
+          {% empty %}
+          <div class="list-group-item text-muted small">No roles found.</div>
+          {% endfor %}
+        </div>
+        <div class="card-body border-top">
+          <label class="form-label small fw-semibold mb-1">Add New Role</label>
+          <div class="input-group input-group-sm">
+            <input type="text" class="form-control" id="newRoleName" placeholder="e.g. Payroll Only">
+            <button class="btn btn-primary" type="button" id="createRoleBtn">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Matrix / Users -->
+    <div class="col-md-9">
+      {% if selected_role %}
+      <div class="card">
+        <div class="card-body">
+
+          <div class="d-flex align-items-center justify-content-between mb-3 gap-3">
+            <div class="d-flex align-items-center gap-3">
+              <span class="badge bg-primary fs-6 px-3 py-2">{{ selected_role.name }}</span>
+              <span class="text-muted small">{{ selected_role.user_set.count }} user(s) currently assigned</span>
+            </div>
+            {% if selected_role.name not in system_roles %}
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="renameRoleBtn"
+                      data-role-id="{{ selected_role.pk }}" data-role-name="{{ selected_role.name }}">
+                <i class="ri-edit-line me-1"></i>Rename
+              </button>
+              <button type="button" class="btn btn-sm btn-outline-danger" id="deleteRoleBtn"
+                      data-role-id="{{ selected_role.pk }}" data-role-name="{{ selected_role.name }}">
+                <i class="ri-delete-bin-line me-1"></i>Delete
+              </button>
+            </div>
+            {% endif %}
+          </div>
+
+          <!-- Tabs -->
+          <ul class="nav nav-tabs" id="rpTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="rp-matrix-tab" data-bs-toggle="tab"
+                      data-bs-target="#rp-matrix" type="button" role="tab">
+                Permission Matrix
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="rp-users-tab" data-bs-toggle="tab"
+                      data-bs-target="#rp-users" type="button" role="tab">
+                Users
+              </button>
+            </li>
+          </ul>
+
+          <div class="tab-content pt-4" id="rpTabsContent">
+
+            <!-- ===== PERMISSION MATRIX TAB ===== -->
+            <div class="tab-pane fade show active" id="rp-matrix" role="tabpanel">
+              <form id="matrixForm">
+                {% csrf_token %}
+                <input type="hidden" name="role_id" value="{{ selected_role.pk }}">
+
+                <div class="table-responsive">
+                  <table class="table table-sm align-middle">
+                    <thead>
+                      <tr>
+                        <th style="min-width:220px;">Feature</th>
+                        <th class="text-center" style="width:90px;">View</th>
+                        <th class="text-center" style="width:90px;">Edit</th>
+                        <th class="text-center" style="width:90px;">Approve</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for category, rows in features_by_category.items %}
+                      <tr class="table-light">
+                        <td colspan="4" class="fw-semibold text-uppercase text-muted" style="font-size:.72rem;letter-spacing:.06em;">
+                          {{ category }}
+                        </td>
+                      </tr>
+                      {% for row in rows %}
+                      <tr>
+                        <td>
+                          {{ row.feature.name }}
+                          {% if row.feature.description %}
+                          <i class="ri-information-line text-muted ms-1" title="{{ row.feature.description }}"></i>
+                          {% endif %}
+                        </td>
+                        <td class="text-center">
+                          {% if row.feature.has_view %}
+                          <input type="checkbox" class="form-check-input" name="can_view_{{ row.feature.id }}"
+                                 {% if row.permission.can_view %}checked{% endif %}>
+                          {% else %}
+                          <span class="text-muted">—</span>
+                          {% endif %}
+                        </td>
+                        <td class="text-center">
+                          {% if row.feature.has_edit %}
+                          <input type="checkbox" class="form-check-input" name="can_edit_{{ row.feature.id }}"
+                                 {% if row.permission.can_edit %}checked{% endif %}>
+                          {% else %}
+                          <span class="text-muted">—</span>
+                          {% endif %}
+                        </td>
+                        <td class="text-center">
+                          {% if row.feature.has_approve %}
+                          <input type="checkbox" class="form-check-input" name="can_approve_{{ row.feature.id }}"
+                                 {% if row.permission.can_approve %}checked{% endif %}>
+                          {% else %}
+                          <span class="text-muted">—</span>
+                          {% endif %}
+                        </td>
+                      </tr>
+                      {% endfor %}
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="d-flex justify-content-end mt-3">
+                  <button type="button" class="btn btn-primary" id="saveMatrixBtn">
+                    <i class="ri-save-line me-1"></i> Save Matrix
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- ===== USERS TAB ===== -->
+            <div class="tab-pane fade" id="rp-users" role="tabpanel">
+              <div class="mb-3">
+                <input type="text" class="form-control form-control-sm" id="userSearch" style="max-width:320px;"
+                       placeholder="Search by name or employee code…">
+              </div>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle" id="usersTable">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Employee Code</th>
+                      <th>Username</th>
+                      <th style="width:220px;">Role</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for emp in users %}
+                    <tr class="user-row" data-search="{{ emp.first_name|lower }} {{ emp.last_name|lower }} {{ emp.employee_code|lower }}">
+                      <td>{{ emp.first_name }} {{ emp.last_name }}</td>
+                      <td>{{ emp.employee_code }}</td>
+                      <td class="text-muted">{{ emp.user.username }}</td>
+                      <td>
+                        <select class="form-select form-select-sm role-select" data-employee-id="{{ emp.id }}">
+                          <option value="">— No role —</option>
+                          {% for role in roles %}
+                          <option value="{{ role.id }}" {% if emp.user.groups.first.id == role.id %}selected{% endif %}>
+                            {{ role.name }}
+                          </option>
+                          {% endfor %}
+                        </select>
+                      </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-muted text-center py-3">No users with a login account found.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div><!-- /tab-content -->
+        </div>
+      </div>
+      {% else %}
+      <div class="card">
+        <div class="card-body text-center py-5">
+          <i class="ri-shield-user-line ri-4x text-muted mb-3 d-block"></i>
+          <h5 class="text-muted">No roles found</h5>
+          <p class="text-muted small">Add a role to get started.</p>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+
+  // ── Create role ──────────────────────────────────────────────────────────
+  const createRoleBtn = document.getElementById('createRoleBtn');
+  if (createRoleBtn) {
+    createRoleBtn.addEventListener('click', async () => {
+      const nameInput = document.getElementById('newRoleName');
+      const name = nameInput.value.trim();
+      if (!name) { hubShowError('Enter a role name.'); return; }
+      const fd = new FormData();
+      fd.set('name', name);
+      const data = await hubPost("{% url 'create-role' %}", fd, createRoleBtn, CSRF);
+      if (data && data.success) {
+        window.location.href = `?role_id=${data.role_id}`;
+      }
+    });
+  }
+
+  // ── Rename role ──────────────────────────────────────────────────────────
+  const renameRoleBtn = document.getElementById('renameRoleBtn');
+  if (renameRoleBtn) {
+    renameRoleBtn.addEventListener('click', async () => {
+      const currentName = renameRoleBtn.dataset.roleName;
+      const roleId = renameRoleBtn.dataset.roleId;
+      const newName = window.prompt('Rename role:', currentName);
+      if (!newName || newName.trim() === '' || newName === currentName) return;
+      const fd = new FormData();
+      fd.set('name', newName.trim());
+      const data = await hubPost(`/settings/roles-permissions/${roleId}/rename/`, fd, renameRoleBtn, CSRF);
+      if (data && data.success) window.location.reload();
+    });
+  }
+
+  // ── Delete role ──────────────────────────────────────────────────────────
+  const deleteRoleBtn = document.getElementById('deleteRoleBtn');
+  if (deleteRoleBtn) {
+    deleteRoleBtn.addEventListener('click', async () => {
+      const roleName = deleteRoleBtn.dataset.roleName;
+      const roleId = deleteRoleBtn.dataset.roleId;
+      const result = await Swal.fire({
+        title: `Delete "${roleName}"?`,
+        text: 'This cannot be undone. Roles with users assigned cannot be deleted.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        confirmButtonText: 'Delete',
+      });
+      if (!result.isConfirmed) return;
+      const fd = new FormData();
+      const data = await hubPost(`/settings/roles-permissions/${roleId}/delete/`, fd, deleteRoleBtn, CSRF);
+      if (data && data.success) window.location.href = "{% url 'roles-permissions-hub' %}";
+    });
+  }
+
+  // ── Save permission matrix ──────────────────────────────────────────────
+  const saveMatrixBtn = document.getElementById('saveMatrixBtn');
+  if (saveMatrixBtn) {
+    saveMatrixBtn.addEventListener('click', async () => {
+      const form = document.getElementById('matrixForm');
+      const fd = new FormData(form);
+      // FormData omits unchecked checkboxes -- explicitly send "on"/"" for
+      // every checkbox in the form so unchecking something actually clears it.
+      form.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        fd.set(cb.name, cb.checked ? 'on' : '');
+      });
+      await hubPost("{% url 'save-role-permissions' %}", fd, saveMatrixBtn, CSRF);
+    });
+  }
+
+  // ── Reassign a user's role ───────────────────────────────────────────────
+  document.querySelectorAll('.role-select').forEach(select => {
+    select.addEventListener('change', async () => {
+      const employeeId = select.dataset.employeeId;
+      const roleId = select.value;
+      if (!roleId) { hubShowError('Select a role.'); return; }
+      const fd = new FormData();
+      fd.set('employee_id', employeeId);
+      fd.set('role_id', roleId);
+      fd.set('csrfmiddlewaretoken', CSRF);
+      try {
+        const res = await fetch("{% url 'reassign-user-role' %}", { method: 'POST', body: fd, headers: { 'X-CSRFToken': CSRF } });
+        const data = await res.json();
+        if (data.success) hubShowSuccess(`Role updated to "${data.role_name}".`);
+        else hubShowError(data.error || 'Failed to update role.');
+      } catch (e) {
+        console.error(e);
+        hubShowError('Server error. Please try again.');
+      }
+    });
+  });
+
+  // ── Users search filter ──────────────────────────────────────────────────
+  const userSearch = document.getElementById('userSearch');
+  if (userSearch) {
+    userSearch.addEventListener('input', () => {
+      const q = userSearch.value.trim().toLowerCase();
+      document.querySelectorAll('.user-row').forEach(row => {
+        row.style.display = row.dataset.search.includes(q) ? '' : 'none';
+      });
+    });
+  }
+});
+</script>
+
+{% endblock %}

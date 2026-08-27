@@ -9,7 +9,7 @@ from dateutil.relativedelta import relativedelta
 from django.utils import timezone
 from django.db.models import JSONField  # for PostgreSQL
 from decimal import Decimal
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 
 # Create your models here.
 status = {
@@ -1735,5 +1735,61 @@ class AttendanceCorrectionRequest(models.Model):
 
     def __str__(self):
         return f"Correction Request {self.id} - {self.status}"
+
+
+# ============================================
+# Roles & Permissions
+# ============================================
+
+class Feature(models.Model):
+    """A logical page/module that can be gated per role (e.g. 'Payroll
+    Processing', 'Leave Management'). `key` is the stable identifier used by
+    the @feature_required decorator — never change it once seeded, since
+    view code references it directly. `has_view`/`has_edit`/`has_approve`
+    declare which action columns actually apply to this feature, so the
+    permission matrix UI only renders checkboxes that mean something (e.g.
+    Payroll has no 'Approve' concept)."""
+    key = models.SlugField(max_length=50, unique=True)
+    name = models.CharField(max_length=100)
+    category = models.CharField(
+        max_length=100,
+        help_text="UI grouping header only (e.g. 'Attendance & Scheduling'). Does not affect permission logic."
+    )
+    description = models.TextField(blank=True)
+
+    has_view = models.BooleanField(default=True)
+    has_edit = models.BooleanField(default=True)
+    has_approve = models.BooleanField(default=False)
+
+    sort_order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["category", "sort_order", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class RoleFeaturePermission(models.Model):
+    """One row per (role, feature): what a Django Group can View/Edit/Approve
+    for that feature. Enforcement lookup:
+    RoleFeaturePermission.objects.filter(role__in=user.groups.all(), feature__key=key, can_<action>=True).exists()
+    """
+    role = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="feature_permissions")
+    feature = models.ForeignKey(Feature, on_delete=models.CASCADE, related_name="role_permissions")
+
+    can_view = models.BooleanField(default=False)
+    can_edit = models.BooleanField(default=False)
+    can_approve = models.BooleanField(default=False)
+
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        unique_together = ("role", "feature")
+
+    def __str__(self):
+        return f"{self.role.name} — {self.feature.name}"
 
 

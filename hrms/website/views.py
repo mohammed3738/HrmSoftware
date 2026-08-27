@@ -33,6 +33,7 @@ import os
 from django.http import FileResponse, Http404
 import openpyxl
 from .services import *  # from previous services.py
+from .services.roles import assign_employee_role
 from .utils.payroll_lock import (
     get_locking_run,
     get_locking_run_for_period,
@@ -44,7 +45,9 @@ from .utils.payroll_lock import (
 from django.forms.models import model_to_dict
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import permission_required
-from .utils.decorators import group_required
+from .utils.decorators import group_required, feature_required
+from .utils.permissions import can_access_employee_record, has_feature_permission
+from django.core.exceptions import PermissionDenied
 
 # def parse_time(time_value):
 #     """Convert time string or float to a proper datetime.time object."""
@@ -67,7 +70,7 @@ from .utils.decorators import group_required
 
 # atul
 @login_required
-@group_required("Admin", "HR")
+@feature_required("company_management", action="view")
 
 def company_details_api(request, pk):
     company = get_object_or_404(Company, pk=pk)
@@ -91,7 +94,7 @@ def company_details_api(request, pk):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("employee_records", action="edit")
 def delete_employee(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
 
@@ -108,7 +111,7 @@ def delete_employee(request, employee_id):
 
 # Vaishu
 @login_required
-@group_required("Admin", "HR")
+@feature_required("branch_management", action="view")
 def branch_details_api(request, pk):
     branch = get_object_or_404(Branch, pk=pk)
 
@@ -362,7 +365,7 @@ ATTENDANCE_UPLOAD_CHUNK_SIZE = 200
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("attendance_data", action="edit")
 def upload_attendance_excel(request):
     if request.method == "GET":
         return render(request, "attendance/attendance_upload.html")
@@ -610,7 +613,7 @@ def _do_import_attendance(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("attendance_data", action="edit")
 @require_http_methods(["POST"])
 def upload_attendance_init(request):
     """
@@ -646,7 +649,7 @@ def upload_attendance_init(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("attendance_data", action="edit")
 @require_http_methods(["POST"])
 def upload_attendance_chunk(request, upload_id):
     """Step 2 of the chunked upload flow: process the next batch of rows
@@ -724,7 +727,7 @@ def _recalculate_attendance_queryset(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("attendance_data", action="edit")
 @require_http_methods(["POST"])
 def recalculate_attendance_init(request):
     """Step 1: report how many existing Attendance rows match the (optional)
@@ -738,7 +741,7 @@ def recalculate_attendance_init(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("attendance_data", action="edit")
 @require_http_methods(["POST"])
 def recalculate_attendance_chunk(request):
     """Step 2: re-run calculate_status()/calculate_lateness() on the next
@@ -774,7 +777,7 @@ LATE_REVIEW_SORT_FIELDS = {
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("attendance_review", action="view")
 def late_attendance_review(request):
     """
     Payroll-time review of every 'Late Present' day for the selected month,
@@ -906,7 +909,7 @@ def _override_attendance_status_item(attendance, new_status, company_filter=None
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("attendance_review", action="edit")
 @require_http_methods(["POST"])
 def override_attendance_status(request):
     """Manually convert a single Attendance record's status — used on the
@@ -938,7 +941,7 @@ def override_attendance_status(request):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("attendance_review", action="edit")
 @require_http_methods(["POST"])
 def bulk_override_attendance_status(request):
     """Convert a batch of Attendance records to the same status in one
@@ -1011,7 +1014,7 @@ def _validate_shift_dates_within_current_period(company, start_date_str, end_dat
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("shift_roster", action="view")
 def shift_roster_list(request):
     """List/filter shift roster assignments — 'who's on which shift, and
     when' at a glance, for planning day/night/rotational shifts. Purely a
@@ -1079,7 +1082,7 @@ def shift_roster_list(request):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("shift_roster", action="edit")
 @require_http_methods(["POST"])
 def add_shift_assignment(request):
     """Assign one shift (name + date range) to one or more employees at
@@ -1137,7 +1140,7 @@ def add_shift_assignment(request):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("shift_roster", action="edit")
 @require_http_methods(["POST"])
 def edit_shift_assignment(request, pk):
     from django.core.exceptions import ValidationError
@@ -1173,7 +1176,7 @@ def edit_shift_assignment(request, pk):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("shift_roster", action="edit")
 @require_http_methods(["POST"])
 def delete_shift_assignment(request, pk):
     assignment = get_object_or_404(ShiftAssignment.objects.select_related("employee"), id=pk)
@@ -1216,7 +1219,7 @@ def attendance_upload_progress(request, upload_id):
 
     
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("attendance_review", action="view")
 def attendance_list(request):
     user = request.user
 
@@ -1261,6 +1264,8 @@ def attendance_list(request):
 @login_required
 def employee_attendance_detail(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
+    if not can_access_employee_record(request.user, employee, "attendance_review", "view"):
+        raise PermissionDenied
 
     attendance_records = Attendance.objects.filter(employee=employee)
 
@@ -1436,7 +1441,7 @@ def approve_correction_request(request, request_id):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("attendance_corrections", action="approve")
 @require_http_methods(["POST"])
 def bulk_approve_correction(request):
     ids = _extract_bulk_ids(request)
@@ -1504,7 +1509,7 @@ def _format_date_iso(d):
     return d.isoformat() if d else None
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("attendance_corrections", action="view")
 def attendance_correction_requests_list(request):
     from .models import AttendanceCorrectionRequest, Attendance
 
@@ -1596,7 +1601,7 @@ def attendance_correction_requests_list(request):
     })
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("attendance_corrections", action="view")
 def attendance_correction_detail(request, pk):
     obj = get_object_or_404(AttendanceCorrectionRequest, pk=pk)
 
@@ -1729,7 +1734,7 @@ from django.db.models.functions import ExtractYear, ExtractMonth
 from django.shortcuts import render
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("comp_off", action="view")
 def comp_off_requests_list(request):
     # read optional filters from GET
     selected_year = request.GET.get("year")   # e.g. "2025" or ""
@@ -1817,7 +1822,7 @@ import datetime as dt
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("comp_off", action="view")
 def comp_off_requests(request, pk):
     """
     Return all comp-off requests for the employee with id=pk for the requested month/year.
@@ -1878,7 +1883,7 @@ def comp_off_requests(request, pk):
     return render(request, "attendance/comp_off_request_table.html", context)
 
 @login_required(login_url="login")
-@group_required("Admin", "HR")
+@feature_required("admin_dashboard", action="view")
 def admin_dashboard(request):
     today = date.today()
     user = request.user
@@ -2011,7 +2016,7 @@ def _extract_bulk_ids(request):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("comp_off", action="approve")
 def approve_compoff(request, compoff_id):
     try:
         compoff = CompOffRequest.objects.get(id=compoff_id)
@@ -2025,7 +2030,7 @@ def approve_compoff(request, compoff_id):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("comp_off", action="approve")
 @require_http_methods(["POST"])
 def bulk_approve_compoff(request):
     ids = _extract_bulk_ids(request)
@@ -2057,7 +2062,7 @@ def bulk_approve_compoff(request):
 #             return JsonResponse({"message": "Request not found!"}, status=404)
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("comp_off", action="approve")
 def reject_compoff(request, compoff_id):
     correction_request = get_object_or_404(CompOffRequest, id=compoff_id)
 
@@ -2080,7 +2085,7 @@ def reject_compoff(request, compoff_id):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("employee_records", action="view")
 def download_employees_excel(request):
     # Fetch active employees
     employees = Employee.objects.filter(status="Active").values(
@@ -2152,7 +2157,7 @@ def download_employees_excel(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("leave_management", action="view")
 def download_leave_excel(request):
     # Fetch active leave balances along with related employee info
     leave_balances = LeaveBalance.objects.select_related("employee").filter(employee__status="Active")
@@ -2379,7 +2384,7 @@ from django.contrib.auth.models import Group
 from django.contrib.auth.models import Group, User
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("employee_records", action="edit")
 def create_or_edit_employee(request, employee_id=None):
     employee = None
     is_edit = False
@@ -2401,26 +2406,11 @@ def create_or_edit_employee(request, employee_id=None):
                 # ✅ HANDLE GROUP ASSIGNMENT
                 selected_group_id = request.POST.get("employee_group")
                 if selected_group_id:
-                    # Create or get the linked User for this employee
-                    if not emp_obj.user:
-                        # Auto-create a user only if employee_code exists
-                        if emp_obj.employee_code:
-                            username = emp_obj.employee_code.lower()
-                            user, created = User.objects.get_or_create(username=username)
-                            if created:
-                                user.set_unusable_password()
-                                user.save()
-                            emp_obj.user = user
-                            emp_obj.save()
-
-                    # Clear old groups and assign new one (only if user exists)
-                    if emp_obj.user:
-                        emp_obj.user.groups.clear()
-                        try:
-                            group = Group.objects.get(id=selected_group_id)
-                            emp_obj.user.groups.add(group)
-                        except Group.DoesNotExist:
-                            pass
+                    try:
+                        group = Group.objects.get(id=selected_group_id)
+                        assign_employee_role(emp_obj, group)
+                    except Group.DoesNotExist:
+                        pass
 
                 # ... rest of your existing formset saving logic
                 formset.instance = emp_obj
@@ -2502,7 +2492,7 @@ from django.contrib.auth.models import Group
 
 # @permission_required("website.view_employee", raise_exception=True)
 @login_required
-@group_required("Admin", "HR")
+@feature_required("employee_records", action="view")
 def employee_list(request):
     return render(request, "employee/create_employee2.html", {
         "form": EmployeeForm(),
@@ -2536,7 +2526,7 @@ def employee_list(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("employee_records", action="edit")
 @require_http_methods(["POST"])
 def bulk_employee_action(request):
     try:
@@ -2566,10 +2556,9 @@ def bulk_employee_action(request):
             emp.status = new_status
             changed = True
         if new_role and emp.user:
-            emp.user.groups.clear()
             try:
                 group = Group.objects.get(name=new_role)
-                emp.user.groups.add(group)
+                assign_employee_role(emp, group)
                 changed = True
             except Group.DoesNotExist:
                 pass
@@ -2584,6 +2573,8 @@ from django.shortcuts import get_object_or_404, render
 @login_required
 def employee_detail(request, pk):
     employee = get_object_or_404(Employee, pk=pk)
+    if not can_access_employee_record(request.user, employee, "employee_records", "view"):
+        raise PermissionDenied
     # employeement = PreviousEmployment.objects.filter(employee=employee)
     # previous_employments = employee.previous_employments.all().order_by('-to_date')
     previous_employments = PreviousEmployment.objects.filter(employee=employee).order_by('-to_date')
@@ -2640,10 +2631,71 @@ def employee_detail(request, pk):
 @login_required
 def my_profile(request):
     if not hasattr(request.user, 'employee_profile'):
-        return redirect('dashboard')  # or raise PermissionDenied
+        # 'dashboard' isn't a real URL name -- this used to raise
+        # NoReverseMatch for any user with no linked Employee record.
+        return redirect('admin-dashboard')
+
+    return redirect('employee_detail', pk=request.user.employee_profile.pk)
+
+
+@login_required
+def employee_dashboard(request):
+    """Self-service landing page for an Employee-role login: only ever
+    queries request.user.employee_profile's own records, never a URL
+    parameter, so there is no ownership check to get wrong here -- unlike
+    employee_detail/employee_attendance_detail/salary_slip_view, which used
+    to have none at all (see can_access_employee_record)."""
+    if not hasattr(request.user, 'employee_profile'):
+        messages.error(request, "Your account isn't linked to an employee profile.")
+        return redirect('login')
 
     employee = request.user.employee_profile
-    return redirect('employee_detail', pk=employee.pk)
+    today = now().date()
+
+    today_attendance = Attendance.objects.filter(employee=employee, date=today).first()
+
+    period_from, period_to = _current_payroll_period(employee.company)
+    if not period_from:
+        period_from = today.replace(day=1)
+        period_to = today
+
+    period_attendance = Attendance.objects.filter(employee=employee, date__range=[period_from, period_to])
+    days_present = period_attendance.filter(status__in=["Present", "Late Present"]).count()
+    days_late = period_attendance.filter(status="Late Present").count()
+    days_half = period_attendance.filter(status__in=["Half Day", "Present (Half-Day)"]).count()
+
+    leave_balance = (
+        LeaveBalance.objects.filter(employee=employee).order_by("-period_to_date").first()
+    )
+
+    payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
+    branch_specific = getattr(payroll_settings, "branch_specific_holidays", True) if payroll_settings else True
+    upcoming_holidays = []
+    for holiday in Holiday.objects.filter(holiday_date__gte=today).select_related("holiday_calendar__branch"):
+        if not branch_specific or holiday.is_applicable_to_branch(employee.branch):
+            if holiday.is_applicable_to_employee(employee):
+                upcoming_holidays.append(holiday)
+        if len(upcoming_holidays) >= 5:
+            break
+
+    recent_payslips = (
+        PayrollRecord.objects.filter(employee=employee, payroll__status=PayrollRun.STATUS_FINALIZED)
+        .select_related("payroll")
+        .order_by("-payroll__end_date")[:6]
+    )
+
+    return render(request, "employee/employee_dashboard.html", {
+        "employee": employee,
+        "today_attendance": today_attendance,
+        "period_from": period_from,
+        "period_to": period_to,
+        "days_present": days_present,
+        "days_late": days_late,
+        "days_half": days_half,
+        "leave_balance": leave_balance,
+        "upcoming_holidays": upcoming_holidays,
+        "recent_payslips": recent_payslips,
+    })
 
 @login_required
 def download_attachment(request, pk):
@@ -2728,7 +2780,7 @@ AssetHandoverFormSet = inlineformset_factory(
 )
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("offboarding", action="edit")
 def offboarding_list(request):
     """Main page - List, Create, Edit, View, Delete all in one"""
     if request.method == 'POST':
@@ -2905,7 +2957,7 @@ def offboarding_delete(request, pk):
 #     return render(request, 'branch/create-branch.html', context)
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("branch_management", action="edit")
 def create_branchs(request):
     if request.method == "POST":
         branch_name = request.POST.get("branch_name")
@@ -2981,7 +3033,7 @@ def delete_branch(request, branch_id):
 #     }
 #     return render(request, 'company/home2.html', context)
 @login_required
-@group_required("Admin")
+@feature_required("company_management", action="edit")
 
 def create_company(request):
     if request.method == "POST":
@@ -3026,7 +3078,7 @@ def create_company(request):
 
 
 @login_required
-@group_required("Admin")
+@feature_required("company_management", action="edit")
 def edit_company(request, company_id):
     company = get_object_or_404(Company, id=company_id)
 
@@ -3045,7 +3097,7 @@ def edit_company(request, company_id):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("company_management", action="view")
 def get_company(request, company_id):
     company = Company.objects.get(id=company_id)
     return JsonResponse({
@@ -3064,7 +3116,7 @@ def get_company(request, company_id):
 
 
 @login_required
-@group_required("Admin")
+@feature_required("company_management", action="edit")
 def delete_company(request, company_id):
     company = get_object_or_404(Company, id=company_id)
 
@@ -3653,6 +3705,12 @@ def leave_balance_view(request):
         # Global users can always recalculate (all companies or one specific)
         'can_recalculate': is_global or bool(scoped_company),
         'show_company_col': is_global and scoped_company is None,
+        # LWP directly affects pay -- only Admin/HR (leave_management edit)
+        # or staff/superuser may override it, never a plain Employee viewing
+        # their own (or, before the earlier scoping fix, a colleague's) row.
+        'can_edit_lwp': (
+            user.is_superuser or user.is_staff or has_feature_permission(user, "leave_management", "edit")
+        ),
     }
 
     # ── Non-global with no company — error ────────────────────────────────────
@@ -3842,6 +3900,14 @@ def leave_balance_view(request):
         .order_by('first_name', 'last_name')
     )
 
+    if not is_global:
+        # A plain Employee-role user should only ever see their own leave
+        # balance, not their whole company's -- this used to list every
+        # active employee in the company for anyone without Admin/HR/Manager
+        # access, which is what let one employee see everyone else's balance.
+        my_employee = getattr(request.user, 'employee_profile', None)
+        all_employees = [emp for emp in all_employees if my_employee and emp.id == my_employee.id]
+
     lb_lookup = {}
     if selected_period:
         for lb in LeaveBalance.objects.filter(
@@ -3987,9 +4053,13 @@ def recalc_employee_leave_balance(request, employee_id):
 
 
 @login_required
+@feature_required("leave_management", action="edit")
 @require_http_methods(["POST"])
 def override_lwp_view(request):
-    """Manually override the LWP value for a single LeaveBalance record."""
+    """Manually override the LWP value for a single LeaveBalance record.
+    LWP directly determines pay, so this is Admin/HR only -- the old
+    same-company check let any Employee-role user in that company override
+    LWP, including their own."""
     lb_id = request.POST.get('lb_id')
     lwp_raw = request.POST.get('lwp_value', '0')
 
@@ -4116,7 +4186,7 @@ def employee_leave_detail(request, employee_id):
         
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("leave_management", action="edit")
 def update_leave_credit_policy(request):
     """Handle policy updates from the HR UI (AJAX or form submit)."""
     if request.method == "POST":
@@ -4221,7 +4291,7 @@ def _approve_leave_item(leave):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("leave_management", action="approve")
 @require_POST
 def approve_leave(request, leave_id):
     try:
@@ -4236,7 +4306,7 @@ def approve_leave(request, leave_id):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("leave_management", action="approve")
 @require_POST
 def bulk_approve_leave(request):
     ids = _extract_bulk_ids(request)
@@ -4256,7 +4326,7 @@ def bulk_approve_leave(request):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("leave_management", action="approve")
 @require_POST
 def reject_leave(request, leave_id):
     try:
@@ -4276,7 +4346,7 @@ def reject_leave(request, leave_id):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("leave_management", action="edit")
 def leave_credit_policy_view(request):
     if user_has_global_access(request.user):
         return redirect('company-settings-hub')
@@ -4628,7 +4698,7 @@ def extract_decimal(request, key):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("salary_structure", action="edit")
 def create_salary(request):
     if request.method == "POST":
         salary_id = request.POST.get("salary_id")
@@ -4711,7 +4781,7 @@ def create_salary(request):
 # salary detail view
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("salary_structure", action="view")
 def salary_details(request, pk):
     try:
         salary = SalaryMaster.objects.select_related('employee').get(pk=pk)
@@ -4867,7 +4937,7 @@ def to_float(v):
 
 # Add these to your views.py
 @login_required
-@group_required("Admin", "HR")
+@feature_required("salary_structure", action="edit")
 def create_salary_increment(request):
     if request.method == "POST":
         try:
@@ -4932,7 +5002,7 @@ def create_salary_increment(request):
     })
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("salary_structure", action="edit")
 def edit_increment(request, pk):
     """Return increment data as JSON for editing"""
     try:
@@ -4978,7 +5048,7 @@ def edit_increment(request, pk):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("salary_structure", action="edit")
 def update_salary_increment(request, pk):
     """Update existing increment"""
     if request.method == "POST":
@@ -5040,7 +5110,7 @@ def update_salary_increment(request, pk):
 
 
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("salary_structure", action="view")
 def increment_details(request, pk):
     inc = get_object_or_404(SalaryIncrement, id=pk)
 
@@ -5060,7 +5130,7 @@ def increment_details(request, pk):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("salary_structure", action="edit")
 def delete_salary_increment(request, pk):
     """Delete increment"""
     if request.method == "POST":
@@ -5134,7 +5204,7 @@ def employee_salary_ajax(request):
 # Salary History list view
 # -------------------------
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("salary_structure", action="view")
 def salary_history(request):
     qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
 
@@ -5165,7 +5235,7 @@ def salary_history(request):
 # AJAX: SalaryHistory detail (used by modal)
 # -------------------------
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("salary_structure", action="view")
 def salary_history_detail(request, pk):
     entry = get_object_or_404(SalaryHistory, pk=pk)
     html = render_to_string("partials/salary_history_detail.html", {"entry": entry})
@@ -5175,6 +5245,11 @@ def salary_history_detail(request, pk):
 # Export to Excel
 # -------------------------
 @login_required
+# Deliberately left on the legacy group_required decorator rather than
+# migrated to the "salary_structure" feature: this view's access
+# (Admin,HR) doesn't match salary_structure's View action (Admin,HR,Manager)
+# elsewhere in the same feature, so folding it in would silently change
+# access one way or the other. Migrate once someone decides the intended level.
 @group_required("Admin", "HR")
 def salary_history_export_excel(request):
     qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
@@ -5319,7 +5394,7 @@ def salary_history_export_excel(request):
 # Compare: return JSON of compare table (modal)
 # -------------------------
 @login_required
-@group_required("Admin", "HR", "Manager")
+@feature_required("salary_structure", action="view")
 def salary_compare(request, history_id, employee_id):
     history = SalaryHistory.objects.get(id=history_id)
     employee = Employee.objects.get(id=employee_id)
@@ -5700,6 +5775,144 @@ def company_settings_hub(request):
 
 @login_required
 @group_required("Admin")
+def roles_permissions_hub(request):
+    """Settings page for managing roles (Django Groups) and the
+    per-feature View/Edit/Approve permission matrix that drives
+    @feature_required(...) across the app. Deliberately gated with the
+    plain hardcoded group_required("Admin"), never feature_required(...) --
+    if this page were matrix-driven, an admin could accidentally revoke
+    Admin's own access to the one page that could fix it."""
+    from .permissions_registry import SYSTEM_ROLES
+
+    roles = Group.objects.all().order_by("name")
+
+    role_id = request.GET.get("role_id")
+    selected_role = None
+    if role_id:
+        selected_role = roles.filter(pk=role_id).first()
+    if selected_role is None:
+        selected_role = roles.first()
+
+    features_by_category = {}
+    permissions_by_feature_id = {}
+    if selected_role:
+        permissions_by_feature_id = {
+            rfp.feature_id: rfp
+            for rfp in RoleFeaturePermission.objects.filter(role=selected_role).select_related("feature")
+        }
+        for feature in Feature.objects.filter(is_active=True):
+            features_by_category.setdefault(feature.category, []).append({
+                "feature": feature,
+                "permission": permissions_by_feature_id.get(feature.id),
+            })
+
+    users = (
+        Employee.objects.select_related("user")
+        .filter(user__isnull=False)
+        .order_by("first_name", "last_name")
+    )
+
+    return render(request, "settings/roles_permissions_hub.html", {
+        "roles": roles,
+        "selected_role": selected_role,
+        "features_by_category": features_by_category,
+        "system_roles": SYSTEM_ROLES,
+        "users": users,
+    })
+
+
+@login_required
+@group_required("Admin")
+@require_http_methods(["POST"])
+def create_role(request):
+    name = (request.POST.get("name") or "").strip()
+    if not name:
+        return JsonResponse({"success": False, "error": "Role name is required."}, status=400)
+    if Group.objects.filter(name__iexact=name).exists():
+        return JsonResponse({"success": False, "error": f'A role named "{name}" already exists.'}, status=400)
+
+    group = Group.objects.create(name=name)
+    for feature in Feature.objects.filter(is_active=True):
+        RoleFeaturePermission.objects.get_or_create(role=group, feature=feature)
+
+    return JsonResponse({"success": True, "role_id": group.id, "name": group.name})
+
+
+@login_required
+@group_required("Admin")
+@require_http_methods(["POST"])
+def rename_role(request, role_id):
+    from .permissions_registry import SYSTEM_ROLES
+    group = get_object_or_404(Group, pk=role_id)
+    if group.name in SYSTEM_ROLES:
+        return JsonResponse({"success": False, "error": f'"{group.name}" is a system role and cannot be renamed.'}, status=400)
+
+    new_name = (request.POST.get("name") or "").strip()
+    if not new_name:
+        return JsonResponse({"success": False, "error": "Role name is required."}, status=400)
+    if Group.objects.exclude(pk=group.pk).filter(name__iexact=new_name).exists():
+        return JsonResponse({"success": False, "error": f'A role named "{new_name}" already exists.'}, status=400)
+
+    group.name = new_name
+    group.save(update_fields=["name"])
+    return JsonResponse({"success": True})
+
+
+@login_required
+@group_required("Admin")
+@require_http_methods(["POST"])
+def delete_role(request, role_id):
+    from .permissions_registry import SYSTEM_ROLES
+    group = get_object_or_404(Group, pk=role_id)
+    if group.name in SYSTEM_ROLES:
+        return JsonResponse({"success": False, "error": f'"{group.name}" is a system role and cannot be deleted.'}, status=400)
+    if group.user_set.exists():
+        return JsonResponse({
+            "success": False,
+            "error": f'"{group.name}" still has {group.user_set.count()} user(s) assigned. Reassign them first.',
+        }, status=400)
+
+    group.delete()
+    return JsonResponse({"success": True})
+
+
+@login_required
+@group_required("Admin")
+@require_http_methods(["POST"])
+def save_role_permissions(request):
+    role_id = request.POST.get("role_id")
+    group = get_object_or_404(Group, pk=role_id)
+
+    with transaction.atomic():
+        for feature in Feature.objects.filter(is_active=True):
+            rfp, _ = RoleFeaturePermission.objects.get_or_create(role=group, feature=feature)
+            rfp.can_view = feature.has_view and request.POST.get(f"can_view_{feature.id}") == "on"
+            rfp.can_edit = feature.has_edit and request.POST.get(f"can_edit_{feature.id}") == "on"
+            rfp.can_approve = feature.has_approve and request.POST.get(f"can_approve_{feature.id}") == "on"
+            rfp.updated_by = request.user
+            rfp.save()
+
+    return JsonResponse({"success": True, "message": f'Permissions saved for "{group.name}".'})
+
+
+@login_required
+@group_required("Admin")
+@require_http_methods(["POST"])
+def reassign_user_role(request):
+    employee_id = request.POST.get("employee_id")
+    role_id = request.POST.get("role_id")
+    employee = get_object_or_404(Employee, pk=employee_id)
+    group = get_object_or_404(Group, pk=role_id)
+
+    if not employee.user:
+        return JsonResponse({"success": False, "error": "This employee has no login account to assign a role to."}, status=400)
+
+    assign_employee_role(employee, group)
+    return JsonResponse({"success": True, "role_name": group.name})
+
+
+@login_required
+@feature_required("company_settings_broadcast", action="edit")
 @require_http_methods(["POST"])
 def broadcast_settings_to_all_companies(request):
     """Copy all settings from one company to all other active companies."""
@@ -5777,7 +5990,7 @@ def broadcast_settings_to_all_companies(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("advances", action="view")
 def advance_list(request):
     status_filter = request.GET.get('status', '').strip()
     search = request.GET.get('q', '').strip()
@@ -5820,7 +6033,7 @@ def advance_list(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("advances", action="edit")
 def advance_create(request):
     """Admin/HR creates an advance."""
     # if not request.user.is_staff:
@@ -5845,7 +6058,7 @@ def advance_create(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("advances", action="view")
 def advance_detail(request, pk):
     """Show schedule, payments, actions (pay/skip)."""
     adv = get_object_or_404(AdvanceMaster, pk=pk)
@@ -5874,7 +6087,7 @@ def advance_detail(request, pk):
     })
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("advances", action="edit")
 @require_POST
 @transaction.atomic
 def pay_advance(request, pk):
@@ -5918,7 +6131,7 @@ def pay_advance(request, pk):
     })
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("advances", action="edit")
 @require_POST
 @transaction.atomic
 def skip_advance_month(request, pk):
@@ -5962,7 +6175,7 @@ def skip_advance_month(request, pk):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("advances", action="edit")
 @require_POST
 def revert_skip_view(request, pk):
     adv = get_object_or_404(AdvanceMaster, pk=pk)
@@ -6135,7 +6348,7 @@ def payroll_run_detail(request, run_id):
     return render(request, "payroll/run_detail.html", {"run": run, "records": records, "settings": settings})
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("payroll", action="edit")
 @require_POST
 def payroll_record_update(request, record_id):
     record = get_object_or_404(PayrollRecord, id=record_id)
@@ -6190,7 +6403,7 @@ def payroll_record_update(request, record_id):
     })
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("payroll", action="edit")
 @require_POST
 def payroll_run_recalculate(request, run_id):
     run = get_object_or_404(PayrollRun, id=run_id)
@@ -6201,7 +6414,7 @@ def payroll_run_recalculate(request, run_id):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("payroll", action="edit")
 @require_POST
 def payroll_run_finalize(request, run_id):
     run = get_object_or_404(PayrollRun, id=run_id)
@@ -6334,6 +6547,8 @@ def salary_slip_view(request, record_id):
         id=record_id,
     )
     employee = record.employee
+    if not can_access_employee_record(request.user, employee, "payroll", "edit"):
+        raise PermissionDenied
     company  = record.payroll.company
 
     context = {
@@ -6410,13 +6625,9 @@ def login_view(request):
             if user.groups.filter(name__in=["Admin", "HR","Manager"]).exists():
                 return redirect("admin-dashboard")
 
-            # EMPLOYEE → Employee Detail Page
+            # EMPLOYEE → Employee Dashboard
             elif user.groups.filter(name="Employee").exists():
-                try:
-                    employee = Employee.objects.get(user=user)
-                    return redirect("employee_detail", pk=employee.id)
-                except Employee.DoesNotExist:
-                    return redirect("admin-dashboard")
+                return redirect("employee-dashboard")
 
             # fallback for users with no group assigned
             return redirect("admin-dashboard")
@@ -6438,7 +6649,7 @@ def logout_view(request):
 from django.contrib.auth.models import User, Group
 
 @login_required
-@group_required("Admin")
+@feature_required("user_accounts", action="edit")
 def create_user_view(request):
     if request.method == "POST":
         employee_id = request.POST.get("employee_id")
@@ -7437,7 +7648,7 @@ def api_earned_leaves_json(request):
 # ============================================================================
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("holiday_calendar", action="edit")
 @require_POST
 def create_holiday_type(request):
     name = request.POST.get("name", "").strip()
@@ -7464,7 +7675,7 @@ def create_holiday_type(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("holiday_calendar", action="edit")
 @require_POST
 def edit_holiday_type(request, type_id):
     ht = get_object_or_404(HolidayType, id=type_id)
@@ -7491,7 +7702,7 @@ def edit_holiday_type(request, type_id):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("holiday_calendar", action="edit")
 @require_POST
 def delete_holiday_type(request, type_id):
     ht = get_object_or_404(HolidayType, id=type_id)
@@ -7770,7 +7981,7 @@ def safe_str(val):
 # ─── Template download ────────────────────────────────────────────────────────
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("employee_records", action="view")
 def download_employee_import_template(request):
     import openpyxl
     from openpyxl.styles import Font, PatternFill
@@ -7816,7 +8027,7 @@ def download_employee_import_template(request):
 # ─── Main import view ─────────────────────────────────────────────────────────
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("employee_records", action="edit")
 def import_employees_excel(request):
     if not request.user.is_authenticated:
         return JsonResponse({"success": False, "error": "Not authenticated. Please log in."}, status=401)
@@ -8053,7 +8264,7 @@ def _do_import_employees(request):
 # ─── Salary Excel Import ──────────────────────────────────────────────────────
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("salary_structure", action="view")
 def download_salary_import_template(request):
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -8091,7 +8302,7 @@ def download_salary_import_template(request):
 
 
 @login_required
-@group_required("Admin", "HR")
+@feature_required("salary_structure", action="edit")
 def import_salary_excel(request):
     if request.method != "POST":
         return JsonResponse({"success": False, "error": "POST required"}, status=405)

@@ -539,19 +539,22 @@ function calculateSalary() {
   /* Special Allowance, unless manually edited: auto-fills the gap between
      Gross CTC and every other current component (so the total still lands
      on the entered Gross CTC target), using the same ESIC circular-
-     dependency algebra as before -- GC = (GrossCTC - PF(er)) / (1 + esic_pct%)
+     dependency algebra as before -- GC = (GrossCTC - PF(er) - Gratuity) / (1 + esic_pct%)
      -- but solved against the *current* Basic/HRA/Stat Bonus values, so a
-     manual edit to any of them is reflected in the auto-filled amount. */
+     manual edit to any of them is reflected in the auto-filled amount.
+     Gratuity is carved out of the Gross CTC budget here (like PF(er)) since
+     it's an employer cost too -- otherwise CTC (which adds Gratuity back on
+     below) would end up higher than the Gross CTC the user actually typed. */
   let specialAllowance;
   if (manualVal("specialAllowance")) {
     specialAllowance = num("specialAllowance");
   } else {
     let targetGuaranteedCash;
     if (esicEnabled) {
-      const gcWithEsic = (grossCTC - pfEr) / (1 + payrollSettings.esic_percentage / 100);
-      targetGuaranteedCash = gcWithEsic < 21000 ? gcWithEsic : (grossCTC - pfEr);
+      const gcWithEsic = (grossCTC - pfEr - gratuity) / (1 + payrollSettings.esic_percentage / 100);
+      targetGuaranteedCash = gcWithEsic < 21000 ? gcWithEsic : (grossCTC - pfEr - gratuity);
     } else {
-      targetGuaranteedCash = grossCTC - pfEr;
+      targetGuaranteedCash = grossCTC - pfEr - gratuity;
     }
     specialAllowance = Math.round(targetGuaranteedCash - basic - hra - statBonus - allowance1 - allowance2);
     if (specialAllowance < 0) specialAllowance = 0;
@@ -573,7 +576,12 @@ function calculateSalary() {
   const esicEr = manualVal("esicEr") ? num("esicEr") : esicErComputed;
   const esicEe = manualVal("esicEe") ? num("esicEe") : esicEr;
 
-  const costToCompany = Math.round(guaranteedCash + pfEr + esicEr);
+  /* CTC = Guaranteed Cash + both employer-side statutory costs (PF, ESIC)
+     + Gratuity -- Gratuity was previously left out of this total even
+     though it's carved out of the Gross CTC budget above, which meant CTC
+     never actually tallied back to the entered Gross CTC whenever Gratuity
+     was enabled. */
+  const costToCompany = Math.round(guaranteedCash + pfEr + esicEr + gratuity);
   const netSalary = Math.round(guaranteedCash - pfEe - esicEe - profTax);
 
   /* Write to UI. guaranteedCash and costToCompany are pure derived totals

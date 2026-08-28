@@ -56,6 +56,8 @@ FEATURES = [
      "has_view": False, "has_edit": True, "has_approve": False, "sort_order": 20},
     {"key": "admin_dashboard", "name": "Admin Dashboard", "category": "Administration",
      "has_view": True, "has_edit": False, "has_approve": False, "sort_order": 30},
+    {"key": "announcements", "name": "Announcements Management", "category": "Administration",
+     "has_view": True, "has_edit": True, "has_approve": False, "sort_order": 40},
 ]
 
 SYSTEM_ROLES = ("Admin", "HR", "Manager", "Employee")
@@ -95,4 +97,6 @@ SEED_GRANTS = {
     ("company_settings_broadcast", "edit"): ("Admin",),
     ("user_accounts", "edit"): ("Admin",),
     ("admin_dashboard", "view"): ("Admin", "HR"),
+    ("announcements", "view"): ("Admin", "HR"),
+    ("announcements", "edit"): ("Admin", "HR"),
 }

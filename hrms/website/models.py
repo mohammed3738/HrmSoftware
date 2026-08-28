@@ -1793,3 +1793,68 @@ class RoleFeaturePermission(models.Model):
         return f"{self.role.name} — {self.feature.name}"
 
 
+# ============================================
+# Announcements
+# ============================================
+
+class Announcement(models.Model):
+    """A company-wide (or all-companies) notice, shown to every role in the
+    notification bell and, for urgent ones, as a dashboard banner."""
+    PRIORITY_NORMAL = "normal"
+    PRIORITY_IMPORTANT = "important"
+    PRIORITY_URGENT = "urgent"
+    PRIORITY_CHOICES = [
+        (PRIORITY_NORMAL, "Normal"),
+        (PRIORITY_IMPORTANT, "Important"),
+        (PRIORITY_URGENT, "Urgent"),
+    ]
+
+    company = models.ForeignKey(
+        "Company", null=True, blank=True, on_delete=models.CASCADE, related_name="announcements",
+        help_text="Leave blank to show this announcement to every company.",
+    )
+    title = models.CharField(max_length=200)
+    body = models.TextField()
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default=PRIORITY_NORMAL)
+    is_active = models.BooleanField(default=True)
+
+    starts_at = models.DateTimeField(default=now)
+    expires_at = models.DateTimeField(
+        null=True, blank=True, help_text="Leave blank for an announcement that never expires on its own.",
+    )
+
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-starts_at", "-created_at"]
+
+    def __str__(self):
+        return self.title
+
+    def is_visible_now(self):
+        if not self.is_active:
+            return False
+        current = now()
+        if self.starts_at and self.starts_at > current:
+            return False
+        if self.expires_at and self.expires_at < current:
+            return False
+        return True
+
+    def is_visible_to_company(self, company):
+        return self.company_id is None or self.company_id == getattr(company, "id", company)
+
+
+class AnnouncementRead(models.Model):
+    """Tracks which user has seen which announcement, for the notification
+    bell's unread badge/state."""
+    announcement = models.ForeignKey(Announcement, on_delete=models.CASCADE, related_name="reads")
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="announcement_reads")
+    read_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("announcement", "user")
+
+

@@ -1,0 +1,243 @@
+{% extends "base2.html" %}
+{% load static %}
+
+{% block body %}
+<div class="container-xxl py-4">
+
+  <!-- Header -->
+  <div class="mb-4">
+    <h4 class="mb-0">Announcements</h4>
+    <small class="text-muted">Post company-wide notices — they'll appear in the notification bell and, if urgent, as a dashboard banner</small>
+  </div>
+
+  <div class="row g-4">
+
+    <!-- Left: Company filter + list -->
+    <div class="col-md-4">
+      <div class="card mb-3">
+        <div class="card-header py-2">
+          <h6 class="mb-0 fw-semibold small text-uppercase text-muted">Filter by Company</h6>
+        </div>
+        <div class="list-group list-group-flush">
+          <a href="?" class="list-group-item list-group-item-action {% if not selected_company %}active{% endif %}">
+            All Companies
+          </a>
+          {% for company in companies %}
+          <a href="?company_id={{ company.pk }}"
+             class="list-group-item list-group-item-action {% if selected_company.pk == company.pk %}active{% endif %}">
+            {{ company.name }}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+          <h6 class="mb-0 fw-semibold">Announcements</h6>
+          <button type="button" class="btn btn-sm btn-primary" id="newAnnouncementBtn">
+            <i class="ri-add-line me-1"></i>New
+          </button>
+        </div>
+        <div class="list-group list-group-flush" id="announcementList">
+          {% for a in announcements %}
+          <a href="#" class="list-group-item list-group-item-action announcement-row" data-id="{{ a.id }}"
+             data-title="{{ a.title }}" data-body="{{ a.body }}" data-priority="{{ a.priority }}"
+             data-company-id="{{ a.company_id|default:'' }}" data-is-active="{{ a.is_active|yesno:'1,0' }}"
+             data-expires-at="{{ a.expires_at|date:'Y-m-d\TH:i' }}">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div class="lh-sm">
+                <div class="fw-semibold small">
+                  {{ a.title }}
+                  {% if not a.is_active %}<span class="badge bg-label-secondary ms-1">Inactive</span>{% endif %}
+                </div>
+                <div class="text-muted" style="font-size:.72rem;">
+                  {{ a.company.name|default:"All Companies" }} · {{ a.created_at|date:"d M Y" }}
+                </div>
+              </div>
+              <span class="badge {% if a.priority == 'urgent' %}bg-danger{% elif a.priority == 'important' %}bg-warning text-dark{% else %}bg-label-primary{% endif %}" style="font-size:.65rem;">
+                {{ a.get_priority_display }}
+              </span>
+            </div>
+          </a>
+          {% empty %}
+          <div class="list-group-item text-muted small text-center py-4">No announcements yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Create/Edit form -->
+    <div class="col-md-8">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h6 class="mb-0 fw-semibold" id="formHeading">New Announcement</h6>
+          <button type="button" class="btn btn-sm btn-outline-danger d-none" id="deleteAnnouncementBtn">
+            <i class="ri-delete-bin-line me-1"></i>Delete
+          </button>
+        </div>
+        <div class="card-body">
+          <form id="announcementForm">
+            {% csrf_token %}
+            <input type="hidden" name="announcement_id" id="announcementId">
+
+            <div class="row g-3">
+              <div class="col-md-8">
+                <label class="form-label">Title</label>
+                <input type="text" class="form-control" name="title" id="title" required maxlength="200">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Priority</label>
+                <select class="form-select" name="priority" id="priority">
+                  {% for value, label in priority_choices %}
+                  <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div class="col-12">
+                <label class="form-label">Message</label>
+                <textarea class="form-control" name="body" id="body" rows="4" required></textarea>
+              </div>
+
+              <div class="col-md-6">
+                <label class="form-label">Company</label>
+                <select class="form-select" name="company_id" id="companyId">
+                  <option value="">All Companies</option>
+                  {% for company in companies %}
+                  <option value="{{ company.id }}">{{ company.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Expires At <span class="text-muted small">(optional)</span></label>
+                <input type="datetime-local" class="form-control" name="expires_at" id="expiresAt">
+              </div>
+
+              <div class="col-12">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" role="switch" id="isActive" name="is_active" checked>
+                  <label class="form-check-label" for="isActive">Active</label>
+                </div>
+                <small class="text-muted">Urgent + Active announcements also appear as a dashboard banner.</small>
+              </div>
+            </div>
+
+            <div class="d-flex justify-content-end gap-2 mt-4">
+              <button type="button" class="btn btn-outline-secondary" id="resetFormBtn">Clear</button>
+              <button type="submit" class="btn btn-primary" id="saveAnnouncementBtn">
+                <i class="ri-save-line me-1"></i>Save Announcement
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
+
+  function showSuccess(msg) {
+    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: msg, showConfirmButton: false, timer: 2500 });
+  }
+  function showError(msg) {
+    Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: msg, showConfirmButton: false, timer: 3500 });
+  }
+
+  const form = document.getElementById('announcementForm');
+  const formHeading = document.getElementById('formHeading');
+  const deleteBtn = document.getElementById('deleteAnnouncementBtn');
+
+  function resetForm() {
+    form.reset();
+    document.getElementById('announcementId').value = '';
+    document.getElementById('isActive').checked = true;
+    formHeading.textContent = 'New Announcement';
+    deleteBtn.classList.add('d-none');
+    document.querySelectorAll('.announcement-row').forEach(r => r.classList.remove('active'));
+  }
+
+  document.getElementById('newAnnouncementBtn').addEventListener('click', resetForm);
+  document.getElementById('resetFormBtn').addEventListener('click', resetForm);
+
+  document.querySelectorAll('.announcement-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      e.preventDefault();
+      document.querySelectorAll('.announcement-row').forEach(r => r.classList.remove('active'));
+      row.classList.add('active');
+
+      document.getElementById('announcementId').value = row.dataset.id;
+      document.getElementById('title').value = row.dataset.title;
+      document.getElementById('body').value = row.dataset.body;
+      document.getElementById('priority').value = row.dataset.priority;
+      document.getElementById('companyId').value = row.dataset.companyId || '';
+      document.getElementById('isActive').checked = row.dataset.isActive === '1';
+      document.getElementById('expiresAt').value = row.dataset.expiresAt || '';
+      formHeading.textContent = 'Edit Announcement';
+      deleteBtn.classList.remove('d-none');
+    });
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('saveAnnouncementBtn');
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+
+    const fd = new FormData(form);
+    fd.set('is_active', document.getElementById('isActive').checked ? 'on' : '');
+    fd.set('csrfmiddlewaretoken', CSRF);
+
+    try {
+      const res = await fetch("{% url 'save-announcement' %}", { method: 'POST', body: fd, headers: { 'X-CSRFToken': CSRF } });
+      const data = await res.json();
+      if (data.success) {
+        showSuccess('Announcement saved.');
+        setTimeout(() => window.location.reload(), 800);
+      } else {
+        showError(data.error || 'Failed to save.');
+      }
+    } catch (err) {
+      console.error(err);
+      showError('Server error. Please try again.');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    }
+  });
+
+  deleteBtn.addEventListener('click', async () => {
+    const id = document.getElementById('announcementId').value;
+    if (!id) return;
+    const result = await Swal.fire({
+      title: 'Delete this announcement?',
+      text: 'This cannot be undone.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      confirmButtonText: 'Delete',
+    });
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(`/announcements/${id}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': CSRF } });
+      const data = await res.json();
+      if (data.success) {
+        showSuccess('Announcement deleted.');
+        setTimeout(() => window.location.reload(), 600);
+      } else {
+        showError(data.error || 'Failed to delete.');
+      }
+    } catch (err) {
+      console.error(err);
+      showError('Server error. Please try again.');
+    }
+  });
+});
+</script>
+
+{% endblock %}

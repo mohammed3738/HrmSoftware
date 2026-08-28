@@ -128,6 +128,12 @@ urlpatterns = [
     path('settings/roles-permissions/reassign-user/', views.reassign_user_role, name='reassign-user-role'),
     path('settings/hub/broadcast/', views.broadcast_settings_to_all_companies, name='broadcast-settings'),
 
+    path('announcements/', views.announcements_hub, name='announcements-hub'),
+    path('announcements/save/', views.save_announcement, name='save-announcement'),
+    path('announcements/<int:pk>/delete/', views.delete_announcement, name='delete-announcement'),
+    path('announcements/api/', views.announcements_api, name='announcements-api'),
+    path('announcements/mark-read/', views.mark_announcement_read, name='mark-announcement-read'),
+
     path("leave-credit-policy/", views.leave_credit_policy_view, name="leave_credit_policy"),
     path("leave-apply/", views.leave_apply_view, name="leave_apply"),
     path("approve-leave/<int:leave_id>/", views.approve_leave, name="approve_leave"),

@@ -329,16 +329,18 @@
                     aria-expanded="false">
                     <i class="ri-notification-2-line ri-22px"></i>
                     <span
-                      class="position-absolute top-0 start-50 translate-middle-y badge badge-dot bg-danger mt-2 border"></span>
+                      id="announcementBellDot"
+                      class="position-absolute top-0 start-50 translate-middle-y badge badge-dot bg-danger mt-2 border d-none"></span>
                   </a>
                   <ul class="dropdown-menu dropdown-menu-end py-0">
                     <li class="dropdown-menu-header border-bottom py-50">
                       <div class="dropdown-header d-flex align-items-center py-2">
-                        <h6 class="mb-0 me-auto">Notification</h6>
+                        <h6 class="mb-0 me-auto">Announcements</h6>
                         <div class="d-flex align-items-center">
-                          <span class="badge rounded-pill bg-label-primary fs-xsmall me-2">8 New</span>
+                          <span id="announcementUnreadBadge" class="badge rounded-pill bg-label-primary fs-xsmall me-2 d-none"></span>
                           <a
                             href="javascript:void(0)"
+                            id="markAllAnnouncementsReadBtn"
                             class="btn btn-text-secondary rounded-pill btn-icon dropdown-notifications-all"
                             data-bs-toggle="tooltip"
                             data-bs-placement="top"
@@ -349,227 +351,96 @@
                       </div>
                     </li>
                     <li class="dropdown-notifications-list scrollable-container">
-                      <ul class="list-group list-group-flush">
-                        <li class="list-group-item list-group-item-action dropdown-notifications-item">
-                          <div class="d-flex">
-                            <div class="flex-shrink-0 me-3">
-                              <div class="avatar">
-                                <img src="../../assets/img/avatars/1.png" alt class="rounded-circle" />
-                              </div>
-                            </div>
-                            <div class="flex-grow-1">
-                              <h6 class="small mb-1">Congratulation Lettie 🎉</h6>
-                              <small class="mb-1 d-block text-body">Won the monthly best seller gold badge</small>
-                              <small class="text-muted">1h ago</small>
-                            </div>
-                            <div class="flex-shrink-0 dropdown-notifications-actions">
-                              <a href="javascript:void(0)" class="dropdown-notifications-read"
-                                ><span class="badge badge-dot"></span
-                              ></a>
-                              <a href="javascript:void(0)" class="dropdown-notifications-archive"
-                                ><span class="ri-close-line ri-20px"></span
-                              ></a>
-                            </div>
-                          </div>
-                        </li>
-                        <li class="list-group-item list-group-item-action dropdown-notifications-item">
-                          <div class="d-flex">
-                            <div class="flex-shrink-0 me-3">
-                              <div class="avatar">
-                                <span class="avatar-initial rounded-circle bg-label-danger">CF</span>
-                              </div>
-                            </div>
-                            <div class="flex-grow-1">
-                              <h6 class="mb-1 small">Charles Franklin</h6>
-                              <small class="mb-1 d-block text-body">Accepted your connection</small>
-                              <small class="text-muted">12hr ago</small>
-                            </div>
-                            <div class="flex-shrink-0 dropdown-notifications-actions">
-                              <a href="javascript:void(0)" class="dropdown-notifications-read"
-                                ><span class="badge badge-dot"></span
-                              ></a>
-                              <a href="javascript:void(0)" class="dropdown-notifications-archive"
-                                ><span class="ri-close-line ri-20px"></span
-                              ></a>
-                            </div>
-                          </div>
-                        </li>
-                        <li class="list-group-item list-group-item-action dropdown-notifications-item marked-as-read">
-                          <div class="d-flex">
-                            <div class="flex-shrink-0 me-3">
-                              <div class="avatar">
-                                <img src="../../assets/img/avatars/2.png" alt class="rounded-circle" />
-                              </div>
-                            </div>
-                            <div class="flex-grow-1">
-                              <h6 class="mb-1 small">New Message ✉️</h6>
-                              <small class="mb-1 d-block text-body">You have new message from Natalie</small>
-                              <small class="text-muted">1h ago</small>
-                            </div>
-                            <div class="flex-shrink-0 dropdown-notifications-actions">
-                              <a href="javascript:void(0)" class="dropdown-notifications-read"
-                                ><span class="badge badge-dot"></span
-                              ></a>
-                              <a href="javascript:void(0)" class="dropdown-notifications-archive"
-                                ><span class="ri-close-line ri-20px"></span
-                              ></a>
-                            </div>
-                          </div>
-                        </li>
-                        <li class="list-group-item list-group-item-action dropdown-notifications-item">
-                          <div class="d-flex">
-                            <div class="flex-shrink-0 me-3">
-                              <div class="avatar">
-                                <span class="avatar-initial rounded-circle bg-label-success"
-                                  ><i class="ri-shopping-cart-2-line"></i
-                                ></span>
-                              </div>
-                            </div>
-                            <div class="flex-grow-1">
-                              <h6 class="mb-1 small">Whoo! You have new order 🛒</h6>
-                              <small class="mb-1 d-block text-body">ACME Inc. made new order $1,154</small>
-                              <small class="text-muted">1 day ago</small>
-                            </div>
-                            <div class="flex-shrink-0 dropdown-notifications-actions">
-                              <a href="javascript:void(0)" class="dropdown-notifications-read"
-                                ><span class="badge badge-dot"></span
-                              ></a>
-                              <a href="javascript:void(0)" class="dropdown-notifications-archive"
-                                ><span class="ri-close-line ri-20px"></span
-                              ></a>
-                            </div>
-                          </div>
-                        </li>
-                        <li class="list-group-item list-group-item-action dropdown-notifications-item marked-as-read">
-                          <div class="d-flex">
-                            <div class="flex-shrink-0 me-3">
-                              <div class="avatar">
-                                <img src="../../assets/img/avatars/9.png" alt class="rounded-circle" />
-                              </div>
-                            </div>
-                            <div class="flex-grow-1">
-                              <h6 class="mb-1 small">Application has been approved 🚀</h6>
-                              <small class="mb-1 d-block text-body"
-                                >Your ABC project application has been approved.</small
-                              >
-                              <small class="text-muted">2 days ago</small>
-                            </div>
-                            <div class="flex-shrink-0 dropdown-notifications-actions">
-                              <a href="javascript:void(0)" class="dropdown-notifications-read"
-                                ><span class="badge badge-dot"></span
-                              ></a>
-                              <a href="javascript:void(0)" class="dropdown-notifications-archive"
-                                ><span class="ri-close-line ri-20px"></span
-                              ></a>
-                            </div>
-                          </div>
-                        </li>
-                        <li class="list-group-item list-group-item-action dropdown-notifications-item marked-as-read">
-                          <div class="d-flex">
-                            <div class="flex-shrink-0 me-3">
-                              <div class="avatar">
-                                <span class="avatar-initial rounded-circle bg-label-success"
-                                  ><i class="ri-pie-chart-2-line"></i
-                                ></span>
-                              </div>
-                            </div>
-                            <div class="flex-grow-1">
-                              <h6 class="mb-1 small">Monthly report is generated</h6>
-                              <small class="mb-1 d-block text-body">July monthly financial report is generated </small>
-                              <small class="text-muted">3 days ago</small>
-                            </div>
-                            <div class="flex-shrink-0 dropdown-notifications-actions">
-                              <a href="javascript:void(0)" class="dropdown-notifications-read"
-                                ><span class="badge badge-dot"></span
-                              ></a>
-                              <a href="javascript:void(0)" class="dropdown-notifications-archive"
-                                ><span class="ri-close-line ri-20px"></span
-                              ></a>
-                            </div>
-                          </div>
-                        </li>
-                        <li class="list-group-item list-group-item-action dropdown-notifications-item marked-as-read">
-                          <div class="d-flex">
-                            <div class="flex-shrink-0 me-3">
-                              <div class="avatar">
-                                <img src="../../assets/img/avatars/5.png" alt class="rounded-circle" />
-                              </div>
-                            </div>
-                            <div class="flex-grow-1">
-                              <h6 class="mb-1 small">Send connection request</h6>
-                              <small class="mb-1 d-block text-body">Peter sent you connection request</small>
-                              <small class="text-muted">4 days ago</small>
-                            </div>
-                            <div class="flex-shrink-0 dropdown-notifications-actions">
-                              <a href="javascript:void(0)" class="dropdown-notifications-read"
-                                ><span class="badge badge-dot"></span
-                              ></a>
-                              <a href="javascript:void(0)" class="dropdown-notifications-archive"
-                                ><span class="ri-close-line ri-20px"></span
-                              ></a>
-                            </div>
-                          </div>
-                        </li>
-                        <li class="list-group-item list-group-item-action dropdown-notifications-item">
-                          <div class="d-flex">
-                            <div class="flex-shrink-0 me-3">
-                              <div class="avatar">
-                                <img src="../../assets/img/avatars/6.png" alt class="rounded-circle" />
-                              </div>
-                            </div>
-                            <div class="flex-grow-1">
-                              <h6 class="mb-1 small">New message from Jane</h6>
-                              <small class="mb-1 d-block text-body">Your have new message from Jane</small>
-                              <small class="text-muted">5 days ago</small>
-                            </div>
-                            <div class="flex-shrink-0 dropdown-notifications-actions">
-                              <a href="javascript:void(0)" class="dropdown-notifications-read"
-                                ><span class="badge badge-dot"></span
-                              ></a>
-                              <a href="javascript:void(0)" class="dropdown-notifications-archive"
-                                ><span class="ri-close-line ri-20px"></span
-                              ></a>
-                            </div>
-                          </div>
-                        </li>
-                        <li class="list-group-item list-group-item-action dropdown-notifications-item marked-as-read">
-                          <div class="d-flex">
-                            <div class="flex-shrink-0 me-3">
-                              <div class="avatar">
-                                <span class="avatar-initial rounded-circle bg-label-warning"
-                                  ><i class="ri-error-warning-line"></i
-                                ></span>
-                              </div>
-                            </div>
-                            <div class="flex-grow-1">
-                              <h6 class="mb-1 small">CPU is running high</h6>
-                              <small class="mb-1 d-block text-body"
-                                >CPU Utilization Percent is currently at 88.63%,</small
-                              >
-                              <small class="text-muted">5 days ago</small>
-                            </div>
-                            <div class="flex-shrink-0 dropdown-notifications-actions">
-                              <a href="javascript:void(0)" class="dropdown-notifications-read"
-                                ><span class="badge badge-dot"></span
-                              ></a>
-                              <a href="javascript:void(0)" class="dropdown-notifications-archive"
-                                ><span class="ri-close-line ri-20px"></span
-                              ></a>
-                            </div>
-                          </div>
-                        </li>
+                      <ul class="list-group list-group-flush" id="announcementDropdownList">
+                        <li class="list-group-item text-muted small text-center py-4">No announcements yet.</li>
                       </ul>
                     </li>
+                    {% if request.user|has_feature:"announcements:edit" %}
                     <li class="border-top">
                       <div class="d-grid p-4">
-                        <a class="btn btn-primary btn-sm d-flex" href="javascript:void(0);">
-                          <small class="align-middle">View all notifications</small>
+                        <a class="btn btn-primary btn-sm d-flex" href="{% url 'announcements-hub' %}">
+                          <small class="align-middle">Manage announcements</small>
                         </a>
                       </div>
                     </li>
+                    {% endif %}
                   </ul>
                 </li>
                 <!--/ Notification -->
+
+                <script>
+                (function () {
+                  var priorityIcon = { urgent: ['ri-alarm-warning-line', 'bg-label-danger'], important: ['ri-error-warning-line', 'bg-label-warning'], normal: ['ri-notification-3-line', 'bg-label-primary'] };
+                  var listEl = document.getElementById('announcementDropdownList');
+                  var dotEl = document.getElementById('announcementBellDot');
+                  var badgeEl = document.getElementById('announcementUnreadBadge');
+                  var csrfEl = document.querySelector('input[name=csrfmiddlewaretoken]');
+                  var CSRF = csrfEl ? csrfEl.value : '{{ csrf_token }}';
+
+                  function escapeHtml(s) {
+                    return String(s).replace(/[&<>"']/g, function (c) {
+                      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                    });
+                  }
+
+                  function render(data) {
+                    var items = data.announcements || [];
+                    if (!items.length) {
+                      listEl.innerHTML = '<li class="list-group-item text-muted small text-center py-4">No announcements yet.</li>';
+                    } else {
+                      listEl.innerHTML = items.map(function (a) {
+                        var icon = priorityIcon[a.priority] || priorityIcon.normal;
+                        return '<li class="list-group-item list-group-item-action dropdown-notifications-item' + (a.is_read ? ' marked-as-read' : '') + '" data-id="' + a.id + '">' +
+                          '<div class="d-flex">' +
+                          '<div class="flex-shrink-0 me-3"><div class="avatar"><span class="avatar-initial rounded-circle ' + icon[1] + '"><i class="' + icon[0] + '"></i></span></div></div>' +
+                          '<div class="flex-grow-1">' +
+                          '<h6 class="small mb-1">' + escapeHtml(a.title) + '</h6>' +
+                          '<small class="mb-1 d-block text-body">' + escapeHtml(a.body) + '</small>' +
+                          '<small class="text-muted">' + escapeHtml(a.created_at) + '</small>' +
+                          '</div>' +
+                          (a.is_read ? '' : '<div class="flex-shrink-0 dropdown-notifications-actions"><a href="javascript:void(0)" class="ann-mark-read" title="Mark as read"><span class="badge badge-dot"></span></a></div>') +
+                          '</div></li>';
+                      }).join('');
+                    }
+
+                    if (data.unread_count > 0) {
+                      dotEl.classList.remove('d-none');
+                      badgeEl.textContent = data.unread_count + ' New';
+                      badgeEl.classList.remove('d-none');
+                    } else {
+                      dotEl.classList.add('d-none');
+                      badgeEl.classList.add('d-none');
+                    }
+
+                    listEl.querySelectorAll('.ann-mark-read').forEach(function (btn) {
+                      btn.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        var li = btn.closest('li[data-id]');
+                        markRead(li.dataset.id).then(loadAnnouncements);
+                      });
+                    });
+                  }
+
+                  function loadAnnouncements() {
+                    fetch("{% url 'announcements-api' %}").then(function (r) { return r.json(); }).then(render).catch(function () {});
+                  }
+
+                  function markRead(id) {
+                    var fd = new FormData();
+                    if (id) fd.set('announcement_id', id);
+                    return fetch("{% url 'mark-announcement-read' %}", { method: 'POST', body: fd, headers: { 'X-CSRFToken': CSRF } });
+                  }
+
+                  var markAllBtn = document.getElementById('markAllAnnouncementsReadBtn');
+                  if (markAllBtn) {
+                    markAllBtn.addEventListener('click', function () {
+                      markRead(null).then(loadAnnouncements);
+                    });
+                  }
+
+                  loadAnnouncements();
+                })();
+                </script>
 
                 <!-- User -->
                 <li class="nav-item navbar-dropdown dropdown-user dropdown">
@@ -940,6 +811,16 @@
                     <a href="{% url 'roles-permissions-hub' %}" class="menu-link">
                       <i class="menu-icon tf-icons ri-shield-user-line"></i>
                       <div>Roles &amp; Permissions</div>
+                    </a>
+                  </li>
+                  {% endif %}
+
+                  {% if request.user|has_feature:"announcements:edit" %}
+                  <!-- Announcements -->
+                  <li class="menu-item">
+                    <a href="{% url 'announcements-hub' %}" class="menu-link">
+                      <i class="menu-icon tf-icons ri-megaphone-line"></i>
+                      <div>Announcements</div>
                     </a>
                   </li>
                   {% endif %}

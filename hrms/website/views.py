@@ -5949,6 +5949,130 @@ def reassign_user_role(request):
     return JsonResponse({"success": True, "role_name": group.name})
 
 
+def _visible_announcements_for_user(user):
+    """Active announcements this user should see: their own company's, plus
+    any 'all companies' ones. A global user (Admin/HR/Manager, or
+    superuser/staff) with no linked Employee sees everything active;
+    anyone else with no company link sees nothing. Does NOT yet filter by
+    the start/expiry date window -- callers should also check
+    announcement.is_visible_now() per row."""
+    user_company = get_user_company(user)
+    qs = Announcement.objects.filter(is_active=True).select_related("company")
+    if user_company:
+        return qs.filter(Q(company=user_company) | Q(company__isnull=True))
+    if user_has_global_access(user):
+        return qs
+    return qs.none()
+
+
+@login_required
+@feature_required("announcements", action="view")
+def announcements_hub(request):
+    """Admin/HR management page: create, edit, and deactivate/delete
+    announcements. Reading announcements themselves (the notification bell,
+    dashboard banners) is open to every role -- only managing them is
+    gated."""
+    companies = Company.objects.filter(status="active").order_by("name")
+    company_id = request.GET.get("company_id")
+    selected_company = companies.filter(id=company_id).first() if company_id else None
+
+    qs = Announcement.objects.select_related("company", "created_by")
+    if selected_company:
+        qs = qs.filter(Q(company=selected_company) | Q(company__isnull=True))
+
+    return render(request, "announcements/hub.html", {
+        "companies": companies,
+        "selected_company": selected_company,
+        "announcements": qs,
+        "priority_choices": Announcement.PRIORITY_CHOICES,
+    })
+
+
+@login_required
+@feature_required("announcements", action="edit")
+@require_http_methods(["POST"])
+def save_announcement(request):
+    announcement_id = request.POST.get("announcement_id")
+    company_id = request.POST.get("company_id")  # blank = all companies
+    title = (request.POST.get("title") or "").strip()
+    body = (request.POST.get("body") or "").strip()
+    priority = request.POST.get("priority") or Announcement.PRIORITY_NORMAL
+    is_active = request.POST.get("is_active") == "on"
+    expires_at_raw = (request.POST.get("expires_at") or "").strip()
+
+    if not title or not body:
+        return JsonResponse({"success": False, "error": "Title and message are required."}, status=400)
+    if priority not in dict(Announcement.PRIORITY_CHOICES):
+        return JsonResponse({"success": False, "error": "Invalid priority."}, status=400)
+
+    from django.utils.dateparse import parse_datetime
+    expires_at = parse_datetime(expires_at_raw) if expires_at_raw else None
+    if expires_at_raw and expires_at is None:
+        return JsonResponse({"success": False, "error": "Invalid expiry date/time."}, status=400)
+
+    if announcement_id:
+        announcement = get_object_or_404(Announcement, pk=announcement_id)
+    else:
+        announcement = Announcement(created_by=request.user)
+
+    announcement.company = Company.objects.filter(id=company_id).first() if company_id else None
+    announcement.title = title
+    announcement.body = body
+    announcement.priority = priority
+    announcement.is_active = is_active
+    announcement.expires_at = expires_at
+    announcement.save()
+
+    return JsonResponse({"success": True, "announcement_id": announcement.id})
+
+
+@login_required
+@feature_required("announcements", action="edit")
+@require_http_methods(["POST"])
+def delete_announcement(request, pk):
+    announcement = get_object_or_404(Announcement, pk=pk)
+    announcement.delete()
+    return JsonResponse({"success": True})
+
+
+@login_required
+def announcements_api(request):
+    """Currently-visible announcements for the logged-in user, each flagged
+    is_read, for the notification bell dropdown. Open to every role --
+    reading announcements isn't a managed permission, only creating them is."""
+    visible = [a for a in _visible_announcements_for_user(request.user) if a.is_visible_now()]
+    read_ids = set(
+        AnnouncementRead.objects.filter(user=request.user, announcement__in=visible)
+        .values_list("announcement_id", flat=True)
+    )
+    data = [{
+        "id": a.id,
+        "title": a.title,
+        "body": a.body,
+        "priority": a.priority,
+        "created_at": a.created_at.strftime("%d %b %Y, %I:%M %p"),
+        "is_read": a.id in read_ids,
+    } for a in visible]
+    return JsonResponse({"announcements": data, "unread_count": sum(1 for d in data if not d["is_read"])})
+
+
+@login_required
+@require_http_methods(["POST"])
+def mark_announcement_read(request):
+    """Mark one announcement (announcement_id in POST) read, or every
+    currently-visible one if announcement_id is omitted (bell's 'Mark all
+    as read')."""
+    announcement_id = request.POST.get("announcement_id")
+    if announcement_id:
+        get_object_or_404(Announcement, pk=announcement_id)
+        AnnouncementRead.objects.get_or_create(announcement_id=announcement_id, user=request.user)
+    else:
+        visible = [a for a in _visible_announcements_for_user(request.user) if a.is_visible_now()]
+        for a in visible:
+            AnnouncementRead.objects.get_or_create(announcement=a, user=request.user)
+    return JsonResponse({"success": True})
+
+
 @login_required
 @feature_required("company_settings_broadcast", action="edit")
 @require_http_methods(["POST"])

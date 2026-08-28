@@ -1,0 +1,54 @@
+<div id="announcementBannerArea"></div>
+
+<script>
+(function () {
+  var area = document.getElementById('announcementBannerArea');
+  if (!area) return;
+  var csrfEl = document.querySelector('input[name=csrfmiddlewaretoken]');
+  var CSRF = csrfEl ? csrfEl.value : '{{ csrf_token }}';
+  var priorityClass = { urgent: 'alert-danger', important: 'alert-warning' };
+  var priorityIcon = { urgent: 'ri-alarm-warning-line', important: 'ri-error-warning-line' };
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function markRead(id) {
+    var fd = new FormData();
+    fd.set('announcement_id', id);
+    return fetch("{% url 'mark-announcement-read' %}", { method: 'POST', body: fd, headers: { 'X-CSRFToken': CSRF } });
+  }
+
+  fetch("{% url 'announcements-api' %}")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var items = (data.announcements || []).filter(function (a) {
+        return !a.is_read && (a.priority === 'urgent' || a.priority === 'important');
+      });
+      if (!items.length) return;
+
+      area.innerHTML = items.map(function (a) {
+        var cls = priorityClass[a.priority] || 'alert-primary';
+        var icon = priorityIcon[a.priority] || 'ri-notification-3-line';
+        return '<div class="alert ' + cls + ' alert-dismissible d-flex align-items-start mb-4" role="alert" data-id="' + a.id + '">' +
+          '<i class="' + icon + ' ri-22px me-2 mt-1"></i>' +
+          '<div class="flex-grow-1">' +
+          '<h6 class="alert-heading mb-1">' + escapeHtml(a.title) + '</h6>' +
+          '<div class="mb-0">' + escapeHtml(a.body) + '</div>' +
+          '</div>' +
+          '<button type="button" class="btn-close ann-banner-dismiss" data-bs-dismiss="alert" aria-label="Close"></button>' +
+          '</div>';
+      }).join('');
+
+      area.querySelectorAll('.ann-banner-dismiss').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var wrapper = btn.closest('[data-id]');
+          markRead(wrapper.dataset.id);
+        });
+      });
+    })
+    .catch(function () {});
+})();
+</script>

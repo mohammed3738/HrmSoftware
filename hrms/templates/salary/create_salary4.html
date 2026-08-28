@@ -485,6 +485,10 @@ async function loadPayrollSettings() {
 /* =====================================================
    MAIN CALCULATION
 ===================================================== */
+function manualVal(id) {
+  return document.getElementById(id)?.dataset.manual === "true";
+}
+
 function calculateSalary() {
   const grossCTC = num("grossCTC");
   if (!grossCTC) return; // Don't calculate if no CTC entered
@@ -505,65 +509,68 @@ function calculateSalary() {
     if (profTaxEl) profTaxEl.value = profTax ? profTax.toFixed(2) : "";
   }
 
-  /* Basic = MIN(GrossCTC × basic_pct%, basic_cap) */
-  let basic;
-  if (document.getElementById("basic").dataset.manual === "true") {
-    basic = num("basic");
-  } else {
-    basic = Math.min(
-      grossCTC * payrollSettings.basic_percentage / 100,
-      payrollSettings.basic_cap
-    );
-  }
+  /* Basic = MIN(GrossCTC × basic_pct%, basic_cap), unless manually edited */
+  const basic = manualVal("basic")
+    ? num("basic")
+    : Math.min(grossCTC * payrollSettings.basic_percentage / 100, payrollSettings.basic_cap);
 
-  /* HRA = Basic × hra_pct% */
-  let hra;
-  if (document.getElementById("hra").dataset.manual === "true") {
-    hra = num("hra");
-  } else {
-    hra = basic * payrollSettings.hra_percentage / 100;
-  }
+  /* HRA = Basic × hra_pct%, unless manually edited */
+  const hra = manualVal("hra") ? num("hra") : basic * payrollSettings.hra_percentage / 100;
 
-  /* Stat Bonus = IF(Basic < basic_cap, ROUND(7000 × bonus_pct%, 0), 0) */
-  const statBonus = basic < payrollSettings.basic_cap
-    ? Math.round(7000 * payrollSettings.bonus_percentage / 100)
-    : 0;
+  /* Stat Bonus = IF(Basic < basic_cap, ROUND(7000 × bonus_pct%, 0), 0),
+     unless manually edited -- previously this ignored manual edits for the
+     purposes of downstream math (only the on-screen value was protected),
+     which is why editing Stat Bonus never moved Guaranteed Cash. */
+  const statBonus = manualVal("statBonus")
+    ? num("statBonus")
+    : (basic < payrollSettings.basic_cap ? Math.round(7000 * payrollSettings.bonus_percentage / 100) : 0);
 
-  /* PF(er) = IF(pfEnabled, MIN(Basic, pf_wage_ceiling) × pf_pct%, 0) */
+  /* PF(er)/(ee), unless manually edited */
   const pfWage = Math.min(basic, payrollSettings.pf_wage_ceiling);
-  const pfEr = pfEnabled
-    ? pfWage * payrollSettings.pf_percentage / 100
-    : 0;
-  const pfEe = pfEr;
+  const pfErComputed = pfEnabled ? pfWage * payrollSettings.pf_percentage / 100 : 0;
+  const pfEr = manualVal("pfEr") ? num("pfEr") : pfErComputed;
+  const pfEe = manualVal("pfEe") ? num("pfEe") : pfEr;
 
-  /* Gratuity */
-  const gratuity = gratuityEnabled
-    ? Math.round(basic * payrollSettings.gratuity_percentage / 100)
-    : 0;
+  /* Gratuity, unless manually edited */
+  const gratuityComputed = gratuityEnabled ? Math.round(basic * payrollSettings.gratuity_percentage / 100) : 0;
+  const gratuity = manualVal("gratuity") ? num("gratuity") : gratuityComputed;
 
-  /* ESIC circular dependency — solved algebraically:
-     GC = GrossCTC - PF(er) - ESIC(er)
-     ESIC(er) = GC × esic_pct%
-     => GC = (GrossCTC - PF(er)) / (1 + esic_pct%) */
-  let esicEr, esicEe, guaranteedCash, specialAllowance;
-
-  if (esicEnabled) {
-    const gcWithEsic = (grossCTC - pfEr) / (1 + payrollSettings.esic_percentage / 100);
-    if (gcWithEsic < 21000) {
-      guaranteedCash = gcWithEsic;
-      esicEr = guaranteedCash * payrollSettings.esic_percentage / 100;
-      esicEe = esicEr;
-    } else {
-      esicEr = esicEe = 0;
-      guaranteedCash = grossCTC - pfEr;
-    }
+  /* Special Allowance, unless manually edited: auto-fills the gap between
+     Gross CTC and every other current component (so the total still lands
+     on the entered Gross CTC target), using the same ESIC circular-
+     dependency algebra as before -- GC = (GrossCTC - PF(er)) / (1 + esic_pct%)
+     -- but solved against the *current* Basic/HRA/Stat Bonus values, so a
+     manual edit to any of them is reflected in the auto-filled amount. */
+  let specialAllowance;
+  if (manualVal("specialAllowance")) {
+    specialAllowance = num("specialAllowance");
   } else {
-    esicEr = esicEe = 0;
-    guaranteedCash = grossCTC - pfEr;
+    let targetGuaranteedCash;
+    if (esicEnabled) {
+      const gcWithEsic = (grossCTC - pfEr) / (1 + payrollSettings.esic_percentage / 100);
+      targetGuaranteedCash = gcWithEsic < 21000 ? gcWithEsic : (grossCTC - pfEr);
+    } else {
+      targetGuaranteedCash = grossCTC - pfEr;
+    }
+    specialAllowance = targetGuaranteedCash - basic - hra - statBonus - allowance1 - allowance2;
+    if (specialAllowance < 0) specialAllowance = 0;
   }
 
-  specialAllowance = guaranteedCash - basic - hra - statBonus - allowance1 - allowance2;
-  if (specialAllowance < 0) specialAllowance = 0;
+  /* Guaranteed Cash is a pure derived total: the live sum of the earning
+     components above (whichever are auto-calculated vs. manually edited),
+     so it updates immediately when Basic/HRA/Stat Bonus/Special Allowance
+     change instead of staying pinned to a one-time Gross-CTC-based formula
+     that never referenced those fields. */
+  const guaranteedCash = basic + hra + statBonus + specialAllowance + allowance1 + allowance2;
+
+  /* ESIC(er)/(ee), unless manually edited -- recomputed from the live
+     Guaranteed Cash above (statutory % of guaranteed wages) rather than
+     solved only once from Gross CTC. */
+  const esicErComputed = (esicEnabled && guaranteedCash < 21000)
+    ? guaranteedCash * payrollSettings.esic_percentage / 100
+    : 0;
+  const esicEr = manualVal("esicEr") ? num("esicEr") : esicErComputed;
+  const esicEe = manualVal("esicEe") ? num("esicEe") : esicEr;
 
   const costToCompany = guaranteedCash + pfEr + esicEr;
   const netSalary = guaranteedCash - pfEe - esicEe - profTax;

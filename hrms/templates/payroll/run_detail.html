@@ -175,16 +175,16 @@
             <td>{{ r.branch_name }}</td>
             <td class="text-nowrap">{{ r.date_of_joining|date:"d M Y" }}</td>
 
-            <td class="text-end">{{ r.gross_ctc }}</td>
+            <td class="text-end">{{ r.gross_ctc|floatformat:0 }}</td>
             <td class="text-center">
               {% if r.opted_for_pf %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-label-secondary">No</span>{% endif %}
             </td>
-            <td class="text-end">{{ r.basic_pm }}</td>
-            <td class="text-end">{{ r.hra_pm }}</td>
-            <td class="text-end">{{ r.sp_allowance_pm }}</td>
-            <td class="text-end">{{ r.stat_bonus_pm }}</td>
-            <td class="text-end">{{ r.allowance1_pm }}</td>
-            <td class="text-end">{{ r.allowance2_pm }}</td>
+            <td class="text-end">{{ r.basic_pm|floatformat:0 }}</td>
+            <td class="text-end">{{ r.hra_pm|floatformat:0 }}</td>
+            <td class="text-end">{{ r.sp_allowance_pm|floatformat:0 }}</td>
+            <td class="text-end">{{ r.stat_bonus_pm|floatformat:0 }}</td>
+            <td class="text-end">{{ r.allowance1_pm|floatformat:0 }}</td>
+            <td class="text-end">{{ r.allowance2_pm|floatformat:0 }}</td>
 
             <td class="text-center">{{ r.total_days }}</td>
             <td class="text-center">
@@ -199,32 +199,32 @@
               {% else %}{{ r.leave_without_pay }}{% endif %}
             </td>
 
-            <td class="text-end basic-proc">{{ r.basic_processed }}</td>
-            <td class="text-end hra-proc">{{ r.hra_processed }}</td>
-            <td class="text-end sp-proc">{{ r.sp_allowance_processed }}</td>
-            <td class="text-end stat-proc">{{ r.stat_bonus_processed }}</td>
-            <td class="text-end a1-proc">{{ r.allowance1_processed }}</td>
-            <td class="text-end a2-proc">{{ r.allowance2_processed }}</td>
-            <td class="text-end gross-proc fw-semibold">{{ r.gross_processed }}</td>
+            <td class="text-end basic-proc">{{ r.basic_processed|floatformat:0 }}</td>
+            <td class="text-end hra-proc">{{ r.hra_processed|floatformat:0 }}</td>
+            <td class="text-end sp-proc">{{ r.sp_allowance_processed|floatformat:0 }}</td>
+            <td class="text-end stat-proc">{{ r.stat_bonus_processed|floatformat:0 }}</td>
+            <td class="text-end a1-proc">{{ r.allowance1_processed|floatformat:0 }}</td>
+            <td class="text-end a2-proc">{{ r.allowance2_processed|floatformat:0 }}</td>
+            <td class="text-end gross-proc fw-semibold">{{ r.gross_processed|floatformat:0 }}</td>
 
             {% if run.status != "finalized" %}
-            <td><input class="form-control form-control-sm text-end pf-emp" style="width:80px" value="{{ r.pf_employee }}"></td>
-            <td><input class="form-control form-control-sm text-end prof-tax" style="width:80px" value="{{ r.professional_tax }}"></td>
-            <td><input class="form-control form-control-sm text-end advance" style="width:80px" value="{{ r.advance }}"></td>
-            <td><input class="form-control form-control-sm text-end esic-emp" style="width:80px" value="{{ r.esic_employee }}"></td>
-            <td><input class="form-control form-control-sm text-end tds" style="width:80px" value="{{ r.tds }}"></td>
-            <td><input class="form-control form-control-sm text-end other-ded" style="width:80px" value="{{ r.other_deductions }}"></td>
+            <td><input class="form-control form-control-sm text-end pf-emp" style="width:80px" value="{{ r.pf_employee|floatformat:0 }}"></td>
+            <td><input class="form-control form-control-sm text-end prof-tax" style="width:80px" value="{{ r.professional_tax|floatformat:0 }}"></td>
+            <td><input class="form-control form-control-sm text-end advance" style="width:80px" value="{{ r.advance|floatformat:0 }}"></td>
+            <td><input class="form-control form-control-sm text-end esic-emp" style="width:80px" value="{{ r.esic_employee|floatformat:0 }}"></td>
+            <td><input class="form-control form-control-sm text-end tds" style="width:80px" value="{{ r.tds|floatformat:0 }}"></td>
+            <td><input class="form-control form-control-sm text-end other-ded" style="width:80px" value="{{ r.other_deductions|floatformat:0 }}"></td>
             {% else %}
-            <td class="text-end">{{ r.pf_employee }}</td>
-            <td class="text-end">{{ r.professional_tax }}</td>
-            <td class="text-end">{{ r.advance }}</td>
-            <td class="text-end">{{ r.esic_employee }}</td>
-            <td class="text-end">{{ r.tds }}</td>
-            <td class="text-end">{{ r.other_deductions }}</td>
+            <td class="text-end">{{ r.pf_employee|floatformat:0 }}</td>
+            <td class="text-end">{{ r.professional_tax|floatformat:0 }}</td>
+            <td class="text-end">{{ r.advance|floatformat:0 }}</td>
+            <td class="text-end">{{ r.esic_employee|floatformat:0 }}</td>
+            <td class="text-end">{{ r.tds|floatformat:0 }}</td>
+            <td class="text-end">{{ r.other_deductions|floatformat:0 }}</td>
             {% endif %}
 
-            <td class="text-end total-ded fw-semibold text-danger">{{ r.total_deductions }}</td>
-            <td class="text-end net-pay fw-bold text-primary">{{ r.net_salary }}</td>
+            <td class="text-end total-ded fw-semibold text-danger">{{ r.total_deductions|floatformat:0 }}</td>
+            <td class="text-end net-pay fw-bold text-primary">{{ r.net_salary|floatformat:0 }}</td>
 
             <td class="text-center text-nowrap">
               {% if run.status != "finalized" %}
@@ -494,8 +494,9 @@ searchInput.addEventListener("input", applySearch);
 clearBtn.addEventListener("click", () => { searchInput.value = ""; applySearch(); searchInput.focus(); });
 
 // ── Calc helpers ─────────────────────────────────────────────────────────────
-function money(n) { return Math.round((Number(n) || 0) * 100) / 100; }
-function fmt(n)   { return "₹" + money(n).toLocaleString("en-IN", {minimumFractionDigits: 2}); }
+// Payroll amounts round to the nearest whole rupee, not paise.
+function money(n) { return Math.round(Number(n) || 0); }
+function fmt(n)   { return "₹" + money(n).toLocaleString("en-IN"); }
 
 function computeRow(tr) {
   const td    = Number(tr.dataset.totalDays);
@@ -532,12 +533,12 @@ function computeRow(tr) {
   const pfInput = tr.querySelector(".pf-emp");
   if (pfInput && tr.dataset.optedPf === "true" && !pfInput.dataset.manual) {
     const pfFlatCap = money(psettings.pf_wage_ceiling * psettings.pf_percentage / 100);
-    pfInput.value = Math.min(money(bp * psettings.pf_percentage / 100), pfFlatCap).toFixed(2);
+    pfInput.value = Math.min(money(bp * psettings.pf_percentage / 100), pfFlatCap);
   }
   // ESIC auto-calc unless manually overridden
   const esicInput = tr.querySelector(".esic-emp");
   if (esicInput && !esicInput.dataset.manual && gross <= psettings.esic_threshold && psettings.esic_percentage > 0) {
-    esicInput.value = money(gross * psettings.esic_percentage / 100).toFixed(2);
+    esicInput.value = money(gross * psettings.esic_percentage / 100);
   }
 
   const pf      = Number(tr.querySelector(".pf-emp")?.value)    || 0;
@@ -565,7 +566,7 @@ function updateSummary() {
     totalDed   += Number(tr.querySelector(".total-ded")?.textContent?.replace(/[₹,]/g, ""))  || 0;
     totalNet   += Number(tr.querySelector(".net-pay")?.textContent?.replace(/[₹,]/g, ""))    || 0;
   });
-  const s = n => "₹" + n.toLocaleString("en-IN", {minimumFractionDigits: 2});
+  const s = n => "₹" + Math.round(n).toLocaleString("en-IN");
   document.getElementById("summaryCount").textContent = visible;
   document.getElementById("summaryGross").textContent = s(totalGross);
   document.getElementById("summaryDed").textContent   = s(totalDed);
@@ -637,7 +638,7 @@ function applyServerRecalc(tr, record) {
   const ded  = b.deductions  || {};
 
   const setText  = (sel, val) => { const el = tr.querySelector(sel); if (el && val !== undefined) el.textContent = fmt(val); };
-  const setInput = (sel, val) => { const el = tr.querySelector(sel); if (el && val !== undefined) el.value = Number(val).toFixed(2); };
+  const setInput = (sel, val) => { const el = tr.querySelector(sel); if (el && val !== undefined) el.value = Math.round(Number(val)); };
 
   setText(".basic-proc", comp.basic_processed);
   setText(".hra-proc",   comp.hra_processed);

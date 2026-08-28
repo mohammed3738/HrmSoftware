@@ -853,6 +853,7 @@ class PayrollRecord(models.Model):
     # SECTION 2 - salary breakup (monthly)
     gross_ctc = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     opted_for_pf = models.BooleanField(default=False)
+    opted_for_esic = models.BooleanField(default=False)
     basic_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     hra_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
     sp_allowance_pm = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))

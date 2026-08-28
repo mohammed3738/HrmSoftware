@@ -185,6 +185,15 @@ def money_d(v):
     return Decimal(v or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
+def money_int(v):
+    """Whole-rupee rounding for payroll amounts (business decision: PF,
+    ESIC, gross/net pay, etc. are rounded to the nearest rupee, not paise).
+    Kept separate from money_d, which is also used for day-count fields
+    (present_days, leave_taken) where fractional values (half-day) are
+    correct and must not be rounded away."""
+    return Decimal(v or 0).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
 def get_attendance_summary(employee, start_date, end_date):
     total_days = (end_date - start_date).days + 1
     qs = Attendance.objects.filter(employee=employee, date__range=[start_date, end_date])
@@ -204,8 +213,8 @@ def get_advance_for_employee_month(employee, start_date, end_date):
         status=AdvanceSchedule.STATUS_PENDING
     ).first()
     if emi:
-        return money_d(emi.scheduled_amount)
-    return money_d(0)
+        return money_int(emi.scheduled_amount)
+    return money_int(0)
 
 
 @transaction.atomic
@@ -254,15 +263,16 @@ def _build_record_snapshot(emp, salary, run):
         "date_of_joining": emp.date_of_joining,
         "month_display": run.month.strftime("%b %Y"),
 
-        "gross_ctc": money_d(salary.gross_ctc_pm or 0),
+        "gross_ctc": money_int(salary.gross_ctc_pm or 0),
         "opted_for_pf": bool(salary.pf_deducted),
-        "basic_pm": money_d(salary.basic_pm or 0),
-        "hra_pm": money_d(salary.hra_pm or 0),
-        "sp_allowance_pm": money_d(salary.sp_allowance_pm or 0),
-        "stat_bonus_pm": money_d(salary.stat_bonus_pm or 0),
-        "allowance1_pm": money_d(salary.allowance1_pm or 0),
-        "allowance2_pm": money_d(salary.allowance2_pm or 0),
-        "total_gross_salary": money_d(salary.gross_ctc_pm or 0),
+        "opted_for_esic": bool(salary.esic_applicable),
+        "basic_pm": money_int(salary.basic_pm or 0),
+        "hra_pm": money_int(salary.hra_pm or 0),
+        "sp_allowance_pm": money_int(salary.sp_allowance_pm or 0),
+        "stat_bonus_pm": money_int(salary.stat_bonus_pm or 0),
+        "allowance1_pm": money_int(salary.allowance1_pm or 0),
+        "allowance2_pm": money_int(salary.allowance2_pm or 0),
+        "total_gross_salary": money_int(salary.gross_ctc_pm or 0),
 
         "total_days": att["total_days"],
         "present_days": att["present_days"],
@@ -334,12 +344,12 @@ def calculate_pro_rata(component_pm, total_days, leave_without_pay):
     total_days = Decimal(total_days or 0)
     leave_without_pay = Decimal(leave_without_pay or 0)
     if total_days <= 0:
-        return Decimal("0.00")
+        return Decimal("0")
     payable_days = total_days - leave_without_pay
     if payable_days <= 0:
-        return Decimal("0.00")
+        return Decimal("0")
     factor = payable_days / total_days
-    return money_d(Decimal(component_pm) * factor)
+    return money_int(Decimal(component_pm) * factor)
 
 
 def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun, payroll_settings: PayrollSettings = None, manual_overrides: dict = None):
@@ -355,7 +365,7 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
     stat_proc  = calculate_pro_rata(record.stat_bonus_pm, TD, LWP)
     a1_proc    = calculate_pro_rata(record.allowance1_pm, TD, LWP)
     a2_proc    = calculate_pro_rata(record.allowance2_pm, TD, LWP)
-    gross_proc = money_d(basic_proc + hra_proc + sp_proc + stat_proc + a1_proc + a2_proc)
+    gross_proc = money_int(basic_proc + hra_proc + sp_proc + stat_proc + a1_proc + a2_proc)
 
     pf_emp = Decimal(0)
     if record.opted_for_pf:
@@ -371,31 +381,32 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
         # leaves PF at the flat cap — only once LWP is heavy enough that
         # even their full earned basic's 12% drops below the flat cap does
         # PF start coming down below it.
-        pf_flat_cap = money_d(pf_wage_ceiling * (pf_percentage / Decimal(100)))
-        pf_emp = min(money_d(basic_proc * (pf_percentage / Decimal(100))), pf_flat_cap)
+        pf_flat_cap = money_int(pf_wage_ceiling * (pf_percentage / Decimal(100)))
+        pf_emp = min(money_int(basic_proc * (pf_percentage / Decimal(100))), pf_flat_cap)
 
     esic_emp = Decimal(0)
-    esic_percentage = Decimal(getattr(payroll_settings, "esic_percentage", 0) or 0)
-    esic_threshold = Decimal(getattr(payroll_settings, "esic_threshold", 21000))
-    if gross_proc <= esic_threshold:
-        esic_emp = money_d(gross_proc * (esic_percentage / Decimal(100)))
+    if record.opted_for_esic:
+        esic_percentage = Decimal(getattr(payroll_settings, "esic_percentage", 0) or 0)
+        esic_threshold = Decimal(getattr(payroll_settings, "esic_threshold", 21000))
+        if gross_proc <= esic_threshold:
+            esic_emp = money_int(gross_proc * (esic_percentage / Decimal(100)))
 
-    prof_tax = Decimal(getattr(payroll_settings, "professional_tax", 0) or 0)
+    prof_tax = money_int(getattr(payroll_settings, "professional_tax", 0) or 0)
 
     if manual_overrides:
-        pf_emp   = money_d(Decimal(manual_overrides.get("pf_employee", pf_emp)))
-        esic_emp = money_d(Decimal(manual_overrides.get("esic_employee", esic_emp)))
-        prof_tax = money_d(Decimal(manual_overrides.get("professional_tax", prof_tax)))
-        tds      = money_d(Decimal(manual_overrides.get("tds", record.tds or 0)))
-        advance  = money_d(Decimal(manual_overrides.get("advance", record.advance or 0)))
-        other_ded = money_d(Decimal(manual_overrides.get("other_deductions", record.other_deductions or 0)))
+        pf_emp   = money_int(Decimal(manual_overrides.get("pf_employee", pf_emp)))
+        esic_emp = money_int(Decimal(manual_overrides.get("esic_employee", esic_emp)))
+        prof_tax = money_int(Decimal(manual_overrides.get("professional_tax", prof_tax)))
+        tds      = money_int(Decimal(manual_overrides.get("tds", record.tds or 0)))
+        advance  = money_int(Decimal(manual_overrides.get("advance", record.advance or 0)))
+        other_ded = money_int(Decimal(manual_overrides.get("other_deductions", record.other_deductions or 0)))
     else:
-        tds       = money_d(record.tds or 0)
-        advance   = money_d(record.advance or 0)
-        other_ded = money_d(record.other_deductions or 0)
+        tds       = money_int(record.tds or 0)
+        advance   = money_int(record.advance or 0)
+        other_ded = money_int(record.other_deductions or 0)
 
-    total_ded = money_d(pf_emp + esic_emp + prof_tax + tds + advance + other_ded)
-    net_pay   = money_d(gross_proc - total_ded)
+    total_ded = money_int(pf_emp + esic_emp + prof_tax + tds + advance + other_ded)
+    net_pay   = money_int(gross_proc - total_ded)
 
     breakdown = {
         "attendance": {"TD": int(TD), "LWP": float(LWP)},

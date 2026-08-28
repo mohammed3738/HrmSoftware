@@ -19,7 +19,7 @@ import json
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth import authenticate, login, logout
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from django.core.paginator import Paginator
 from dateutil.relativedelta import relativedelta
 from django.template.loader import render_to_string
@@ -4728,9 +4728,13 @@ from decimal import Decimal
 #     return render(request, 'salary/create_salary4.html', {'employees': employees, 'salary': salary})
 
 def extract_decimal(request, key):
-    """Safe decimal extraction helper."""
+    """Safe decimal extraction helper. Salary structure amounts are rounded
+    to the nearest whole rupee (business decision), so this rounds
+    regardless of what the frontend actually submitted -- covers a stray
+    decimal from manual typing or a direct API call, not just the JS-rounded
+    happy path."""
     try:
-        return Decimal(request.POST.get(key, "0") or "0")
+        return Decimal(request.POST.get(key, "0") or "0").quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     except:
         return Decimal("0")
 

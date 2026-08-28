@@ -74,8 +74,8 @@
         <td><a href="{% url 'employee_detail' employee.employee.pk %}">{{ employee.employee.employee_code }}</a></td>
 
         <td>{{ employee.employee.first_name }} {{ employee.employee.last_name }}</td>
-        <td>{{ employee.basic_pm|floatformat:2 }}</td>
-        <td>{{ employee.basic_pa|floatformat:2 }}</td>
+        <td>{{ employee.basic_pm|floatformat:0 }}</td>
+        <td>{{ employee.basic_pa|floatformat:0 }}</td>
 
         {% comment %} <td>{{ employee.hra_pm|floatformat:2 }}</td>
         <td>{{ employee.hra_pa|floatformat:2 }}</td>
@@ -450,7 +450,8 @@ function setVal(id, value) {
   const el = document.getElementById(id);
   if (!el) return;
   if (el.dataset.manual === "true") return;
-  el.value = value.toFixed(2);
+  // Payroll amounts are rounded to the nearest whole rupee, not paise.
+  el.value = Math.round(value);
 }
 
 function isYes(id) {
@@ -505,17 +506,17 @@ function calculateSalary() {
   if (profTaxEl && profTaxEl.dataset.manual === "true") {
     profTax = num("profTax");
   } else {
-    profTax = payrollSettings.professional_tax || 0;
-    if (profTaxEl) profTaxEl.value = profTax ? profTax.toFixed(2) : "";
+    profTax = Math.round(payrollSettings.professional_tax || 0);
+    if (profTaxEl) profTaxEl.value = profTax || "";
   }
 
   /* Basic = MIN(GrossCTC × basic_pct%, basic_cap), unless manually edited */
   const basic = manualVal("basic")
     ? num("basic")
-    : Math.min(grossCTC * payrollSettings.basic_percentage / 100, payrollSettings.basic_cap);
+    : Math.round(Math.min(grossCTC * payrollSettings.basic_percentage / 100, payrollSettings.basic_cap));
 
   /* HRA = Basic × hra_pct%, unless manually edited */
-  const hra = manualVal("hra") ? num("hra") : basic * payrollSettings.hra_percentage / 100;
+  const hra = manualVal("hra") ? num("hra") : Math.round(basic * payrollSettings.hra_percentage / 100);
 
   /* Stat Bonus = IF(Basic < basic_cap, ROUND(7000 × bonus_pct%, 0), 0),
      unless manually edited -- previously this ignored manual edits for the
@@ -527,7 +528,7 @@ function calculateSalary() {
 
   /* PF(er)/(ee), unless manually edited */
   const pfWage = Math.min(basic, payrollSettings.pf_wage_ceiling);
-  const pfErComputed = pfEnabled ? pfWage * payrollSettings.pf_percentage / 100 : 0;
+  const pfErComputed = pfEnabled ? Math.round(pfWage * payrollSettings.pf_percentage / 100) : 0;
   const pfEr = manualVal("pfEr") ? num("pfEr") : pfErComputed;
   const pfEe = manualVal("pfEe") ? num("pfEe") : pfEr;
 
@@ -552,7 +553,7 @@ function calculateSalary() {
     } else {
       targetGuaranteedCash = grossCTC - pfEr;
     }
-    specialAllowance = targetGuaranteedCash - basic - hra - statBonus - allowance1 - allowance2;
+    specialAllowance = Math.round(targetGuaranteedCash - basic - hra - statBonus - allowance1 - allowance2);
     if (specialAllowance < 0) specialAllowance = 0;
   }
 
@@ -561,19 +562,19 @@ function calculateSalary() {
      so it updates immediately when Basic/HRA/Stat Bonus/Special Allowance
      change instead of staying pinned to a one-time Gross-CTC-based formula
      that never referenced those fields. */
-  const guaranteedCash = basic + hra + statBonus + specialAllowance + allowance1 + allowance2;
+  const guaranteedCash = Math.round(basic + hra + statBonus + specialAllowance + allowance1 + allowance2);
 
   /* ESIC(er)/(ee), unless manually edited -- recomputed from the live
      Guaranteed Cash above (statutory % of guaranteed wages) rather than
      solved only once from Gross CTC. */
   const esicErComputed = (esicEnabled && guaranteedCash < 21000)
-    ? guaranteedCash * payrollSettings.esic_percentage / 100
+    ? Math.round(guaranteedCash * payrollSettings.esic_percentage / 100)
     : 0;
   const esicEr = manualVal("esicEr") ? num("esicEr") : esicErComputed;
   const esicEe = manualVal("esicEe") ? num("esicEe") : esicEr;
 
-  const costToCompany = guaranteedCash + pfEr + esicEr;
-  const netSalary = guaranteedCash - pfEe - esicEe - profTax;
+  const costToCompany = Math.round(guaranteedCash + pfEr + esicEr);
+  const netSalary = Math.round(guaranteedCash - pfEe - esicEe - profTax);
 
   /* Write to UI. guaranteedCash and costToCompany are pure derived totals
      (sums of the other fields) and always get overwritten -- everything
@@ -584,13 +585,13 @@ function calculateSalary() {
   setVal("hra", hra);
   setVal("statBonus", statBonus);
   setVal("specialAllowance", specialAllowance);
-  document.getElementById("guaranteedCash").value  = guaranteedCash.toFixed(2);
+  document.getElementById("guaranteedCash").value  = Math.round(guaranteedCash);
   setVal("pfEr", pfEr);
   setVal("pfEe", pfEe);
   setVal("esicEr", esicEr);
   setVal("esicEe", esicEe);
   setVal("gratuity", gratuity);
-  document.getElementById("costToCompany").value   = costToCompany.toFixed(2);
+  document.getElementById("costToCompany").value   = Math.round(costToCompany);
   setVal("netSalary", netSalary);
 
   /* Annual × 12 */
@@ -604,7 +605,7 @@ function calculateSalary() {
     ["netSalary","netSalaryAnn"]
   ].forEach(([mId, aId]) => {
     const el = document.getElementById(aId);
-    if (el) el.value = (num(mId) * 12).toFixed(2);
+    if (el) el.value = Math.round(num(mId) * 12);
   });
 }
 

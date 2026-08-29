@@ -1,0 +1,101 @@
+{% extends "base2.html" %}
+{% load static %}
+
+{% block body %}
+<div class="container-xxl py-4">
+
+  <!-- Header -->
+  <div class="mb-4">
+    <h4 class="mb-0">Audit Log</h4>
+    <small class="text-muted">A record of sensitive actions — role &amp; permission changes, salary edits, payroll finalization, employee record edits, and approvals</small>
+  </div>
+
+  <!-- Filters -->
+  <div class="card mb-4">
+    <div class="card-body">
+      <form method="get" class="row g-3 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label small">Actor</label>
+          <select name="actor_id" class="form-select form-select-sm">
+            <option value="">All users</option>
+            {% for a in actors %}
+            <option value="{{ a.id }}" {% if selected_actor_id == a.id|stringformat:"s" %}selected{% endif %}>{{ a.get_full_name|default:a.username }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small">Action</label>
+          <select name="action" class="form-select form-select-sm">
+            <option value="">All actions</option>
+            {% for value, label in action_choices %}
+            <option value="{{ value }}" {% if selected_action == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small">From</label>
+          <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from|default:'' }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small">To</label>
+          <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to|default:'' }}">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label small">Search</label>
+          <input type="text" name="q" class="form-control form-control-sm" placeholder="Summary or target…" value="{{ search|default:'' }}">
+        </div>
+        <div class="col-12 d-flex gap-2">
+          <button type="submit" class="btn btn-sm btn-primary"><i class="ri-filter-3-line me-1"></i>Filter</button>
+          <a href="{% url 'audit-log' %}" class="btn btn-sm btn-outline-secondary">Clear</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Timestamp</th>
+            <th>Actor</th>
+            <th>Action</th>
+            <th>Target</th>
+            <th>Summary</th>
+            <th>Company</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in page_obj %}
+          <tr>
+            <td class="text-nowrap small text-muted">{{ row.created_at|date:"d M Y, H:i" }}</td>
+            <td class="small">{% if row.actor %}{{ row.actor.get_full_name|default:row.actor.username }}{% else %}System{% endif %}</td>
+            <td><span class="badge bg-label-primary" style="font-size:.68rem;">{{ row.get_action_display }}</span></td>
+            <td class="small">{{ row.target_type }}{% if row.target_repr %}: {{ row.target_repr }}{% endif %}</td>
+            <td class="small">{{ row.summary }}</td>
+            <td class="small text-muted">{{ row.company|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="text-center text-muted py-4">No audit entries match these filters.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page_obj.has_other_pages %}
+    <div class="card-footer d-flex justify-content-between align-items-center">
+      <span class="text-muted small">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      <div>
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}&actor_id={{ selected_actor_id|default:'' }}&action={{ selected_action|default:'' }}&date_from={{ date_from|default:'' }}&date_to={{ date_to|default:'' }}&q={{ search|default:'' }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}&actor_id={{ selected_actor_id|default:'' }}&action={{ selected_action|default:'' }}&date_from={{ date_from|default:'' }}&date_to={{ date_to|default:'' }}&q={{ search|default:'' }}" class="btn btn-sm btn-outline-primary">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

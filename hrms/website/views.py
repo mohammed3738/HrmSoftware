@@ -34,6 +34,7 @@ from django.http import FileResponse, Http404
 import openpyxl
 from .services import *  # from previous services.py
 from .services.roles import assign_employee_role
+from .services.audit import log_audit, snapshot, diff
 from .utils.payroll_lock import (
     get_locking_run,
     get_locking_run_for_period,
@@ -1432,7 +1433,7 @@ def submit_correction_request(request):
 
 
 # approval
-def _approve_correction_item(correction_request):
+def _approve_correction_item(correction_request, actor=None):
     """Approve a single AttendanceCorrectionRequest and write the corrected
     times onto its Attendance record. Returns an error message string on
     failure (e.g. payroll lock), or None on success."""
@@ -1441,6 +1442,7 @@ def _approve_correction_item(correction_request):
     if locking_run:
         return _lock_message(locking_run, action="approve this correction")
 
+    old_in_time, old_out_time = attendance.in_time, attendance.out_time
     attendance.in_time = correction_request.new_in_time
     attendance.out_time = correction_request.new_out_time
     attendance.save()
@@ -1448,6 +1450,13 @@ def _approve_correction_item(correction_request):
     correction_request.status = "Approved"
     correction_request.reviewed_at = now()
     correction_request.save()
+
+    log_audit(actor, AuditLog.Action.CORRECTION_APPROVED, correction_request, employee=attendance.employee,
+               summary=f"Approved attendance correction for {attendance.employee} on {attendance.date}",
+               changes={
+                   "in_time": {"old": str(old_in_time) if old_in_time else None, "new": str(attendance.in_time) if attendance.in_time else None},
+                   "out_time": {"old": str(old_out_time) if old_out_time else None, "new": str(attendance.out_time) if attendance.out_time else None},
+               })
     return None
 
 
@@ -1455,7 +1464,7 @@ def _approve_correction_item(correction_request):
 def approve_correction_request(request, request_id):
     correction_request = get_object_or_404(AttendanceCorrectionRequest, id=request_id)
 
-    error = _approve_correction_item(correction_request)
+    error = _approve_correction_item(correction_request, actor=request.user)
     if error:
         return JsonResponse({"success": False, "error": error}, status=400)
     return JsonResponse({"message": "Correction Approved!"})
@@ -1473,7 +1482,7 @@ def bulk_approve_correction(request):
         except AttendanceCorrectionRequest.DoesNotExist:
             failed.append({"id": req_id, "error": "Request not found."})
             continue
-        error = _approve_correction_item(correction_request)
+        error = _approve_correction_item(correction_request, actor=request.user)
         if error:
             failed.append({"id": req_id, "error": error})
         else:
@@ -1497,6 +1506,10 @@ def reject_correction_request(request, request_id):
         correction_request.rejection_reason = rejection_reason  # Save reason for employee reference
         correction_request.reviewed_at = now()
         correction_request.save()
+
+        log_audit(request.user, AuditLog.Action.CORRECTION_REJECTED, correction_request,
+                   employee=correction_request.attendance.employee,
+                   summary=f"Rejected attendance correction for {correction_request.attendance.employee} on {correction_request.attendance.date}")
 
         return JsonResponse({"message": "Correction Request Rejected!"})
 
@@ -2002,7 +2015,7 @@ def admin_dashboard(request):
     })
 
 
-def _approve_compoff_item(compoff):
+def _approve_compoff_item(compoff, actor=None):
     """Approve a single CompOffRequest. Returns an error message string on
     failure (e.g. payroll lock), or None on success."""
     locking_run = get_locking_run_for_period(
@@ -2013,6 +2026,9 @@ def _approve_compoff_item(compoff):
 
     compoff.status = "Approved"
     compoff.save()
+
+    log_audit(actor, AuditLog.Action.COMPOFF_APPROVED, compoff,
+               summary=f"Approved comp-off request for {compoff.employee}")
     return None
 
 
@@ -2044,7 +2060,7 @@ def approve_compoff(request, compoff_id):
     except CompOffRequest.DoesNotExist:
         return JsonResponse({"message": "Request not found!"}, status=404)
 
-    error = _approve_compoff_item(compoff)
+    error = _approve_compoff_item(compoff, actor=request.user)
     if error:
         return JsonResponse({"success": False, "error": error}, status=400)
     return JsonResponse({"message": "CompOff request approved successfully!"})
@@ -2062,7 +2078,7 @@ def bulk_approve_compoff(request):
         except CompOffRequest.DoesNotExist:
             failed.append({"id": compoff_id, "error": "Request not found."})
             continue
-        error = _approve_compoff_item(compoff)
+        error = _approve_compoff_item(compoff, actor=request.user)
         if error:
             failed.append({"id": compoff_id, "error": error})
         else:
@@ -2099,6 +2115,9 @@ def reject_compoff(request, compoff_id):
         correction_request.rejection_reason = rejection_reason  # Save reason for employee reference
         correction_request.reviewed_at = now()
         correction_request.save()
+
+        log_audit(request.user, AuditLog.Action.COMPOFF_REJECTED, correction_request,
+                   summary=f"Rejected comp-off request for {correction_request.employee}")
 
         return JsonResponse({"message": "Correction Request Rejected!"})
 
@@ -2404,15 +2423,23 @@ from django.contrib.auth.models import Group
 
 from django.contrib.auth.models import Group, User
 
+# Curated subset of Employee fields worth diffing in the audit trail --
+# not all ~40 personal-detail fields, just the ones whose change is
+# operationally significant (role/reporting/status changes, not e.g. a
+# typo fix to an address).
+EMPLOYEE_AUDIT_FIELDS = ("designation", "department", "status", "company_id", "branch_id", "date_of_joining")
+
 @login_required
 @feature_required("employee_records", action="edit")
 def create_or_edit_employee(request, employee_id=None):
     employee = None
     is_edit = False
+    employee_before = None
 
     if employee_id:
         employee = get_object_or_404(Employee, id=employee_id)
         is_edit = True
+        employee_before = snapshot(employee, EMPLOYEE_AUDIT_FIELDS)
 
     if request.method == 'POST':
         form = EmployeeForm(request.POST, request.FILES, instance=employee)
@@ -2429,7 +2456,7 @@ def create_or_edit_employee(request, employee_id=None):
                 if selected_group_id:
                     try:
                         group = Group.objects.get(id=selected_group_id)
-                        assign_employee_role(emp_obj, group)
+                        assign_employee_role(emp_obj, group, actor=request.user)
                     except Group.DoesNotExist:
                         pass
 
@@ -2473,6 +2500,14 @@ def create_or_edit_employee(request, employee_id=None):
                 if not has_attachment_error:
                     for obj in attachment_formset.deleted_objects:
                         obj.delete()
+
+                    if is_edit:
+                        log_audit(request.user, AuditLog.Action.EMPLOYEE_UPDATED, emp_obj,
+                                   summary=f"Updated employee record for {emp_obj}",
+                                   changes=diff(employee_before, emp_obj, EMPLOYEE_AUDIT_FIELDS))
+                    else:
+                        log_audit(request.user, AuditLog.Action.EMPLOYEE_CREATED, emp_obj,
+                                   summary=f"Created employee record for {emp_obj}")
 
                     messages.success(
                         request,
@@ -2579,7 +2614,7 @@ def bulk_employee_action(request):
         if new_role and emp.user:
             try:
                 group = Group.objects.get(name=new_role)
-                assign_employee_role(emp, group)
+                assign_employee_role(emp, group, actor=request.user)
                 changed = True
             except Group.DoesNotExist:
                 pass
@@ -2623,12 +2658,15 @@ def employee_detail(request, pk):
         except Exception:
             photo_url = None
 
+    employee_history = AuditLog.objects.filter(employee=employee).select_related("actor")[:50]
+
     context = {
         'employee': employee,
         'previous_employments': previous_employments,
         'attachments': attachments,
         'previous_employments_attachment': previous_employments_attachment,
         'salary': salary,
+        'employee_history': employee_history,
         'display': {
             'first_name': first_name,
             'last_name': last_name,
@@ -2830,8 +2868,12 @@ def offboarding_list(request):
                         employee.save(update_fields=['status'])
 
             if off_id:
+                log_audit(request.user, AuditLog.Action.OFFBOARDING_UPDATED, offboarding,
+                           summary=f"Updated offboarding for {offboarding.employee}")
                 messages.success(request, "Offboarding updated successfully!")
             else:
+                log_audit(request.user, AuditLog.Action.OFFBOARDING_CREATED, offboarding,
+                           summary=f"Started offboarding for {offboarding.employee}")
                 messages.success(request, f"Offboarding created. {offboarding.employee} has been marked as Left.")
 
             return redirect('offboarding-list')
@@ -2957,6 +2999,8 @@ def offboarding_delete(request, pk):
     """Delete offboarding via AJAX"""
     if request.method == 'POST':
         offboarding = get_object_or_404(Offboarding, pk=pk)
+        log_audit(request.user, AuditLog.Action.OFFBOARDING_DELETED, offboarding,
+                   summary=f"Deleted offboarding for {offboarding.employee}")
         offboarding.delete()
         return JsonResponse({'success': True, 'message': 'Offboarding deleted successfully!'})
     return JsonResponse({'success': False, 'message': 'Invalid request.'})
@@ -4314,7 +4358,7 @@ def leave_apply_view(request):
     })
 
 
-def _approve_leave_item(leave):
+def _approve_leave_item(leave, actor=None):
     """Approve a single LeaveApplication. Returns an error message string on
     failure (e.g. payroll lock), or None on success."""
     locking_run = get_locking_run_for_period(
@@ -4325,6 +4369,9 @@ def _approve_leave_item(leave):
 
     leave.status = "Approved"
     leave.save()
+
+    log_audit(actor, AuditLog.Action.LEAVE_APPROVED, leave,
+               summary=f"Approved leave for {leave.employee} ({leave.start_date} - {leave.end_date})")
     return None
 
 
@@ -4337,7 +4384,7 @@ def approve_leave(request, leave_id):
     except LeaveApplication.DoesNotExist:
         return JsonResponse({"message": "Leave not found"}, status=404)
 
-    error = _approve_leave_item(leave)
+    error = _approve_leave_item(leave, actor=request.user)
     if error:
         return JsonResponse({"success": False, "error": error}, status=400)
     return JsonResponse({"message": "Leave Approved Successfully!"})
@@ -4355,7 +4402,7 @@ def bulk_approve_leave(request):
         except LeaveApplication.DoesNotExist:
             failed.append({"id": leave_id, "error": "Leave not found."})
             continue
-        error = _approve_leave_item(leave)
+        error = _approve_leave_item(leave, actor=request.user)
         if error:
             failed.append({"id": leave_id, "error": error})
         else:
@@ -4377,6 +4424,9 @@ def reject_leave(request, leave_id):
         leave = LeaveApplication.objects.get(id=leave_id)
         leave.status = "Rejected"
         leave.save()
+
+        log_audit(request.user, AuditLog.Action.LEAVE_REJECTED, leave,
+                   summary=f"Rejected leave for {leave.employee} ({leave.start_date} - {leave.end_date})")
 
         return JsonResponse({"message": "Leave Rejected Successfully!"})
     except:
@@ -4787,11 +4837,15 @@ def create_salary(request):
             "ctc_pa": extract_decimal(request, "ctc_pa"),
         }
 
+        salary_audit_fields = list(data.keys()) + ["pf_deducted", "gratuity_applicable", "esic_applicable"]
+
         if salary_id:
             sm = SalaryMaster.objects.get(pk=salary_id)
+            sm_before = snapshot(sm, salary_audit_fields)
             message = "Salary updated successfully."
         else:
             sm = SalaryMaster(employee=employee)
+            sm_before = None
             message = "Salary created successfully."
 
         sm.employee = employee
@@ -4803,6 +4857,15 @@ def create_salary(request):
             setattr(sm, field, value)
 
         sm.save()
+
+        if sm_before is not None:
+            log_audit(request.user, AuditLog.Action.SALARY_UPDATED, sm,
+                       summary=f"Updated salary structure for {employee}",
+                       changes=diff(sm_before, sm, salary_audit_fields))
+        else:
+            log_audit(request.user, AuditLog.Action.SALARY_CREATED, sm,
+                       summary=f"Created salary structure for {employee}")
+
         messages.success(request, message)
         return redirect("create-salary")
 
@@ -5854,12 +5917,19 @@ def roles_permissions_hub(request):
         .order_by("first_name", "last_name")
     )
 
+    role_history = None
+    if selected_role:
+        role_history = AuditLog.objects.filter(
+            target_type="Group", target_id=selected_role.pk
+        ).select_related("actor")[:50]
+
     return render(request, "settings/roles_permissions_hub.html", {
         "roles": roles,
         "selected_role": selected_role,
         "features_by_category": features_by_category,
         "system_roles": SYSTEM_ROLES,
         "users": users,
+        "role_history": role_history,
     })
 
 
@@ -5877,6 +5947,7 @@ def create_role(request):
     for feature in Feature.objects.filter(is_active=True):
         RoleFeaturePermission.objects.get_or_create(role=group, feature=feature)
 
+    log_audit(request.user, AuditLog.Action.ROLE_CREATED, group, summary=f'Created role "{group.name}"')
     return JsonResponse({"success": True, "role_id": group.id, "name": group.name})
 
 
@@ -5895,8 +5966,12 @@ def rename_role(request, role_id):
     if Group.objects.exclude(pk=group.pk).filter(name__iexact=new_name).exists():
         return JsonResponse({"success": False, "error": f'A role named "{new_name}" already exists.'}, status=400)
 
+    old_name = group.name
     group.name = new_name
     group.save(update_fields=["name"])
+    log_audit(request.user, AuditLog.Action.ROLE_RENAMED, group,
+               summary=f'Renamed role "{old_name}" to "{new_name}"',
+               changes={"name": {"old": old_name, "new": new_name}})
     return JsonResponse({"success": True})
 
 
@@ -5914,6 +5989,8 @@ def delete_role(request, role_id):
             "error": f'"{group.name}" still has {group.user_set.count()} user(s) assigned. Reassign them first.',
         }, status=400)
 
+    # Logged before delete() so the target still has a pk/repr at write time.
+    log_audit(request.user, AuditLog.Action.ROLE_DELETED, group, summary=f'Deleted role "{group.name}"')
     group.delete()
     return JsonResponse({"success": True})
 
@@ -5925,14 +6002,26 @@ def save_role_permissions(request):
     role_id = request.POST.get("role_id")
     group = get_object_or_404(Group, pk=role_id)
 
+    # One audit row per save (aggregated across every feature's checkboxes),
+    # not one per checkbox -- a single admin action shouldn't produce ~18 rows.
+    permission_changes = {}
     with transaction.atomic():
         for feature in Feature.objects.filter(is_active=True):
             rfp, _ = RoleFeaturePermission.objects.get_or_create(role=group, feature=feature)
+            before = snapshot(rfp, ("can_view", "can_edit", "can_approve"))
             rfp.can_view = feature.has_view and request.POST.get(f"can_view_{feature.id}") == "on"
             rfp.can_edit = feature.has_edit and request.POST.get(f"can_edit_{feature.id}") == "on"
             rfp.can_approve = feature.has_approve and request.POST.get(f"can_approve_{feature.id}") == "on"
             rfp.updated_by = request.user
             rfp.save()
+            feature_changes = diff(before, rfp, ("can_view", "can_edit", "can_approve"))
+            if feature_changes:
+                permission_changes[feature.key] = feature_changes
+
+    if permission_changes:
+        log_audit(request.user, AuditLog.Action.ROLE_PERMISSIONS_UPDATED, group,
+                   summary=f'Updated permissions for role "{group.name}"',
+                   changes=permission_changes)
 
     return JsonResponse({"success": True, "message": f'Permissions saved for "{group.name}".'})
 
@@ -5949,7 +6038,7 @@ def reassign_user_role(request):
     if not employee.user:
         return JsonResponse({"success": False, "error": "This employee has no login account to assign a role to."}, status=400)
 
-    assign_employee_role(employee, group)
+    assign_employee_role(employee, group, actor=request.user)
     return JsonResponse({"success": True, "role_name": group.name})
 
 
@@ -6075,6 +6164,56 @@ def mark_announcement_read(request):
         for a in visible:
             AnnouncementRead.objects.get_or_create(announcement=a, user=request.user)
     return JsonResponse({"success": True})
+
+
+@login_required
+@feature_required("audit_log", action="view")
+def audit_log_view(request):
+    """Filterable, paginated list of curated sensitive-action audit rows.
+    Company-scoped for non-global users, same as _visible_announcements_for_user."""
+    qs = AuditLog.objects.select_related("actor", "employee", "company").all()
+
+    user_company = get_user_company(request.user)
+    if user_company:
+        qs = qs.filter(company=user_company)
+    elif not user_has_global_access(request.user):
+        qs = qs.none()
+
+    actor_id = request.GET.get("actor_id")
+    if actor_id:
+        qs = qs.filter(actor_id=actor_id)
+
+    action = request.GET.get("action")
+    if action:
+        qs = qs.filter(action=action)
+
+    date_from = request.GET.get("date_from")
+    if date_from:
+        qs = qs.filter(created_at__date__gte=date_from)
+
+    date_to = request.GET.get("date_to")
+    if date_to:
+        qs = qs.filter(created_at__date__lte=date_to)
+
+    search = (request.GET.get("q") or "").strip()
+    if search:
+        qs = qs.filter(Q(summary__icontains=search) | Q(target_repr__icontains=search))
+
+    paginator = Paginator(qs, 50)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    actors = User.objects.filter(audit_logs__isnull=False).distinct().order_by("username")
+
+    return render(request, "audit/audit_log.html", {
+        "page_obj": page_obj,
+        "actors": actors,
+        "action_choices": AuditLog.Action.choices,
+        "selected_actor_id": actor_id,
+        "selected_action": action,
+        "date_from": date_from,
+        "date_to": date_to,
+        "search": search,
+    })
 
 
 @login_required
@@ -6586,10 +6725,15 @@ def payroll_run_finalize(request, run_id):
     run = get_object_or_404(PayrollRun, id=run_id)
     if run.status == PayrollRun.STATUS_FINALIZED:
         return JsonResponse({"success": False, "error": "This payroll run is already finalized."}, status=400)
+    record_count = run.records.count()
     for rec in run.records.all():
         recalc_and_save_record(rec, manual_overrides=rec.manual_override or {})
     run.status = PayrollRun.STATUS_FINALIZED
     run.save()
+
+    log_audit(request.user, AuditLog.Action.PAYROLL_FINALIZED, run, company=run.company,
+               summary=f"Finalized payroll for {run.month:%b %Y} ({run.company}) — {record_count} record(s)")
+
     return JsonResponse({"success": True})
 
 
@@ -6829,6 +6973,12 @@ def create_user_view(request):
         employee.user = user
         employee.force_password_change = True   # 🔥 REQUIRED
         employee.save()
+
+        # Do not put the temp password in the audit summary/changes -- audit
+        # rows are visible to every Admin/HR user, no reason to persist a
+        # credential there even a temporary one.
+        log_audit(request.user, AuditLog.Action.USER_ACCOUNT_CREATED, user, employee=employee,
+                   summary=f"Created login for {employee} (username: {user.username}, role: {role})")
 
         messages.success(
             request,

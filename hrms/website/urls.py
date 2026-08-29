@@ -134,6 +134,8 @@ urlpatterns = [
     path('announcements/api/', views.announcements_api, name='announcements-api'),
     path('announcements/mark-read/', views.mark_announcement_read, name='mark-announcement-read'),
 
+    path('audit-log/', views.audit_log_view, name='audit-log'),
+
     path("leave-credit-policy/", views.leave_credit_policy_view, name="leave_credit_policy"),
     path("leave-apply/", views.leave_apply_view, name="leave_apply"),
     path("approve-leave/<int:leave_id>/", views.approve_leave, name="approve_leave"),

@@ -1,4 +1,4 @@
-{% extends 'base2.html' %} {% block body %} {% load static %}
+{% extends 'base2.html' %} {% block body %} {% load static %} {% load custom_filters %}
 
 <!-- Content -->
 
@@ -420,6 +420,18 @@
             Previous Employeement Attachments
           </button>
         </li>
+        {% if request.user|has_feature:"audit_log:view" %}
+        <li class="nav-item" role="presentation">
+          <button
+            class="nav-link"
+            data-bs-toggle="tab"
+            data-bs-target="#tab-history"
+            type="button"
+            role="tab">
+            History
+          </button>
+        </li>
+        {% endif %}
       </ul>
 
       <!-- ================= TAB CONTENT ================= -->
@@ -547,6 +559,53 @@
           </div>
 
         </div>
+
+        {% if request.user|has_feature:"audit_log:view" %}
+        <!-- ===== HISTORY TAB ===== -->
+        <div
+          class="tab-pane fade"
+          id="tab-history"
+          role="tabpanel">
+
+          <div class="card mb-0">
+            <h5 class="card-header">History</h5>
+            <div class="card-datatable table-responsive pb-0">
+              <table class="table datatable-project table-border-bottom-0">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Summary</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% if employee_history %}
+                    {% for row in employee_history %}
+                      <tr>
+                        <td>{{ row.created_at|date:"d M Y, H:i" }}</td>
+                        <td>{% if row.actor %}{{ row.actor.get_full_name|default:row.actor.username }}{% else %}System{% endif %}</td>
+                        <td><span class="badge bg-label-primary" style="font-size:.68rem;">{{ row.get_action_display }}</span></td>
+                        <td>{{ row.summary }}</td>
+                      </tr>
+                    {% endfor %}
+                  {% else %}
+                    <tr>
+                      <td colspan="4" class="text-center">No history for this employee yet</td>
+                    </tr>
+                  {% endif %}
+                </tbody>
+              </table>
+            </div>
+            {% if employee_history %}
+            <div class="card-footer">
+              <a href="{% url 'audit-log' %}" class="small">View all in Audit Log →</a>
+            </div>
+            {% endif %}
+          </div>
+
+        </div>
+        {% endif %}
 
       </div>
 

@@ -90,6 +90,12 @@
                 Users
               </button>
             </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="rp-history-tab" data-bs-toggle="tab"
+                      data-bs-target="#rp-history" type="button" role="tab">
+                History
+              </button>
+            </li>
           </ul>
 
           <div class="tab-content pt-4" id="rpTabsContent">
@@ -203,6 +209,37 @@
                   </tbody>
                 </table>
               </div>
+            </div>
+
+            <!-- ===== HISTORY TAB ===== -->
+            <div class="tab-pane fade" id="rp-history" role="tabpanel">
+              <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                  <thead>
+                    <tr>
+                      <th>Timestamp</th>
+                      <th>Actor</th>
+                      <th>Action</th>
+                      <th>Summary</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for row in role_history %}
+                    <tr>
+                      <td class="text-nowrap small text-muted">{{ row.created_at|date:"d M Y, H:i" }}</td>
+                      <td class="small">{% if row.actor %}{{ row.actor.get_full_name|default:row.actor.username }}{% else %}System{% endif %}</td>
+                      <td><span class="badge bg-label-primary" style="font-size:.68rem;">{{ row.get_action_display }}</span></td>
+                      <td class="small">{{ row.summary }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="text-muted text-center py-3">No history for this role yet.</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% if role_history %}
+              <a href="{% url 'audit-log' %}?action=role_permissions_updated" class="small">View all in Audit Log →</a>
+              {% endif %}
             </div>
 
           </div><!-- /tab-content -->

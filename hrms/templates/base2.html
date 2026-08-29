@@ -825,6 +825,16 @@
                   </li>
                   {% endif %}
 
+                  {% if request.user|has_feature:"audit_log:view" %}
+                  <!-- Audit Log -->
+                  <li class="menu-item">
+                    <a href="{% url 'audit-log' %}" class="menu-link">
+                      <i class="menu-icon tf-icons ri-history-line"></i>
+                      <div>Audit Log</div>
+                    </a>
+                  </li>
+                  {% endif %}
+
                 </ul>
               </div>
             </aside>

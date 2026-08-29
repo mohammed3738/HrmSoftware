@@ -1859,3 +1859,61 @@ class AnnouncementRead(models.Model):
         unique_together = ("announcement", "user")
 
 
+class AuditLog(models.Model):
+    """Immutable record of a curated set of sensitive actions (role/
+    permission changes, salary edits, payroll finalization, employee
+    record edits, leave/comp-off/attendance-correction approvals, new
+    login creation) -- not a generic model-change log for everything.
+    Written exclusively via website.services.audit.log_audit(), never
+    created directly, so field-population rules stay in one place."""
+
+    class Action(models.TextChoices):
+        ROLE_CREATED = "role_created", "Role created"
+        ROLE_RENAMED = "role_renamed", "Role renamed"
+        ROLE_DELETED = "role_deleted", "Role deleted"
+        ROLE_PERMISSIONS_UPDATED = "role_permissions_updated", "Role permissions updated"
+        ROLE_ASSIGNED = "role_assigned", "Role assigned to employee"
+        SALARY_CREATED = "salary_created", "Salary structure created"
+        SALARY_UPDATED = "salary_updated", "Salary structure updated"
+        PAYROLL_FINALIZED = "payroll_finalized", "Payroll run finalized"
+        EMPLOYEE_CREATED = "employee_created", "Employee record created"
+        EMPLOYEE_UPDATED = "employee_updated", "Employee record updated"
+        OFFBOARDING_CREATED = "offboarding_created", "Offboarding created"
+        OFFBOARDING_UPDATED = "offboarding_updated", "Offboarding updated"
+        OFFBOARDING_DELETED = "offboarding_deleted", "Offboarding deleted"
+        LEAVE_APPROVED = "leave_approved", "Leave approved"
+        LEAVE_REJECTED = "leave_rejected", "Leave rejected"
+        COMPOFF_APPROVED = "compoff_approved", "Comp-off approved"
+        COMPOFF_REJECTED = "compoff_rejected", "Comp-off rejected"
+        CORRECTION_APPROVED = "correction_approved", "Attendance correction approved"
+        CORRECTION_REJECTED = "correction_rejected", "Attendance correction rejected"
+        USER_ACCOUNT_CREATED = "user_account_created", "User account created"
+
+    actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_logs")
+    action = models.CharField(max_length=40, choices=Action.choices, db_index=True)
+    # e.g. "Employee", "SalaryMaster", "Group", "PayrollRun" -- the model
+    # class name of whatever the action was performed on.
+    target_type = models.CharField(max_length=50)
+    target_id = models.PositiveIntegerField(null=True, blank=True)
+    # Human-readable label captured at write time so it still means
+    # something after the target row itself is later renamed or deleted.
+    target_repr = models.CharField(max_length=200)
+    # Direct shortcut (not routed through target_type/target_id) so an
+    # employee's History tab is a single filter -- most audited actions
+    # relate to one employee; role/permission events leave this null.
+    employee = models.ForeignKey("Employee", null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_logs")
+    company = models.ForeignKey("Company", null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_logs")
+    summary = models.CharField(max_length=500)
+    # {field: {"old": ..., "new": ...}} for update actions; empty for pure
+    # creates or actions where a before/after diff doesn't apply.
+    changes = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["target_type", "target_id"])]
+
+    def __str__(self):
+        return f"{self.get_action_display()} — {self.target_repr}"
+
+

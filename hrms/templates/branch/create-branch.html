@@ -74,6 +74,15 @@
             </ul>
           </div>
         </div>
+        <div class="me-2 mb-2">
+          <a
+            href="#"
+            data-bs-toggle="modal"
+            data-bs-target="#bulk_upload_branch"
+            class="btn btn-outline-primary d-flex align-items-center"
+            ><i class="ti ti-upload me-2"></i>Bulk Upload</a
+          >
+        </div>
         <div class="mb-2">
           <a
             href="#"
@@ -293,6 +302,11 @@
         </div>
       </div> {% endcomment %}
       <div class="card-body p-0">
+        <div class="d-flex gap-2 px-3 pt-3">
+          <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
+          <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Archived</a>
+          <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+        </div>
         <div class="custom-datatable-filter table-responsive">
           <table class="table datatable">
             <thead class="thead-light">
@@ -305,8 +319,8 @@
             <tbody>
               {% if branches %} {% for branch in branches %}
 
-              <tr>                              
-                <td>{{branch.branch_name}}</td>
+              <tr>
+                <td>{{branch.branch_name}}{% if not branch.is_active %}<span class="badge bg-label-secondary ms-1">Archived</span>{% endif %}</td>
                 <td>
                   <div
                     class="d-flex align-items-center justify-content-between"
@@ -342,13 +356,23 @@
                       >
                         <i class="ti ti-edit me-2"></i> Edit
                       </a>
+                      {% if branch.is_active %}
                       <a
                         class="dropdown-item text-danger"
                         href="javascript:void(0)"
-                        onclick="confirmDelete({{ branch.id }})"
+                        onclick="confirmArchiveBranch({{ branch.id }})"
                       >
-                        <i class="ti ti-trash me-2"></i> Delete
+                        <i class="ti ti-archive me-2"></i> Archive
                       </a>
+                      {% else %}
+                      <a
+                        class="dropdown-item text-success"
+                        href="javascript:void(0)"
+                        onclick="restoreBranch({{ branch.id }})"
+                      >
+                        <i class="ti ti-rotate me-2"></i> Restore
+                      </a>
+                      {% endif %}
                     </div>
                   </div>
                 </td>
@@ -454,6 +478,42 @@
 </div>
 <!-- /Edit Branch -->
 <!-- /Edit Branch -->
+
+<!-- Bulk Upload Branches -->
+<div class="modal fade" id="bulk_upload_branch" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h4 class="modal-title">Bulk Upload Branches</h4>
+        <button type="button" class="btn-close custom-btn-close" data-bs-dismiss="modal" aria-label="Close">
+          <i class="ti ti-x"></i>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">
+          Upload an Excel file (.xlsx/.xls) with a Branch Name column (required) and a Branch Address column (optional), one branch per row.
+        </p>
+        <a href="{% url 'download-branch-upload-template' %}" class="btn btn-sm btn-outline-secondary mb-3">
+          <i class="ti ti-download me-1"></i>Download Template
+        </a>
+        <form id="branchBulkUploadForm">
+          {% csrf_token %}
+          <div class="mb-3">
+            <input type="file" name="excel_file" id="branchBulkUploadFile" class="form-control" accept=".xlsx,.xls" required>
+          </div>
+          <button type="submit" class="btn btn-primary" id="branchBulkUploadBtn">
+            <i class="ti ti-upload me-1"></i>Upload
+          </button>
+        </form>
+        <div id="branchBulkUploadResult" class="mt-3 d-none">
+          <div class="alert" id="branchBulkUploadSummary"></div>
+          <ul class="small text-danger" id="branchBulkUploadErrors" style="max-height:200px; overflow-y:auto;"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- /Bulk Upload Branches -->
 
 <!-- Upgrade Information -->
 <div class="modal fade" id="upgrade_info">
@@ -624,11 +684,14 @@
 </div>
 <!-- /Upgrade Information -->
 
-<!-- Delete Modal -->
+<!-- Archive / Restore Forms -->
 <form id="deleteBranchForm" method="POST" style="display: none">
   {% csrf_token %}
 </form>
-<!-- /Delete Modal -->
+<form id="restoreBranchForm" method="POST" style="display: none">
+  {% csrf_token %}
+</form>
+<!-- /Archive / Restore Forms -->
 
 <!-- /Main Wrapper -->
 
@@ -739,29 +802,95 @@
 </script>
 <!-- /View Branch Script -->
 
-<!-- Delete Branch Script -->
+<!-- Archive / Restore Branch Script -->
 <script>
-function confirmDelete(branchId) {
+function confirmArchiveBranch(branchId) {
     Swal.fire({
-        title: "Are you sure?",
-        text: "This action will permanently delete the company!",
+        title: "Archive this branch?",
+        text: "It will be hidden from active lists but its history (employees, holidays, etc.) is kept. You can restore it later.",
         icon: "warning",
         showCancelButton: true,
         confirmButtonColor: "#d33",
         cancelButtonColor: "#3085d6",
-        confirmButtonText: "Yes, delete it!"
+        confirmButtonText: "Yes, archive it!"
     }).then((result) => {
         if (result.isConfirmed) {
-
-            // Submit hidden POST form
             const form = document.getElementById("deleteBranchForm");
             form.action = `/branch/delete/${branchId}/`;
             form.submit();
         }
     });
 }
+
+function restoreBranch(branchId) {
+    const form = document.getElementById("restoreBranchForm");
+    form.action = `/restore/branch/${branchId}/`;
+    form.submit();
+}
 </script>
-<!-- /Delete Branch Script -->
+<!-- /Archive / Restore Branch Script -->
+
+<!-- Bulk Upload Branch Script -->
+<script>
+document.getElementById("branchBulkUploadForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    const fileInput = document.getElementById("branchBulkUploadFile");
+    if (!fileInput.files.length) return;
+
+    const btn = document.getElementById("branchBulkUploadBtn");
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Uploading…';
+
+    const formData = new FormData();
+    formData.append("excel_file", fileInput.files[0]);
+    const csrf = this.querySelector("[name=csrfmiddlewaretoken]").value;
+
+    fetch("{% url 'upload-branch-excel' %}", {
+        method: "POST",
+        headers: { "X-CSRFToken": csrf },
+        body: formData,
+    })
+        .then((res) => res.json())
+        .then((data) => {
+            const resultBox = document.getElementById("branchBulkUploadResult");
+            const summary = document.getElementById("branchBulkUploadSummary");
+            const errorList = document.getElementById("branchBulkUploadErrors");
+            resultBox.classList.remove("d-none");
+            errorList.innerHTML = "";
+
+            if (!data.success) {
+                summary.className = "alert alert-danger";
+                summary.textContent = data.error || "Upload failed.";
+                return;
+            }
+
+            summary.className = data.created > 0 ? "alert alert-success" : "alert alert-warning";
+            summary.textContent = `${data.created} branch(es) created, ${data.skipped} row(s) skipped.`;
+            data.errors.forEach((err) => {
+                const li = document.createElement("li");
+                li.textContent = err;
+                errorList.appendChild(li);
+            });
+
+            if (data.created > 0) {
+                setTimeout(() => window.location.reload(), 1500);
+            }
+        })
+        .catch(() => {
+            const resultBox = document.getElementById("branchBulkUploadResult");
+            const summary = document.getElementById("branchBulkUploadSummary");
+            resultBox.classList.remove("d-none");
+            summary.className = "alert alert-danger";
+            summary.textContent = "Something went wrong while uploading.";
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        });
+});
+</script>
+<!-- /Bulk Upload Branch Script -->
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {

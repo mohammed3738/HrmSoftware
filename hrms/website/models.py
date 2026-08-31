@@ -36,9 +36,10 @@ class Company(models.Model):
 class Branch(models.Model):
     branch_name= models.CharField(max_length=100)
     branch_address = models.TextField(verbose_name="Branch Address", blank=True, null=True,)  # Full address
+    is_active = models.BooleanField(default=True)
     def __str__(self):
         return f"{self.branch_name}"
-    
+
 
 BLOOD_GROUP_CHOICES = [
     ("A+", "A+"),
@@ -156,7 +157,7 @@ class Employee(models.Model):
         verbose_name="Emergency Contact Relation 2"
     )
     emergency_contact_mobile2 = models.CharField(max_length=30, null=True, blank=True, verbose_name="Emergency Contact Mobile No 2")
-    status = models.CharField(max_length=50, choices=[("Active", "Active"), ("Pending", "Pending"), ("Left", "Left")] , default='Active')
+    status = models.CharField(max_length=50, choices=[("Active", "Active"), ("Pending", "Pending"), ("Left", "Left"), ("Archived", "Archived")] , default='Active')
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
@@ -231,6 +232,7 @@ class Offboarding(models.Model):
     relieving_letter = models.FileField(upload_to="offboarding/relieving_letters/", verbose_name="Relieving Letter", blank=True , null=True)
     other_documents = models.FileField(upload_to="offboarding/other_documents/", blank=True, null=True, verbose_name="Other Documents")
     fnf_documents = models.FileField(upload_to="offboarding/fnf/", blank=True, null=True, verbose_name="FNF Document")
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return f"Offboarding for {self.employee}"
@@ -739,6 +741,7 @@ class SalaryIncrement(models.Model):
     change_set = JSONField()
 
     is_processed = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return f"Increment for {self.employee} effective {self.effective_date}"
@@ -938,7 +941,8 @@ class HolidayType(models.Model):
     description = models.TextField(blank=True)
     color_code = models.CharField(max_length=7, default='#2196F3',
                                  help_text="Hex color for calendar display")
-    
+    is_active = models.BooleanField(default=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -1039,17 +1043,23 @@ class Holiday(models.Model):
         help_text="Employees who get this holiday, when 'Applies to all employees' is off.",
     )
 
+    is_active = models.BooleanField(default=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.PROTECT)
-    
+
     class Meta:
         ordering = ['holiday_date']
         indexes = [
             models.Index(fields=['holiday_date']),
         ]
         constraints = [
-            models.UniqueConstraint(fields=['holiday_date'], name='unique_holiday_date'),
+            # Only enforced among active holidays -- otherwise an archived
+            # holiday would permanently block ever adding a new one on the
+            # same date again.
+            models.UniqueConstraint(fields=['holiday_date'], condition=models.Q(is_active=True),
+                                     name='unique_active_holiday_date'),
         ]
     
     def __str__(self):
@@ -1260,12 +1270,14 @@ class HalfDayScenario(models.Model):
     
     is_approved = models.BooleanField(default=False)
     
+    is_active = models.BooleanField(default=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_by = models.ForeignKey(User, on_delete=models.PROTECT)
     approved_by = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True,
                                    related_name='approved_half_day_scenarios')
-    
+
     class Meta:
         ordering = ['-scenario_date']
         indexes = [
@@ -1273,15 +1285,17 @@ class HalfDayScenario(models.Model):
             models.Index(fields=['is_approved', 'scenario_date'], name='website_hal_is_appr_7f6ba9_idx'),
         ]
         constraints = [
+            # Both conditioned on is_active too -- an archived scenario must
+            # not permanently block adding a new one on the same date/branch.
             models.UniqueConstraint(
                 fields=['branch', 'scenario_date'],
-                condition=models.Q(branch__isnull=False),
-                name='unique_branch_scenario_date',
+                condition=models.Q(branch__isnull=False, is_active=True),
+                name='unique_active_branch_scenario_date',
             ),
             models.UniqueConstraint(
                 fields=['scenario_date'],
-                condition=models.Q(branch__isnull=True),
-                name='unique_allbranch_scenario_date',
+                condition=models.Q(branch__isnull=True, is_active=True),
+                name='unique_active_allbranch_scenario_date',
             ),
         ]
 
@@ -1494,8 +1508,18 @@ class Attendance(models.Model):
                     return
             
             # STEP 3: Normal attendance calculation (EXISTING CODE - DON'T CHANGE)
-            # If no in_time or out_time, mark as Absent
-            if not self.in_time or not self.out_time:
+            # If no in_time or out_time, mark as Absent. Also treat
+            # in_time == out_time == midnight (00:00:00) as "no punch
+            # recorded" -- this app's attendance source files use 00:00/00:00
+            # to mark an absent employee, but datetime.time(0, 0) is truthy
+            # in Python, so it doesn't get caught by the blank check above,
+            # and the overnight-shift adjustment below would otherwise turn
+            # it into a ~24-hour "Present" shift. Catching it here (not just
+            # at upload-parse time) also fixes already-stored bad rows the
+            # moment attendance is recalculated, without needing a data
+            # migration.
+            midnight = datetime.time(0, 0, 0)
+            if not self.in_time or not self.out_time or (self.in_time == midnight and self.out_time == midnight):
                 self.status = "Absent"
                 self.count = Decimal("0.00")
                 self.late = 0
@@ -1670,6 +1694,34 @@ class AttendanceUpload(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class SalaryUpload(models.Model):
+    """Tracks a bulk salary-structure Excel import by the SHA-256 of its
+    content, so re-uploading the exact same file after a dropped connection
+    resumes instead of re-processing (and duplicating history for) employees
+    already applied by an earlier attempt. See import_salary_excel in
+    website/views.py."""
+    file_hash = models.CharField(max_length=64, db_index=True)
+    file_name = models.CharField(max_length=255, blank=True)
+    total_rows = models.IntegerField(default=0)
+    # employee_codes successfully applied so far for this exact file's
+    # content -- the resume/dedupe key.
+    processed_employee_codes = models.JSONField(default=list, blank=True)
+    created_count = models.IntegerField(default=0)
+    errors = models.JSONField(default=list, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("processing", "Processing"),
+            ("completed", "Completed"),
+            ("failed", "Failed"),
+        ],
+        default="processing"
+    )
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class ShiftAssignment(models.Model):
     """
     A roster entry: which shift an employee is on for a given date range
@@ -1687,6 +1739,7 @@ class ShiftAssignment(models.Model):
     shift_end_time = models.TimeField(null=True, blank=True, help_text="Optional, for reference only")
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1708,6 +1761,7 @@ class ShiftAssignment(models.Model):
                 employee_id=self.employee_id,
                 start_date__lte=self.end_date,
                 end_date__gte=self.start_date,
+                is_active=True,
             ).exclude(pk=self.pk)
             if overlapping.exists():
                 raise ValidationError(
@@ -1888,6 +1942,12 @@ class AuditLog(models.Model):
         CORRECTION_APPROVED = "correction_approved", "Attendance correction approved"
         CORRECTION_REJECTED = "correction_rejected", "Attendance correction rejected"
         USER_ACCOUNT_CREATED = "user_account_created", "User account created"
+        RECORD_ARCHIVED = "record_archived", "Record archived"
+        RECORD_RESTORED = "record_restored", "Record restored"
+        EMPLOYEE_ARCHIVED = "employee_archived", "Employee archived"
+        EMPLOYEE_RESTORED = "employee_restored", "Employee restored"
+        OFFBOARDING_ARCHIVED = "offboarding_archived", "Offboarding archived"
+        OFFBOARDING_RESTORED = "offboarding_restored", "Offboarding restored"
 
     actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_logs")
     action = models.CharField(max_length=40, choices=Action.choices, db_index=True)

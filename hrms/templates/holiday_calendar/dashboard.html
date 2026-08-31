@@ -1018,6 +1018,11 @@
                     <h2>Holiday Management</h2>
                     <button class="btn btn-primary" onclick="openAddHolidayModal()">+ Add Holiday</button>
                 </div>
+                <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+                    <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-secondary{% endif %}">Active</a>
+                    <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-secondary{% endif %}">Archived</a>
+                    <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+                </div>
                 <table>
                     <thead>
                         <tr>
@@ -1034,7 +1039,7 @@
                             {% for holiday in all_holidays %}
                                 <tr>
                                     <td><strong>{{ holiday.holiday_date|date:"M d, Y" }}</strong></td>
-                                    <td>{{ holiday.name }}</td>
+                                    <td>{{ holiday.name }}{% if not holiday.is_active %} <span class="status-badge">Archived</span>{% endif %}</td>
                                     <td>
                                         <span class="status-badge badge-{{ holiday.holiday_type.type_category|lower }}">
                                             {{ holiday.holiday_type.name }}
@@ -1053,8 +1058,12 @@
                                         </span>
                                     </td>
                                     <td>
+                                        {% if holiday.is_active %}
                                         <button class="btn btn-secondary btn-sm" onclick="editHoliday({{ holiday.id }})">Edit</button>
-                                        <button class="btn btn-danger btn-sm" style="margin-left: 0.25rem;" onclick="deleteHoliday({{ holiday.id }})">Delete</button>
+                                        <button class="btn btn-danger btn-sm" style="margin-left: 0.25rem;" onclick="deleteHoliday({{ holiday.id }})">Archive</button>
+                                        {% else %}
+                                        <button class="btn btn-secondary btn-sm" onclick="restoreHoliday({{ holiday.id }})">Restore</button>
+                                        {% endif %}
                                     </td>
                                 </tr>
                             {% endfor %}
@@ -1136,6 +1145,11 @@
                     <h2>Holiday Types</h2>
                     <button class="btn btn-primary" onclick="openModal('addHolidayTypeModal')">+ Add Type</button>
                 </div>
+                <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+                    <a href="?tab=holiday-types&show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-secondary{% endif %}">Active</a>
+                    <a href="?tab=holiday-types&show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-secondary{% endif %}">Archived</a>
+                    <a href="?tab=holiday-types&show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+                </div>
                 <table>
                     <thead>
                         <tr>
@@ -1159,15 +1173,22 @@
                                     {{ ht.get_type_category_display }}
                                 </span>
                             </td>
-                            <td>{{ ht.description|default:"—" }}</td>
+                            <td>{{ ht.description|default:"—" }}{% if not ht.is_active %} <span class="status-badge">Archived</span>{% endif %}</td>
                             <td>{{ ht.holiday_set.count }}</td>
                             <td>
+                                {% if ht.is_active %}
                                 <button class="btn btn-secondary btn-sm" onclick="editHolidayType({{ ht.id }})">Edit</button>
                                 <form method="POST" action="{% url 'holiday-type-delete' ht.id %}" style="display:inline;"
-                                      onsubmit="return confirm('Delete holiday type \'{{ ht.name|escapejs }}\'? This cannot be undone.')">
+                                      onsubmit="return confirm('Archive holiday type \'{{ ht.name|escapejs }}\'? It will be hidden from active use but kept for existing holidays that reference it.')">
                                     {% csrf_token %}
-                                    <button type="submit" class="btn btn-danger btn-sm" style="margin-left:0.25rem;">Delete</button>
+                                    <button type="submit" class="btn btn-danger btn-sm" style="margin-left:0.25rem;">Archive</button>
                                 </form>
+                                {% else %}
+                                <form method="POST" action="{% url 'restore-record' 'holidaytype' ht.id %}" style="display:inline;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-secondary btn-sm">Restore</button>
+                                </form>
+                                {% endif %}
                             </td>
                         </tr>
                         {% empty %}
@@ -1272,6 +1293,11 @@
                     <h2>Half-Day Scenarios</h2>
                     <button class="btn btn-primary" onclick="openAddHalfDayModal()">+ Add Half-Day</button>
                 </div>
+                <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
+                    <a href="?tab=halfday&show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-secondary{% endif %}">Active</a>
+                    <a href="?tab=halfday&show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-secondary{% endif %}">Archived</a>
+                    <a href="?tab=halfday&show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+                </div>
                 <table>
                     <thead>
                         <tr>
@@ -1295,16 +1321,23 @@
                                         <span class="status-badge status-pending">⏳ Pending</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ scenario.branch.branch_name|default:"All Branches" }}</td>
+                                <td>{{ scenario.branch.branch_name|default:"All Branches" }}{% if not scenario.is_active %} <span class="status-badge">Archived</span>{% endif %}</td>
                                 <td>
+                                    {% if scenario.is_active %}
                                     <button class="btn btn-secondary btn-sm" onclick="editHalfDay({{ scenario.id }})">Edit</button>
                                     <form method="POST"
                                         action="{% url 'delete-half-day-scenario' scenario.id %}"
                                         style="display:inline;"
-                                        onsubmit="return confirm('Delete this half-day scenario?')">
+                                        onsubmit="return confirm('Archive this half-day scenario? It will be hidden from active lists but kept in history.')">
                                         {% csrf_token %}
-                                        <button type="submit" class="btn btn-danger btn-sm" style="margin-left:0.25rem;">Delete</button>
+                                        <button type="submit" class="btn btn-danger btn-sm" style="margin-left:0.25rem;">Archive</button>
                                     </form>
+                                    {% else %}
+                                    <form method="POST" action="{% url 'restore-record' 'halfdayscenario' scenario.id %}" style="display:inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-secondary btn-sm">Restore</button>
+                                    </form>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}
@@ -2013,10 +2046,21 @@
         }
 
         function deleteHoliday(id) {
-            if (!confirm('Delete this holiday?')) return;
+            if (!confirm('Archive this holiday? It will be hidden from the calendar but kept in history. You can restore it later.')) return;
             const form = document.createElement('form');
             form.method = 'POST';
             form.action = `/holiday/${id}/delete/`;
+            const csrf = document.createElement('input');
+            csrf.type = 'hidden'; csrf.name = 'csrfmiddlewaretoken'; csrf.value = CSRF;
+            form.appendChild(csrf);
+            document.body.appendChild(form);
+            form.submit();
+        }
+
+        function restoreHoliday(id) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/restore/holiday/${id}/`;
             const csrf = document.createElement('input');
             csrf.type = 'hidden'; csrf.name = 'csrfmiddlewaretoken'; csrf.value = CSRF;
             form.appendChild(csrf);
@@ -2098,7 +2142,7 @@
             previousMonth, nextMonth, todayMonth, filterCalendar,
             openAddHolidayModal, openAddHalfDayModal,
             openModal, closeModal,
-            editHoliday, deleteHoliday,
+            editHoliday, deleteHoliday, restoreHoliday,
             editHolidayType,
             editHalfDay,
             editEarnedLeaves,

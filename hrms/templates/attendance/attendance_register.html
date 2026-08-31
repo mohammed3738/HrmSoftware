@@ -1,0 +1,215 @@
+{% extends 'base2.html' %}
+{% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="card shadow p-3 rounded-4">
+    <h4 class="m-2 fw-bold"><i class="ri-table-line me-2 text-primary"></i>Attendance Register</h4>
+    <p class="text-muted small px-2">
+      One row per employee for the selected payroll period, with a column for every calendar day.
+      Click a day's value to correct it — the same status conversion used on Late Attendance Review
+      (Present / Half Day / Holiday / Late Present).
+    </p>
+
+    <form method="GET" class="row g-2 align-items-end mb-3 px-2" id="registerFilterForm">
+      {% if is_global %}
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Company</label>
+        <select name="company_id" class="form-select form-select-sm" onchange="document.getElementById('registerFilterForm').submit()">
+          <option value="">-- Select Company --</option>
+          {% for c in all_companies %}
+          <option value="{{ c.id }}" {% if selected_company_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      {% if available_periods %}
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Payroll Period</label>
+        <select name="period" class="form-select form-select-sm" onchange="document.getElementById('registerFilterForm').submit()">
+          {% for period in available_periods %}
+          <option value="{{ period.to_date|date:'Y-m-d' }}" {% if selected_period == period.to_date|date:'Y-m-d' %}selected{% endif %}>
+            {{ period.label }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Employee</label>
+        <input type="text" name="q" value="{{ search_query }}" class="form-control form-control-sm" placeholder="Name or code">
+      </div>
+
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-sm btn-primary"><i class="ri-filter-2-line me-1"></i>Filter</button>
+        <a href="{% url 'attendance-register' %}{% if selected_company_id %}?company_id={{ selected_company_id }}{% endif %}" class="btn btn-sm btn-outline-secondary">Reset</a>
+      </div>
+    </form>
+
+    {% if error %}
+    <div class="alert alert-warning mx-2">{{ error }}</div>
+    {% elif not day_columns %}
+    <div class="alert alert-info mx-2">No attendance data found for this company/period yet.</div>
+    {% else %}
+
+    <div class="table-responsive" style="max-height:75vh;">
+      <table class="table table-sm table-bordered align-middle mb-0" style="font-size:0.78rem;">
+        <thead class="table-light" style="position:sticky; top:0; z-index:2;">
+          <tr>
+            <th rowspan="2" style="min-width:90px;">Emp Code</th>
+            <th rowspan="2" style="min-width:150px;">Name</th>
+            <th rowspan="2" class="text-end">Opening</th>
+            <th rowspan="2" class="text-end">Leave<br>Taken</th>
+            <th rowspan="2" class="text-end">Late</th>
+            <th rowspan="2" class="text-end">Comp<br>Off</th>
+            <th rowspan="2" class="text-end">LWP</th>
+            <th rowspan="2" class="text-end">Paid<br>Days</th>
+            <th rowspan="2" class="text-end">Total<br>Days</th>
+            <th rowspan="2" class="text-end">Closing<br>Balance</th>
+            <th rowspan="2" class="text-end">Leave<br>Balance</th>
+            <th rowspan="2" style="min-width:90px;">Branch</th>
+            {% for col in day_columns %}
+            <th class="text-center {% if col.is_weekend %}table-danger{% endif %}" style="min-width:34px; padding:2px;">
+              {{ col.date|date:"d-M" }}
+            </th>
+            {% endfor %}
+            <th rowspan="2" class="text-end">Late<br>Deduction</th>
+          </tr>
+          <tr>
+            {% for col in day_columns %}
+            <th class="text-center {% if col.is_weekend %}table-danger{% endif %}" style="padding:2px;">{{ col.weekday }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>{{ row.employee.employee_code }}</td>
+            <td class="fw-medium text-nowrap">{{ row.employee.first_name }} {{ row.employee.last_name }}</td>
+            <td class="text-end">{{ row.lb.opening_balance|default:"0.00" }}</td>
+            <td class="text-end">{{ row.lb.leave_taken|default:"0.00" }}</td>
+            <td class="text-end">{{ row.lb.late|default:"0" }}</td>
+            <td class="text-end">{{ row.lb.compoff|default:"0.00" }}</td>
+            <td class="text-end">{{ row.lb.leave_without_pay|default:"0.00" }}</td>
+            <td class="text-end">{{ row.lb.number_of_days_present|default:"0.00" }}</td>
+            <td class="text-end">{{ row.lb.total_number_of_days|default:"0" }}</td>
+            <td class="text-end">{{ row.lb.closing_balance|default:"0.00" }}</td>
+            <td class="text-end">{{ row.lb.final_leave_balance|default:"0.00" }}</td>
+            <td class="text-nowrap">{{ row.employee.branch.branch_name|default:"—" }}</td>
+            {% for day in row.days %}
+              {% if day.attendance_id %}
+              <td class="text-center day-cell" data-attendance-id="{{ day.attendance_id }}" data-current-status="{{ day.status }}" onclick="openDayOverride(this)" style="cursor:pointer; padding:2px;" title="Click to correct">{{ day.display }}</td>
+              {% else %}
+              <td class="text-center {% if day.is_weekend %}table-danger{% endif %}" style="padding:2px;">{{ day.display }}</td>
+              {% endif %}
+            {% endfor %}
+            <td class="text-end">{{ row.late_deduction }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="13">No employees found.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if paginator.num_pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center mt-3 px-2">
+      <span class="text-muted small">Page {{ page_obj.number }} of {{ paginator.num_pages }} ({{ total_employees }} employees)</span>
+      <div>
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-sm btn-outline-primary">Next</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function getCSRFToken() {
+  return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
+}
+
+const DAY_OVERRIDE_VALID_STATUSES = ["Present", "Half Day", "Holiday", "Late Present"];
+
+function openDayOverride(cellEl) {
+  if (cellEl.querySelector('select')) return;
+
+  const currentStatus = cellEl.dataset.currentStatus || "Absent";
+  const attendanceId = cellEl.dataset.attendanceId;
+  const originalHtml = cellEl.innerHTML;
+
+  const select = document.createElement('select');
+  select.className = 'form-select form-select-sm';
+  select.style.cssText = 'font-size:0.7rem; padding:0 2px; min-width:80px;';
+
+  const noChangeOpt = document.createElement('option');
+  noChangeOpt.value = currentStatus;
+  noChangeOpt.textContent = currentStatus + ' (current)';
+  noChangeOpt.selected = true;
+  select.appendChild(noChangeOpt);
+
+  DAY_OVERRIDE_VALID_STATUSES.forEach(function (s) {
+    if (s === currentStatus) return;
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s;
+    select.appendChild(opt);
+  });
+
+  cellEl.innerHTML = '';
+  cellEl.appendChild(select);
+  select.focus();
+
+  function closeEditor(newHtml) {
+    cellEl.innerHTML = newHtml !== undefined ? newHtml : originalHtml;
+  }
+
+  select.addEventListener('blur', function () {
+    setTimeout(function () {
+      if (cellEl.contains(select)) closeEditor();
+    }, 150);
+  });
+
+  select.addEventListener('click', function (e) { e.stopPropagation(); });
+
+  select.addEventListener('change', function () {
+    const newStatus = select.value;
+    if (newStatus === currentStatus) { closeEditor(); return; }
+    select.disabled = true;
+
+    fetch("{% url 'override_attendance_status' %}", {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-CSRFToken': getCSRFToken(),
+      },
+      body: new URLSearchParams({ attendance_id: attendanceId, new_status: newStatus }),
+    })
+    .then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
+    .then(function (result) {
+      if (!result.ok) {
+        alert(result.data.error || 'Could not update this day.');
+        closeEditor();
+        return;
+      }
+      const countNum = parseFloat(result.data.count);
+      let display = '';
+      if (countNum === 1) display = '1';
+      else if (countNum > 0) display = String(countNum);
+      cellEl.dataset.currentStatus = result.data.status;
+      closeEditor(display);
+    })
+    .catch(function () {
+      alert('Something went wrong while updating this day.');
+      closeEditor();
+    });
+  });
+}
+</script>
+{% endblock %}

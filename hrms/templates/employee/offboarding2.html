@@ -33,6 +33,12 @@
       </div>
       {% endif %}
 
+      <div class="d-flex gap-2 mb-3">
+        <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
+        <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Archived</a>
+        <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+      </div>
+
       <!-- Table -->
       <div class="table-responsive text-nowrap">
         <table class="table datatable">
@@ -49,12 +55,12 @@
             {% for off in offboardings %}
             <tr>
               <td>{{ off.employee.employee_code }}</td>
-              <td>{{ off.employee }}</td>
+              <td>{{ off.employee }}{% if not off.is_active %}<span class="badge bg-label-secondary ms-1">Archived</span>{% endif %}</td>
               <td>{{ off.date_of_resignation|date:"M d, Y" }}</td>
               <td>{{ off.date_of_relieving|date:"M d, Y" }}</td>
               <td>
                 <div class="dropdown">
-                  <button class="btn btn-sm btn-icon btn-text-secondary rounded-pill dropdown-toggle hide-arrow" 
+                  <button class="btn btn-sm btn-icon btn-text-secondary rounded-pill dropdown-toggle hide-arrow"
                           data-bs-toggle="dropdown">
                     <i class="ri-more-2-line"></i>
                   </button>
@@ -65,9 +71,15 @@
                     <a class="dropdown-item edit-offboarding-btn" href="javascript:void(0);" data-id="{{ off.id }}">
                       <i class="ri-edit-line me-2"></i> Edit
                     </a>
+                    {% if off.is_active %}
                     <a class="dropdown-item text-danger" href="javascript:void(0);" onclick="confirmDelete({{ off.id }})">
-                      <i class="ri-delete-bin-7-line me-2"></i> Delete
+                      <i class="ri-archive-line me-2"></i> Archive
                     </a>
+                    {% else %}
+                    <a class="dropdown-item text-success" href="javascript:void(0);" onclick="restoreOffboarding({{ off.id }})">
+                      <i class="ri-refresh-line me-2"></i> Restore
+                    </a>
+                    {% endif %}
                   </div>
                 </div>
               </td>
@@ -405,16 +417,16 @@ function resetForm() {
   document.querySelector('[data-bs-target="#tab-details"]').click();
 }
 
-// Delete Confirmation
+// Archive Confirmation
 function confirmDelete(offId) {
   Swal.fire({
-    title: "Are you sure?",
-    text: "This action cannot be undone!",
+    title: "Archive this offboarding record?",
+    text: "It will be hidden from the active list, but kept for the employee's exit history. You can restore it later.",
     icon: "warning",
     showCancelButton: true,
     confirmButtonColor: "#3085d6",
     cancelButtonColor: "#d33",
-    confirmButtonText: "Yes, delete it!",
+    confirmButtonText: "Yes, archive it!",
     cancelButtonText: "Cancel",
   }).then((result) => {
     if (result.isConfirmed) {
@@ -429,7 +441,7 @@ function confirmDelete(offId) {
         .then((data) => {
           if (data.success) {
             Swal.fire({
-              title: "Deleted!",
+              title: "Archived!",
               text: data.message,
               icon: "success",
               confirmButtonColor: "#3085d6",
@@ -437,7 +449,7 @@ function confirmDelete(offId) {
               location.reload();
             });
           } else {
-            Swal.fire("Error!", "Failed to delete offboarding.", "error");
+            Swal.fire("Error!", "Failed to archive offboarding.", "error");
           }
         })
         .catch(() => {
@@ -445,6 +457,24 @@ function confirmDelete(offId) {
         });
     }
   });
+}
+
+function restoreOffboarding(offId) {
+  fetch(`/restore/offboarding/${offId}/`, {
+    method: "POST",
+    headers: { "X-CSRFToken": "{{ csrf_token }}" },
+  })
+    .then((response) => response.json())
+    .then((data) => {
+      if (data.success) {
+        location.reload();
+      } else {
+        Swal.fire("Error!", "Failed to restore offboarding.", "error");
+      }
+    })
+    .catch(() => {
+      Swal.fire("Error!", "Something went wrong.", "error");
+    });
 }
 
 // Dynamic Asset Rows Management

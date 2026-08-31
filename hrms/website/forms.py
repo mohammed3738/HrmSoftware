@@ -1,6 +1,7 @@
 from django import forms
 from .models import *
 from django.forms import inlineformset_factory,DateInput
+from django.db.models import Q
 
 
 # class EmployeeForm(forms.ModelForm):
@@ -75,6 +76,16 @@ class EmployeeForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs['class'] = 'form-control'
+        # Archived branches/companies shouldn't be offered for a new
+        # assignment, but an employee already pointing at one (since
+        # archived) must keep it selectable so saving the form doesn't
+        # silently blank the field out.
+        self.fields['branch'].queryset = Branch.objects.filter(
+            Q(is_active=True) | Q(pk=self.instance.branch_id)
+        )
+        self.fields['company'].queryset = Company.objects.filter(
+            Q(status='active') | Q(pk=self.instance.company_id)
+        )
 
 
 
@@ -470,19 +481,30 @@ class HolidayForm(forms.ModelForm):
             }),
         }
     
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Archived holiday types shouldn't be offered for a new holiday, but
+        # one already using an archived type must stay selectable so saving
+        # the form doesn't silently blank the field out.
+        self.fields['holiday_type'].queryset = HolidayType.objects.filter(
+            Q(is_active=True) | Q(pk=self.instance.holiday_type_id)
+        )
+
     def clean_holiday_date(self):
         holiday_date = self.cleaned_data.get('holiday_date')
-        
+
         if holiday_date and holiday_date < date.today():
             raise forms.ValidationError(
                 'Holiday date cannot be in the past.'
             )
-        
-        # Check if holiday already exists for this date
+
+        # Check if an active holiday already exists for this date -- an
+        # archived one on the same date is fine to co-exist with (matches
+        # the unique_active_holiday_date DB constraint).
         existing = Holiday.objects.filter(
-            holiday_date=holiday_date
+            holiday_date=holiday_date, is_active=True
         ).exclude(id=self.instance.id)
-        
+
         if existing.exists():
             raise forms.ValidationError(
                 f'A holiday already exists for {holiday_date.strftime("%B %d, %Y")}.'

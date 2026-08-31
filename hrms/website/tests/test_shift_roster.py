@@ -131,9 +131,14 @@ class ShiftRosterTest(TestCase):
         self.assertEqual(assignment.shift_name, "Night Shift")
         self.assertEqual(assignment.notes, "Changed to nights")
 
+        # "Delete" is a soft delete (archive, is_active=False) -- the row is
+        # kept, not destroyed, consistent with the rest of the app's
+        # archive/restore pattern.
         resp = self.client.post(reverse("delete_shift_assignment", args=[assignment.id]))
         self.assertTrue(resp.json()["success"])
-        self.assertFalse(ShiftAssignment.objects.filter(id=assignment.id).exists())
+        assignment.refresh_from_db()
+        self.assertFalse(assignment.is_active)
+        self.assertTrue(ShiftAssignment.objects.filter(id=assignment.id).exists())
 
     def test_api_get_shift_assignment_for_edit_prefill(self):
         assignment = ShiftAssignment.objects.create(

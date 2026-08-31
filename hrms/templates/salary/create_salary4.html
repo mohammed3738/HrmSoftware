@@ -136,7 +136,6 @@
    class="dropdown-item">
   Edit
 </a>
-              <a class="dropdown-item" href="#"><i class="ri-delete-bin-7-line me-2"></i>Delete</a>
               <a class="dropdown-item"
                 onclick="viewSalaryDetails({{ employee.id }})">
                 <i class="ri-eye-line"></i> View
@@ -828,8 +827,12 @@ function submitSalaryImport() {
         `<div class="alert alert-danger">${data.error}</div>`;
       return;
     }
+    let resumeNote = "";
+    if (data.resumed) {
+      resumeNote = ` This upload picked up where a previous attempt left off — ${data.already_done} record(s) were already done and were skipped, so nothing got duplicated.`;
+    }
     let html = `<div class="alert alert-success">
-      <strong>Import complete:</strong> ${data.created} salary record(s) created, ${data.skipped} skipped.
+      <strong>Import complete:</strong> ${data.created} salary record(s) created, ${data.skipped} skipped.${resumeNote}
     </div>`;
     if (data.errors && data.errors.length) {
       html += `<div class="alert alert-warning"><strong>Row errors:</strong><ul class="mb-0 mt-1">`;

@@ -37,6 +37,11 @@ urlpatterns = [
     path("branch/<int:branch_id>/get/", views.get_branch, name="get_branch"),
     path("branch/delete/<int:branch_id>/", views.delete_branch, name="delete_branch"),
 
+    path('upload-company/', views.upload_company_excel, name='upload-company-excel'),
+    path('company/upload-template/', views.download_company_upload_template, name='download-company-upload-template'),
+    path('upload-branch/', views.upload_branch_excel, name='upload-branch-excel'),
+    path('branch/upload-template/', views.download_branch_upload_template, name='download-branch-upload-template'),
+
     path("login/", views.login_view, name="login"),
 
     path("create-user/", views.create_user_view, name="create-user"),
@@ -58,6 +63,7 @@ urlpatterns = [
     path("attendance/late-review/", views.late_attendance_review, name="late_attendance_review"),
     path("attendance/override-status/", views.override_attendance_status, name="override_attendance_status"),
     path("attendance/bulk-override-status/", views.bulk_override_attendance_status, name="bulk_override_attendance_status"),
+    path("attendance/register/", views.attendance_register_view, name="attendance-register"),
 
     path("attendance/shift-roster/", views.shift_roster_list, name="shift_roster_list"),
     path("attendance/shift-roster/add/", views.add_shift_assignment, name="add_shift_assignment"),
@@ -135,6 +141,7 @@ urlpatterns = [
     path('announcements/mark-read/', views.mark_announcement_read, name='mark-announcement-read'),
 
     path('audit-log/', views.audit_log_view, name='audit-log'),
+    path('restore/<str:model_type>/<int:pk>/', views.restore_record, name='restore-record'),
 
     path("leave-credit-policy/", views.leave_credit_policy_view, name="leave_credit_policy"),
     path("leave-apply/", views.leave_apply_view, name="leave_apply"),

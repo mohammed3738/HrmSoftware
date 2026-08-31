@@ -53,6 +53,11 @@
         <i class="ri-calendar-check-line me-1"></i> This Week ({{ week_start }} to {{ week_end }})
       </a>
     </div>
+    <div class="d-flex gap-2 px-2 mb-3">
+      <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
+      <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Archived</a>
+      <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+    </div>
 
     {% if assignments %}
     <div class="table-responsive">
@@ -88,8 +93,13 @@
             <td class="small text-muted">{% if a.created_by %}{{ a.created_by.get_full_name|default:a.created_by.username }}{% else %}—{% endif %}</td>
             <td class="small text-muted">{{ a.created_at|date:"d M Y, h:i A" }}</td>
             <td>
+              {% if a.is_active %}
               <button class="btn btn-sm btn-outline-secondary" onclick="openEditShiftModal({{ a.id }})">Edit</button>
-              <button class="btn btn-sm btn-outline-danger" onclick="deleteShiftAssignment({{ a.id }})">Delete</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="deleteShiftAssignment({{ a.id }})">Archive</button>
+              {% else %}
+              <span class="badge bg-label-secondary me-1">Archived</span>
+              <button class="btn btn-sm btn-outline-success" onclick="restoreShiftAssignment({{ a.id }})">Restore</button>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}
@@ -385,17 +395,30 @@ document.getElementById('editShiftForm').addEventListener('submit', function (e)
 });
 
 function deleteShiftAssignment(id) {
-  if (!confirm('Delete this shift assignment?')) return;
+  if (!confirm('Archive this shift assignment? It will be hidden from the active roster but kept in history. You can restore it later.')) return;
   fetch(`/attendance/shift-roster/${id}/delete/`, {
     method: 'POST',
     headers: { 'X-CSRFToken': getCSRFToken() },
   })
   .then(res => res.json().then(data => ({ ok: res.ok, data })))
   .then(({ ok, data }) => {
-    if (!ok || !data.success) { alert((data && data.error) || 'Could not delete.'); return; }
+    if (!ok || !data.success) { alert((data && data.error) || 'Could not archive.'); return; }
     location.reload();
   })
-  .catch(() => alert('Something went wrong while deleting.'));
+  .catch(() => alert('Something went wrong while archiving.'));
+}
+
+function restoreShiftAssignment(id) {
+  fetch(`/restore/shiftassignment/${id}/`, {
+    method: 'POST',
+    headers: { 'X-CSRFToken': getCSRFToken() },
+  })
+  .then(res => res.json().then(data => ({ ok: res.ok, data })))
+  .then(({ ok, data }) => {
+    if (!ok || !data.success) { alert('Could not restore.'); return; }
+    location.reload();
+  })
+  .catch(() => alert('Something went wrong while restoring.'));
 }
 </script>
 {% endblock %}

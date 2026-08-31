@@ -99,3 +99,42 @@ class EmployeeDashboardTest(TestCase):
     def test_my_profile_redirects_to_own_employee_detail_page(self):
         resp = self.client.get(reverse("my_profile"))
         self.assertRedirects(resp, reverse("employee_detail", args=[self.employee.pk]))
+
+    def test_absent_employees_today_lists_absentees_in_own_company_only(self):
+        other_company = Company.objects.create(
+            short_name="OTH", name="Other Co", phone="1", email="oth@test.com", address="Addr",
+        )
+        absent_colleague = Employee.objects.create(
+            company=self.company, branch=self.branch,
+            salutation="Ms", first_name="Ann", last_name="Absent",
+            father_name="Father", gender="Female", blood_group="O+", date_of_birth=date(1990, 1, 1),
+            place_of_birth="City", personal_email="ann@test.com", present_address="Addr",
+            permanent_address="Addr", personal_mobile="1234567890", employee_code="EDT002",
+            designation="Developer", department="IT", date_of_joining=date(2020, 1, 1), location="City",
+            pan_no="ABCDE1234F", aadhar_no="123456789012", name_as_per_bank="Ann",
+            salary_account_number="1234567890", ifsc_code="TEST0001234",
+            emergency_contact_name1="Jane", emergency_contact_relation1="Spouse",
+            emergency_contact_mobile1="0987654321", status="Active",
+        )
+        Attendance.objects.create(employee=absent_colleague, date=date.today(), status="Absent", status_overridden=True)
+
+        # An absentee in a different company must never leak into this list.
+        other_branch = Branch.objects.create(branch_name="Other Branch")
+        other_company_employee = Employee.objects.create(
+            company=other_company, branch=other_branch,
+            salutation="Mr", first_name="Far", last_name="Away",
+            father_name="Father", gender="Male", blood_group="O+", date_of_birth=date(1990, 1, 1),
+            place_of_birth="City", personal_email="far@test.com", present_address="Addr",
+            permanent_address="Addr", personal_mobile="1234567890", employee_code="OTH001",
+            designation="Developer", department="IT", date_of_joining=date(2020, 1, 1), location="City",
+            pan_no="ABCDE1234F", aadhar_no="123456789012", name_as_per_bank="Far",
+            salary_account_number="1234567890", ifsc_code="TEST0001234",
+            emergency_contact_name1="Jane", emergency_contact_relation1="Spouse",
+            emergency_contact_mobile1="0987654321", status="Active",
+        )
+        Attendance.objects.create(employee=other_company_employee, date=date.today(), status="Absent", status_overridden=True)
+
+        resp = self.client.get(reverse("employee-dashboard"))
+        codes = [a.employee.employee_code for a in resp.context["absent_employees_today"]]
+        self.assertIn("EDT002", codes)
+        self.assertNotIn("OTH001", codes)

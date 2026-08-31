@@ -69,6 +69,12 @@
   <button class="btn btn-outline-secondary btn-sm" onclick="clearBulkSelection()">Clear</button>
 </div>
 
+<div class="d-flex gap-2 mb-3">
+  <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
+  <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Archived</a>
+  <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+</div>
+
 <!-- Table -->
 <div class="table-responsive text-nowrap">
   <table class="datatable table">
@@ -104,6 +110,8 @@
           <p class="mt-4" style="color: #4CBB17"><b>{{ employee.status }}</b></p>
           {% elif employee.status == "Pending" %}
           <p class="mt-6" style="color: orange"><b>{{ employee.status }}</b></p>
+          {% elif employee.status == "Archived" %}
+          <p class="mt-6" style="color: #6c757d"><b>{{ employee.status }}</b></p>
           {% else %}
           <p class="mt-6" style="color: red"><b>{{ employee.status }}</b></p>
           {% endif %}
@@ -117,10 +125,17 @@
               <a href="{% url 'employee_edit' employee.id %}" class="dropdown-item">
                 <i class="ti ti-edit me-2"></i> Edit
               </a>
+              {% if employee.status != "Archived" %}
               <a class="dropdown-item text-danger" href="javascript:void(0);"
                  onclick="confirmEmployeeDelete({{ employee.id }})">
-                <i class="ri-delete-bin-7-line me-2"></i> Delete
+                <i class="ri-archive-line me-2"></i> Archive
               </a>
+              {% else %}
+              <a class="dropdown-item text-success" href="javascript:void(0);"
+                 onclick="restoreEmployee({{ employee.id }})">
+                <i class="ri-refresh-line me-2"></i> Restore
+              </a>
+              {% endif %}
             </div>
           </div>
         </td>
@@ -1377,13 +1392,13 @@ function toggleOtherField(selectEl) {
 
   function confirmEmployeeDelete(employeeId) {
     Swal.fire({
-      title: "Are you sure?",
-      text: "This employee will be permanently deleted!",
+      title: "Archive this employee?",
+      text: "Their record, salary history, attendance, and payroll history are kept -- they're just hidden from active lists. You can restore them later.",
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#d33",
       cancelButtonColor: "#3085d6",
-      confirmButtonText: "Yes, delete!",
+      confirmButtonText: "Yes, archive!",
     }).then((result) => {
       if (result.isConfirmed) {
         const form = document.getElementById("deleteEmployeeForm");
@@ -1391,6 +1406,12 @@ function toggleOtherField(selectEl) {
         form.submit();
       }
     });
+  }
+
+  function restoreEmployee(employeeId) {
+    const form = document.getElementById("deleteEmployeeForm");
+    form.action = `/restore/employee/${employeeId}/`;
+    form.submit();
   }
 </script>
 

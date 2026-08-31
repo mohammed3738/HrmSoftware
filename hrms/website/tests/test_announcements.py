@@ -241,6 +241,9 @@ class AnnouncementManagementPermissionTest(TestCase):
         self.assertFalse(resp.json()["success"])
 
     def test_admin_can_delete_announcement(self):
+        # "Delete" is a soft delete (archive, is_active=False) -- the row
+        # is kept, not destroyed, consistent with the rest of the app's
+        # archive/restore pattern.
         self.make_user("amp_admin4", "Admin")
         a = Announcement.objects.create(title="Delete Me", body="B")
         client = Client()
@@ -248,7 +251,9 @@ class AnnouncementManagementPermissionTest(TestCase):
         resp = client.post(reverse("delete-announcement", args=[a.pk]))
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["success"])
-        self.assertFalse(Announcement.objects.filter(pk=a.pk).exists())
+        a.refresh_from_db()
+        self.assertFalse(a.is_active)
+        self.assertTrue(Announcement.objects.filter(pk=a.pk).exists())
 
     def test_employee_cannot_delete_announcement(self):
         self.make_user("amp_emp2", "Employee")

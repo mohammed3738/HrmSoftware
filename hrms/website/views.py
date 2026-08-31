@@ -100,12 +100,15 @@ def delete_employee(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
 
     if request.method == "POST":
-        employee.delete()
-        messages.success(request, "Employee deleted successfully.")
-        return redirect("create-employee")  
+        employee.status = "Archived"
+        employee.save(update_fields=["status"])
+        log_audit(request.user, AuditLog.Action.EMPLOYEE_ARCHIVED, employee,
+                   summary=f"Archived employee {employee}")
+        messages.success(request, "Employee archived successfully.")
+        return redirect("employee_create")
 
     messages.error(request, "Invalid request.")
-    return redirect("create-employee")
+    return redirect("employee_create")
 
 
 # atul
@@ -382,44 +385,60 @@ def upload_attendance_excel(request):
 
 
 def _parse_excel_time(val):
-    """Parse a cell value into a datetime.time. Returns None if blank/invalid."""
+    """Parse a cell value into a datetime.time. Returns None if blank/invalid
+    -- and also for midnight (00:00 / 00:00:00), which is this app's source
+    files' convention for "no punch recorded" (an absent employee shows
+    00:00 in both In Time and Out Time), not a literal midnight check-in.
+    Without this, an absent row's in_time/out_time end up as
+    datetime.time(0, 0) instead of None -- calculate_status()'s "no in/out
+    time -> Absent" check never fires (datetime.time(0, 0) is truthy in
+    Python), and the overnight-shift adjustment (out_time <= in_time -> add
+    a day) then treats it as a ~24-hour shift, so absentees were being
+    marked Present instead of Absent."""
     import datetime as dt
-    if val is None:
-        return None
-    try:
-        if pd.isna(val):
+
+    def parse():
+        if val is None:
             return None
-    except (TypeError, ValueError):
-        pass
-    # Already a time object
-    if isinstance(val, dt.time):
-        return val
-    # datetime / Timestamp → extract .time()
-    if hasattr(val, "time") and callable(val.time):
         try:
-            return val.time()
+            if pd.isna(val):
+                return None
+        except (TypeError, ValueError):
+            pass
+        # Already a time object
+        if isinstance(val, dt.time):
+            return val
+        # datetime / Timestamp → extract .time()
+        if hasattr(val, "time") and callable(val.time):
+            try:
+                return val.time()
+            except Exception:
+                pass
+        # Excel stores times as fraction of a day (float 0–1)
+        if isinstance(val, float) and 0 <= val < 1:
+            total_sec = int(round(val * 86400))
+            return dt.time(total_sec // 3600, (total_sec % 3600) // 60, total_sec % 60)
+        # String parsing
+        s = str(val).strip()
+        if s.lower() in ("", "nan", "none", "nat"):
+            return None
+        for fmt in ("%H:%M:%S", "%H:%M", "%I:%M %p", "%I:%M:%S %p"):
+            try:
+                return dt.datetime.strptime(s, fmt).time()
+            except ValueError:
+                continue
+        try:
+            t = pd.to_datetime(s, errors="coerce")
+            if t is not None and not pd.isna(t):
+                return t.time()
         except Exception:
             pass
-    # Excel stores times as fraction of a day (float 0–1)
-    if isinstance(val, float) and 0 <= val < 1:
-        total_sec = int(round(val * 86400))
-        return dt.time(total_sec // 3600, (total_sec % 3600) // 60, total_sec % 60)
-    # String parsing
-    s = str(val).strip()
-    if s.lower() in ("", "nan", "none", "nat"):
         return None
-    for fmt in ("%H:%M:%S", "%H:%M", "%I:%M %p", "%I:%M:%S %p"):
-        try:
-            return dt.datetime.strptime(s, fmt).time()
-        except ValueError:
-            continue
-    try:
-        t = pd.to_datetime(s, errors="coerce")
-        if t is not None and not pd.isna(t):
-            return t.time()
-    except Exception:
-        pass
-    return None
+
+    parsed = parse()
+    if parsed is not None and parsed.hour == 0 and parsed.minute == 0 and parsed.second == 0:
+        return None
+    return parsed
 
 
 def _excel_engine_for(uploaded_file):
@@ -1026,6 +1045,12 @@ def shift_roster_list(request):
     if company_filter:
         base_qs = base_qs.filter(employee__company=company_filter)
 
+    show = request.GET.get("show", "active")
+    if show == "active":
+        base_qs = base_qs.filter(is_active=True)
+    elif show == "archived":
+        base_qs = base_qs.filter(is_active=False)
+
     qs = base_qs
 
     employee_search = request.GET.get("employee", "").strip()
@@ -1079,6 +1104,7 @@ def shift_roster_list(request):
         "week_end": week_end.isoformat(),
         "roster_min_date": today.isoformat(),
         "roster_max_date": period_to.isoformat() if period_to else "",
+        "show": show,
     })
 
 
@@ -1184,7 +1210,10 @@ def delete_shift_assignment(request, pk):
     company_filter = get_company_filter(request.user)
     if company_filter and assignment.employee.company_id != company_filter.id:
         return JsonResponse({"success": False, "error": "Permission denied."}, status=403)
-    assignment.delete()
+    assignment.is_active = False
+    assignment.save(update_fields=["is_active"])
+    log_audit(request.user, AuditLog.Action.RECORD_ARCHIVED, assignment,
+               summary=f"Archived shift assignment for {assignment.employee}")
     return JsonResponse({"success": True})
 
 
@@ -1951,6 +1980,12 @@ def admin_dashboard(request):
     on_leave_today  = today_attn.filter(status='On Leave').count()
     not_marked      = total_active - today_attn.count()
 
+    absent_employees_today = (
+        today_attn.filter(status='Absent')
+        .select_related('employee')
+        .order_by('employee__first_name', 'employee__last_name')
+    )
+
     # ── Department distribution ───────────────────────────────────
     dept_data = list(
         active_qs.exclude(department__isnull=True).exclude(department='')
@@ -2012,6 +2047,7 @@ def admin_dashboard(request):
         'correction_requests': correction_requests,
         'upcoming_offboarding': upcoming_offboarding,
         'dept_data': dept_data,
+        'absent_employees_today': absent_employees_today,
     })
 
 
@@ -2529,11 +2565,19 @@ def create_or_edit_employee(request, employee_id=None):
         first_group = employee.user.groups.first()
         current_group_id = first_group.id if first_group else None
 
+    show = request.GET.get("show", "active")
+    employees_list = Employee.objects.all()
+    if show == "active":
+        employees_list = employees_list.exclude(status="Archived")
+    elif show == "archived":
+        employees_list = employees_list.filter(status="Archived")
+
     return render(request, "employee/create_employee2.html", {
         "form": form,
         "formset": formset,
         "attachment_formset": attachment_formset,
-        "employees": Employee.objects.all(),
+        "employees": employees_list,
+        "show": show,
         "is_edit": is_edit,
         "employee": employee,
         "groups": Group.objects.all(),
@@ -2550,11 +2594,19 @@ from django.contrib.auth.models import Group
 @login_required
 @feature_required("employee_records", action="view")
 def employee_list(request):
+    show = request.GET.get("show", "active")
+    employees = Employee.objects.all()
+    if show == "active":
+        employees = employees.exclude(status="Archived")
+    elif show == "archived":
+        employees = employees.filter(status="Archived")
+
     return render(request, "employee/create_employee2.html", {
         "form": EmployeeForm(),
         "formset": PreviousEmploymentFormSet(),
         "attachment_formset": AttachmentFormSet(),
-        "employees": Employee.objects.all(),
+        "employees": employees,
+        "show": show,
         "is_edit": False,
         "groups": Group.objects.all(),
         "current_group_id": None,
@@ -2713,6 +2765,12 @@ def employee_dashboard(request):
 
     today_attendance = Attendance.objects.filter(employee=employee, date=today).first()
 
+    absent_employees_today = (
+        Attendance.objects.filter(employee__company=employee.company, employee__status='Active', date=today, status='Absent')
+        .select_related('employee')
+        .order_by('employee__first_name', 'employee__last_name')
+    )
+
     period_from, period_to = _current_payroll_period(employee.company)
     if not period_from:
         period_from = today.replace(day=1)
@@ -2754,6 +2812,8 @@ def employee_dashboard(request):
         "leave_balance": leave_balance,
         "upcoming_holidays": upcoming_holidays,
         "recent_payslips": recent_payslips,
+        "absent_employees_today": absent_employees_today,
+        "today": today,
     })
 
 @login_required
@@ -2883,7 +2943,12 @@ def offboarding_list(request):
         form = OffboardingForm()
         formset = AssetHandoverFormSet(instance=Offboarding())
 
+    show = request.GET.get('show', 'active')
     offboardings = Offboarding.objects.all().select_related('employee')
+    if show == 'active':
+        offboardings = offboardings.filter(is_active=True)
+    elif show == 'archived':
+        offboardings = offboardings.filter(is_active=False)
     employees = Employee.objects.filter(status__in=['Active', 'Pending'])
 
     return render(request, 'employee/offboarding2.html', {
@@ -2891,6 +2956,7 @@ def offboarding_list(request):
         'formset': formset,
         'offboardings': offboardings,
         'employees': employees,
+        'show': show,
     })
 
 @login_required
@@ -2995,14 +3061,17 @@ def offboarding_edit_data(request, id):
     })
 
 @login_required
+@feature_required("offboarding", action="edit")
 def offboarding_delete(request, pk):
-    """Delete offboarding via AJAX"""
+    """Archive offboarding via AJAX (soft delete -- offboarding records are
+    part of an employee's exit history and must never be permanently lost)."""
     if request.method == 'POST':
         offboarding = get_object_or_404(Offboarding, pk=pk)
-        log_audit(request.user, AuditLog.Action.OFFBOARDING_DELETED, offboarding,
-                   summary=f"Deleted offboarding for {offboarding.employee}")
-        offboarding.delete()
-        return JsonResponse({'success': True, 'message': 'Offboarding deleted successfully!'})
+        offboarding.is_active = False
+        offboarding.save(update_fields=["is_active"])
+        log_audit(request.user, AuditLog.Action.OFFBOARDING_ARCHIVED, offboarding,
+                   summary=f"Archived offboarding for {offboarding.employee}")
+        return JsonResponse({'success': True, 'message': 'Offboarding archived successfully!'})
     return JsonResponse({'success': False, 'message': 'Invalid request.'})
 
 # def create_branch(request):
@@ -3035,8 +3104,74 @@ def create_branchs(request):
         )
         messages.success(request, "Branch added successfully!")
         return redirect("create-branch")  # Redirect to company list page
+
+    show = request.GET.get("show", "active")
     branches = Branch.objects.all()
-    return render(request, "branch/create-branch.html",{"branches": branches})
+    if show == "active":
+        branches = branches.filter(is_active=True)
+    elif show == "archived":
+        branches = branches.filter(is_active=False)
+    return render(request, "branch/create-branch.html", {"branches": branches, "show": show})
+
+
+@login_required
+@feature_required("branch_management", action="edit")
+def download_branch_upload_template(request):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Branches"
+    ws.append(["Branch Name", "Branch Address"])
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="branch_upload_template.xlsx"'
+    wb.save(response)
+    return response
+
+
+@login_required
+@feature_required("branch_management", action="edit")
+@require_http_methods(["POST"])
+def upload_branch_excel(request):
+    """Bulk-create Branches from an uploaded Excel file. Synchronous (not
+    chunked like the attendance upload) -- branch lists are realistically
+    tens of rows, not thousands, so a single request is the right amount
+    of complexity here."""
+    excel_file = request.FILES.get("excel_file")
+    if not excel_file:
+        return JsonResponse({"success": False, "error": "No file uploaded."}, status=400)
+
+    file_path = default_storage.save(f"temp/{excel_file.name}", excel_file)
+    created = 0
+    errors = []
+    try:
+        df = pd.read_excel(default_storage.path(file_path))
+        df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+
+        for idx, row in df.iterrows():
+            row_num = idx + 2  # header is row 1, data starts at row 2
+            try:
+                branch_name = str(row.get("branch_name", "") or "").strip()
+                if not branch_name or branch_name.lower() == "nan":
+                    errors.append(f"Row {row_num}: Branch Name is required.")
+                    continue
+
+                branch_address = row.get("branch_address", "")
+                branch_address = "" if pd.isna(branch_address) else str(branch_address).strip()
+
+                Branch.objects.create(branch_name=branch_name, branch_address=branch_address)
+                created += 1
+            except Exception as e:
+                errors.append(f"Row {row_num}: {e}")
+    except Exception as e:
+        return JsonResponse({"success": False, "error": f"Could not read file: {e}"}, status=400)
+    finally:
+        default_storage.delete(file_path)
+
+    return JsonResponse({
+        "success": True,
+        "created": created,
+        "skipped": len(errors),
+        "errors": errors[:100],
+    })
 
 
 @login_required
@@ -3071,12 +3206,16 @@ def get_branch(request, branch_id):
     })
 
 @login_required
+@feature_required("branch_management", action="edit")
 def delete_branch(request, branch_id):
     branch = get_object_or_404(Branch, id=branch_id)
 
     if request.method == "POST":
-        branch.delete()
-        messages.success(request, "Branch deleted successfully.")
+        branch.is_active = False
+        branch.save(update_fields=["is_active"])
+        log_audit(request.user, AuditLog.Action.RECORD_ARCHIVED, branch,
+                   summary=f"Archived branch {branch.branch_name}")
+        messages.success(request, "Branch archived successfully.")
         return redirect("create-branch")
 
     messages.error(request, "Invalid request.")
@@ -3136,10 +3275,102 @@ def create_company(request):
         )
         messages.success(request, "Company added successfully!")
         return redirect("create-company")  # Redirect to company list page
+
+    show = request.GET.get("show", "active")
     companies = Company.objects.all()
-    return render(request, "company/home2.html",{"companies": companies})
+    if show == "active":
+        companies = companies.filter(status="active")
+    elif show == "archived":
+        companies = companies.filter(status="inactive")
+    return render(request, "company/home2.html", {"companies": companies, "show": show})
 
 
+@login_required
+@feature_required("company_management", action="edit")
+def download_company_upload_template(request):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Companies"
+    ws.append([
+        "Short Name", "Company Name", "Phone Number", "Email", "Company Address",
+        "TAN Number", "PAN Number", "Employer PF Number", "PTRC Number", "PTEC Number", "ESIC Number",
+    ])
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = 'attachment; filename="company_upload_template.xlsx"'
+    wb.save(response)
+    return response
+
+
+@login_required
+@feature_required("company_management", action="edit")
+@require_http_methods(["POST"])
+def upload_company_excel(request):
+    """Bulk-create Companies from an uploaded Excel file. Synchronous (not
+    chunked like the attendance upload) -- company lists are realistically
+    tens of rows, not thousands, so a single request is the right amount
+    of complexity here."""
+    excel_file = request.FILES.get("excel_file")
+    if not excel_file:
+        return JsonResponse({"success": False, "error": "No file uploaded."}, status=400)
+
+    file_path = default_storage.save(f"temp/{excel_file.name}", excel_file)
+    created = 0
+    errors = []
+    # Tracks short_names created earlier in this same file so an
+    # in-batch duplicate is caught too, not just one already in the DB.
+    seen_short_names = set()
+    try:
+        df = pd.read_excel(default_storage.path(file_path))
+        df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+
+        def clean(value):
+            return "" if pd.isna(value) else str(value).strip()
+
+        for idx, row in df.iterrows():
+            row_num = idx + 2  # header is row 1, data starts at row 2
+            try:
+                short_name = clean(row.get("short_name"))
+                name = clean(row.get("company_name"))
+                phone = clean(row.get("phone_number"))
+                email = clean(row.get("email"))
+                address = clean(row.get("company_address"))
+
+                missing = [
+                    label for value, label in [
+                        (short_name, "Short Name"), (name, "Company Name"), (phone, "Phone Number"),
+                        (email, "Email"), (address, "Company Address"),
+                    ] if not value
+                ]
+                if missing:
+                    errors.append(f"Row {row_num}: {', '.join(missing)} required.")
+                    continue
+
+                if short_name.lower() in seen_short_names or Company.objects.filter(short_name__iexact=short_name).exists():
+                    errors.append(f"Row {row_num}: short_name '{short_name}' already exists.")
+                    continue
+
+                Company.objects.create(
+                    short_name=short_name, name=name, phone=phone, email=email, address=address,
+                    tan_number=clean(row.get("tan_number")), pan_number=clean(row.get("pan_number")),
+                    employer_pf=clean(row.get("employer_pf_number")), ptrc_number=clean(row.get("ptrc_number")),
+                    ptec_number=clean(row.get("ptec_number")), esic_number=clean(row.get("esic_number")),
+                    status="active",
+                )
+                seen_short_names.add(short_name.lower())
+                created += 1
+            except Exception as e:
+                errors.append(f"Row {row_num}: {e}")
+    except Exception as e:
+        return JsonResponse({"success": False, "error": f"Could not read file: {e}"}, status=400)
+    finally:
+        default_storage.delete(file_path)
+
+    return JsonResponse({
+        "success": True,
+        "created": created,
+        "skipped": len(errors),
+        "errors": errors[:100],
+    })
 
 
 @login_required
@@ -3186,8 +3417,11 @@ def delete_company(request, company_id):
     company = get_object_or_404(Company, id=company_id)
 
     if request.method == "POST":
-        company.delete()
-        messages.success(request, "Company deleted successfully.")
+        company.status = "inactive"
+        company.save(update_fields=["status"])
+        log_audit(request.user, AuditLog.Action.RECORD_ARCHIVED, company,
+                   summary=f"Archived company {company.name}")
+        messages.success(request, "Company archived successfully.")
         return redirect("create-company")
 
     messages.error(request, "Invalid request.")
@@ -4038,6 +4272,187 @@ def leave_balance_view(request):
         'avg_balance': float(avg_balance),
     })
     return render(request, 'leave_balance/leave_balance_report.html', context)
+
+
+@login_required
+@feature_required("attendance_review", action="view")
+def attendance_register_view(request):
+    """Day-by-day attendance register (muster roll): one row per employee
+    with the same Leave Balance summary columns (Opening/Leave Taken/Late/
+    Comp Off/LWP/Paid Days/Total Days/Closing/Balance) plus one column per
+    calendar day in the selected payroll period. Per-day cells are edited
+    via the existing override_attendance_status endpoint (same one used on
+    the Late Attendance Review page) -- no new override mechanism needed.
+
+    Deliberately single-company scoped, unlike leave_balance_view's "all
+    companies" mode -- that aggregation is disproportionate for a wide
+    day-by-day report, and the existing Leave Balance report already
+    covers the cross-company summary need."""
+    from website.models import Company
+
+    user = request.user
+    is_global = user_has_global_access(user)
+    user_own_company = get_user_company(user)
+
+    company_id_param = request.GET.get('company_id', '').strip()
+    if is_global and company_id_param:
+        company = Company.objects.filter(id=company_id_param).first()
+    elif is_global:
+        company = None
+    else:
+        company = user_own_company
+
+    context = {
+        'is_global': is_global,
+        'all_companies': Company.objects.filter(status='active').order_by('name') if is_global else None,
+        'selected_company_id': company.id if company else None,
+    }
+
+    if not company:
+        context.update({'rows': [], 'day_columns': [], 'available_periods': []})
+        return render(request, 'attendance/attendance_register.html', context)
+
+    try:
+        payroll_settings = PayrollSettings.objects.get(company=company)
+    except PayrollSettings.DoesNotExist:
+        context.update({
+            'rows': [], 'day_columns': [], 'available_periods': [],
+            'error': 'Payroll settings not configured for this company.',
+        })
+        return render(request, 'attendance/attendance_register.html', context)
+
+    available_periods = get_all_payroll_periods_from_attendance(company, payroll_settings)
+
+    selected_period_str = request.GET.get('period')
+    selected_period = None
+    if selected_period_str and available_periods:
+        for period in available_periods:
+            if str(period['to_date']) == selected_period_str:
+                selected_period = period
+                break
+    if not selected_period and available_periods:
+        selected_period = available_periods[0]
+
+    if not selected_period:
+        context.update({
+            'rows': [], 'day_columns': [], 'available_periods': [],
+            'user_company_id': company.id,
+        })
+        return render(request, 'attendance/attendance_register.html', context)
+
+    from_date, to_date = selected_period['from_date'], selected_period['to_date']
+
+    # Day columns for the selected period, same weekend logic already used
+    # by calculate_leave_balance_for_period / Attendance.calculate_status().
+    sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
+    day_columns = []
+    d = from_date
+    while d <= to_date:
+        is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
+        day_columns.append({'date': d, 'weekday': d.strftime('%a'), 'is_weekend': is_weekend})
+        d += timedelta(days=1)
+
+    employees_qs = (
+        Employee.objects.filter(company=company, status='Active')
+        .select_related('branch')
+        .order_by('first_name', 'last_name')
+    )
+
+    search_query = request.GET.get('q', '').strip()
+    if search_query:
+        sq = search_query.lower()
+        employees_list = [
+            emp for emp in employees_qs
+            if sq in (emp.first_name or '').lower()
+            or sq in (emp.last_name or '').lower()
+            or sq in (emp.employee_code or '').lower()
+        ]
+    else:
+        employees_list = list(employees_qs)
+
+    paginator = Paginator(employees_list, 15)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+    page_employees = list(page_obj)
+    page_employee_ids = [e.id for e in page_employees]
+
+    # Bulk-fetch this page's LeaveBalance summary rows in one query.
+    lb_lookup = {
+        lb.employee_id: lb
+        for lb in LeaveBalance.objects.filter(
+            employee_id__in=page_employee_ids,
+            period_from_date=from_date,
+            period_to_date=to_date,
+        )
+    }
+
+    # Bulk-fetch ALL of this page's Attendance across the whole period in
+    # one query, grouped by (employee_id, date) -- avoids an N+1 across
+    # employees x days that a naive per-cell lookup would cause.
+    att_lookup = {}
+    for a in Attendance.objects.filter(
+        employee_id__in=page_employee_ids, date__gte=from_date, date__lte=to_date,
+    ).values('id', 'employee_id', 'date', 'status', 'count'):
+        att_lookup[(a['employee_id'], a['date'])] = a
+
+    late_marks_affect_lwp = getattr(payroll_settings, 'late_marks_affect_lwp', True)
+
+    def format_count(count):
+        if count == 0:
+            return ''
+        if count == 1:
+            return '1'
+        if count == Decimal('0.5'):
+            return '0.5'
+        return str(count)
+
+    rows = []
+    for emp in page_employees:
+        lb = lb_lookup.get(emp.id)
+        # Late Deduction: derived on the fly from the stored late count,
+        # using the exact same grace-period formula already used inside
+        # calculate_leave_balance_for_period -- not a new stored field.
+        late_count = lb.late if lb else 0
+        if late_marks_affect_lwp and late_count > 5:
+            late_deduction = (late_count - 5) // 3
+        else:
+            late_deduction = 0
+
+        days = []
+        for col in day_columns:
+            if col['is_weekend']:
+                # Weekends are always fully credited (matches days_present's
+                # own treatment of weekends as automatically-present), and
+                # aren't backed by an editable Attendance row here.
+                days.append({'date': col['date'], 'is_weekend': True, 'display': '1', 'attendance_id': None})
+                continue
+            att = att_lookup.get((emp.id, col['date']))
+            if not att:
+                days.append({'date': col['date'], 'is_weekend': False, 'display': '', 'attendance_id': None})
+                continue
+            days.append({
+                'date': col['date'],
+                'is_weekend': False,
+                'display': format_count(att['count'] or Decimal('0.00')),
+                'attendance_id': att['id'],
+                'status': att['status'],
+            })
+
+        rows.append({'employee': emp, 'lb': lb, 'late_deduction': late_deduction, 'days': days})
+
+    context.update({
+        'rows': rows,
+        'day_columns': day_columns,
+        'available_periods': available_periods,
+        'selected_period': str(selected_period['to_date']),
+        'display_period': selected_period['label'],
+        'search_query': search_query,
+        'page_obj': page_obj,
+        'paginator': paginator,
+        'user_company_id': company.id,
+        'total_employees': len(employees_list),
+    })
+    return render(request, 'attendance/attendance_register.html', context)
+
 
 @login_required
 def recalculate_leave_balances_view(request):
@@ -5101,9 +5516,17 @@ def create_salary_increment(request):
             print("CREATE ERROR:", e)
             messages.error(request, "Failed to create increment.")
 
+    show = request.GET.get("show", "active")
+    increments = SalaryIncrement.objects.all()
+    if show == "active":
+        increments = increments.filter(is_active=True)
+    elif show == "archived":
+        increments = increments.filter(is_active=False)
+
     return render(request, "salary_increment/create_increment.html", {
         "employees": Employee.objects.all(),
-        "increments": SalaryIncrement.objects.all(),
+        "increments": increments,
+        "show": show,
     })
 
 @login_required
@@ -5237,24 +5660,27 @@ def increment_details(request, pk):
 @login_required
 @feature_required("salary_structure", action="edit")
 def delete_salary_increment(request, pk):
-    """Delete increment"""
+    """Archive increment"""
     if request.method == "POST":
         try:
             inc = SalaryIncrement.objects.get(id=pk)
-            
+
             # Check if already processed
             if inc.is_processed:
                 return JsonResponse({
                     "error": "Cannot delete processed increment"
                 }, status=400)
-            
-            inc.delete()
-            messages.success(request, "Increment deleted successfully.")
+
+            inc.is_active = False
+            inc.save(update_fields=["is_active"])
+            log_audit(request.user, AuditLog.Action.RECORD_ARCHIVED, inc,
+                       summary=f"Archived salary increment for {inc.employee}")
+            messages.success(request, "Increment archived successfully.")
             return JsonResponse({"success": True})
-            
+
         except SalaryIncrement.DoesNotExist:
             return JsonResponse({"error": "Increment not found"}, status=404)
-    
+
     return JsonResponse({"error": "Invalid request"}, status=400)
 
 @login_required
@@ -6124,7 +6550,8 @@ def save_announcement(request):
 @require_http_methods(["POST"])
 def delete_announcement(request, pk):
     announcement = get_object_or_404(Announcement, pk=pk)
-    announcement.delete()
+    announcement.is_active = False
+    announcement.save(update_fields=["is_active"])
     return JsonResponse({"success": True})
 
 
@@ -6163,6 +6590,61 @@ def mark_announcement_read(request):
         visible = [a for a in _visible_announcements_for_user(request.user) if a.is_visible_now()]
         for a in visible:
             AnnouncementRead.objects.get_or_create(announcement=a, user=request.user)
+    return JsonResponse({"success": True})
+
+
+# Config-driven restore for every model whose "Delete" button was converted
+# to a soft delete (archive). Restore has no per-model business logic beyond
+# "flip the field back and log it" -- unlike archiving, which keeps its
+# divergent guards (SalaryIncrement.is_processed, HolidayType in-use check,
+# etc.) in each model's own delete_* view, so those stay separate functions.
+ARCHIVABLE = {
+    "branch":          dict(model=Branch, field="is_active", restore_value=True,
+                             feature=("branch_management", "edit"), list_url="create-branch"),
+    "company":         dict(model=Company, field="status", restore_value="active",
+                             feature=("company_management", "edit"), list_url="create-company"),
+    "employee":        dict(model=Employee, field="status", restore_value="Active",
+                             feature=("employee_records", "edit"), list_url="employee_create"),
+    "holiday":         dict(model=Holiday, field="is_active", restore_value=True,
+                             feature=("holiday_calendar", "edit"), list_url="holiday-calendar"),
+    "holidaytype":     dict(model=HolidayType, field="is_active", restore_value=True,
+                             feature=("holiday_calendar", "edit"), list_url="holiday-dashboard"),
+    "halfdayscenario": dict(model=HalfDayScenario, field="is_active", restore_value=True,
+                             feature=("holiday_calendar", "edit"), list_url="holiday-calendar"),
+    "shiftassignment": dict(model=ShiftAssignment, field="is_active", restore_value=True,
+                             feature=("shift_roster", "edit"), list_url=None),
+    "salaryincrement": dict(model=SalaryIncrement, field="is_active", restore_value=True,
+                             feature=("salary_structure", "edit"), list_url=None),
+    "offboarding":     dict(model=Offboarding, field="is_active", restore_value=True,
+                             feature=("offboarding", "edit"), list_url=None),  # AJAX, matches offboarding_delete's JSON response
+}
+
+_RESTORE_ACTIONS = {
+    "employee": AuditLog.Action.EMPLOYEE_RESTORED,
+    "offboarding": AuditLog.Action.OFFBOARDING_RESTORED,
+}
+
+
+@login_required
+@require_http_methods(["POST"])
+def restore_record(request, model_type, pk):
+    cfg = ARCHIVABLE.get(model_type)
+    if cfg is None:
+        raise Http404
+    if not (request.user.is_superuser or request.user.is_staff
+            or has_feature_permission(request.user, *cfg["feature"])):
+        raise PermissionDenied
+
+    obj = get_object_or_404(cfg["model"], pk=pk)
+    setattr(obj, cfg["field"], cfg["restore_value"])
+    obj.save(update_fields=[cfg["field"]])
+
+    action = _RESTORE_ACTIONS.get(model_type, AuditLog.Action.RECORD_RESTORED)
+    log_audit(request.user, action, obj, summary=f"Restored {cfg['model'].__name__} #{obj.pk}")
+
+    if cfg["list_url"]:
+        messages.success(request, f"{cfg['model'].__name__} restored.")
+        return redirect(cfg["list_url"])
     return JsonResponse({"success": True})
 
 
@@ -7128,10 +7610,18 @@ def holiday_calendar_dashboard(request):
         
         # Sort by year then month
         monthly_leaves = sorted(monthly_leaves, key=lambda x: (x.year, x.month))
+    # Active/Archived/All toggle for the Holidays List / Holiday Types /
+    # Half-Day Scenarios tabs. The calendar view, its JSON feed, and the
+    # stats cards below always stay active-only regardless of this toggle
+    # -- an archived (cancelled) holiday/scenario has no business appearing
+    # on the live calendar or in headline counts.
+    show = request.GET.get('show', 'active')
+
     # ----------------------------------------------------
     # 4️⃣ Holidays for calendar (month-based)
     # ----------------------------------------------------
     all_holidays_month = Holiday.objects.filter(
+        is_active=True,
         holiday_date__year=year,
         holiday_date__month=month
     ).order_by('holiday_date')
@@ -7147,7 +7637,7 @@ def holiday_calendar_dashboard(request):
             'status': h.status,
             'is_national': h.is_national,
         }
-        for h in Holiday.objects.all()
+        for h in Holiday.objects.filter(is_active=True)
     ])
 
     # ----------------------------------------------------
@@ -7155,6 +7645,7 @@ def holiday_calendar_dashboard(request):
     # ----------------------------------------------------
     today = date.today()
     upcoming_holidays = Holiday.objects.filter(
+        is_active=True,
         holiday_date__gte=today,
         holiday_date__lte=today + timedelta(days=7)
     ).order_by('holiday_date')[:10]
@@ -7162,7 +7653,7 @@ def holiday_calendar_dashboard(request):
     # ----------------------------------------------------
     # 7️⃣ Statistics (year-based)
     # ----------------------------------------------------
-    all_holidays_year = Holiday.objects.filter(holiday_date__year=year)
+    all_holidays_year = Holiday.objects.filter(is_active=True, holiday_date__year=year)
 
     total_holidays = all_holidays_year.count()
     national_holidays = all_holidays_year.filter(is_national=True).count()
@@ -7170,13 +7661,22 @@ def holiday_calendar_dashboard(request):
     emergency_closures = all_holidays_year.filter(status='emergency').count()
 
     # ----------------------------------------------------
-    # 8️⃣ Holiday Types (dropdowns)
+    # 8️⃣ Holiday Types (dropdowns + Holiday Types tab table)
     # ----------------------------------------------------
     holiday_types = HolidayType.objects.all()
+    if show == 'active':
+        holiday_types = holiday_types.filter(is_active=True)
+    elif show == 'archived':
+        holiday_types = holiday_types.filter(is_active=False)
     branches = Branch.objects.all()
 
     all_half_day_scenarios = HalfDayScenario.objects.all().order_by('scenario_date')
-    
+    if show == 'active':
+        all_half_day_scenarios = all_half_day_scenarios.filter(is_active=True)
+    elif show == 'archived':
+        all_half_day_scenarios = all_half_day_scenarios.filter(is_active=False)
+
+    active_half_day_scenarios = HalfDayScenario.objects.filter(is_active=True)
     half_day_json = json.dumps([
         {
             'id': s.id,
@@ -7187,19 +7687,26 @@ def holiday_calendar_dashboard(request):
             'branch': s.branch.branch_name if s.branch else 'All',
             'credit_count': str(s.credit_count),
         }
-        for s in all_half_day_scenarios
+        for s in active_half_day_scenarios.order_by('scenario_date')
     ])
 
     # ----------------------------------------------------
     # 9️⃣ FINAL CONTEXT (⚠️ NOTHING REMOVED)
     # ----------------------------------------------------
+    all_holidays = Holiday.objects.all().order_by('holiday_date')
+    if show == 'active':
+        all_holidays = all_holidays.filter(is_active=True)
+    elif show == 'archived':
+        all_holidays = all_holidays.filter(is_active=False)
+
     context = {
         'year': year,
         'month': month,
         'month_name': month_name,
+        'show': show,
 
         # Holidays
-        'all_holidays': Holiday.objects.all().order_by('holiday_date'),
+        'all_holidays': all_holidays,
         'upcoming_holidays': upcoming_holidays,
         'holidays_json': holidays_json,
 
@@ -7219,7 +7726,7 @@ def holiday_calendar_dashboard(request):
         'branches': branches,
         'all_half_day_scenarios': all_half_day_scenarios,
         'half_day_json': half_day_json,
-        'total_half_days': all_half_day_scenarios.filter(
+        'total_half_days': active_half_day_scenarios.filter(
             scenario_date__year=year, is_approved=True
         ).count(),
 
@@ -7412,33 +7919,39 @@ def edit_holiday(request, holiday_id):
 # ============================================================================
 
 @login_required
+@feature_required("holiday_calendar", action="edit")
 @require_http_methods(["POST"])
 def delete_holiday(request, holiday_id):
     """
-    Delete Holiday View
-    
+    Archive Holiday View
+
     POST only (with confirmation from frontend)
-    
+
     Parameters:
-    - holiday_id: ID of holiday to delete
-    
-    Deletes the holiday and redirects with message
+    - holiday_id: ID of holiday to archive
+
+    Archives the holiday (soft delete) and redirects with message
     """
-    
+
     # Get the holiday
     holiday = get_object_or_404(Holiday, id=holiday_id)
     holiday_name = holiday.name
     holiday_date = holiday.holiday_date.strftime("%b %d, %Y")
-    
-    # Delete it
-    holiday.delete()
-    
+
+    # Archive it -- keeps it in the calendar's history instead of
+    # permanently destroying it, and frees up its date for a new holiday
+    # via the unique_active_holiday_date constraint.
+    holiday.is_active = False
+    holiday.save(update_fields=["is_active"])
+    log_audit(request.user, AuditLog.Action.RECORD_ARCHIVED, holiday,
+               summary=f'Archived holiday "{holiday_name}" ({holiday_date})')
+
     # Show success message
     messages.success(
         request,
-        f'✓ Holiday "{holiday_name}" ({holiday_date}) deleted successfully!'
+        f'✓ Holiday "{holiday_name}" ({holiday_date}) archived successfully!'
     )
-    
+
     return redirect('holiday-calendar')
 
 
@@ -7694,13 +8207,13 @@ def add_half_day_scenario(request):
             # branch_id == 'all' or empty → applies to all branches (branch=None)
             if branch_id == 'all' or not branch_id:
                 branch = None
-                if HalfDayScenario.objects.filter(scenario_date=parsed_date, branch__isnull=True).exists():
+                if HalfDayScenario.objects.filter(scenario_date=parsed_date, branch__isnull=True, is_active=True).exists():
                     messages.error(request, f'❌ An all-branches half-day scenario already exists for {parsed_date}.')
                     return redirect('holiday-calendar')
                 branch_label = 'All Branches'
             else:
                 branch = get_object_or_404(Branch, id=branch_id)
-                if HalfDayScenario.objects.filter(scenario_date=parsed_date, branch=branch).exists():
+                if HalfDayScenario.objects.filter(scenario_date=parsed_date, branch=branch, is_active=True).exists():
                     messages.error(
                         request,
                         f'❌ A half-day scenario already exists for '
@@ -7763,13 +8276,17 @@ def edit_half_day_scenario(request, scenario_id):
 
 
 @login_required
+@feature_required("holiday_calendar", action="edit")
 @require_http_methods(["POST"])
 def delete_half_day_scenario(request, scenario_id):
     scenario = get_object_or_404(HalfDayScenario, id=scenario_id)
     branch_name = scenario.branch.branch_name if scenario.branch else 'All Branches'
     date_str = scenario.scenario_date.strftime("%b %d, %Y")
-    scenario.delete()
-    messages.success(request, f'✓ Half-day scenario for {branch_name} on {date_str} deleted!')
+    scenario.is_active = False
+    scenario.save(update_fields=["is_active"])
+    log_audit(request.user, AuditLog.Action.RECORD_ARCHIVED, scenario,
+               summary=f"Archived half-day scenario for {branch_name} on {date_str}")
+    messages.success(request, f'✓ Half-day scenario for {branch_name} on {date_str} archived!')
     return redirect('holiday-calendar')
 
 
@@ -8018,11 +8535,13 @@ def edit_holiday_type(request, type_id):
 def delete_holiday_type(request, type_id):
     ht = get_object_or_404(HolidayType, id=type_id)
     if Holiday.objects.filter(holiday_type=ht).exists():
-        messages.error(request, f"Cannot delete '{ht.name}': it is used by existing holidays.")
+        messages.error(request, f"Cannot archive '{ht.name}': it is used by existing holidays.")
         return redirect(f"{reverse('holiday-dashboard')}?tab=holiday-types")
     name = ht.name
-    ht.delete()
-    messages.success(request, f"Holiday type '{name}' deleted.")
+    ht.is_active = False
+    ht.save(update_fields=["is_active"])
+    log_audit(request.user, AuditLog.Action.RECORD_ARCHIVED, ht, summary=f"Archived holiday type '{name}'")
+    messages.success(request, f"Holiday type '{name}' archived.")
     return redirect(f"{reverse('holiday-dashboard')}?tab=holiday-types")
 
 
@@ -8622,12 +9141,33 @@ def import_salary_excel(request):
     if not uploaded_file:
         return JsonResponse({"success": False, "error": "No file uploaded."})
 
+    import hashlib
+    content = uploaded_file.read()
+    file_hash = hashlib.sha256(content).hexdigest()
+
     try:
-        df = pd.read_excel(uploaded_file, dtype=str)
+        df = pd.read_excel(io.BytesIO(content), dtype=str)
     except Exception as e:
         return JsonResponse({"success": False, "error": f"Cannot read file: {e}"})
 
     df.columns = df.columns.str.strip()
+
+    # Resumability: this file's content (byte-identical, hence same hash) may
+    # have been uploaded before and died partway through (dropped connection,
+    # timeout). employee_codes already recorded as applied are skipped this
+    # time -- re-uploading the same file never re-processes (and so never
+    # duplicates history for) an employee already done, and only the rows
+    # that never got a chance to run (or that errored and can be retried
+    # once fixed) are actually touched.
+    upload, is_new_upload = SalaryUpload.objects.get_or_create(
+        file_hash=file_hash,
+        defaults={
+            "file_name": uploaded_file.name,
+            "created_by": request.user if request.user.is_authenticated else None,
+        },
+    )
+    already_done = set(upload.processed_employee_codes or [])
+    already_done_at_start = len(already_done)
 
     def safe_decimal(val):
         try:
@@ -8653,6 +9193,9 @@ def import_salary_excel(request):
             errors.append({"row": row_num, "errors": ["Employee Code: required"]})
             skipped_count += 1
             continue
+
+        if emp_code in already_done:
+            continue  # already applied by an earlier attempt on this exact file
 
         try:
             employee = Employee.objects.get(employee_code=emp_code)
@@ -8716,14 +9259,28 @@ def import_salary_excel(request):
                 for k, v in {**pm_fields, **pa_fields}.items():
                     setattr(sm, k, v)
                 sm.save()
+            already_done.add(emp_code)
             created_count += 1
+            # Persist progress immediately -- if the connection drops on the
+            # NEXT row, everything up to this one is already safely recorded
+            # as done and won't be re-applied on retry.
+            upload.processed_employee_codes = sorted(already_done)
+            upload.created_count = len(already_done)
+            upload.total_rows = len(df)
+            upload.save(update_fields=["processed_employee_codes", "created_count", "total_rows"])
         except Exception as e:
             errors.append({"row": row_num, "errors": [str(e)]})
             skipped_count += 1
 
+    upload.errors = errors[:100]
+    upload.status = "completed"
+    upload.save(update_fields=["errors", "status"])
+
     return JsonResponse({
         "success": True,
         "created": created_count,
+        "already_done": already_done_at_start,
+        "resumed": not is_new_upload,
         "skipped": skipped_count,
         "errors": errors,
     })

@@ -72,7 +72,7 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h6 class="mb-0 fw-semibold" id="formHeading">New Announcement</h6>
           <button type="button" class="btn btn-sm btn-outline-danger d-none" id="deleteAnnouncementBtn">
-            <i class="ri-delete-bin-line me-1"></i>Delete
+            <i class="ri-archive-line me-1"></i>Archive
           </button>
         </div>
         <div class="card-body">
@@ -214,12 +214,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const id = document.getElementById('announcementId').value;
     if (!id) return;
     const result = await Swal.fire({
-      title: 'Delete this announcement?',
-      text: 'This cannot be undone.',
+      title: 'Archive this announcement?',
+      text: 'It will stop showing in the notification bell and dashboard banners, but stays here for reference. Re-activate it anytime by editing it and switching Active back on.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#d33',
-      confirmButtonText: 'Delete',
+      confirmButtonText: 'Archive',
     });
     if (!result.isConfirmed) return;
 
@@ -227,10 +227,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch(`/announcements/${id}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': CSRF } });
       const data = await res.json();
       if (data.success) {
-        showSuccess('Announcement deleted.');
+        showSuccess('Announcement archived.');
         setTimeout(() => window.location.reload(), 600);
       } else {
-        showError(data.error || 'Failed to delete.');
+        showError(data.error || 'Failed to archive.');
       }
     } catch (err) {
       console.error(err);

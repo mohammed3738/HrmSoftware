@@ -6,7 +6,7 @@ company like the rest of that dashboard's KPIs.
 
 Run with: python manage.py test website.tests.test_admin_dashboard_absentees
 """
-from datetime import date
+from datetime import date, time
 
 from django.contrib.auth.models import User, Group
 from django.test import TestCase, Client
@@ -58,3 +58,16 @@ class AdminDashboardAbsenteesTest(TestCase):
         row = resp.context["absent_employees_today"][0]
         self.assertEqual(row.employee.employee_code, "ADA2")
         self.assertEqual(row.employee.first_name, "Absent")
+
+    def test_absent_status_row_with_an_in_time_is_excluded(self):
+        # A row that's status="Absent" but still carries a punched in_time
+        # (e.g. a stale/manually-overridden record) must not appear in the
+        # "who actually didn't punch in today" list.
+        punched_employee = self._make_employee("ADA3", "Punched", "ButAbsent")
+        Attendance.objects.create(
+            employee=punched_employee, date=date.today(), status="Absent",
+            in_time=time(9, 30), status_overridden=True,
+        )
+        resp = self.client.get(reverse("admin-dashboard"))
+        codes = [a.employee.employee_code for a in resp.context["absent_employees_today"]]
+        self.assertNotIn("ADA3", codes)

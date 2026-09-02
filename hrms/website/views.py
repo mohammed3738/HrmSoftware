@@ -1981,7 +1981,7 @@ def admin_dashboard(request):
     not_marked      = total_active - today_attn.count()
 
     absent_employees_today = (
-        today_attn.filter(status='Absent')
+        today_attn.filter(status='Absent', in_time__isnull=True)
         .select_related('employee')
         .order_by('employee__first_name', 'employee__last_name')
     )
@@ -2766,7 +2766,7 @@ def employee_dashboard(request):
     today_attendance = Attendance.objects.filter(employee=employee, date=today).first()
 
     absent_employees_today = (
-        Attendance.objects.filter(employee__company=employee.company, employee__status='Active', date=today, status='Absent')
+        Attendance.objects.filter(employee__company=employee.company, employee__status='Active', date=today, status='Absent', in_time__isnull=True)
         .select_related('employee')
         .order_by('employee__first_name', 'employee__last_name')
     )

@@ -202,6 +202,14 @@ urlpatterns = [
 
     path('leave-balance/employee/<int:employee_id>/recalc/', views.recalc_employee_leave_balance, name='recalc-employee-leave'),
     path('leave-balance/employee/<int:employee_id>/', views.employee_leave_detail, name='employee-leave-detail'),
+    # Departments & reporting line
+    path('my-approvals/', views.my_approvals, name='my-approvals'),
+    path('departments/', views.department_list, name='department-list'),
+    path('departments/save/', views.save_department, name='department-create'),
+    path('departments/<int:department_id>/save/', views.save_department, name='department-edit'),
+    path('departments/<int:department_id>/delete/', views.delete_department, name='department-delete'),
+    path('departments/defaults/', views.department_defaults_api, name='department-defaults'),
+
     path('leave-balance/override-lwp/', views.override_lwp_view, name='override-lwp'),
     path('leave-balance/override-compoff/', views.override_compoff_view, name='override-compoff'),
 

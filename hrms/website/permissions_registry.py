@@ -21,6 +21,8 @@ FEATURES = [
      "has_view": True, "has_edit": True, "has_approve": False, "sort_order": 10},
     {"key": "offboarding", "name": "Offboarding", "category": "Employee Lifecycle",
      "has_view": True, "has_edit": True, "has_approve": False, "sort_order": 20},
+    {"key": "department_management", "name": "Departments & Reporting Line", "category": "Employee Lifecycle",
+     "has_view": True, "has_edit": True, "has_approve": False, "sort_order": 15},
 
     {"key": "company_management", "name": "Company Management", "category": "Organization Setup",
      "has_view": True, "has_edit": True, "has_approve": False, "sort_order": 10},
@@ -69,6 +71,8 @@ SEED_GRANTS = {
     ("employee_records", "view"): ("Admin", "HR"),
     ("employee_records", "edit"): ("Admin", "HR"),
     ("offboarding", "edit"): ("Admin", "HR"),
+    ("department_management", "view"): ("Admin", "HR", "Manager"),
+    ("department_management", "edit"): ("Admin", "HR"),
 
     ("company_management", "view"): ("Admin", "HR"),
     ("company_management", "edit"): ("Admin",),

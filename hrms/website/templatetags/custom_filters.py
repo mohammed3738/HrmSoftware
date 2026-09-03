@@ -62,3 +62,20 @@ def has_feature(user, feature_key_and_action):
         return False
     from website.utils.permissions import has_feature_permission
     return has_feature_permission(user, feature_key, action)
+
+
+@register.filter
+def has_reportees(user):
+    """Does anyone report to this user? Drives the 'My Approvals' nav item,
+    which has to appear for plain Employee-role logins who happen to be a
+    department's reporting person -- a role-based check can't see that."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    approver = getattr(user, "employee_profile", None)
+    if approver is None:
+        return False
+    from django.db.models import Q
+    from website.models import Employee
+    return Employee.objects.filter(
+        Q(reporting_person_id=approver.id) | Q(manager_id=approver.id)
+    ).exclude(pk=approver.pk).exists()

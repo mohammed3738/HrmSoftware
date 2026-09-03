@@ -550,6 +550,15 @@
                     </ul> {% endcomment %}
                   </li>
 
+                  <!-- My Approvals: only for people who actually have reportees -->
+                  {% if request.user|has_reportees %}
+                  <li class="menu-item">
+                    <a href="{% url 'my-approvals' %}" class="menu-link">
+                      <div>My Approvals</div>
+                    </a>
+                  </li>
+                  {% endif %}
+
 
                   <!-- Organization Menu -->
                   <li class="menu-item">
@@ -568,6 +577,13 @@
                           <div>Branch</div>
                         </a>
                       </li>
+                      {% if request.user|has_feature:"department_management:view" %}
+                      <li class="menu-item">
+                        <a href="{% url 'department-list' %}" class="menu-link">
+                          <div>Departments</div>
+                        </a>
+                      </li>
+                      {% endif %}
                     </ul>
                   </li>
 

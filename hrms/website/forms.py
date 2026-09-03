@@ -53,6 +53,7 @@ class EmployeeForm(forms.ModelForm):
             'father_name', 'gender', 'blood_group', 'date_of_birth', 'place_of_birth',
             'personal_email', 'present_address', 'permanent_address', 'personal_mobile',
             'date_of_marriage', 'employee_code', 'designation', 'department',
+            'use_department_defaults', 'reporting_person', 'manager',
             'date_of_joining', 'date_of_confirmation', 'location', 'shift_start_time', 'shift_end_time',
             'week_off_day',
             'pan_no', 'aadhar_no', 'voter_id', 'passport', 'uan_no', 'pf_no', 'esic_no',
@@ -86,6 +87,55 @@ class EmployeeForm(forms.ModelForm):
         self.fields['company'].queryset = Company.objects.filter(
             Q(status='active') | Q(pk=self.instance.company_id)
         )
+
+        # ── Department & reporting line ────────────────────────────────
+        # Department is stored as a name (a CharField predating the
+        # Department model), so this is a dropdown of defined department
+        # names rather than a ModelChoiceField. Any legacy free-text value
+        # already on the record stays selectable so editing an employee
+        # can't silently blank out their department.
+        dept_names = list(
+            Department.objects.filter(is_active=True).values_list('name', flat=True)
+        )
+        current_dept = (self.instance.department or '').strip()
+        if current_dept and current_dept.lower() not in {n.lower() for n in dept_names}:
+            dept_names.append(current_dept)
+        self.fields['department'] = forms.ChoiceField(
+            choices=[('', '--- Select Department ---')] + [(n, n) for n in sorted(dept_names)],
+            required=False, label='Department',
+        )
+        self.fields['department'].widget.attrs['class'] = 'form-control'
+
+        # Approvers must be real, currently-employed people, and nobody can
+        # approve their own requests.
+        approver_qs = Employee.objects.filter(status='Active').order_by('first_name', 'last_name')
+        if self.instance.pk:
+            approver_qs = approver_qs.exclude(pk=self.instance.pk)
+        for field_name in ('reporting_person', 'manager'):
+            self.fields[field_name].queryset = approver_qs
+            self.fields[field_name].required = False
+            self.fields[field_name].widget.attrs['class'] = 'form-control'
+
+        # Rendered as a real checkbox, not a text input.
+        self.fields['use_department_defaults'].widget = forms.CheckboxInput(
+            attrs={'class': 'form-check-input'}
+        )
+
+    def clean(self):
+        cleaned = super().clean()
+        # A disabled input submits nothing, so when the employee follows
+        # their department the posted reporting person/manager is ignored
+        # outright and taken from the department instead -- the form must
+        # not be the thing that decides this, since the disabled state is
+        # only a client-side convenience.
+        if cleaned.get('use_department_defaults'):
+            department = Department.objects.filter(
+                name__iexact=(cleaned.get('department') or '').strip(), is_active=True
+            ).first()
+            if department is not None:
+                cleaned['reporting_person'] = department.reporting_person
+                cleaned['manager'] = department.manager
+        return cleaned
 
 
 

@@ -467,6 +467,44 @@
                       {% endfor %}
                     </div>
                   </div>
+
+                  <!-- ── Reporting line ─────────────────────────────── -->
+                  <div class="col-12">
+                    <div class="form-check mb-2">
+                      {{ form.use_department_defaults }}
+                      <label class="form-check-label fw-medium" for="{{ form.use_department_defaults.id_for_label }}">
+                        Use department's reporting person &amp; manager
+                      </label>
+                      <div class="form-text mb-0">
+                        Untick to give this employee a different reporting person — e.g. most of a
+                        department reports to one person while a few report to someone else.
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label class="form-label">Reporting Person</label>
+                      {{ form.reporting_person|add_class:"form-control" }}
+                      {% for error in form.reporting_person.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label class="form-label">Manager</label>
+                      {{ form.manager|add_class:"form-control" }}
+                      {% for error in form.manager.errors %}
+                      <div class="text-danger small">{{ error }}</div>
+                      {% endfor %}
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label class="form-label d-block">&nbsp;</label>
+                      <div id="deptDefaultsNote" class="form-text"></div>
+                    </div>
+                  </div>
                   <div class="col-md-4">
                     <div class="mb-3">
                       <label class="form-label">Date Of Joining</label>
@@ -1653,6 +1691,82 @@ function applyBulkAction() {
   })
   .catch(() => alert('Network error. Please try again.'));
 }
+</script>
+
+<!-- ── Reporting line: department defaults vs. individual override ───── -->
+<script>
+(function () {
+  const DEPT_DEFAULTS_URL = "{% url 'department-defaults' %}";
+  const departmentField = document.getElementById("{{ form.department.auto_id }}");
+  const useDefaults = document.getElementById("{{ form.use_department_defaults.auto_id }}");
+  const reportingPerson = document.getElementById("{{ form.reporting_person.auto_id }}");
+  const manager = document.getElementById("{{ form.manager.auto_id }}");
+  const note = document.getElementById("deptDefaultsNote");
+
+  if (!departmentField || !useDefaults || !reportingPerson || !manager) return;
+
+  function setNote(text, isWarning) {
+    if (!note) return;
+    note.textContent = text || "";
+    note.className = isWarning ? "form-text text-warning" : "form-text text-muted";
+  }
+
+  // A disabled <select> submits nothing, so the server re-derives both
+  // values from the department when the box is ticked (EmployeeForm.clean).
+  // Disabling here is purely to make it obvious the fields aren't yours to
+  // set while the department is driving them.
+  function applyDisabledState() {
+    const locked = useDefaults.checked;
+    reportingPerson.disabled = locked;
+    manager.disabled = locked;
+  }
+
+  function loadDepartmentDefaults() {
+    const name = (departmentField.value || "").trim();
+    if (!useDefaults.checked) { setNote(""); return; }
+    if (!name) {
+      setNote("Pick a department to inherit its reporting person and manager.", true);
+      reportingPerson.value = "";
+      manager.value = "";
+      return;
+    }
+
+    fetch(`${DEPT_DEFAULTS_URL}?name=${encodeURIComponent(name)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (!data.found) {
+          reportingPerson.value = "";
+          manager.value = "";
+          setNote(`No department record for “${name}” yet — add it under Departments to set its approvers.`, true);
+          return;
+        }
+        reportingPerson.value = data.reporting_person ? data.reporting_person.id : "";
+        manager.value = data.manager ? data.manager.id : "";
+        if (!data.reporting_person && !data.manager) {
+          setNote(`“${name}” has no reporting person or manager set yet.`, true);
+        } else {
+          setNote("Inherited from the department.", false);
+        }
+      })
+      .catch(() => setNote("Couldn't load the department's approvers.", true));
+  }
+
+  useDefaults.addEventListener("change", function () {
+    applyDisabledState();
+    if (useDefaults.checked) {
+      loadDepartmentDefaults();
+    } else {
+      setNote("Set individually for this employee.", false);
+    }
+  });
+
+  departmentField.addEventListener("change", function () {
+    if (useDefaults.checked) loadDepartmentDefaults();
+  });
+
+  applyDisabledState();
+  if (useDefaults.checked) loadDepartmentDefaults();
+})();
 </script>
 
 {% endblock %}

@@ -1,0 +1,191 @@
+{% extends 'base2.html' %}
+{% block title %}My Approvals{% endblock %}
+{% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+
+  <div class="mb-3">
+    <h2 class="mb-1">My Approvals</h2>
+    <p class="text-muted mb-0 small">
+      Requests from the people who report to you. Approving here is the same as approving
+      from the admin dashboard — HR and Admin can still act on these too.
+    </p>
+  </div>
+
+  {% if not has_reportees %}
+  <div class="card">
+    <div class="card-body text-center text-muted py-5">
+      <i class="ri-user-follow-line ri-3x d-block mb-2 opacity-50"></i>
+      Nobody reports to you right now, so there's nothing to approve here.
+      <div class="small mt-1">Reporting lines are set per department, or per employee.</div>
+    </div>
+  </div>
+  {% else %}
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card h-100"><div class="card-body">
+        <div class="text-muted small">Pending in total</div>
+        <div class="fw-bold fs-4">{{ pending_total }}</div>
+      </div></div>
+    </div>
+    <div class="col-md-3">
+      <div class="card h-100"><div class="card-body">
+        <div class="text-muted small">People reporting to you</div>
+        <div class="fw-bold fs-4">{{ reportees|length }}</div>
+      </div></div>
+    </div>
+  </div>
+
+  <!-- Leave -->
+  <div class="card mb-4">
+    <div class="card-header pb-1">
+      <h6 class="mb-0"><i class="ri-calendar-event-line me-1 text-primary"></i> Pending Leave Requests</h6>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Reason</th><th class="text-end">Action</th></tr>
+        </thead>
+        <tbody>
+          {% for l in leave_requests %}
+          <tr data-row-id="leave-{{ l.id }}">
+            <td class="fw-medium">{{ l.employee.first_name }} {{ l.employee.last_name }}</td>
+            <td><span class="badge bg-label-primary">{{ l.get_leave_type_display }}</span></td>
+            <td class="text-muted">{{ l.start_date|date:"d M" }} – {{ l.end_date|date:"d M Y" }}</td>
+            <td>{{ l.total_days }}</td>
+            <td class="text-muted small">{{ l.reason|default:"—"|truncatechars:60 }}</td>
+            <td class="text-end text-nowrap">
+              <button class="btn btn-sm btn-success" onclick="actOn('leave', {{ l.id }}, 'approve')">Approve</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="actOn('leave', {{ l.id }}, 'reject')">Reject</button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="text-center text-muted py-3">Nothing pending</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Comp-off -->
+  <div class="card mb-4">
+    <div class="card-header pb-1">
+      <h6 class="mb-0"><i class="ri-time-line me-1 text-info"></i> Pending Comp-Off Requests</h6>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Employee</th><th>From</th><th>To</th><th>Reason</th><th class="text-end">Action</th></tr>
+        </thead>
+        <tbody>
+          {% for c in compoff_requests %}
+          <tr data-row-id="compoff-{{ c.id }}">
+            <td class="fw-medium">{{ c.employee.first_name }} {{ c.employee.last_name }}</td>
+            <td class="text-muted">{{ c.from_date|date:"d M Y" }}</td>
+            <td class="text-muted">{{ c.to_date|date:"d M Y" }}</td>
+            <td class="text-muted small">{{ c.reason|default:"—"|truncatechars:60 }}</td>
+            <td class="text-end text-nowrap">
+              <button class="btn btn-sm btn-success" onclick="actOn('compoff', {{ c.id }}, 'approve')">Approve</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="actOn('compoff', {{ c.id }}, 'reject')">Reject</button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="text-center text-muted py-3">Nothing pending</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Attendance corrections -->
+  <div class="card mb-4">
+    <div class="card-header pb-1">
+      <h6 class="mb-0"><i class="ri-edit-box-line me-1 text-danger"></i> Pending Attendance Corrections</h6>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Employee</th><th>Date</th><th>Old In/Out</th><th>New In/Out</th><th>Reason</th><th>Mark as</th><th class="text-end">Action</th></tr>
+        </thead>
+        <tbody>
+          {% for req in correction_requests %}
+          <tr data-row-id="correction-{{ req.id }}">
+            <td class="fw-medium">{{ req.attendance.employee.first_name }} {{ req.attendance.employee.last_name }}</td>
+            <td class="text-muted">{{ req.attendance.date|date:"d M Y" }}</td>
+            <td class="text-muted small">{{ req.old_in_time|default:"–" }} / {{ req.old_out_time|default:"–" }}</td>
+            <td class="text-muted small">
+              {{ req.new_in_time|default:"–" }} / {{ req.new_out_time|default:"–" }}
+              {% if req.times_unchanged %}<span class="badge bg-label-warning ms-1">no change</span>{% endif %}
+            </td>
+            <td class="text-muted small">{{ req.reason|default:"—"|truncatechars:50 }}</td>
+            <td>
+              <select class="form-select form-select-sm correction-status" style="min-width:130px;">
+                <option value="">Auto</option>
+                <option value="Present">Full Day</option>
+                <option value="Late Present">Late Present</option>
+                <option value="Half Day">Half Day</option>
+                <option value="Absent">Absent</option>
+              </select>
+            </td>
+            <td class="text-end text-nowrap">
+              <button class="btn btn-sm btn-success" onclick="actOn('correction', {{ req.id }}, 'approve', this)">Approve</button>
+              <button class="btn btn-sm btn-outline-danger" onclick="actOn('correction', {{ req.id }}, 'reject')">Reject</button>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-3">Nothing pending</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% endif %}
+</div>
+
+<script>
+function getCSRFToken() {
+  return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
+}
+
+const ENDPOINTS = {
+  leave:      { approve: id => `/approve-leave/${id}/`,       reject: id => `/reject-leave/${id}/` },
+  compoff:    { approve: id => `/approve-compoff/${id}/`,     reject: id => `/reject-compoff/${id}/` },
+  correction: { approve: id => `/approve-correction/${id}/`,  reject: id => `/reject-correction/${id}/` },
+};
+
+function actOn(kind, id, action, btn) {
+  let reason = null;
+  if (action === 'reject') {
+    reason = window.prompt('Reason for rejection:');
+    if (!reason) return;
+  }
+
+  const url = ENDPOINTS[kind][action](id);
+  const headers = { 'X-CSRFToken': getCSRFToken() };
+  let body;
+
+  if (action === 'reject') {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify({ reason: reason });
+  } else if (kind === 'correction') {
+    const row = btn.closest('tr');
+    const decision = row.querySelector('.correction-status').value;
+    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    body = new URLSearchParams({ status_decision: decision });
+  }
+
+  fetch(url, { method: 'POST', headers: headers, body: body })
+    .then(res => res.json().then(data => ({ ok: res.ok, data })))
+    .then(({ ok, data }) => {
+      if (!ok) {
+        alert(data.error || data.message || 'That request could not be updated.');
+        return;
+      }
+      const row = document.querySelector(`[data-row-id="${kind}-${id}"]`);
+      if (row) row.remove();
+    })
+    .catch(() => alert('Something went wrong. Please try again.'));
+}
+</script>
+{% endblock %}

@@ -41,6 +41,78 @@ class Branch(models.Model):
         return f"{self.branch_name}"
 
 
+class Department(models.Model):
+    """A department plus who signs off for it: a reporting person who
+    handles day-to-day approvals, and a manager above them. Employees
+    normally inherit both from their department (Employee.
+    use_department_defaults), but can be pointed at a different reporting
+    person individually -- e.g. most of Sales reports to one person while a
+    few report to someone else.
+
+    Deliberately NOT company-scoped, matching Branch (the other
+    org-structure lookup in this app), and named rather than FK'd from
+    Employee.department: that field is a free-text CharField holding years
+    of existing values, and turning it into a foreign key would rewrite
+    every employee fixture and template in the project for no gain here.
+    Employees are linked to a department by name (case-insensitively)."""
+    name = models.CharField(max_length=100, verbose_name="Department Name")
+    reporting_person = models.ForeignKey(
+        "Employee", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="departments_as_reporting_person",
+        help_text="Handles approvals for this department day to day.",
+    )
+    manager = models.ForeignKey(
+        "Employee", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="departments_as_manager",
+        help_text="Approves above the reporting person. May be the same person.",
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            # Conditioned on is_active so an archived department doesn't
+            # permanently block re-creating one with the same name.
+            models.UniqueConstraint(
+                fields=["name"],
+                condition=models.Q(is_active=True),
+                name="unique_active_department_name",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.sync_employees()
+
+    def sync_employees(self):
+        """Push this department's reporting person/manager onto every
+        employee who follows the department default. Without this, changing
+        who signs off for a department would only affect employees added
+        afterwards."""
+        from django.db.models.functions import Lower
+
+        if not self.is_active:
+            return
+        (
+            Employee.objects
+            .annotate(dept_lower=Lower("department"))
+            .filter(dept_lower=self.name.lower(), use_department_defaults=True)
+            .update(reporting_person=self.reporting_person, manager=self.manager)
+        )
+        # The reporting person/manager is usually a member of the department
+        # they sign off for, and the bulk update above would have just made
+        # them their own approver. Employee.save() guards against that, but
+        # .update() bypasses it, so undo it here.
+        for approver_id in {self.reporting_person_id, self.manager_id} - {None}:
+            Employee.objects.filter(pk=approver_id, reporting_person_id=approver_id).update(reporting_person=None)
+            Employee.objects.filter(pk=approver_id, manager_id=approver_id).update(manager=None)
+
+
 BLOOD_GROUP_CHOICES = [
     ("A+", "A+"),
     ("A-", "A-"),
@@ -95,6 +167,26 @@ class Employee(models.Model):
     employee_code = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="Employee Code")
     designation = models.CharField(max_length=100, null=True, blank=True, verbose_name="Designation")
     department = models.CharField(max_length=100, null=True, blank=True, verbose_name="Department")
+
+    # ── Reporting line ────────────────────────────────────────────────
+    # Who may approve this employee's leave / comp-off / attendance
+    # correction requests, on top of Admin/HR. Normally inherited from the
+    # employee's Department, but overridable per employee (see
+    # use_department_defaults) because departments are not uniform: most of
+    # Sales may report to one person while a handful report to another.
+    use_department_defaults = models.BooleanField(
+        default=True,
+        verbose_name="Use department's reporting person & manager",
+        help_text="When on, this employee follows whoever is set on their department.",
+    )
+    reporting_person = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="reportees", verbose_name="Reporting Person",
+    )
+    manager = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="team_members", verbose_name="Manager",
+    )
     date_of_joining = models.DateField(null=True, blank=True, verbose_name="Date of Joining")
     date_of_confirmation = models.DateField(blank=True, null=True, verbose_name="Date of Confirmation")
     location = models.CharField(max_length=255, null=True, blank=True, verbose_name="Location")
@@ -158,6 +250,46 @@ class Employee(models.Model):
     )
     emergency_contact_mobile2 = models.CharField(max_length=30, null=True, blank=True, verbose_name="Emergency Contact Mobile No 2")
     status = models.CharField(max_length=50, choices=[("Active", "Active"), ("Pending", "Pending"), ("Left", "Left"), ("Archived", "Archived")] , default='Active')
+
+    def get_department_record(self):
+        """The Department row matching this employee's department name, or
+        None (the name may be legacy free text with no department defined)."""
+        if not self.department:
+            return None
+        return Department.objects.filter(
+            name__iexact=self.department.strip(), is_active=True
+        ).first()
+
+    def apply_reporting_defaults(self):
+        """Copy the department's reporting person/manager onto this employee
+        when they follow the department default. Copied rather than resolved
+        on read so 'whose requests can I approve' stays a plain indexed FK
+        lookup instead of a per-employee department join."""
+        if not self.use_department_defaults:
+            return
+        department = self.get_department_record()
+        if department is None:
+            return
+        self.reporting_person = department.reporting_person
+        self.manager = department.manager
+
+    def save(self, *args, **kwargs):
+        self.apply_reporting_defaults()
+        # Nobody approves their own requests. This can happen legitimately --
+        # the reporting person of a department is themselves a member of it --
+        # so it is silently cleared rather than raised as a validation error.
+        if self.pk:
+            if self.reporting_person_id == self.pk:
+                self.reporting_person = None
+            if self.manager_id == self.pk:
+                self.manager = None
+        super().save(*args, **kwargs)
+
+    def get_approvers(self):
+        """Employees who may approve this employee's requests, on top of
+        Admin/HR. Reporting person and manager are often the same person."""
+        return [p for p in (self.reporting_person, self.manager) if p is not None]
+
     def __str__(self):
         return f"{self.first_name} {self.last_name}"
 
@@ -1972,6 +2104,8 @@ class AuditLog(models.Model):
         CORRECTION_APPROVED = "correction_approved", "Attendance correction approved"
         CORRECTION_REJECTED = "correction_rejected", "Attendance correction rejected"
         USER_ACCOUNT_CREATED = "user_account_created", "User account created"
+        RECORD_CREATED = "record_created", "Record created"
+        RECORD_UPDATED = "record_updated", "Record updated"
         RECORD_ARCHIVED = "record_archived", "Record archived"
         RECORD_RESTORED = "record_restored", "Record restored"
         EMPLOYEE_ARCHIVED = "employee_archived", "Employee archived"

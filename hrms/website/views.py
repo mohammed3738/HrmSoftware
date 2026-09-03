@@ -46,8 +46,11 @@ from .utils.payroll_lock import (
 from django.forms.models import model_to_dict
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import permission_required
-from .utils.decorators import group_required, feature_required
-from .utils.permissions import can_access_employee_record, has_feature_permission
+from .utils.decorators import group_required, feature_required, approval_required
+from .utils.permissions import (
+    can_access_employee_record, has_feature_permission,
+    can_approve_for_employee, approvable_employees,
+)
 from django.core.exceptions import PermissionDenied
 
 # def parse_time(time_value):
@@ -1489,6 +1492,9 @@ def _approve_correction_item(correction_request, actor=None, status_decision=Non
     the employee submits the same times they already had and is really
     asking their manager to make a judgement call about the day."""
     attendance = correction_request.attendance
+    if actor is not None and not can_approve_for_employee(actor, attendance.employee, "attendance_corrections"):
+        return "You aren't authorised to approve this employee's request."
+
     locking_run = get_locking_run(attendance.employee.company, attendance.date)
     if locking_run:
         return _lock_message(locking_run, action="approve this correction")
@@ -1541,7 +1547,7 @@ def _approve_correction_item(correction_request, actor=None, status_decision=Non
 
 
 @login_required
-@feature_required("attendance_corrections", action="approve")
+@approval_required("attendance_corrections")
 @require_http_methods(["POST"])
 def approve_correction_request(request, request_id):
     correction_request = get_object_or_404(AttendanceCorrectionRequest, id=request_id)
@@ -1570,7 +1576,7 @@ def approve_correction_request(request, request_id):
 
 
 @login_required
-@feature_required("attendance_corrections", action="approve")
+@approval_required("attendance_corrections")
 @require_http_methods(["POST"])
 def bulk_approve_correction(request):
     ids = _extract_bulk_ids(request)
@@ -1590,8 +1596,12 @@ def bulk_approve_correction(request):
 
 
 @login_required
+@approval_required("attendance_corrections")
 def reject_correction_request(request, request_id):
     correction_request = get_object_or_404(AttendanceCorrectionRequest, id=request_id)
+
+    if not can_approve_for_employee(request.user, correction_request.attendance.employee, "attendance_corrections"):
+        return JsonResponse({"error": "You aren't authorised to reject this employee's request."}, status=403)
 
     if request.method == "POST":
         data = json.loads(request.body)
@@ -2125,7 +2135,11 @@ def admin_dashboard(request):
 
 def _approve_compoff_item(compoff, actor=None):
     """Approve a single CompOffRequest. Returns an error message string on
-    failure (e.g. payroll lock), or None on success."""
+    failure (e.g. payroll lock, not this approver's reportee), or None on
+    success."""
+    if actor is not None and not can_approve_for_employee(actor, compoff.employee, "comp_off"):
+        return "You aren't authorised to approve this employee's request."
+
     locking_run = get_locking_run_for_period(
         compoff.employee.company, compoff.from_date, compoff.to_date
     )
@@ -2161,7 +2175,7 @@ def _extract_bulk_ids(request):
 
 
 @login_required
-@feature_required("comp_off", action="approve")
+@approval_required("comp_off")
 def approve_compoff(request, compoff_id):
     try:
         compoff = CompOffRequest.objects.get(id=compoff_id)
@@ -2175,7 +2189,7 @@ def approve_compoff(request, compoff_id):
 
 
 @login_required
-@feature_required("comp_off", action="approve")
+@approval_required("comp_off")
 @require_http_methods(["POST"])
 def bulk_approve_compoff(request):
     ids = _extract_bulk_ids(request)
@@ -2207,9 +2221,12 @@ def bulk_approve_compoff(request):
 #             return JsonResponse({"message": "Request not found!"}, status=404)
 
 @login_required
-@feature_required("comp_off", action="approve")
+@approval_required("comp_off")
 def reject_compoff(request, compoff_id):
     correction_request = get_object_or_404(CompOffRequest, id=compoff_id)
+
+    if not can_approve_for_employee(request.user, correction_request.employee, "comp_off"):
+        return JsonResponse({"error": "You aren't authorised to reject this employee's request."}, status=403)
 
     if request.method == "POST":
         data = json.loads(request.body)
@@ -3184,6 +3201,153 @@ def create_branchs(request):
     elif show == "archived":
         branches = branches.filter(is_active=False)
     return render(request, "branch/create-branch.html", {"branches": branches, "show": show})
+
+
+@login_required
+def my_approvals(request):
+    """A reporting person's approval inbox: pending leave, comp-off and
+    attendance-correction requests from the people who report to them.
+
+    Deliberately not behind @feature_required -- being someone's reporting
+    person IS the authorisation here, and reporting persons are typically
+    plain Employee-role logins who can't reach the admin dashboard at all.
+    The page shows nothing unless the user actually has reportees, and every
+    approve/reject action is re-checked per record server-side."""
+    approver = getattr(request.user, "employee_profile", None)
+    if approver is None:
+        return render(request, "approvals/my_approvals.html", {"has_reportees": False})
+
+    reportees = Employee.objects.filter(
+        Q(reporting_person_id=approver.id) | Q(manager_id=approver.id)
+    ).exclude(pk=approver.pk)
+
+    leave_requests = (
+        LeaveApplication.objects.select_related("employee")
+        .filter(employee__in=reportees, status="Pending").order_by("-id")
+    )
+    compoff_requests = (
+        CompOffRequest.objects.select_related("employee")
+        .filter(employee__in=reportees, status="Pending").order_by("-id")
+    )
+    correction_requests = (
+        AttendanceCorrectionRequest.objects.select_related("attendance__employee")
+        .filter(attendance__employee__in=reportees, status="Pending").order_by("-id")
+    )
+
+    return render(request, "approvals/my_approvals.html", {
+        "has_reportees": reportees.exists(),
+        "reportees": reportees.order_by("first_name", "last_name"),
+        "leave_requests": leave_requests,
+        "compoff_requests": compoff_requests,
+        "correction_requests": correction_requests,
+        "pending_total": leave_requests.count() + compoff_requests.count() + correction_requests.count(),
+    })
+
+
+@login_required
+@feature_required("department_management", action="view")
+def department_list(request):
+    """Departments and who signs off for each: a reporting person for
+    day-to-day approvals and a manager above them (often the same person).
+    Employees inherit both unless individually overridden."""
+    show = request.GET.get("show", "active")
+    departments = Department.objects.select_related("reporting_person", "manager")
+    if show == "active":
+        departments = departments.filter(is_active=True)
+    elif show == "archived":
+        departments = departments.filter(is_active=False)
+
+    # How many employees currently sit in each department, so it's obvious
+    # who a change to the reporting person will affect.
+    departments = list(departments)
+    for dept in departments:
+        dept.employee_count = Employee.objects.filter(
+            department__iexact=dept.name, status="Active"
+        ).count()
+
+    return render(request, "department/department_list.html", {
+        "departments": departments,
+        "show": show,
+        "employees": Employee.objects.filter(status="Active").order_by("first_name", "last_name"),
+    })
+
+
+@login_required
+@feature_required("department_management", action="edit")
+@require_http_methods(["POST"])
+def save_department(request, department_id=None):
+    """Create or update a department. One endpoint for both so the add form
+    and the edit modal post to the same place."""
+    name = (request.POST.get("name") or "").strip()
+    if not name:
+        messages.error(request, "Department name is required.")
+        return redirect("department-list")
+
+    reporting_person_id = request.POST.get("reporting_person") or None
+    manager_id = request.POST.get("manager") or None
+
+    clash = Department.objects.filter(name__iexact=name, is_active=True)
+    if department_id:
+        clash = clash.exclude(id=department_id)
+    if clash.exists():
+        messages.error(request, f"A department named “{name}” already exists.")
+        return redirect("department-list")
+
+    if department_id:
+        department = get_object_or_404(Department, id=department_id)
+        action = AuditLog.Action.RECORD_UPDATED
+        verb = "Updated"
+    else:
+        department = Department()
+        action = AuditLog.Action.RECORD_CREATED
+        verb = "Created"
+
+    department.name = name
+    department.reporting_person_id = reporting_person_id
+    department.manager_id = manager_id
+    department.save()  # also re-syncs employees following this department
+
+    log_audit(request.user, action, department,
+              summary=f"{verb} department {department.name}")
+    messages.success(request, f"Department “{department.name}” saved.")
+    return redirect("department-list")
+
+
+@login_required
+@feature_required("department_management", action="edit")
+@require_http_methods(["POST"])
+def delete_department(request, department_id):
+    department = get_object_or_404(Department, id=department_id)
+    department.is_active = False
+    department.save(update_fields=["is_active"])
+    log_audit(request.user, AuditLog.Action.RECORD_ARCHIVED, department,
+              summary=f"Archived department {department.name}")
+    messages.success(request, f"Department “{department.name}” archived.")
+    return redirect("department-list")
+
+
+@login_required
+def department_defaults_api(request):
+    """Reporting person + manager defined for a department, so the employee
+    form can fill those fields in the moment 'Use department's reporting
+    person & manager' is ticked."""
+    name = (request.GET.get("name") or "").strip()
+    department = Department.objects.filter(name__iexact=name, is_active=True).select_related(
+        "reporting_person", "manager"
+    ).first()
+    if department is None:
+        return JsonResponse({"found": False, "reporting_person": None, "manager": None})
+
+    def as_option(employee):
+        if employee is None:
+            return None
+        return {"id": employee.id, "name": f"{employee.first_name} {employee.last_name}".strip()}
+
+    return JsonResponse({
+        "found": True,
+        "reporting_person": as_option(department.reporting_person),
+        "manager": as_option(department.manager),
+    })
 
 
 @login_required
@@ -4941,7 +5105,11 @@ def leave_apply_view(request):
 
 def _approve_leave_item(leave, actor=None):
     """Approve a single LeaveApplication. Returns an error message string on
-    failure (e.g. payroll lock), or None on success."""
+    failure (e.g. payroll lock, not this approver's reportee), or None on
+    success."""
+    if actor is not None and not can_approve_for_employee(actor, leave.employee, "leave_management"):
+        return "You aren't authorised to approve this employee's request."
+
     locking_run = get_locking_run_for_period(
         leave.employee.company, leave.start_date, leave.end_date
     )
@@ -4957,7 +5125,7 @@ def _approve_leave_item(leave, actor=None):
 
 
 @login_required
-@feature_required("leave_management", action="approve")
+@approval_required("leave_management")
 @require_POST
 def approve_leave(request, leave_id):
     try:
@@ -4972,7 +5140,7 @@ def approve_leave(request, leave_id):
 
 
 @login_required
-@feature_required("leave_management", action="approve")
+@approval_required("leave_management")
 @require_POST
 def bulk_approve_leave(request):
     ids = _extract_bulk_ids(request)
@@ -4992,7 +5160,7 @@ def bulk_approve_leave(request):
 
 
 @login_required
-@feature_required("leave_management", action="approve")
+@approval_required("leave_management")
 @require_POST
 def reject_leave(request, leave_id):
     try:
@@ -5003,6 +5171,8 @@ def reject_leave(request, leave_id):
             return JsonResponse({"message": "Reason required"}, status=400)
 
         leave = LeaveApplication.objects.get(id=leave_id)
+        if not can_approve_for_employee(request.user, leave.employee, "leave_management"):
+            return JsonResponse({"message": "You aren't authorised to reject this employee's request."}, status=403)
         leave.status = "Rejected"
         leave.save()
 

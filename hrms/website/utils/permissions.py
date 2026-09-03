@@ -1,4 +1,5 @@
 from django.core.exceptions import PermissionDenied
+from django.db.models import Q
 
 def is_admin(user):
     return user.groups.filter(name="Admin").exists()
@@ -25,6 +26,53 @@ def has_feature_permission(user, feature_key, action="view"):
     return RoleFeaturePermission.objects.filter(
         role__in=user.groups.all(), feature__key=feature_key, **{f"can_{action}": True}
     ).exists()
+
+
+def can_approve_for_employee(user, employee, feature_key):
+    """May `user` approve or reject `employee`'s leave / comp-off /
+    attendance-correction request?
+
+    Two independent ways in:
+      * the role-based grant (Admin/HR/Manager via the permission matrix),
+        exactly as before -- nobody loses access;
+      * being that employee's own reporting person or manager, which is the
+        point of the reporting line: routine approvals shouldn't queue
+        behind whoever happens to hold the Admin role.
+    """
+    if user.is_superuser or user.is_staff:
+        return True
+    if has_feature_permission(user, feature_key, "approve"):
+        return True
+    approver = getattr(user, "employee_profile", None)
+    if approver is None:
+        return False
+    return approver.id in {employee.reporting_person_id, employee.manager_id}
+
+
+def is_reporting_approver(user):
+    """Does this user sit on anyone's reporting line at all? Coarse gate for
+    the approval endpoints -- whether they may act on a *specific* request
+    is decided per record by can_approve_for_employee()."""
+    from website.models import Employee
+
+    approver = getattr(user, "employee_profile", None)
+    if approver is None:
+        return False
+    return Employee.objects.filter(
+        Q(reporting_person_id=approver.id) | Q(manager_id=approver.id)
+    ).exists()
+
+
+def approvable_employees(user, feature_key, base_qs):
+    """Narrow an approval queue to the employees `user` may act on. Users
+    with the blanket role grant see everything in `base_qs` (unchanged);
+    a reporting person sees only their own reportees."""
+    if user.is_superuser or user.is_staff or has_feature_permission(user, feature_key, "approve"):
+        return base_qs
+    approver = getattr(user, "employee_profile", None)
+    if approver is None:
+        return base_qs.none()
+    return base_qs.filter(Q(reporting_person_id=approver.id) | Q(manager_id=approver.id))
 
 
 def can_access_employee_record(user, employee, feature_key, action="view"):

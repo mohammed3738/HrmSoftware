@@ -786,6 +786,58 @@ class PayrollSettings(models.Model):
         help_text="If unchecked, late marks will never deduct from leave balance / cause LWP, regardless of count."
     )
 
+    # ── Attendance status thresholds ──────────────────────────────────
+    # How many hours worked earns which status. These used to be hardcoded
+    # in Attendance.calculate_status() as a 9-hour day with 70% / 50%
+    # cut-offs; the defaults below reproduce that exactly, so nothing
+    # changes until a company edits them.
+    #
+    # Read as a ladder, longest first:
+    #   >= full_day_hours - grace      -> Present
+    #   >= late_present_min_hours      -> Late Present
+    #   >= half_day_min_hours          -> Half Day  (worth half_day_count)
+    #   anything less                  -> Absent
+    full_day_hours = models.DecimalField(
+        max_digits=4, decimal_places=2, default=Decimal("9.00"),
+        validators=[MinValueValidator(Decimal("0.50")), MaxValueValidator(Decimal("24.00"))],
+        verbose_name="Full day hours",
+        help_text="Hours that make a full working day. Also the duty length lateness is measured against.",
+    )
+    late_present_min_hours = models.DecimalField(
+        max_digits=4, decimal_places=2, default=Decimal("6.30"),
+        validators=[MinValueValidator(Decimal("0.00")), MaxValueValidator(Decimal("24.00"))],
+        verbose_name="Late Present from (hours)",
+        help_text="Work at least this many hours, but short of a full day, to still be credited a full day as Late Present.",
+    )
+    half_day_min_hours = models.DecimalField(
+        max_digits=4, decimal_places=2, default=Decimal("4.50"),
+        validators=[MinValueValidator(Decimal("0.00")), MaxValueValidator(Decimal("24.00"))],
+        verbose_name="Half Day from (hours)",
+        help_text="Work at least this many hours for a Half Day. Below this the day is Absent.",
+    )
+    half_day_count = models.DecimalField(
+        max_digits=3, decimal_places=2, default=Decimal("0.50"),
+        validators=[MinValueValidator(Decimal("0.00")), MaxValueValidator(Decimal("1.00"))],
+        verbose_name="Half Day credit",
+        help_text="Day-count a Half Day is worth for payroll (0.50 = half a day's pay).",
+    )
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+        # The ladder only makes sense strictly descending -- a Half Day
+        # threshold above the Late Present one would make Half Day
+        # unreachable, silently changing how everyone's attendance counts.
+        if self.half_day_min_hours > self.late_present_min_hours:
+            raise ValidationError({
+                "half_day_min_hours": "Half Day hours must not be more than Late Present hours."
+            })
+        if self.late_present_min_hours > self.full_day_hours:
+            raise ValidationError({
+                "late_present_min_hours": "Late Present hours must not be more than a full day."
+            })
+
     # Salary master settings
     pf_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=12.00)
     esic_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=3.67)
@@ -1495,12 +1547,27 @@ class Attendance(models.Model):
         except Exception:
             return 15
 
-    def calculate_lateness(self, grace_period_minutes=None):
+    def get_full_day_hours(self):
+        """Company-configured full working day (PayrollSettings.
+        full_day_hours), defaulting to 9."""
+        from django.apps import apps
+        PayrollSettings = apps.get_model('website', 'PayrollSettings')
+        try:
+            ps = PayrollSettings.objects.filter(company=self.employee.company).first()
+            return Decimal(str(ps.full_day_hours)) if ps else Decimal("9.0")
+        except Exception:
+            return Decimal("9.0")
+
+    def calculate_lateness(self, grace_period_minutes=None, full_day_hours=None):
         """
-        Flexible/floating shift: duty is expected to run 9 hours from actual
-        check-in time (e.g. in at 10:00 -> out by 19:00; in at 09:00 -> out by
-        18:00). Returns how many minutes short of that 9-hour mark the
-        employee left, or 0 if they met it or fell within the grace period.
+        Flexible/floating shift: duty is expected to run a full day's worth
+        of hours from the actual check-in time (with a 9-hour day: in at
+        10:00 -> out by 19:00; in at 09:00 -> out by 18:00). Returns how many
+        minutes short of that mark the employee left, or 0 if they met it or
+        fell within the grace period.
+
+        Both the duty length and the grace period come from PayrollSettings;
+        callers already holding those values pass them in to avoid re-querying.
         """
         if not self.in_time or not self.out_time:
             return 0
@@ -1510,7 +1577,10 @@ class Attendance(models.Model):
         if out_dt <= in_dt:
             out_dt += datetime.timedelta(days=1)
 
-        expected_out_dt = in_dt + datetime.timedelta(hours=9)
+        if full_day_hours is None:
+            full_day_hours = self.get_full_day_hours()
+
+        expected_out_dt = in_dt + datetime.timedelta(hours=float(full_day_hours))
 
         if grace_period_minutes is None:
             grace_period_minutes = self.get_grace_period_minutes()
@@ -1679,29 +1749,34 @@ class Attendance(models.Model):
             grace_period_minutes = ps.grace_period_minutes if ps else 15
             grace_hours = Decimal(grace_period_minutes) / Decimal("60")
 
-            self.late = self.calculate_lateness(grace_period_minutes)
+            # Every threshold below is company policy, configured on
+            # PayrollSettings (Settings -> Attendance Rules). The fallbacks
+            # are the values these rules were hardcoded to before they
+            # became configurable: a 9-hour day with 70% / 50% cut-offs.
+            expected_hours = Decimal(str(ps.full_day_hours)) if ps else Decimal("9.00")
+            late_present_min = Decimal(str(ps.late_present_min_hours)) if ps else Decimal("6.30")
+            half_day_min = Decimal(str(ps.half_day_min_hours)) if ps else Decimal("4.50")
+            half_day_credit = Decimal(str(ps.half_day_count)) if ps else Decimal("0.50")
 
-            # Define expected hours (9 hours)
-            expected_hours = Decimal("9.0")
+            self.late = self.calculate_lateness(grace_period_minutes, expected_hours)
 
             # Apply rules based on hours worked
             if worked_hours >= expected_hours - grace_hours:
-                # Worked the full 9 hours, or fell short only within the grace period
+                # Worked a full day, or fell short only within the grace period
                 self.status = "Present"
                 self.count = Decimal("1.00")
 
-            elif worked_hours >= expected_hours * Decimal("0.7"):
-                # Worked 6.3+ hours (70% of 9 hours) but beyond the grace period
+            elif worked_hours >= late_present_min:
+                # Short of a full day beyond the grace period, but enough to
+                # still be credited a whole day
                 self.status = "Late Present"
                 self.count = Decimal("1.00")
 
-            elif worked_hours >= expected_hours * Decimal("0.5"):
-                # Worked 4.5+ hours (50% of 9 hours)
+            elif worked_hours >= half_day_min:
                 self.status = "Half Day"
-                self.count = Decimal("0.50")
+                self.count = half_day_credit
 
             else:
-                # Worked less than 4.5 hours
                 self.status = "Absent"
                 self.count = Decimal("0.00")
 

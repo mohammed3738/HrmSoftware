@@ -19,7 +19,7 @@ import json
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth import authenticate, login, logout
 from datetime import date, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from django.core.paginator import Paginator
 from dateutil.relativedelta import relativedelta
 from django.template.loader import render_to_string
@@ -51,7 +51,7 @@ from .utils.permissions import (
     can_access_employee_record, has_feature_permission,
     can_approve_for_employee, approvable_employees,
 )
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 
 # def parse_time(time_value):
 #     """Convert time string or float to a proper datetime.time object."""
@@ -6514,6 +6514,29 @@ def save_payroll_settings(request):
             settings.weekend_days = weekend_days
 
         settings.late_marks_affect_lwp = request.POST.get("late_marks_affect_lwp") == "on"
+
+        # Attendance status thresholds. Only touched when the form actually
+        # posts them, so a partial save from another settings tab can't
+        # reset a company's attendance policy to the defaults.
+        for field in ("full_day_hours", "late_present_min_hours", "half_day_min_hours", "half_day_count"):
+            raw = request.POST.get(field)
+            if raw not in (None, ""):
+                try:
+                    setattr(settings, field, Decimal(str(raw)))
+                except (InvalidOperation, TypeError):
+                    return JsonResponse(
+                        {'success': False, 'error': f'“{raw}” isn\'t a valid number for {field.replace("_", " ")}.'},
+                        status=400,
+                    )
+
+        # Thresholds must stay a descending ladder, otherwise a rule becomes
+        # unreachable and everyone's attendance quietly recalculates wrong.
+        try:
+            settings.clean()
+        except ValidationError as exc:
+            return JsonResponse({'success': False, 'error': '; '.join(
+                msg for messages_ in exc.message_dict.values() for msg in messages_
+            )}, status=400)
 
         settings.save()
         MonthlyEarnedLeaves.sync_with_payroll_settings(settings)

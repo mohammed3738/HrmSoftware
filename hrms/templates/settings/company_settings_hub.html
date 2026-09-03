@@ -122,6 +122,49 @@
                   <input class="form-control" type="number" name="grace_period_minutes" id="hub_grace"
                          value="{{ payroll_settings.grace_period_minutes }}">
                 </div>
+
+                <!-- ── Attendance status rules ─────────────────────────── -->
+                <div class="col-12 mt-3">
+                  <h6 class="text-muted text-uppercase fw-semibold mb-1" style="font-size:.7rem;letter-spacing:.08em;">
+                    Attendance Status Rules
+                  </h6>
+                  <p class="text-muted small mb-2">
+                    How many hours worked earns which status. Read top down — the first rule that fits wins.
+                  </p>
+                </div>
+
+                <div class="col-md-3">
+                  <label class="form-label">Full Day (hours)</label>
+                  <input class="form-control" type="number" step="0.25" min="0.5" max="24"
+                         name="full_day_hours" id="hub_full_day_hours"
+                         value="{{ payroll_settings.full_day_hours }}">
+                  <div class="form-text">Present at or above this, minus the grace period.</div>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Late Present from (hours)</label>
+                  <input class="form-control" type="number" step="0.25" min="0" max="24"
+                         name="late_present_min_hours" id="hub_late_present_hours"
+                         value="{{ payroll_settings.late_present_min_hours }}">
+                  <div class="form-text">Still a full day's credit, marked late.</div>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Half Day from (hours)</label>
+                  <input class="form-control" type="number" step="0.25" min="0" max="24"
+                         name="half_day_min_hours" id="hub_half_day_hours"
+                         value="{{ payroll_settings.half_day_min_hours }}">
+                  <div class="form-text">Below this the day counts as Absent.</div>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Half Day credit</label>
+                  <input class="form-control" type="number" step="0.05" min="0" max="1"
+                         name="half_day_count" id="hub_half_day_count"
+                         value="{{ payroll_settings.half_day_count }}">
+                  <div class="form-text">Day-count a half day is worth for payroll.</div>
+                </div>
+
+                <div class="col-12">
+                  <div class="alert alert-secondary py-2 px-3 small mb-0" id="attendanceRulePreview"></div>
+                </div>
                 <div class="col-md-3">
                   <label class="form-label">Max Leave Balance</label>
                   <input class="form-control" type="number" name="max_leave_balance" id="hub_max_leave"
@@ -473,6 +516,52 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     return success;
   }
+
+  // ── Attendance rules: spell the ladder back out in plain English ────
+  // These four numbers decide everyone's attendance, so show what they
+  // actually mean before the policy is saved, not after a recalculation.
+  (function () {
+    const ids = ['hub_full_day_hours', 'hub_late_present_hours', 'hub_half_day_hours', 'hub_half_day_count', 'hub_grace'];
+    const els = ids.map(id => document.getElementById(id));
+    const preview = document.getElementById('attendanceRulePreview');
+    if (!preview || els.some(el => !el)) return;
+
+    const [fullDay, latePresent, halfDay, halfCredit, grace] = els;
+
+    function hrs(value) {
+      const n = parseFloat(value);
+      return Number.isFinite(n) ? n : 0;
+    }
+
+    function render() {
+      const full = hrs(fullDay.value);
+      const late = hrs(latePresent.value);
+      const half = hrs(halfDay.value);
+      const credit = hrs(halfCredit.value);
+      const presentFrom = Math.max(0, full - hrs(grace.value) / 60);
+
+      if (half > late || late > full) {
+        preview.className = 'alert alert-warning py-2 px-3 small mb-0';
+        preview.innerHTML =
+          '<strong>These thresholds overlap.</strong> They have to descend: ' +
+          'Half Day ≤ Late Present ≤ Full Day, otherwise one of the rules can never be reached.';
+        return;
+      }
+
+      preview.className = 'alert alert-secondary py-2 px-3 small mb-0';
+      preview.innerHTML =
+        '<strong>With these rules, a worked day becomes:</strong>' +
+        `<div class="mt-1">• <strong>${presentFrom.toFixed(2)} h</strong> or more → <strong>Present</strong> (counts 1 day)</div>` +
+        `<div>• <strong>${late.toFixed(2)} h</strong> up to ${presentFrom.toFixed(2)} h → <strong>Late Present</strong> (counts 1 day)</div>` +
+        `<div>• <strong>${half.toFixed(2)} h</strong> up to ${late.toFixed(2)} h → <strong>Half Day</strong> (counts ${credit.toFixed(2)} day)</div>` +
+        `<div>• under ${half.toFixed(2)} h → <strong>Absent</strong> (counts 0)</div>` +
+        '<div class="text-muted mt-1">Changing these only affects days recalculated afterwards — ' +
+        'run “Recalculate Attendance” to apply them to existing records.</div>';
+    }
+
+    els.forEach(el => el.addEventListener('input', render));
+    render();
+  })();
 
   const payrollBtn = document.getElementById('hubSavePayrollBtn');
   if (payrollBtn) {

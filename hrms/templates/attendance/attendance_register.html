@@ -83,18 +83,35 @@
         </thead>
         <tbody>
           {% for row in rows %}
-          <tr>
+          <tr data-lb-id="{% if row.lb %}{{ row.lb.id }}{% endif %}">
             <td>{{ row.employee.employee_code }}</td>
             <td class="fw-medium text-nowrap">{{ row.employee.first_name }} {{ row.employee.last_name }}</td>
             <td class="text-end">{{ row.lb.opening_balance|default:"0.00" }}</td>
             <td class="text-end">{{ row.lb.leave_taken|default:"0.00" }}</td>
             <td class="text-end">{{ row.lb.late|default:"0" }}</td>
+
+            {% if row.lb and can_edit_compoff %}
+            <td class="text-end compoff-cell" style="padding:2px;">
+              <div class="compoff-display">
+                <span class="reg-compoff-val">{{ row.lb.compoff|floatformat:2 }}</span>
+                <button type="button" class="compoff-edit-btn" title="Override Comp Off" onclick="startCompoffEdit(this)">✏️</button>
+              </div>
+              <div class="compoff-edit" style="display:none;">
+                <input type="number" class="compoff-input" step="0.5" min="0" value="{{ row.lb.compoff|floatformat:2 }}"
+                       style="width:56px;padding:1px 3px;border:1px solid #696cff;border-radius:4px;font-size:0.72rem;">
+                <button type="button" class="compoff-save-btn" onclick="saveCompoff(this)" title="Save">✔</button>
+                <button type="button" class="compoff-cancel-btn" onclick="cancelCompoffEdit(this)" title="Cancel">✖</button>
+              </div>
+            </td>
+            {% else %}
             <td class="text-end">{{ row.lb.compoff|default:"0.00" }}</td>
-            <td class="text-end">{{ row.lb.leave_without_pay|default:"0.00" }}</td>
+            {% endif %}
+
+            <td class="text-end reg-lwp-val">{{ row.lb.leave_without_pay|default:"0.00" }}</td>
             <td class="text-end">{{ row.lb.number_of_days_present|default:"0.00" }}</td>
             <td class="text-end">{{ row.lb.total_number_of_days|default:"0" }}</td>
-            <td class="text-end">{{ row.lb.closing_balance|default:"0.00" }}</td>
-            <td class="text-end">{{ row.lb.final_leave_balance|default:"0.00" }}</td>
+            <td class="text-end reg-closing-val">{{ row.lb.closing_balance|default:"0.00" }}</td>
+            <td class="text-end reg-final-val">{{ row.lb.final_leave_balance|default:"0.00" }}</td>
             <td class="text-nowrap">{{ row.employee.branch.branch_name|default:"—" }}</td>
             {% for day in row.days %}
               {% if day.attendance_id %}
@@ -130,9 +147,70 @@
   </div>
 </div>
 
+<style>
+  .compoff-cell { position: relative; }
+  .compoff-display { display: flex; align-items: center; justify-content: flex-end; gap: 3px; }
+  .compoff-edit-btn {
+    background: none; border: none; cursor: pointer; padding: 0 2px;
+    opacity: 0; font-size: 0.68rem; line-height: 1; color: #696cff;
+    transition: opacity 0.15s;
+  }
+  tr:hover .compoff-edit-btn { opacity: 1; }
+  .compoff-edit { display: flex; align-items: center; gap: 3px; justify-content: flex-end; }
+  .compoff-save-btn, .compoff-cancel-btn {
+    background: none; border: none; cursor: pointer; font-size: 0.72rem; padding: 0 2px;
+  }
+  .compoff-save-btn { color: #71dd37; }
+  .compoff-cancel-btn { color: #ff3e1d; }
+</style>
 <script>
 function getCSRFToken() {
   return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
+}
+
+const OVERRIDE_COMPOFF_URL = "{% url 'override-compoff' %}";
+
+function startCompoffEdit(btn) {
+  const cell = btn.closest('.compoff-cell');
+  cell.querySelector('.compoff-display').style.display = 'none';
+  cell.querySelector('.compoff-edit').style.display = 'flex';
+  cell.querySelector('.compoff-input').focus();
+}
+
+function cancelCompoffEdit(btn) {
+  const cell = btn.closest('.compoff-cell');
+  cell.querySelector('.compoff-display').style.display = 'flex';
+  cell.querySelector('.compoff-edit').style.display = 'none';
+}
+
+function saveCompoff(btn) {
+  const cell = btn.closest('.compoff-cell');
+  const row = btn.closest('tr');
+  const lbId = row.dataset.lbId;
+  const newCompoff = cell.querySelector('.compoff-input').value;
+
+  fetch(OVERRIDE_COMPOFF_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': getCSRFToken() },
+    body: `lb_id=${lbId}&compoff_value=${encodeURIComponent(newCompoff)}`,
+  })
+  .then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
+  .then(function (result) {
+    if (!result.ok || !result.data.success) {
+      alert(result.data.message || 'Could not update Comp Off.');
+      return;
+    }
+    const data = result.data;
+    cell.querySelector('.reg-compoff-val').textContent = data.compoff;
+    cell.querySelector('.compoff-input').value = data.compoff;
+    row.querySelector('.reg-lwp-val').textContent = data.lwp;
+    row.querySelector('.reg-closing-val').textContent = data.closing_balance;
+    row.querySelector('.reg-final-val').textContent = data.final_leave_balance;
+    cancelCompoffEdit(btn);
+  })
+  .catch(function () {
+    alert('Something went wrong while updating Comp Off.');
+  });
 }
 
 const DAY_OVERRIDE_VALID_STATUSES = ["Present", "Half Day", "Holiday", "Late Present"];

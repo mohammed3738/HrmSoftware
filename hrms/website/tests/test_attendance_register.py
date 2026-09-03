@@ -185,6 +185,44 @@ class AttendanceRegisterTest(TestCase):
         resp = client.get(reverse("attendance-register"))
         self.assertEqual(resp.status_code, 403)
 
+    def test_hr_sees_compoff_override_control(self):
+        hr_user = User.objects.create_user(username="areg_hr", password="pass12345")
+        hr_user.groups.add(Group.objects.get(name="HR"))
+        client = Client()
+        client.login(username="areg_hr", password="pass12345")
+        resp = client.get(reverse("attendance-register"), {
+            "period": "2026-03-31", "company_id": self.company.id,
+        })
+        self.assertTrue(resp.context["can_edit_compoff"])
+        self.assertContains(resp, 'onclick="startCompoffEdit(this)"')
+
+    def test_manager_does_not_see_compoff_override_control(self):
+        # leave_management:edit is Admin/HR only -- Manager gets view-only.
+        manager = User.objects.create_user(username="areg_mgr2", password="pass12345")
+        manager.groups.add(Group.objects.get(name="Manager"))
+        client = Client()
+        client.login(username="areg_mgr2", password="pass12345")
+        resp = client.get(reverse("attendance-register"), {
+            "period": "2026-03-31", "company_id": self.company.id,
+        })
+        self.assertFalse(resp.context["can_edit_compoff"])
+        self.assertNotContains(resp, 'onclick="startCompoffEdit(this)"')
+
+    def test_compoff_override_updates_the_row_on_the_spot(self):
+        resp = self.client.post(reverse("override-compoff"), {
+            "lb_id": self.lb.id, "compoff_value": "1.00",
+        })
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["success"])
+
+        self.lb.refresh_from_db()
+        self.assertEqual(self.lb.compoff, Decimal("1.00"))
+        self.assertTrue(self.lb.compoff_overridden)
+
+        resp2 = self.get_register()
+        row = resp2.context["rows"][0]
+        self.assertEqual(row["lb"].compoff, Decimal("1.00"))
+
     def test_composes_correctly_with_the_existing_override_endpoint(self):
         """The register must reflect a correction made through the
         pre-existing override_attendance_status endpoint -- proving it

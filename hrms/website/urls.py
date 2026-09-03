@@ -203,6 +203,7 @@ urlpatterns = [
     path('leave-balance/employee/<int:employee_id>/recalc/', views.recalc_employee_leave_balance, name='recalc-employee-leave'),
     path('leave-balance/employee/<int:employee_id>/', views.employee_leave_detail, name='employee-leave-detail'),
     path('leave-balance/override-lwp/', views.override_lwp_view, name='override-lwp'),
+    path('leave-balance/override-compoff/', views.override_compoff_view, name='override-compoff'),
 
 
 

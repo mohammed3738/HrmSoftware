@@ -86,6 +86,9 @@
               <span class="badge bg-danger px-3">Rejected</span>
               {% elif attendance.status == 'Approved' %}
               <span class="badge bg-success">Approved</span>
+              {% if attendance.approved_status %}
+              <div class="small text-muted mt-1">Marked as {{ attendance.approved_status }}</div>
+              {% endif %}
               {% else %}
               <span class="badge bg-warning px-3">{{ attendance.status }}</span>
               {% endif %}

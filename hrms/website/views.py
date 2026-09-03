@@ -1462,41 +1462,111 @@ def submit_correction_request(request):
 
 
 # approval
-def _approve_correction_item(correction_request, actor=None):
+# Statuses an approver may explicitly grant when approving a correction
+# request. Deliberately a different set from ATTENDANCE_OVERRIDE_STATUS_MAP
+# (the late-review forgiveness map): that one offers Holiday and treats
+# "Late Present" as "clear the override and recompute from the punch times",
+# whereas here the approver is deciding the outcome of a request that may
+# not change any times at all (e.g. "I came in late for a medical reason"),
+# so an explicit Late Present and Absent both have to be grantable.
+CORRECTION_APPROVAL_STATUS_MAP = {
+    "Present": Decimal("1.00"),
+    "Late Present": Decimal("1.00"),
+    "Half Day": Decimal("0.50"),
+    "Absent": Decimal("0.00"),
+}
+
+
+def _approve_correction_item(correction_request, actor=None, status_decision=None):
     """Approve a single AttendanceCorrectionRequest and write the corrected
     times onto its Attendance record. Returns an error message string on
-    failure (e.g. payroll lock), or None on success."""
+    failure (e.g. payroll lock, invalid status), or None on success.
+
+    ``status_decision`` is the status the approver explicitly grants for the
+    day (Present / Late Present / Half Day / Absent). Left blank, the day is
+    recalculated from the corrected punch times as before -- which is all a
+    plain time-fix needs. It matters for the other kind of request, where
+    the employee submits the same times they already had and is really
+    asking their manager to make a judgement call about the day."""
     attendance = correction_request.attendance
     locking_run = get_locking_run(attendance.employee.company, attendance.date)
     if locking_run:
         return _lock_message(locking_run, action="approve this correction")
 
+    if status_decision and status_decision not in CORRECTION_APPROVAL_STATUS_MAP:
+        return "Invalid status choice."
+
     old_in_time, old_out_time = attendance.in_time, attendance.out_time
+    old_status = attendance.status
+
     attendance.in_time = correction_request.new_in_time
     attendance.out_time = correction_request.new_out_time
+
+    if status_decision:
+        # An explicit grant is a manual override, so it has to survive
+        # calculate_status() here and any later bulk recalculation --
+        # the same guarantee override_attendance_status already gives.
+        attendance.status_overridden = True
+        attendance.status = status_decision
+        attendance.count = CORRECTION_APPROVAL_STATUS_MAP[status_decision]
+        attendance.is_half_day = (status_decision == "Half Day")
+        attendance.is_holiday = False
+    else:
+        # "Recalculate from the corrected times" is the whole point of a
+        # plain time fix, so clear any earlier manual override -- otherwise
+        # calculate_status() returns early and the new times get written
+        # without ever changing the status they were meant to correct.
+        attendance.status_overridden = False
+
     attendance.save()
 
     correction_request.status = "Approved"
+    correction_request.approved_status = status_decision or None
     correction_request.reviewed_at = now()
     correction_request.save()
 
+    changes = {
+        "in_time": {"old": str(old_in_time) if old_in_time else None, "new": str(attendance.in_time) if attendance.in_time else None},
+        "out_time": {"old": str(old_out_time) if old_out_time else None, "new": str(attendance.out_time) if attendance.out_time else None},
+        "status": {"old": old_status, "new": attendance.status},
+    }
+    if status_decision:
+        changes["granted_status"] = {"old": None, "new": status_decision}
+
     log_audit(actor, AuditLog.Action.CORRECTION_APPROVED, correction_request, employee=attendance.employee,
-               summary=f"Approved attendance correction for {attendance.employee} on {attendance.date}",
-               changes={
-                   "in_time": {"old": str(old_in_time) if old_in_time else None, "new": str(attendance.in_time) if attendance.in_time else None},
-                   "out_time": {"old": str(old_out_time) if old_out_time else None, "new": str(attendance.out_time) if attendance.out_time else None},
-               })
+               summary=f"Approved attendance correction for {attendance.employee} on {attendance.date}"
+                       + (f" as {status_decision}" if status_decision else ""),
+               changes=changes)
     return None
 
 
 @login_required
+@feature_required("attendance_corrections", action="approve")
+@require_http_methods(["POST"])
 def approve_correction_request(request, request_id):
     correction_request = get_object_or_404(AttendanceCorrectionRequest, id=request_id)
 
-    error = _approve_correction_item(correction_request, actor=request.user)
+    status_decision = (request.POST.get("status_decision") or "").strip()
+    if not status_decision and request.content_type == "application/json":
+        try:
+            status_decision = (json.loads(request.body or "{}").get("status_decision") or "").strip()
+        except ValueError:
+            status_decision = ""
+
+    error = _approve_correction_item(correction_request, actor=request.user, status_decision=status_decision or None)
     if error:
         return JsonResponse({"success": False, "error": error}, status=400)
-    return JsonResponse({"message": "Correction Approved!"})
+
+    attendance = correction_request.attendance
+    attendance.refresh_from_db()
+    return JsonResponse({
+        "message": (
+            f"Correction approved — marked as {attendance.status}."
+            if status_decision else "Correction Approved!"
+        ),
+        "status": attendance.status,
+        "count": str(attendance.count),
+    })
 
 
 @login_required
@@ -1651,6 +1721,7 @@ def attendance_correction_requests_list(request):
             "new_in_time": _format_time(req.new_in_time),
             "new_out_time": _format_time(req.new_out_time),
             "status": req.status,
+            "approved_status": req.approved_status,
             "created_at": _format_date_iso(req.created_at),
         })
 
@@ -1687,6 +1758,7 @@ def attendance_correction_detail(request, pk):
         "rejection_reason": obj.rejection_reason,
         "created_at": obj.created_at.strftime("%Y-%m-%d") if obj.created_at else None,
         "status": obj.status,
+        "approved_status": obj.approved_status,
         "employee": {
             "id": employee.id,
             "first_name": employee.first_name,
@@ -3847,31 +3919,34 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
 
     # ============================================
     # STEP 6: Comp-Off
-    # ============================================
-    compoff_total = (
-        CompOffRequest.objects
-        .filter(
-            employee=employee,
-            status="Approved",
-            from_date__gte=from_date,
-            to_date__lte=to_date
-        )
-        .aggregate(total=Sum("count"))["total"]
-        or Decimal("0.00")
-    )
-
-    # ============================================
-    # STEP 7: LWP
-    # Check if this record has a manual LWP override — preserve it if so.
+    # Check if this record has a manual Comp Off override — preserve it if so.
     # ============================================
     existing_lb = LeaveBalance.objects.filter(
         employee=employee,
         period_from_date=from_date,
         period_to_date=to_date,
-        lwp_overridden=True,
     ).first()
 
-    if existing_lb:
+    if existing_lb and existing_lb.compoff_overridden:
+        compoff_total = existing_lb.compoff
+    else:
+        compoff_total = (
+            CompOffRequest.objects
+            .filter(
+                employee=employee,
+                status="Approved",
+                from_date__gte=from_date,
+                to_date__lte=to_date
+            )
+            .aggregate(total=Sum("count"))["total"]
+            or Decimal("0.00")
+        )
+
+    # ============================================
+    # STEP 7: LWP
+    # Check if this record has a manual LWP override — preserve it if so.
+    # ============================================
+    if existing_lb and existing_lb.lwp_overridden:
         leave_without_pay = existing_lb.leave_without_pay
         leave_balance = max(Decimal("0.00"), opening_balance + compoff_total - leave_taken - late_days - leave_without_pay)
         if leave_balance < 0:
@@ -3915,7 +3990,8 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     
     # ============================================
     # STEP 10: Save Record (with period dates)
-    # Never overwrite lwp_overridden — it is managed only by override_lwp_view.
+    # Never overwrite lwp_overridden/compoff_overridden — they are managed
+    # only by override_lwp_view/override_compoff_view.
     # ============================================
     LeaveBalance.objects.update_or_create(
         employee=employee,
@@ -4450,6 +4526,10 @@ def attendance_register_view(request):
         'paginator': paginator,
         'user_company_id': company.id,
         'total_employees': len(employees_list),
+        # Comp Off directly feeds into LWP/pay, same gate as override_lwp_view.
+        'can_edit_compoff': (
+            user.is_superuser or user.is_staff or has_feature_permission(user, "leave_management", "edit")
+        ),
     })
     return render(request, 'attendance/attendance_register.html', context)
 
@@ -4611,6 +4691,92 @@ def override_lwp_view(request):
         return JsonResponse({
             'success': True,
             'lwp': f'{new_lwp:.2f}',
+            'leave_balance': f'{leave_balance:.2f}',
+            'closing_balance': f'{closing_balance:.2f}',
+            'final_leave_balance': f'{final_leave_balance:.2f}',
+        })
+
+    except LeaveBalance.DoesNotExist:
+        return JsonResponse({'success': False, 'message': 'Record not found.'}, status=404)
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': str(e)}, status=400)
+
+
+@login_required
+@feature_required("leave_management", action="edit")
+@require_http_methods(["POST"])
+def override_compoff_view(request):
+    """Manually override the Comp Off value for a single LeaveBalance
+    record -- same pattern as override_lwp_view, used by the Attendance
+    Register's Comp Off cell. Comp Off feeds into the same balance formula
+    as LWP, so unless LWP was itself manually overridden, LWP is also
+    recomputed here (exactly like calculate_leave_balance_for_period's STEP
+    7) so a Comp Off adjustment can raise or lower an auto-derived LWP too."""
+    lb_id = request.POST.get('lb_id')
+    compoff_raw = request.POST.get('compoff_value', '0')
+
+    try:
+        lb = LeaveBalance.objects.select_related('employee__company').get(id=lb_id)
+
+        company_filter = get_company_filter(request.user)
+        if company_filter and lb.employee.company_id != company_filter.id:
+            return JsonResponse({'success': False, 'message': 'Permission denied.'}, status=403)
+
+        locking_run = get_locking_run_for_period(
+            lb.employee.company, lb.period_from_date, lb.period_to_date
+        )
+        if locking_run:
+            return lock_response(locking_run, action="override Comp Off")
+
+        new_compoff = Decimal(str(compoff_raw))
+        if new_compoff < 0:
+            return JsonResponse({'success': False, 'message': 'Comp Off cannot be negative.'}, status=400)
+
+        monthly_credit = lb.closing_balance - lb.leave_balance
+
+        try:
+            payroll = PayrollSettings.objects.get(company=lb.employee.company)
+            max_cap = Decimal(str(payroll.max_leave_balance))
+            affect_lwp = getattr(payroll, 'late_marks_affect_lwp', True)
+        except PayrollSettings.DoesNotExist:
+            max_cap = Decimal('30')
+            affect_lwp = True
+
+        if affect_lwp:
+            late_days = Decimal(str((lb.late - 5) // 3)) if lb.late > 5 else Decimal('0')
+        else:
+            late_days = Decimal('0')
+
+        if lb.lwp_overridden:
+            leave_without_pay = lb.leave_without_pay
+            leave_balance = max(Decimal('0.00'), lb.opening_balance + new_compoff - lb.leave_taken - late_days - leave_without_pay)
+        else:
+            balance_before_credit = lb.opening_balance + new_compoff - lb.leave_taken - late_days
+            if balance_before_credit < 0:
+                leave_without_pay = abs(balance_before_credit)
+                leave_balance = Decimal('0.00')
+            else:
+                leave_without_pay = Decimal('0.00')
+                leave_balance = balance_before_credit
+
+        closing_balance = leave_balance + monthly_credit
+        final_leave_balance = min(closing_balance, max_cap)
+
+        lb.compoff = new_compoff
+        lb.leave_without_pay = leave_without_pay
+        lb.leave_balance = leave_balance
+        lb.closing_balance = closing_balance
+        lb.final_leave_balance = final_leave_balance
+        lb.compoff_overridden = True
+        lb.save(update_fields=[
+            'compoff', 'leave_without_pay', 'leave_balance', 'closing_balance',
+            'final_leave_balance', 'compoff_overridden',
+        ])
+
+        return JsonResponse({
+            'success': True,
+            'compoff': f'{new_compoff:.2f}',
+            'lwp': f'{leave_without_pay:.2f}',
             'leave_balance': f'{leave_balance:.2f}',
             'closing_balance': f'{closing_balance:.2f}',
             'final_leave_balance': f'{final_leave_balance:.2f}',

@@ -452,6 +452,10 @@ class LeaveBalance(models.Model):
         default=False,
         help_text="If True, LWP was manually set and recalculation will preserve it."
     )
+    compoff_overridden = models.BooleanField(
+        default=False,
+        help_text="If True, Comp Off was manually set and recalculation will preserve it."
+    )
 
     def __str__(self):
         return f"{self.employee.first_name} {self.employee.employee_code} - Leave Balance"
@@ -1787,6 +1791,32 @@ class AttendanceCorrectionRequest(models.Model):
     # reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="approvals")
     reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    APPROVED_STATUS_CHOICES = [
+        ("Present", "Full Day (Present)"),
+        ("Late Present", "Late Present"),
+        ("Half Day", "Half Day"),
+        ("Absent", "Absent"),
+    ]
+    approved_status = models.CharField(
+        max_length=20,
+        choices=APPROVED_STATUS_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Status the approver explicitly granted when approving. Blank means the "
+                  "status was derived automatically from the corrected in/out times.",
+    )
+
+    @property
+    def times_unchanged(self):
+        """True when the request doesn't actually change any punch time --
+        i.e. the employee raised it to explain the day (e.g. 'I was late for
+        a medical reason') rather than to fix a wrong punch. Approving one of
+        these has no effect unless the approver explicitly grants a status."""
+        return (
+            self.new_in_time == self.old_in_time
+            and self.new_out_time == self.old_out_time
+        )
 
     def __str__(self):
         return f"Correction Request {self.id} - {self.status}"

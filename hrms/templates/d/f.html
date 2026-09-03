@@ -406,7 +406,7 @@
                 <td class="text-muted small">{{ req.attendance.in_time|default:"–" }} / {{ req.attendance.out_time|default:"–" }}</td>
                 <td>
                   <button class="btn btn-sm btn-info action-btn"
-                    onclick="openApprovalModal('{{ req.attendance.employee.employee_code }}','{{ req.attendance.employee.first_name }}','{{ req.attendance.date }}','{{ req.attendance.in_time }}','{{ req.attendance.out_time }}','{{ req.new_in_time }}','{{ req.new_out_time }}',`{{ req.reason|escapejs }}`,{{ req.id }})">
+                    onclick="openApprovalModal('{{ req.attendance.employee.employee_code }}','{{ req.attendance.employee.first_name }}','{{ req.attendance.date }}','{{ req.attendance.in_time }}','{{ req.attendance.out_time }}','{{ req.new_in_time }}','{{ req.new_out_time }}',`{{ req.reason|escapejs }}`,{{ req.id }},{{ req.times_unchanged|yesno:"true,false" }})">
                     View
                   </button>
                 </td>
@@ -609,6 +609,21 @@
         </div>
         <h6 class="text-primary fw-bold mb-2"><i class="ri-file-text-line me-1"></i> Reason</h6>
         <div id="m_reason" class="p-3 border rounded-3 fs-6" style="white-space:pre-line;min-height:60px;background:#f7faff;border:1px solid #c9e6ff!important;color:#004085;"></div>
+
+        <h6 class="text-primary fw-bold mb-2 mt-4"><i class="ri-checkbox-circle-line me-1"></i> Mark This Day As</h6>
+        <div id="m_no_time_change_note" class="alert alert-warning py-2 px-3 small mb-2" style="display:none;">
+          <i class="ri-information-line me-1"></i>
+          This request doesn't change any punch time — the employee is asking you to decide the day.
+          Pick what they should be given below, otherwise approving changes nothing.
+        </div>
+        <select id="m_status_decision" class="form-select">
+          <option value="">Auto — recalculate from the corrected times</option>
+          <option value="Present">Full Day (Present)</option>
+          <option value="Late Present">Late Present</option>
+          <option value="Half Day">Half Day</option>
+          <option value="Absent">Absent</option>
+        </select>
+        <div class="form-text">Choosing anything other than “Auto” sets the day manually and keeps it from being overwritten by a later recalculation.</div>
       </div>
       <div class="modal-footer justify-content-between border-0 px-4 pb-4">
         <button class="btn btn-success px-4 rounded-pill" id="approveBtn"><i class="ri-check-line me-1"></i>Approve</button>
@@ -916,7 +931,7 @@ function bulkApprove(type) {
 }
 
 // ── Attendance Correction ────────────────────────────────────────────
-function openApprovalModal(empId, name, date, oldIn, oldOut, newIn, newOut, reason, id) {
+function openApprovalModal(empId, name, date, oldIn, oldOut, newIn, newOut, reason, id, timesUnchanged) {
   document.getElementById("m_emp_id").innerText = empId;
   document.getElementById("m_emp_name").innerText = name;
   document.getElementById("m_date").innerText = date;
@@ -925,17 +940,33 @@ function openApprovalModal(empId, name, date, oldIn, oldOut, newIn, newOut, reas
   document.getElementById("m_new_in").innerText = newIn;
   document.getElementById("m_new_out").innerText = newOut;
   document.getElementById("m_reason").innerText = reason;
+
+  // A request that changes no punch time is really a judgement call for the
+  // approver ("I was late for a medical reason"), so surface that up front --
+  // approving it on "Auto" would leave the day exactly as it is.
+  document.getElementById("m_status_decision").value = "";
+  document.getElementById("m_no_time_change_note").style.display = timesUnchanged ? "block" : "none";
+
   document.getElementById("approveBtn").setAttribute("onclick", `approveRequest(${id})`);
   document.getElementById("rejectBtn").setAttribute("onclick", `rejectRequest(${id})`);
   new bootstrap.Modal(document.getElementById('approvalModal')).show();
 }
 
 function approveRequest(id) {
+  const statusDecision = document.getElementById("m_status_decision").value;
   let modal = bootstrap.Modal.getInstance(document.getElementById("approvalModal"));
   modal.hide(); document.querySelector(".modal-backdrop")?.remove();
-  Swal.fire({ title:'Approve?', icon:'question', showCancelButton:true, confirmButtonColor:'#28a745', confirmButtonText:'Yes, Approve' })
+  Swal.fire({
+    title: 'Approve?',
+    text: statusDecision ? `This day will be marked as "${statusDecision}".` : 'The day will be recalculated from the corrected times.',
+    icon: 'question', showCancelButton: true, confirmButtonColor: '#28a745', confirmButtonText: 'Yes, Approve'
+  })
   .then(r => { if (r.isConfirmed) {
-    fetch(`/approve-correction/${id}/`, { method:"POST", headers:{"X-CSRFToken": getCSRFToken()} })
+    fetch(`/approve-correction/${id}/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", "X-CSRFToken": getCSRFToken() },
+      body: new URLSearchParams({ status_decision: statusDecision }),
+    })
     .then(res => res.json().then(data => ({ ok: res.ok, data })))
     .then(({ ok, data }) => {
       if (ok) {

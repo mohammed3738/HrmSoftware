@@ -27,12 +27,36 @@ async function hubPost(url, formData, btn, csrfToken) {
     const token = csrfToken || document.querySelector('[name=csrfmiddlewaretoken]')?.value;
     formData.set('csrfmiddlewaretoken', token);
     const res = await fetch(url, { method: 'POST', body: formData, headers: { 'X-CSRFToken': token } });
+
+    // These come back as HTML, not JSON, so they have to be recognised
+    // before parsing -- otherwise res.json() throws and every one of them
+    // surfaces as "Server error. Please try again.", which tells the user
+    // to retry something that will never succeed.
+    if (res.status === 403) {
+      hubShowError("You don't have permission to do that. This action needs the Super Admin or Admin role.");
+      return null;
+    }
+    if (res.status === 401) {
+      hubShowError('Your session has expired. Please sign in again.');
+      return null;
+    }
+    if (res.redirected) {
+      hubShowError('You were signed out or redirected. Please reload the page and sign in again.');
+      return null;
+    }
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      hubShowError(`Unexpected response from the server (HTTP ${res.status}).`);
+      return null;
+    }
+
     data = await res.json();
     if (data.success) hubShowSuccess(data.message || 'Saved!');
     else hubShowError(data.error || 'Failed to save.');
   } catch (e) {
     console.error(e);
-    hubShowError('Server error. Please try again.');
+    hubShowError('Could not reach the server. Check your connection and try again.');
   } finally {
     btn.disabled = false;
     btn.innerHTML = original;

@@ -44,7 +44,9 @@ class LeaveBalanceLwpEditPermissionTest(TestCase):
         )
 
         self.hr_user = User.objects.create_user(username="lwe_hr", password="pass12345")
-        self.hr_user.groups.add(Group.objects.get(name="HR"))
+        # LWP overrides need leave_management:edit, which HR no longer
+        # holds -- HR reads leave balances without changing them.
+        self.hr_user.groups.add(Group.objects.get(name="Admin"))
 
         self.lb = LeaveBalance.objects.create(
             employee=self.employee, period_from_date=date(2026, 1, 1), period_to_date=date(2026, 1, 31),

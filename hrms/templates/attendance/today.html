@@ -132,7 +132,7 @@
     <span class="close-btn" onclick="closeCorrectionModal()">&times;</span>
     <h3 class="modal-title">🕒 Attendance Correction Request</h3>
 
-    <form id="correctionForm" class="modal-form">
+    <form id="correctionForm" class="modal-form" enctype="multipart/form-data">
       {% csrf_token %}
       <input type="hidden" id="attendance_id" name="attendance_id" />
 
@@ -161,6 +161,34 @@
         <input type="time" id="new_out_time" name="new_out_time" required />
       </div>
 
+
+      <!-- ── Minutes of Meeting ─────────────────────────────────────── -->
+      <div class="form-group">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:600;">
+          <input type="checkbox" id="is_mom" name="is_mom" style="width:auto;margin:0;">
+          MoM (Minutes of Meeting)
+        </label>
+        <small style="color:#6c757d;">
+          Tick this if the time was spent on a call, then record the call timings and attach the minutes.
+        </small>
+      </div>
+
+      <div id="momFields">
+        <div class="form-group">
+          <label>Meeting In-Call Time</label>
+          <input type="time" id="meeting_in_time" name="meeting_in_time" disabled />
+        </div>
+
+        <div class="form-group">
+          <label>Meeting Out-Call Time</label>
+          <input type="time" id="meeting_out_time" name="meeting_out_time" disabled />
+        </div>
+
+        <div class="form-group">
+          <label>Minutes of Meeting Attachment</label>
+          <input type="file" id="mom_attachment" name="mom_attachment" disabled />
+        </div>
+      </div>
       <div class="form-group">
         <label>Reason</label>
         <textarea
@@ -438,6 +466,13 @@
     // Prefill new values editable (24HR format)
     document.getElementById("new_in_time").value = newIn || "";
     document.getElementById("new_out_time").value = newOut || "";
+    // Reopening the modal starts a fresh request, so clear any MoM state
+    // left over from the previous one.
+    const momToggle = document.getElementById("is_mom");
+    if (momToggle) {
+      momToggle.checked = false;
+      momToggle.dispatchEvent(new Event("change"));
+    }
     document.getElementById("correctionModal").style.display = "block";
   }
 
@@ -457,6 +492,32 @@
   }
 
   // Handle correction request form submission
+
+  // ── MoM: the meeting fields only apply when the box is ticked ───────
+  (function () {
+    const momToggle = document.getElementById("is_mom");
+    const momFields = ["meeting_in_time", "meeting_out_time", "mom_attachment"]
+      .map((id) => document.getElementById(id));
+    if (!momToggle || momFields.some((el) => !el)) return;
+
+    function applyMomState() {
+      const on = momToggle.checked;
+      momFields.forEach((el) => {
+        el.disabled = !on;
+        if (!on) el.value = "";
+      });
+      // Both timings are what the approver reviews, so they're required
+      // once MoM is on. The attachment stays optional.
+      momFields[0].required = on;
+      momFields[1].required = on;
+      const wrap = document.getElementById("momFields");
+      if (wrap) wrap.style.opacity = on ? "1" : "0.55";
+    }
+
+    momToggle.addEventListener("change", applyMomState);
+    applyMomState();
+  })();
+
   document
     .getElementById("correctionForm")
     .addEventListener("submit", function (event) {

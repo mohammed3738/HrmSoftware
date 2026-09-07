@@ -107,17 +107,28 @@ class AttendanceRegisterTest(TestCase):
         half_day = days_by_date[date(2026, 3, 3)]
         self.assertEqual(half_day["display"], "0.5")
 
+        # An absence is marked "A" -- deliberately distinct from a blank
+        # cell, which means no attendance was ever recorded for that day.
         absent_day = days_by_date[date(2026, 3, 4)]
-        self.assertEqual(absent_day["display"], "")
+        self.assertEqual(absent_day["display"], "A")
         self.assertIsNotNone(absent_day["attendance_id"])  # still overridable
 
     def test_day_with_no_attendance_row_is_blank_and_not_overridable(self):
+        """Blank means "nothing recorded", which is not the same claim as
+        "A" (recorded, and they were absent)."""
         resp = self.get_register()
         row = resp.context["rows"][0]
         days_by_date = {d["date"]: d for d in row["days"]}
         blank_day = days_by_date[date(2026, 3, 6)]
         self.assertEqual(blank_day["display"], "")
         self.assertIsNone(blank_day["attendance_id"])
+
+    def test_absent_and_unrecorded_days_are_told_apart_in_the_grid(self):
+        resp = self.get_register()
+        days = {d["date"]: d["display"] for d in resp.context["rows"][0]["days"]}
+        self.assertEqual(days[date(2026, 3, 4)], "A")   # recorded absence
+        self.assertEqual(days[date(2026, 3, 6)], "")    # never recorded
+        self.assertContains(resp, "= absent")
 
     def test_weekend_cell_always_shows_credited_and_is_not_overridable(self):
         resp = self.get_register()
@@ -169,13 +180,21 @@ class AttendanceRegisterTest(TestCase):
         # N+1 (a per-cell lookup would need ~93 extra queries on top).
         self.assertLess(len(ctx.captured_queries), 30)
 
-    def test_manager_can_view_register(self):
-        manager = User.objects.create_user(username="areg_mgr", password="pass12345")
-        manager.groups.add(Group.objects.get(name="Manager"))
+    def test_payroll_officer_can_view_register(self):
+        officer = User.objects.create_user(username="areg_po", password="pass12345")
+        officer.groups.add(Group.objects.get(name="Payroll Officer"))
         client = Client()
-        client.login(username="areg_mgr", password="pass12345")
+        client.login(username="areg_po", password="pass12345")
         resp = client.get(reverse("attendance-register"))
         self.assertEqual(resp.status_code, 200)
+
+    def test_hod_cannot_view_register(self):
+        hod = User.objects.create_user(username="areg_hod", password="pass12345")
+        hod.groups.add(Group.objects.get(name="HOD"))
+        client = Client()
+        client.login(username="areg_hod", password="pass12345")
+        resp = client.get(reverse("attendance-register"))
+        self.assertEqual(resp.status_code, 403)
 
     def test_employee_cannot_view_register(self):
         emp_user = User.objects.create_user(username="areg_emp", password="pass12345")
@@ -185,9 +204,11 @@ class AttendanceRegisterTest(TestCase):
         resp = client.get(reverse("attendance-register"))
         self.assertEqual(resp.status_code, 403)
 
-    def test_hr_sees_compoff_override_control(self):
+    def test_admin_sees_compoff_override_control(self):
+        # Overriding Comp Off needs leave_management:edit -- Admin holds it,
+        # HR does not (HR reads leave balances without changing them).
         hr_user = User.objects.create_user(username="areg_hr", password="pass12345")
-        hr_user.groups.add(Group.objects.get(name="HR"))
+        hr_user.groups.add(Group.objects.get(name="Admin"))
         client = Client()
         client.login(username="areg_hr", password="pass12345")
         resp = client.get(reverse("attendance-register"), {
@@ -196,10 +217,32 @@ class AttendanceRegisterTest(TestCase):
         self.assertTrue(resp.context["can_edit_compoff"])
         self.assertContains(resp, 'onclick="startCompoffEdit(this)"')
 
-    def test_manager_does_not_see_compoff_override_control(self):
-        # leave_management:edit is Admin/HR only -- Manager gets view-only.
+    def test_viewing_the_register_does_not_imply_editing_comp_off(self):
+        """The Comp Off control is gated on leave_management:edit, separately
+        from being able to open the register at all. None of the shipped
+        roles splits those two, so this uses a custom role -- which is the
+        whole point of the permission matrix being editable."""
+        from website.models import Feature, RoleFeaturePermission
+
+        viewer_role = Group.objects.create(name="Register Viewer")
+        for key, action in (("attendance_review", "view"),):
+            feature = Feature.objects.get(key=key)
+            rfp, _ = RoleFeaturePermission.objects.get_or_create(role=viewer_role, feature=feature)
+            setattr(rfp, f"can_{action}", True)
+            rfp.save()
+
         manager = User.objects.create_user(username="areg_mgr2", password="pass12345")
-        manager.groups.add(Group.objects.get(name="Manager"))
+        manager.groups.add(viewer_role)
+        # Not a global-access role, so they need an employee record to
+        # resolve which company's register they're looking at.
+        Employee.objects.create(
+            company=self.company, branch=self.branch, user=manager, salutation="Mr",
+            first_name="Reg", last_name="Viewer", father_name="Father", gender="Male",
+            date_of_birth=date(1990, 1, 1), personal_email="regview@test.com",
+            personal_mobile="1234567890", employee_code="AREGV", designation="Dev",
+            department="IT", date_of_joining=date(2020, 1, 1), status="Active",
+            force_password_change=False,
+        )
         client = Client()
         client.login(username="areg_mgr2", password="pass12345")
         resp = client.get(reverse("attendance-register"), {

@@ -5,8 +5,14 @@
     <h4 class="m-2 fw-bold"><i class="ri-table-line me-2 text-primary"></i>Attendance Register</h4>
     <p class="text-muted small px-2">
       One row per employee for the selected payroll period, with a column for every calendar day.
+      <strong>1</strong> = full day, <strong>0.5</strong> = half day, <strong>A</strong> = absent,
+      blank = nothing recorded for that day.
+      {% if can_edit_attendance %}
       Click a day's value to correct it — the same status conversion used on Late Attendance Review
       (Present / Half Day / Holiday / Late Present).
+      {% else %}
+      Read-only: you can review the register but not change a recorded day.
+      {% endif %}
     </p>
 
     <form method="GET" class="row g-2 align-items-end mb-3 px-2" id="registerFilterForm">
@@ -114,10 +120,10 @@
             <td class="text-end reg-final-val">{{ row.lb.final_leave_balance|default:"0.00" }}</td>
             <td class="text-nowrap">{{ row.employee.branch.branch_name|default:"—" }}</td>
             {% for day in row.days %}
-              {% if day.attendance_id %}
-              <td class="text-center day-cell" data-attendance-id="{{ day.attendance_id }}" data-current-status="{{ day.status }}" onclick="openDayOverride(this)" style="cursor:pointer; padding:2px;" title="Click to correct">{{ day.display }}</td>
+              {% if day.attendance_id and can_edit_attendance %}
+              <td class="text-center day-cell{% if day.display == 'A' %} text-danger fw-bold{% endif %}" data-attendance-id="{{ day.attendance_id }}" data-current-status="{{ day.status }}" onclick="openDayOverride(this)" style="cursor:pointer; padding:2px;" title="Click to correct">{{ day.display }}</td>
               {% else %}
-              <td class="text-center {% if day.is_weekend %}table-danger{% endif %}" style="padding:2px;">{{ day.display }}</td>
+              <td class="text-center {% if day.is_weekend %}table-danger{% elif day.display == 'A' %}text-danger fw-bold{% endif %}" style="padding:2px;">{{ day.display }}</td>
               {% endif %}
             {% endfor %}
             <td class="text-end">{{ row.late_deduction }}</td>
@@ -276,11 +282,14 @@ function openDayOverride(cellEl) {
         closeEditor();
         return;
       }
+      // Mirror the server's format_count(): 0 is an absence, shown as "A".
       const countNum = parseFloat(result.data.count);
-      let display = '';
+      let display = 'A';
       if (countNum === 1) display = '1';
       else if (countNum > 0) display = String(countNum);
       cellEl.dataset.currentStatus = result.data.status;
+      cellEl.classList.toggle('text-danger', display === 'A');
+      cellEl.classList.toggle('fw-bold', display === 'A');
       closeEditor(display);
     })
     .catch(function () {

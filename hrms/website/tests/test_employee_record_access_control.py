@@ -47,7 +47,7 @@ class EmployeeRecordAccessControlTest(TestCase):
         self.hr_user.groups.add(Group.objects.get(name="HR"))
 
         self.manager_user = User.objects.create_user(username="eac_manager", password="pass12345")
-        self.manager_user.groups.add(Group.objects.get(name="Manager"))
+        self.manager_user.groups.add(Group.objects.get(name="HOD"))
 
         self.other_employee_user = User.objects.create_user(username="eac_other_login", password="pass12345")
         self.other_employee_user.groups.add(Group.objects.get(name="Employee"))
@@ -84,9 +84,15 @@ class EmployeeRecordAccessControlTest(TestCase):
         resp = self._client_as(self.self_user).get(reverse("employee_attendance_detail", args=[self.other_employee.pk]))
         self.assertEqual(resp.status_code, 403)
 
-    def test_manager_can_view_any_employees_attendance(self):
-        # attendance_review view IS granted to Manager (unlike employee_records).
+    def test_hod_cannot_view_another_employees_attendance(self):
+        # HOD holds no company-wide grants at all: they read their own
+        # records and approve for their reportees through the reporting
+        # line. The old Manager role did have attendance_review:view.
         resp = self._client_as(self.manager_user).get(reverse("employee_attendance_detail", args=[self.other_employee.pk]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_hr_can_view_any_employees_attendance(self):
+        resp = self._client_as(self.hr_user).get(reverse("employee_attendance_detail", args=[self.other_employee.pk]))
         self.assertEqual(resp.status_code, 200)
 
     # ── salary_slip_view ─────────────────────────────────────────────────
@@ -106,12 +112,24 @@ class EmployeeRecordAccessControlTest(TestCase):
         resp = self._client_as(self.self_user).get(reverse("salary-slip", args=[record.id]))
         self.assertEqual(resp.status_code, 403)
 
-    def test_hr_can_view_any_payslip(self):
+    def test_hr_cannot_view_another_employees_payslip(self):
+        """Payroll is hidden from HR entirely -- payslips are payroll output,
+        so HR reads only their own (self-service), never a colleague's."""
         run = PayrollRun.objects.create(
             company=self.company, month=date(2026, 1, 1), start_date=date(2026, 1, 1), end_date=date(2026, 1, 31),
         )
         record = PayrollRecord.objects.create(payroll=run, employee=self.other_employee, employee_code="EAC002")
         resp = self._client_as(self.hr_user).get(reverse("salary-slip", args=[record.id]))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_payroll_officer_can_view_any_payslip(self):
+        officer = User.objects.create_user(username="eac_payroll", password="pass12345")
+        officer.groups.add(Group.objects.get(name="Payroll Officer"))
+        run = PayrollRun.objects.create(
+            company=self.company, month=date(2026, 1, 1), start_date=date(2026, 1, 1), end_date=date(2026, 1, 31),
+        )
+        record = PayrollRecord.objects.create(payroll=run, employee=self.other_employee, employee_code="EAC002")
+        resp = self._client_as(officer).get(reverse("salary-slip", args=[record.id]))
         self.assertEqual(resp.status_code, 200)
 
     def test_manager_cannot_view_others_payslip(self):

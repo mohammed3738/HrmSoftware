@@ -7,6 +7,16 @@ from django.db import migrations, models
 from website.permissions_registry import FEATURES, SEED_GRANTS, SYSTEM_ROLES
 
 
+def _defaults_for(model, row):
+    """Only pass fields the Feature model had *at this point in history*.
+
+    These seed migrations read the live permissions_registry, so a field
+    added to FEATURES later (has_create, say) would otherwise crash this
+    migration when a fresh database is built from scratch."""
+    known = {f.name for f in model._meta.get_fields()}
+    return {k: v for k, v in row.items() if k in known and k != "key"}
+
+
 def seed_roles_and_permissions(apps, schema_editor):
     Group = apps.get_model("auth", "Group")
     Feature = apps.get_model("website", "Feature")
@@ -16,7 +26,9 @@ def seed_roles_and_permissions(apps, schema_editor):
 
     features = {}
     for row in FEATURES:
-        feature, created = Feature.objects.get_or_create(key=row["key"], defaults=row)
+        feature, created = Feature.objects.get_or_create(
+            key=row["key"], defaults=_defaults_for(Feature, row),
+        )
         features[row["key"]] = feature
 
     for feature_key, feature in features.items():

@@ -46,7 +46,10 @@ from .utils.payroll_lock import (
 from django.forms.models import model_to_dict
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.decorators import permission_required
-from .utils.decorators import group_required, feature_required, approval_required
+from .utils.decorators import (
+    group_required, feature_required, approval_required, create_or_edit_required,
+)
+from .permissions_registry import GLOBAL_ACCESS_ROLES, SELF_SERVICE_ROLES, SYSTEM_ROLES
 from .utils.permissions import (
     can_access_employee_record, has_feature_permission,
     can_approve_for_employee, approvable_employees,
@@ -734,7 +737,13 @@ ATTENDANCE_RECALC_CHUNK_SIZE = 200
 
 def _recalculate_attendance_queryset(request):
     """Build the (optionally date-filtered, company-scoped) Attendance
-    queryset shared by the recalculate init/chunk endpoints."""
+    queryset shared by the recalculate init/chunk endpoints.
+
+    Days inside a finalized payroll run are excluded: recalculation re-saves
+    each row and Attendance.save() recomputes status/count, so without this
+    a rules change (or a bug fix) would silently rewrite the numbers behind
+    payslips that have already gone out. Attendance upload takes the same
+    stance row by row."""
     qs = Attendance.objects.all()
     company = get_company_filter(request.user)
     if company:
@@ -746,6 +755,13 @@ def _recalculate_attendance_queryset(request):
         qs = qs.filter(date__gte=date_from)
     if date_to:
         qs = qs.filter(date__lte=date_to)
+
+    for run in PayrollRun.objects.filter(status=PayrollRun.STATUS_FINALIZED):
+        locked = Q(date__gte=run.start_date, date__lte=run.end_date)
+        if run.company_id:
+            locked &= Q(employee__company_id=run.company_id)
+        qs = qs.exclude(locked)
+
     return qs.order_by("id")
 
 
@@ -800,7 +816,7 @@ LATE_REVIEW_SORT_FIELDS = {
 
 
 @login_required
-@feature_required("attendance_review", action="view")
+@feature_required("attendance_review", action="edit")
 def late_attendance_review(request):
     """
     Payroll-time review of every 'Late Present' day for the selected month,
@@ -1443,12 +1459,40 @@ def submit_correction_request(request):
         new_out_time = request.POST.get("new_out_time")
         reason = request.POST.get("reason")
 
-        attendance = get_object_or_404(Attendance, id=attendance_id)
+        attendance = get_object_or_404(
+            Attendance.objects.select_related("employee__company"), id=attendance_id
+        )
+
+        # Raise requests for your own attendance only -- this used to accept
+        # any attendance_id from any logged-in user. HR/Admin keep the
+        # ability to raise on someone's behalf via the feature permission.
+        if not can_access_employee_record(request.user, attendance.employee, "attendance_corrections", "view"):
+            return JsonResponse({"error": "You can only raise a request for your own attendance."}, status=403)
 
         # Block raising a correction request for a finalized payroll period
         locking_run = get_locking_run(attendance.employee.company, attendance.date)
         if locking_run:
             return lock_response(locking_run, action="raise a correction request")
+
+        # ── Minutes of Meeting (optional) ─────────────────────────────
+        # Ticking MoM turns this into "I was on a call": the call timings
+        # and the minutes themselves are what the approver reviews, so
+        # both timings are required once the box is on.
+        is_mom = request.POST.get("is_mom") in ("on", "true", "1", "True")
+        meeting_in_time = (request.POST.get("meeting_in_time") or "").strip() or None
+        meeting_out_time = (request.POST.get("meeting_out_time") or "").strip() or None
+        mom_attachment = request.FILES.get("mom_attachment")
+
+        if is_mom and not (meeting_in_time and meeting_out_time):
+            return JsonResponse(
+                {"error": "Meeting in-call and out-call times are required for a Minutes of Meeting request."},
+                status=400,
+            )
+        if not is_mom:
+            # Ignore anything left behind in the fields when the box was
+            # ticked and then unticked again.
+            meeting_in_time = meeting_out_time = None
+            mom_attachment = None
 
         # Create a correction request
         correction_request = AttendanceCorrectionRequest.objects.create(
@@ -1459,9 +1503,19 @@ def submit_correction_request(request):
             new_in_time=new_in_time,
             new_out_time=new_out_time,
             reason=reason,
+            is_mom=is_mom,
+            meeting_in_time=meeting_in_time,
+            meeting_out_time=meeting_out_time,
+            mom_attachment=mom_attachment,
         )
-        
-        return JsonResponse({"message": "Correction request submitted successfully!"})
+
+        return JsonResponse({
+            "message": (
+                "Minutes of Meeting request submitted successfully!"
+                if is_mom else "Correction request submitted successfully!"
+            ),
+            "is_mom": is_mom,
+        })
 
 
 # approval
@@ -1652,12 +1706,24 @@ def _format_date_iso(d):
     return d.isoformat() if d else None
 
 @login_required
-@feature_required("attendance_corrections", action="view")
 def attendance_correction_requests_list(request):
+    """Correction requests. Anyone holding attendance_corrections:view sees
+    the whole company's; everyone else sees only the ones they raised, so
+    an employee can follow their own request without a company-wide grant."""
     from .models import AttendanceCorrectionRequest, Attendance
+
+    can_see_all = (
+        request.user.is_superuser or request.user.is_staff
+        or has_feature_permission(request.user, "attendance_corrections", "view")
+    )
+    own_employee = getattr(request.user, "employee_profile", None)
+    if not can_see_all and own_employee is None:
+        raise PermissionDenied
 
     # Base queryset
     base_qs = AttendanceCorrectionRequest.objects.select_related("attendance__employee")
+    if not can_see_all:
+        base_qs = base_qs.filter(attendance__employee=own_employee)
 
     # Dropdown values from Attendance table
     years = Attendance.objects.dates("date", "year", order="DESC")
@@ -1733,10 +1799,16 @@ def attendance_correction_requests_list(request):
             "status": req.status,
             "approved_status": req.approved_status,
             "created_at": _format_date_iso(req.created_at),
+            "is_mom": req.is_mom,
+            "meeting_in_time": _format_time(req.meeting_in_time),
+            "meeting_out_time": _format_time(req.meeting_out_time),
+            "meeting_duration": req.meeting_duration_display,
+            "mom_attachment_url": req.mom_attachment.url if req.mom_attachment else None,
         })
 
     # Render
     return render(request, "attendance/attendance_request_status.html", {
+        "can_see_all_requests": can_see_all,
         "years": years,
         "months": months_qs,
         "selected_year": selected_year,
@@ -1769,6 +1841,11 @@ def attendance_correction_detail(request, pk):
         "created_at": obj.created_at.strftime("%Y-%m-%d") if obj.created_at else None,
         "status": obj.status,
         "approved_status": obj.approved_status,
+        "is_mom": obj.is_mom,
+        "meeting_in_time": obj.meeting_in_time.isoformat() if obj.meeting_in_time else None,
+        "meeting_out_time": obj.meeting_out_time.isoformat() if obj.meeting_out_time else None,
+        "meeting_duration": obj.meeting_duration_display,
+        "mom_attachment_url": obj.mom_attachment.url if obj.mom_attachment else None,
         "employee": {
             "id": employee.id,
             "first_name": employee.first_name,
@@ -1879,14 +1956,25 @@ from django.db.models.functions import ExtractYear, ExtractMonth
 from django.shortcuts import render
 
 @login_required
-@feature_required("comp_off", action="view")
 def comp_off_requests_list(request):
+    """Comp-off requests. Holders of comp_off:view see the whole company's;
+    everyone else sees only their own."""
+    can_see_all = (
+        request.user.is_superuser or request.user.is_staff
+        or has_feature_permission(request.user, "comp_off", "view")
+    )
+    own_employee = getattr(request.user, "employee_profile", None)
+    if not can_see_all and own_employee is None:
+        raise PermissionDenied
+
     # read optional filters from GET
     selected_year = request.GET.get("year")   # e.g. "2025" or ""
     selected_month = request.GET.get("month") # e.g. "12" or ""
 
     # base queryset: only requests that have from_date (safe)
     qs = CompOffRequest.objects.filter(from_date__isnull=False).select_related("employee")
+    if not can_see_all:
+        qs = qs.filter(employee=own_employee)
 
     # annotate year/month using from_date
     qs = qs.annotate(year=ExtractYear("from_date"), month=ExtractMonth("from_date"))
@@ -1957,6 +2045,7 @@ def comp_off_requests_list(request):
             "selected_month": selected_month,
             "years": years,
             "months": months,
+            "can_see_all_requests": can_see_all,
         },
     )
 
@@ -2130,7 +2219,65 @@ def admin_dashboard(request):
         'upcoming_offboarding': upcoming_offboarding,
         'dept_data': dept_data,
         'absent_employees_today': absent_employees_today,
+        **_dashboard_panels_for(user, active_qs, company_filter),
     })
+
+
+def _dashboard_panels_for(user, active_qs, company_filter):
+    """Which dashboard panels this user sees, and the data only some of them
+    need.
+
+    Driven by feature permissions rather than role names, so the shipped
+    roles each land on a dashboard shaped to their job -- Payroll Officer
+    gets the payroll panel, HR gets the people panels -- and a custom role
+    built in the permission matrix gets a coherent dashboard too, instead of
+    a page full of buttons that 403 when clicked."""
+    def allowed(feature_key, action):
+        return (
+            user.is_superuser or user.is_staff
+            or has_feature_permission(user, feature_key, action)
+        )
+
+    can_view_payroll = allowed("payroll", "view")
+    panels = {
+        'show_people_panels': allowed("employee_records", "view"),
+        'show_attendance_panels': allowed("attendance_review", "view"),
+        'show_attendance_tools': allowed("attendance_data", "edit"),
+        'show_leave_approvals': allowed("leave_management", "approve"),
+        'show_compoff_approvals': allowed("comp_off", "approve"),
+        'show_correction_approvals': allowed("attendance_corrections", "approve"),
+        'show_offboarding_panel': allowed("offboarding", "view"),
+        'show_payroll_panel': can_view_payroll,
+        'can_run_payroll': allowed("payroll", "edit"),
+    }
+    panels['show_any_approvals'] = any((
+        panels['show_leave_approvals'],
+        panels['show_compoff_approvals'],
+        panels['show_correction_approvals'],
+    ))
+
+    if not can_view_payroll:
+        return panels
+
+    # ── Payroll panel ─────────────────────────────────────────────────
+    runs = PayrollRun.objects.all()
+    if company_filter:
+        runs = runs.filter(company=company_filter)
+    recent_runs = list(runs.select_related("company").order_by("-month")[:5])
+
+    # An employee with no active salary structure can't be paid, so this is
+    # the first thing that blocks a payroll run.
+    employees_without_salary = active_qs.exclude(
+        id__in=SalaryMaster.objects.filter(is_active=True).values("employee_id")
+    ).count()
+
+    panels.update({
+        'recent_payroll_runs': recent_runs,
+        'draft_run_count': runs.filter(status=PayrollRun.STATUS_DRAFT).count(),
+        'finalized_run_count': runs.filter(status=PayrollRun.STATUS_FINALIZED).count(),
+        'employees_without_salary': employees_without_salary,
+    })
+    return panels
 
 
 def _approve_compoff_item(compoff, actor=None):
@@ -2555,7 +2702,11 @@ from django.contrib.auth.models import Group, User
 EMPLOYEE_AUDIT_FIELDS = ("designation", "department", "status", "company_id", "branch_id", "date_of_joining")
 
 @login_required
-@feature_required("employee_records", action="edit")
+@create_or_edit_required(
+    "employee_records",
+    # An employee_id in the URL means an existing record is being opened.
+    resolve_action=lambda request, *a, **kw: "edit" if (kw.get("employee_id") or a) else "create",
+)
 def create_or_edit_employee(request, employee_id=None):
     employee = None
     is_edit = False
@@ -2839,6 +2990,16 @@ def my_profile(request):
 
 
 @login_required
+def my_attendance(request):
+    """Send the signed-in user to their own attendance page. Mirrors
+    my_profile: the nav can't know an employee's id, and resolving it
+    server-side keeps the link from being edited into a colleague's."""
+    if not hasattr(request.user, 'employee_profile'):
+        return redirect('admin-dashboard')
+    return redirect('employee_attendance_detail', employee_id=request.user.employee_profile.pk)
+
+
+@login_required
 def employee_dashboard(request):
     """Self-service landing page for an Employee-role login: only ever
     queries request.user.employee_profile's own records, never a URL
@@ -2903,7 +3064,66 @@ def employee_dashboard(request):
         "recent_payslips": recent_payslips,
         "absent_employees_today": absent_employees_today,
         "today": today,
+        **_team_panel_for(employee, today),
     })
+
+
+def _team_panel_for(approver, today):
+    """The extra 'My Team' block a HOD (or anyone else on a reporting line)
+    sees on top of the ordinary self-service dashboard: who reports to them,
+    how many requests are waiting, and who isn't in today.
+
+    Keyed off actually having reportees rather than off holding the HOD
+    role, so a reporting person from any role gets it and a HOD with nobody
+    under them isn't shown an empty panel."""
+    reportees = Employee.objects.filter(
+        Q(reporting_person_id=approver.id) | Q(manager_id=approver.id)
+    ).exclude(pk=approver.pk).filter(status="Active")
+
+    if not reportees.exists():
+        return {"has_team": False}
+
+    pending_leave = (
+        LeaveApplication.objects.select_related("employee")
+        .filter(employee__in=reportees, status="Pending").order_by("-id")
+    )
+    pending_compoff = (
+        CompOffRequest.objects.select_related("employee")
+        .filter(employee__in=reportees, status="Pending").order_by("-id")
+    )
+    pending_corrections = (
+        AttendanceCorrectionRequest.objects.select_related("attendance__employee")
+        .filter(attendance__employee__in=reportees, status="Pending").order_by("-id")
+    )
+
+    team_attendance = {
+        a.employee_id: a
+        for a in Attendance.objects.filter(employee__in=reportees, date=today)
+    }
+    team_today = [
+        {"employee": member, "attendance": team_attendance.get(member.id)}
+        for member in reportees.order_by("first_name", "last_name")
+    ]
+
+    return {
+        "has_team": True,
+        "team_size": reportees.count(),
+        "team_pending_leave": pending_leave.count(),
+        "team_pending_compoff": pending_compoff.count(),
+        "team_pending_corrections": pending_corrections.count(),
+        "team_pending_total": pending_leave.count() + pending_compoff.count() + pending_corrections.count(),
+        "team_today": team_today,
+        "team_absent_today": sum(
+            1 for row in team_today
+            if row["attendance"] and row["attendance"].status == "Absent"
+        ),
+        # The queues themselves, so approving happens on the dashboard
+        # rather than only behind a link to My Approvals. Same names the
+        # shared approvals/_pending_queues.html partial reads.
+        "leave_requests": pending_leave,
+        "compoff_requests": pending_compoff,
+        "correction_requests": pending_corrections,
+    }
 
 @login_required
 def download_attachment(request, pk):
@@ -2988,7 +3208,14 @@ AssetHandoverFormSet = inlineformset_factory(
 )
 
 @login_required
-@feature_required("offboarding", action="edit")
+@create_or_edit_required(
+    "offboarding",
+    # One page for list / add / change: a GET is just reading the list.
+    resolve_action=lambda request, *a, **kw: (
+        "view" if request.method != "POST"
+        else ("edit" if request.POST.get("offboarding_id") else "create")
+    ),
+)
 def offboarding_list(request):
     """Main page - List, Create, Edit, View, Delete all in one"""
     if request.method == 'POST':
@@ -3473,10 +3700,14 @@ def delete_branch(request, branch_id):
 #     }
 #     return render(request, 'company/home2.html', context)
 @login_required
-@feature_required("company_management", action="edit")
-
+@feature_required("company_management", action="view")
 def create_company(request):
+    """The company list, which also handles adding one. Viewing is open to
+    anyone with company_management:view (Admin reads companies); actually
+    creating one needs :edit, which only Super Admin holds."""
     if request.method == "POST":
+        if not has_feature_permission(request.user, "company_management", "edit")                 and not (request.user.is_superuser or request.user.is_staff):
+            raise PermissionDenied
         short_name = request.POST.get("short_name")
         name = request.POST.get("name")
         phone = request.POST.get("phone")
@@ -3841,7 +4072,7 @@ def user_has_global_access(user):
     """
     if user.is_superuser or user.is_staff:
         return True
-    return user.groups.filter(name__in=['Admin', 'HR', 'Manager']).exists()
+    return user.groups.filter(name__in=GLOBAL_ACCESS_ROLES).exists()
 
 
 def role_based_dashboard_url(user):
@@ -3854,9 +4085,9 @@ def role_based_dashboard_url(user):
     Employee link) falls back to admin-dashboard, which they can always
     reach via the superuser/staff bypass. Shared by login_view and
     change_password so the "route by role" logic can't drift apart."""
-    if user.groups.filter(name__in=["Admin", "HR", "Manager"]).exists():
+    if user.groups.filter(name__in=GLOBAL_ACCESS_ROLES).exists():
         return "admin-dashboard"
-    if user.groups.filter(name="Employee").exists() or hasattr(user, "employee_profile"):
+    if user.groups.filter(name__in=SELF_SERVICE_ROLES).exists() or hasattr(user, "employee_profile"):
         return "employee-dashboard"
     return "admin-dashboard"
 
@@ -4209,6 +4440,12 @@ def generate_leave_balances_for_all_periods(company, payroll_settings):
         from_date = period_info['from_date']
         to_date = period_info['to_date']
 
+        # A finalized payroll run makes its period historical: the leave
+        # balance is what the payslips were computed from, so recalculating
+        # it would move numbers behind pay that has already gone out.
+        if get_locking_run_for_period(company, from_date, to_date):
+            continue
+
         for employee in employees:
             try:
                 with transaction.atomic():
@@ -4546,6 +4783,18 @@ def attendance_register_view(request):
         'is_global': is_global,
         'all_companies': Company.objects.filter(status='active').order_by('name') if is_global else None,
         'selected_company_id': company.id if company else None,
+        # Comp Off directly feeds into LWP/pay, same gate as override_lwp_view.
+        # Set here rather than only on the fully-populated path so every
+        # early return still carries the key the template reads.
+        'can_edit_compoff': (
+            user.is_superuser or user.is_staff or has_feature_permission(user, "leave_management", "edit")
+        ),
+        # The per-day cells post to override_attendance_status, which needs
+        # attendance_review:edit. Without it the register is a read-only
+        # report rather than a page of cells that 403 when clicked.
+        'can_edit_attendance': (
+            user.is_superuser or user.is_staff or has_feature_permission(user, "attendance_review", "edit")
+        ),
     }
 
     if not company:
@@ -4637,8 +4886,11 @@ def attendance_register_view(request):
     late_marks_affect_lwp = getattr(payroll_settings, 'late_marks_affect_lwp', True)
 
     def format_count(count):
+        """What a day's cell shows. A zero-count day is an absence, marked
+        "A" -- distinct from a blank cell, which means no attendance was
+        ever recorded for that day."""
         if count == 0:
-            return ''
+            return 'A'
         if count == 1:
             return '1'
         if count == Decimal('0.5'):
@@ -4690,10 +4942,6 @@ def attendance_register_view(request):
         'paginator': paginator,
         'user_company_id': company.id,
         'total_employees': len(employees_list),
-        # Comp Off directly feeds into LWP/pay, same gate as override_lwp_view.
-        'can_edit_compoff': (
-            user.is_superuser or user.is_staff or has_feature_permission(user, "leave_management", "edit")
-        ),
     })
     return render(request, 'attendance/attendance_register.html', context)
 
@@ -5541,7 +5789,15 @@ def extract_decimal(request, key):
 
 
 @login_required
-@feature_required("salary_structure", action="edit")
+@create_or_edit_required(
+    "salary_structure",
+    # This is the structure form itself, not a read-only list, so opening it
+    # needs create rights; a salary_id in the POST means an existing
+    # structure is being changed.
+    resolve_action=lambda request, *a, **kw: (
+        "edit" if (request.method == "POST" and request.POST.get("salary_id")) else "create"
+    ),
+)
 def create_salary(request):
     if request.method == "POST":
         salary_id = request.POST.get("salary_id")
@@ -5630,7 +5886,13 @@ def create_salary(request):
         "employees": employees,
         "salary": salaries,
         "salary_obj": salary_obj,
-        "is_edit": bool(salary_obj)
+        "is_edit": bool(salary_obj),
+        # HR drafts new structures but cannot change an existing one, so the
+        # Edit affordance has to disappear for them rather than 403 on save.
+        "can_edit_salary": (
+            request.user.is_superuser or request.user.is_staff
+            or has_feature_permission(request.user, "salary_structure", "edit")
+        ),
     })
 
 
@@ -6117,7 +6379,7 @@ def salary_history_detail(request, pk):
 # (Admin,HR) doesn't match salary_structure's View action (Admin,HR,Manager)
 # elsewhere in the same feature, so folding it in would silently change
 # access one way or the other. Migrate once someone decides the intended level.
-@group_required("Admin", "HR")
+@group_required("Super Admin", "Admin", "HR")
 def salary_history_export_excel(request):
     qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
     # apply same filters as list (to keep export consistent)
@@ -6664,14 +6926,15 @@ def company_settings_hub(request):
 
 
 @login_required
-@group_required("Admin")
+@group_required("Super Admin", "Admin")
 def roles_permissions_hub(request):
     """Settings page for managing roles (Django Groups) and the
     per-feature View/Edit/Approve permission matrix that drives
     @feature_required(...) across the app. Deliberately gated with the
-    plain hardcoded group_required("Admin"), never feature_required(...) --
-    if this page were matrix-driven, an admin could accidentally revoke
-    Admin's own access to the one page that could fix it."""
+    plain hardcoded group_required("Super Admin", "Admin"), never
+    feature_required(...) -- if this page were matrix-driven, an admin
+    could accidentally revoke their own access to the one page that could
+    fix it."""
     from .permissions_registry import SYSTEM_ROLES
 
     roles = Group.objects.all().order_by("name")
@@ -6719,7 +6982,7 @@ def roles_permissions_hub(request):
 
 
 @login_required
-@group_required("Admin")
+@group_required("Super Admin", "Admin")
 @require_http_methods(["POST"])
 def create_role(request):
     name = (request.POST.get("name") or "").strip()
@@ -6737,7 +7000,7 @@ def create_role(request):
 
 
 @login_required
-@group_required("Admin")
+@group_required("Super Admin", "Admin")
 @require_http_methods(["POST"])
 def rename_role(request, role_id):
     from .permissions_registry import SYSTEM_ROLES
@@ -6761,7 +7024,7 @@ def rename_role(request, role_id):
 
 
 @login_required
-@group_required("Admin")
+@group_required("Super Admin", "Admin")
 @require_http_methods(["POST"])
 def delete_role(request, role_id):
     from .permissions_registry import SYSTEM_ROLES
@@ -6781,7 +7044,7 @@ def delete_role(request, role_id):
 
 
 @login_required
-@group_required("Admin")
+@group_required("Super Admin", "Admin")
 @require_http_methods(["POST"])
 def save_role_permissions(request):
     role_id = request.POST.get("role_id")
@@ -6793,13 +7056,14 @@ def save_role_permissions(request):
     with transaction.atomic():
         for feature in Feature.objects.filter(is_active=True):
             rfp, _ = RoleFeaturePermission.objects.get_or_create(role=group, feature=feature)
-            before = snapshot(rfp, ("can_view", "can_edit", "can_approve"))
+            before = snapshot(rfp, ("can_view", "can_create", "can_edit", "can_approve"))
             rfp.can_view = feature.has_view and request.POST.get(f"can_view_{feature.id}") == "on"
+            rfp.can_create = feature.has_create and request.POST.get(f"can_create_{feature.id}") == "on"
             rfp.can_edit = feature.has_edit and request.POST.get(f"can_edit_{feature.id}") == "on"
             rfp.can_approve = feature.has_approve and request.POST.get(f"can_approve_{feature.id}") == "on"
             rfp.updated_by = request.user
             rfp.save()
-            feature_changes = diff(before, rfp, ("can_view", "can_edit", "can_approve"))
+            feature_changes = diff(before, rfp, ("can_view", "can_create", "can_edit", "can_approve"))
             if feature_changes:
                 permission_changes[feature.key] = feature_changes
 
@@ -6812,7 +7076,7 @@ def save_role_permissions(request):
 
 
 @login_required
-@group_required("Admin")
+@group_required("Super Admin", "Admin")
 @require_http_methods(["POST"])
 def reassign_user_role(request):
     employee_id = request.POST.get("employee_id")
@@ -7136,12 +7400,24 @@ def broadcast_settings_to_all_companies(request):
 
 
 @login_required
-@feature_required("advances", action="view")
 def advance_list(request):
+    """Advances. Anyone holding advances:view sees the whole company's;
+    everyone else sees only their own, which is what makes "I can check my
+    own advance" work without handing out a company-wide grant."""
+    can_see_all = (
+        request.user.is_superuser or request.user.is_staff
+        or has_feature_permission(request.user, "advances", "view")
+    )
+    own_employee = getattr(request.user, "employee_profile", None)
+    if not can_see_all and own_employee is None:
+        raise PermissionDenied
+
     status_filter = request.GET.get('status', '').strip()
     search = request.GET.get('q', '').strip()
 
     qs = AdvanceMaster.objects.select_related('employee').prefetch_related('schedules').order_by('-created_at')
+    if not can_see_all:
+        qs = qs.filter(employee=own_employee)
 
     if status_filter in ('active', 'completed'):
         qs = qs.filter(status=status_filter)
@@ -7154,7 +7430,7 @@ def advance_list(request):
             _Q(employee__employee_code__icontains=search)
         )
 
-    all_qs = AdvanceMaster.objects.all()
+    all_qs = AdvanceMaster.objects.all() if can_see_all else AdvanceMaster.objects.filter(employee=own_employee)
     active_qs = all_qs.filter(status='active')
     stats = {
         'total': all_qs.count(),
@@ -7175,6 +7451,11 @@ def advance_list(request):
         'stats': stats,
         'status_filter': status_filter,
         'search': search,
+        'can_see_all_advances': can_see_all,
+        'can_manage_advances': (
+            request.user.is_superuser or request.user.is_staff
+            or has_feature_permission(request.user, "advances", "edit")
+        ),
     })
 
 
@@ -7204,10 +7485,12 @@ def advance_create(request):
 
 
 @login_required
-@feature_required("advances", action="view")
 def advance_detail(request, pk):
-    """Show schedule, payments, actions (pay/skip)."""
+    """Show schedule, payments, actions (pay/skip). Readable by anyone with
+    advances:view, or by the employee the advance belongs to."""
     adv = get_object_or_404(AdvanceMaster, pk=pk)
+    if not can_access_employee_record(request.user, adv.employee, "advances", "view"):
+        raise PermissionDenied
     # security: if non-staff, ensure this belongs to user
     # if not request.user.is_staff:
     #     try:
@@ -7229,7 +7512,14 @@ def advance_detail(request, pk):
         'schedules': schedules,
         'payments': payments,
         'payment_form': payment_form,
-        'skip_form': skip_form
+        'skip_form': skip_form,
+        # An employee reading their own advance can see the schedule but
+        # not pay or skip an instalment -- those endpoints need
+        # advances:edit and would only 403 them.
+        'can_manage_advances': (
+            request.user.is_superuser or request.user.is_staff
+            or has_feature_permission(request.user, "advances", "edit")
+        ),
     })
 
 @login_required
@@ -7349,6 +7639,7 @@ def revert_skip_view(request, pk):
 
 
 @login_required
+@feature_required("payroll", action="view")
 def payroll_run_list(request):
     companies = Company.objects.filter(status="active").order_by("name")
     company_id = request.GET.get("company")
@@ -7376,6 +7667,13 @@ def payroll_run_list(request):
         "status_filter": status_filter or "",
         "draft_count": draft_count,
         "finalized_count": finalized_count,
+        # Admin can read a payroll run but not create, recalculate or
+        # finalize one, so the pages have to render read-only rather than
+        # offering controls that 403.
+        "can_run_payroll": (
+            request.user.is_superuser or request.user.is_staff
+            or has_feature_permission(request.user, "payroll", "edit")
+        ),
     })
 
 
@@ -7402,6 +7700,7 @@ def _compute_payroll_dates(ps, year, m):
 
 
 @login_required
+@feature_required("payroll", action="edit")
 def payroll_run_create(request):
     companies = Company.objects.filter(status="active").order_by("name")
     if request.method == "POST":
@@ -7463,6 +7762,7 @@ def payroll_run_create(request):
 
 
 @login_required
+@feature_required("payroll", action="view")
 def payroll_period_preview(request):
     """AJAX: return payroll period dates for a given company + month."""
     company_id = request.GET.get("company_id")
@@ -7487,11 +7787,21 @@ def payroll_period_preview(request):
     })
 
 @login_required
+@feature_required("payroll", action="view")
 def payroll_run_detail(request, run_id):
     run = get_object_or_404(PayrollRun, id=run_id)
     records = run.records.select_related("employee").all()
     settings = PayrollSettings.objects.filter(company=run.company).first()
-    return render(request, "payroll/run_detail.html", {"run": run, "records": records, "settings": settings})
+    return render(request, "payroll/run_detail.html", {
+        "run": run, "records": records, "settings": settings,
+        # Admin can read a payroll run but not create, recalculate or
+        # finalize one, so the pages have to render read-only rather than
+        # offering controls that 403.
+        "can_run_payroll": (
+            request.user.is_superuser or request.user.is_staff
+            or has_feature_permission(request.user, "payroll", "edit")
+        ),
+    })
 
 @login_required
 @feature_required("payroll", action="edit")
@@ -7585,6 +7895,7 @@ from django.http import HttpResponse
 from .models import PayrollRun, PayrollRecord
 
 @login_required
+@feature_required("payroll", action="view")
 def payroll_export_excel(request, run_id):
     run = PayrollRun.objects.get(id=run_id)
     records = PayrollRecord.objects.filter(payroll=run)   # ✅ FIXED FIELD NAME
@@ -7636,6 +7947,7 @@ from django.http import HttpResponse
 from io import BytesIO
 
 @login_required
+@feature_required("payroll", action="view")
 def payroll_export_pdf(request, run_id):
     run = PayrollRun.objects.get(id=run_id)
     records = PayrollRecord.objects.filter(payroll=run)   # ✅ FIXED FIELD NAME
@@ -7829,7 +8141,11 @@ def create_user_view(request):
         return redirect("create-user")
 
     employees = Employee.objects.filter(user__isnull=True)
-    return render(request, "auth/create_user.html", {"employees": employees})
+    # Roles come from the actual Group rows in registry order, so adding or
+    # renaming a role never leaves this dropdown behind.
+    groups_by_name = {g.name: g for g in Group.objects.all()}
+    roles = [groups_by_name[name] for name in SYSTEM_ROLES if name in groups_by_name]
+    return render(request, "auth/create_user.html", {"employees": employees, "roles": roles})
 
 
 

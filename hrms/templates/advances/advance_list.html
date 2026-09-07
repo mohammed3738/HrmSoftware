@@ -8,15 +8,20 @@
   <!-- Header -->
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-      <h4 class="fw-bold mb-1">Employee Advances</h4>
+      <h4 class="fw-bold mb-1">{% if can_see_all_advances %}Employee Advances{% else %}My Advances{% endif %}</h4>
       <ol class="breadcrumb mb-0">
         <li class="breadcrumb-item"><a href="#"><i class="ti ti-smart-home"></i></a></li>
         <li class="breadcrumb-item active">Advances</li>
       </ol>
+      {% if not can_see_all_advances %}
+      <small class="text-muted">Your own advances. Contact payroll about anything that looks wrong.</small>
+      {% endif %}
     </div>
+    {% if can_manage_advances %}
     <a href="{% url 'create-advance' %}" class="btn btn-primary">
       <i class="ti ti-plus me-1"></i> New Advance
     </a>
+    {% endif %}
   </div>
 
   <!-- Stats -->

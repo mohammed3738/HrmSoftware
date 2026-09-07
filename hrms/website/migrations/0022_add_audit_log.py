@@ -9,6 +9,16 @@ from website.permissions_registry import FEATURES, SEED_GRANTS, SYSTEM_ROLES
 _AUDIT_LOG_FEATURE = next(row for row in FEATURES if row["key"] == "audit_log")
 
 
+def _defaults_for(model, row):
+    """Only pass fields the Feature model had *at this point in history*.
+
+    These seed migrations read the live permissions_registry, so a field
+    added to FEATURES later (has_create, say) would otherwise crash this
+    migration when a fresh database is built from scratch."""
+    known = {f.name for f in model._meta.get_fields()}
+    return {k: v for k, v in row.items() if k in known and k != "key"}
+
+
 def seed_audit_log_feature(apps, schema_editor):
     """Register the new 'audit_log' Feature + its RoleFeaturePermission
     rows -- migration 0019 already seeded everything else, so this only
@@ -18,7 +28,7 @@ def seed_audit_log_feature(apps, schema_editor):
     RoleFeaturePermission = apps.get_model("website", "RoleFeaturePermission")
 
     feature, _ = Feature.objects.get_or_create(
-        key=_AUDIT_LOG_FEATURE["key"], defaults=_AUDIT_LOG_FEATURE,
+        key=_AUDIT_LOG_FEATURE["key"], defaults=_defaults_for(Feature, _AUDIT_LOG_FEATURE),
     )
 
     for role_name in SYSTEM_ROLES:

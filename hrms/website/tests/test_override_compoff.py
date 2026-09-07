@@ -40,7 +40,8 @@ class OverrideCompoffTest(TestCase):
         )
 
         self.hr_user = User.objects.create_user(username="oct_hr", password="pass12345")
-        self.hr_user.groups.add(Group.objects.get(name="HR"))
+        # Comp Off overrides need leave_management:edit -- Admin's now.
+        self.hr_user.groups.add(Group.objects.get(name="Admin"))
 
         # opening(2) + compoff(0) - leave_taken(5) - late_days(0) = -3
         # -> leave_without_pay=3, leave_balance=0; monthly_credit=1 (closing - leave_balance)

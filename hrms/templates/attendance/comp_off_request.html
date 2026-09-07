@@ -1,7 +1,7 @@
 {% extends 'base2.html' %} {% block body %}
 <div class="container-xxl flex-grow-1 container-p-y">
   <div class="card shadow p-3 rounded-4">
-    <h4 class="m-6  fw-bold">Comp Off's Requests List</h4>
+    <h4 class="m-6  fw-bold">{% if can_see_all_requests %}Comp Off's Requests List{% else %}My Comp-Off Requests{% endif %}</h4>
 
     <form method="GET" class="row g-2 align-items-end mb-3">
       <div class="col-md-3">

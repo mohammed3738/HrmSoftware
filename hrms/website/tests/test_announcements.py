@@ -112,8 +112,8 @@ class AnnouncementScopingAndReadTrackingTest(TestCase):
         self.assertNotIn("Company B only", titles)
         self.assertNotIn("Inactive", titles)
 
-    def test_manager_also_scoped_to_own_company(self):
-        manager = self.make_employee(self.company_b, "ANNMGR1", group_name="Manager")
+    def test_hod_also_scoped_to_own_company(self):
+        manager = self.make_employee(self.company_b, "ANNMGR1", group_name="HOD")
         client = Client()
         client.login(username=manager.user.username, password="Temp@123")
 
@@ -195,8 +195,8 @@ class AnnouncementManagementPermissionTest(TestCase):
         resp = client.get(reverse("announcements-hub"))
         self.assertEqual(resp.status_code, 200)
 
-    def test_manager_cannot_view_hub(self):
-        self.make_user("amp_mgr", "Manager")
+    def test_hod_cannot_view_hub(self):
+        self.make_user("amp_mgr", "HOD")
         client = Client()
         client.login(username="amp_mgr", password="pass12345")
         resp = client.get(reverse("announcements-hub"))
@@ -220,8 +220,8 @@ class AnnouncementManagementPermissionTest(TestCase):
         self.assertTrue(resp.json()["success"])
         self.assertTrue(Announcement.objects.filter(title="New Notice").exists())
 
-    def test_manager_cannot_create_announcement(self):
-        self.make_user("amp_mgr2", "Manager")
+    def test_hod_cannot_create_announcement(self):
+        self.make_user("amp_mgr2", "HOD")
         client = Client()
         client.login(username="amp_mgr2", password="pass12345")
         resp = client.post(reverse("save-announcement"), {

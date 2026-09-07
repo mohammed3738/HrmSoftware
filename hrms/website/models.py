@@ -1999,6 +1999,22 @@ class AttendanceCorrectionRequest(models.Model):
     reviewed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # ── Minutes of Meeting ────────────────────────────────────────────
+    # A correction can optionally be raised as a Minutes of Meeting: the
+    # employee was on a call rather than at their desk, so they record when
+    # the call ran and attach the minutes as evidence. Purely additive --
+    # leaving is_mom off gives the ordinary correction request.
+    is_mom = models.BooleanField(
+        default=False, verbose_name="Minutes of Meeting",
+        help_text="Raised as a Minutes of Meeting, with call timings and the minutes attached.",
+    )
+    meeting_in_time = models.TimeField(null=True, blank=True, verbose_name="Meeting In-Call Time")
+    meeting_out_time = models.TimeField(null=True, blank=True, verbose_name="Meeting Out-Call Time")
+    mom_attachment = models.FileField(
+        upload_to="attendance_corrections/mom/", null=True, blank=True,
+        verbose_name="Minutes of Meeting Attachment",
+    )
+
     APPROVED_STATUS_CHOICES = [
         ("Present", "Full Day (Present)"),
         ("Late Present", "Late Present"),
@@ -2013,6 +2029,19 @@ class AttendanceCorrectionRequest(models.Model):
         help_text="Status the approver explicitly granted when approving. Blank means the "
                   "status was derived automatically from the corrected in/out times.",
     )
+
+    @property
+    def meeting_duration_display(self):
+        """Call length as 'Hh Mm', or empty when this isn't a MoM request or
+        either timing is missing."""
+        if not (self.is_mom and self.meeting_in_time and self.meeting_out_time):
+            return ""
+        start = datetime.datetime.combine(datetime.date.today(), self.meeting_in_time)
+        end = datetime.datetime.combine(datetime.date.today(), self.meeting_out_time)
+        if end <= start:  # call ran past midnight
+            end += datetime.timedelta(days=1)
+        hours, minutes = divmod(int((end - start).total_seconds() // 60), 60)
+        return f"{hours}h {minutes}m"
 
     @property
     def times_unchanged(self):
@@ -2037,10 +2066,15 @@ class Feature(models.Model):
     """A logical page/module that can be gated per role (e.g. 'Payroll
     Processing', 'Leave Management'). `key` is the stable identifier used by
     the @feature_required decorator — never change it once seeded, since
-    view code references it directly. `has_view`/`has_edit`/`has_approve`
-    declare which action columns actually apply to this feature, so the
-    permission matrix UI only renders checkboxes that mean something (e.g.
-    Payroll has no 'Approve' concept)."""
+    view code references it directly. `has_view`/`has_create`/`has_edit`/
+    `has_approve` declare which action columns actually apply to this
+    feature, so the permission matrix UI only renders checkboxes that mean
+    something (e.g. Payroll has no 'Approve' concept).
+
+    `create` is separate from `edit` so a role can be allowed to add
+    records without being able to change existing ones — HR onboarding an
+    employee or drafting a salary structure, where corrections stay with
+    Admin."""
     key = models.SlugField(max_length=50, unique=True)
     name = models.CharField(max_length=100)
     category = models.CharField(
@@ -2050,6 +2084,7 @@ class Feature(models.Model):
     description = models.TextField(blank=True)
 
     has_view = models.BooleanField(default=True)
+    has_create = models.BooleanField(default=False)
     has_edit = models.BooleanField(default=True)
     has_approve = models.BooleanField(default=False)
 
@@ -2064,14 +2099,15 @@ class Feature(models.Model):
 
 
 class RoleFeaturePermission(models.Model):
-    """One row per (role, feature): what a Django Group can View/Edit/Approve
-    for that feature. Enforcement lookup:
+    """One row per (role, feature): what a Django Group can
+    View/Create/Edit/Approve for that feature. Enforcement lookup:
     RoleFeaturePermission.objects.filter(role__in=user.groups.all(), feature__key=key, can_<action>=True).exists()
     """
     role = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="feature_permissions")
     feature = models.ForeignKey(Feature, on_delete=models.CASCADE, related_name="role_permissions")
 
     can_view = models.BooleanField(default=False)
+    can_create = models.BooleanField(default=False)
     can_edit = models.BooleanField(default=False)
     can_approve = models.BooleanField(default=False)
 

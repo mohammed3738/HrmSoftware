@@ -41,9 +41,13 @@ def is_employee_role(user):
         return False
     if user.is_superuser or user.is_staff:
         return False
-    if user.groups.filter(name__in=["Admin", "HR", "Manager"]).exists():
+    from website.permissions_registry import GLOBAL_ACCESS_ROLES, SELF_SERVICE_ROLES
+    if user.groups.filter(name__in=GLOBAL_ACCESS_ROLES).exists():
         return False
-    return user.groups.filter(name="Employee").exists()
+    # HOD lands on the self-service dashboard too: they read their own
+    # records and approve for their reportees, rather than running the
+    # company-wide admin dashboard.
+    return user.groups.filter(name__in=SELF_SERVICE_ROLES).exists()
 
 
 @register.filter
@@ -79,3 +83,13 @@ def has_reportees(user):
     return Employee.objects.filter(
         Q(reporting_person_id=approver.id) | Q(manager_id=approver.id)
     ).exclude(pk=approver.pk).exists()
+
+
+@register.filter
+def has_employee_profile(user):
+    """Is this login linked to an employee record? Gates the self-service
+    corners of the nav (own advances, own payslips) that don't need a
+    company-wide grant."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    return getattr(user, "employee_profile", None) is not None

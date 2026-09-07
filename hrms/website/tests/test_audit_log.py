@@ -166,8 +166,8 @@ class AuditLogPermissionTest(TestCase):
         resp = client.get(reverse("audit-log"))
         self.assertEqual(resp.status_code, 200)
 
-    def test_manager_cannot_view(self):
-        self.make_user("aperm_mgr", "Manager")
+    def test_hod_cannot_view(self):
+        self.make_user("aperm_mgr", "HOD")
         client = Client()
         client.login(username="aperm_mgr", password="pass12345")
         resp = client.get(reverse("audit-log"))
@@ -193,6 +193,10 @@ class AuditLogInstrumentationTest(TestCase):
         )
         self.admin = User.objects.create_user(username="ait_admin", password="pass12345")
         self.admin.groups.add(Group.objects.get(name="Admin"))
+        # Finalizing a payroll run needs payroll:edit, which Admin no longer
+        # holds -- this suite drives that action, so give the actor the role
+        # that actually runs payroll.
+        self.admin.groups.add(Group.objects.get(name="Payroll Officer"))
         self.client = Client()
         self.client.login(username="ait_admin", password="pass12345")
 

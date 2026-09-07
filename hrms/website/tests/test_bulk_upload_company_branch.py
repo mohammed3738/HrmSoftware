@@ -30,8 +30,9 @@ def _build_excel(headers, rows):
 
 class CompanyBulkUploadTest(TestCase):
     def setUp(self):
+        # Adding companies is Super Admin's, not Admin's.
         self.admin = User.objects.create_user(username="cbu_admin", password="pass12345")
-        self.admin.groups.add(Group.objects.get(name="Admin"))
+        self.admin.groups.add(Group.objects.get(name="Super Admin"))
         self.client = Client()
         self.client.login(username="cbu_admin", password="pass12345")
 
@@ -95,7 +96,7 @@ class CompanyBulkUploadTest(TestCase):
 
     def test_manager_cannot_upload_companies(self):
         manager = User.objects.create_user(username="cbu_mgr", password="pass12345")
-        manager.groups.add(Group.objects.get(name="Manager"))
+        manager.groups.add(Group.objects.get(name="HOD"))
         client = Client()
         client.login(username="cbu_mgr", password="pass12345")
         excel_file = _build_excel(

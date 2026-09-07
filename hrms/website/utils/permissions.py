@@ -7,25 +7,74 @@ def is_admin(user):
 def is_hr(user):
     return user.groups.filter(name="HR").exists()
 
-def is_manager(user):
-    return user.groups.filter(name="Manager").exists()
+def is_hod(user):
+    return user.groups.filter(name="HOD").exists()
+
+
+def is_super_admin(user):
+    return user.groups.filter(name="Super Admin").exists()
+
+
+def is_payroll_officer(user):
+    return user.groups.filter(name="Payroll Officer").exists()
 
 def is_employee(user):
     return user.groups.filter(name="Employee").exists()
 
 def admin_or_hr(user):
-    return is_admin(user) or is_hr(user)
+    return is_admin(user) or is_hr(user) or is_super_admin(user)
+
+
+_PERMISSION_CACHE_ATTR = "_feature_permission_cache"
+
+
+def _load_feature_permissions(user):
+    """Every (feature_key, action) this user's roles grant, in one query.
+
+    Loaded whole rather than one query per check: the nav alone asks about
+    half a dozen features on every page render, and each gated panel asks
+    about more."""
+    from website.models import RoleFeaturePermission
+
+    granted = set()
+    rows = RoleFeaturePermission.objects.filter(role__in=user.groups.all()).values_list(
+        "feature__key", "can_view", "can_create", "can_edit", "can_approve",
+    )
+    for feature_key, can_view, can_create, can_edit, can_approve in rows:
+        for action, allowed in (
+            ("view", can_view), ("create", can_create),
+            ("edit", can_edit), ("approve", can_approve),
+        ):
+            if allowed:
+                granted.add((feature_key, action))
+    return granted
+
+
+def invalidate_feature_permission_cache(user):
+    """Drop the cached grants for `user` -- call after changing the
+    permission matrix within a single request."""
+    if hasattr(user, _PERMISSION_CACHE_ATTR):
+        delattr(user, _PERMISSION_CACHE_ATTR)
 
 
 def has_feature_permission(user, feature_key, action="view"):
     """Does any of this user's roles (Django Groups) grant `action` access
     to the feature identified by `feature_key`? Backs @feature_required.
     See website/permissions_registry.py for the full feature list and the
-    seed data this is checked against."""
-    from website.models import RoleFeaturePermission
-    return RoleFeaturePermission.objects.filter(
-        role__in=user.groups.all(), feature__key=feature_key, **{f"can_{action}": True}
-    ).exists()
+    seed data this is checked against.
+
+    The user's grants are cached on the user instance, which lives for one
+    request, so a page asking about many features costs one query rather
+    than one per question."""
+    granted = getattr(user, _PERMISSION_CACHE_ATTR, None)
+    if granted is None:
+        granted = _load_feature_permissions(user)
+        try:
+            setattr(user, _PERMISSION_CACHE_ATTR, granted)
+        except AttributeError:
+            # AnonymousUser and friends may not accept attributes.
+            pass
+    return (feature_key, action) in granted
 
 
 def can_approve_for_employee(user, employee, feature_key):

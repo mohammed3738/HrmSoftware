@@ -86,6 +86,7 @@
         <small class="text-muted">{{ today|date:"l, d F Y" }} &nbsp;·&nbsp; {{ user_company.name|default:"All Companies" }}</small>
       </div>
       <div class="d-flex gap-2 flex-wrap">
+        {% if show_attendance_tools %}
         <a href="{% url 'download-empty-excel' %}" class="btn btn-outline-secondary btn-sm">
           <i class="ti ti-download me-1"></i> Download Attendance Template
         </a>
@@ -95,17 +96,106 @@
         <button id="openRecalcModal" class="btn btn-outline-warning btn-sm">
           <i class="ti ti-refresh me-1"></i> Recalculate Attendance
         </button>
+        {% endif %}
+        {% if show_people_panels %}
         <button onclick="downloadEmployees()" class="btn btn-outline-danger btn-sm">
           <i class="ti ti-users me-1"></i> Download All Employees
         </button>
+        {% endif %}
+        {% if can_run_payroll %}
+        <a href="{% url 'payroll-run-create' %}" class="btn btn-success btn-sm">
+          <i class="ti ti-cash me-1"></i> New Payroll Run
+        </a>
+        {% endif %}
       </div>
     </div>
   </div>
+
+  <!-- ── Payroll ───────────────────────────────────────────────────── -->
+  {% if show_payroll_panel %}
+  <div class="row g-4 mb-4">
+    <div class="col-lg-7">
+      <div class="card h-100">
+        <div class="card-header d-flex justify-content-between align-items-center pb-1">
+          <h6 class="mb-0"><i class="ri-money-rupee-circle-line me-1 text-success"></i> Payroll Runs</h6>
+          <a href="{% url 'payroll-run-list' %}" class="btn btn-sm btn-outline-success action-btn">View All</a>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+              <tr><th>Month</th><th>Company</th><th>Period</th><th>Status</th><th class="text-end">Action</th></tr>
+            </thead>
+            <tbody>
+              {% for run in recent_payroll_runs %}
+              <tr>
+                <td class="fw-medium">{{ run.month|date:"M Y" }}</td>
+                <td class="text-muted">{{ run.company.short_name|default:"—" }}</td>
+                <td class="text-muted small">{{ run.start_date|date:"d M" }} – {{ run.end_date|date:"d M" }}</td>
+                <td>
+                  {% if run.status == 'finalized' %}
+                  <span class="badge bg-label-success">Finalized</span>
+                  {% else %}
+                  <span class="badge bg-label-warning">Draft</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <a href="{% url 'payroll-run-detail' run.id %}" class="btn btn-sm btn-info action-btn">Open</a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="5" class="text-center text-muted py-3">No payroll runs yet</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card h-100">
+        <div class="card-header pb-1">
+          <h6 class="mb-0"><i class="ri-checkbox-multiple-line me-1 text-primary"></i> Payroll Readiness</h6>
+        </div>
+        <div class="card-body">
+          <div class="row g-3 text-center mb-3">
+            <div class="col-6">
+              <div class="p-3 rounded-3 bg-label-warning">
+                <div class="pending-badge text-warning">{{ draft_run_count }}</div>
+                <div class="small text-muted mt-1">Draft Runs</div>
+              </div>
+            </div>
+            <div class="col-6">
+              <div class="p-3 rounded-3 bg-label-success">
+                <div class="pending-badge text-success">{{ finalized_run_count }}</div>
+                <div class="small text-muted mt-1">Finalized</div>
+              </div>
+            </div>
+          </div>
+
+          {% if employees_without_salary %}
+          <div class="alert alert-warning py-2 px-3 small mb-0">
+            <i class="ri-error-warning-line me-1"></i>
+            <strong>{{ employees_without_salary }}</strong> active employee{{ employees_without_salary|pluralize }}
+            {{ employees_without_salary|pluralize:"has,have" }} no salary structure and cannot be paid.
+            <a href="{% url 'create-salary' %}" class="d-block mt-1">Set one up</a>
+          </div>
+          {% else %}
+          <div class="alert alert-success py-2 px-3 small mb-0">
+            <i class="ri-check-line me-1"></i>
+            Every active employee has a salary structure.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
 
   <!-- ── Row 2: Today's Attendance + Pending Approvals ─────────────── -->
   <div class="row g-4 mb-4">
 
     <!-- Today's Attendance -->
+    {% if show_attendance_panels %}
     <div class="col-md-6 col-xl-5">
       <div class="card h-100">
         <div class="card-header pb-1">
@@ -164,12 +254,14 @@
         </div>
       </div>
     </div>
+    {% endif %}
 
     <!-- Pending Approvals Summary + Dept Distribution -->
     <div class="col-md-6 col-xl-7">
       <div class="row g-4 h-100">
 
         <!-- Pending Approvals (3 mini cards) -->
+        {% if show_any_approvals %}
         <div class="col-12">
           <div class="card">
             <div class="card-header pb-1">
@@ -205,6 +297,7 @@
             </div>
           </div>
         </div>
+        {% endif %}
 
         <!-- Department Distribution -->
         {% if dept_data %}
@@ -234,6 +327,7 @@
   </div>
 
   <!-- ── Row 2.5: Absent Today ────────────────────────────────────── -->
+  {% if show_attendance_panels %}
   <div class="row g-4 mb-4">
     <div class="col-12">
       <div class="card">
@@ -269,7 +363,10 @@
     </div>
   </div>
 
+  {% endif %}
+
   <!-- ── Row 3: Leave Requests table ───────────────────────────────── -->
+  {% if show_any_approvals %}
   <div class="row g-4 mb-4">
     <div class="col-lg-6">
       <div class="card h-100">
@@ -369,10 +466,13 @@
     </div>
   </div>
 
+  {% endif %}
+
   <!-- ── Row 4: Attendance Corrections + Recent Joiners ────────────── -->
   <div class="row g-4 mb-4">
 
     <!-- Attendance Corrections -->
+    {% if show_correction_approvals %}
     <div class="col-lg-6">
       <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center pb-1">
@@ -406,7 +506,12 @@
                 <td class="text-muted small">{{ req.attendance.in_time|default:"–" }} / {{ req.attendance.out_time|default:"–" }}</td>
                 <td>
                   <button class="btn btn-sm btn-info action-btn"
-                    onclick="openApprovalModal('{{ req.attendance.employee.employee_code }}','{{ req.attendance.employee.first_name }}','{{ req.attendance.date }}','{{ req.attendance.in_time }}','{{ req.attendance.out_time }}','{{ req.new_in_time }}','{{ req.new_out_time }}',`{{ req.reason|escapejs }}`,{{ req.id }},{{ req.times_unchanged|yesno:"true,false" }})">
+                    data-mom="{{ req.is_mom|yesno:'1,0' }}"
+                    data-mom-in="{{ req.meeting_in_time|default:'' }}"
+                    data-mom-out="{{ req.meeting_out_time|default:'' }}"
+                    data-mom-duration="{{ req.meeting_duration_display }}"
+                    data-mom-url="{% if req.mom_attachment %}{{ req.mom_attachment.url }}{% endif %}"
+                    onclick="openApprovalModal('{{ req.attendance.employee.employee_code }}','{{ req.attendance.employee.first_name }}','{{ req.attendance.date }}','{{ req.attendance.in_time }}','{{ req.attendance.out_time }}','{{ req.new_in_time }}','{{ req.new_out_time }}',`{{ req.reason|escapejs }}`,{{ req.id }},{{ req.times_unchanged|yesno:"true,false" }},this)">
                     View
                   </button>
                 </td>
@@ -420,7 +525,10 @@
       </div>
     </div>
 
+    {% endif %}
+
     <!-- Recent Joiners -->
+    {% if show_people_panels %}
     <div class="col-lg-6">
       <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center pb-1">
@@ -459,7 +567,10 @@
 
   </div>
 
+    {% endif %}
+
   <!-- ── Row 5: Anniversaries + Upcoming Offboarding ───────────────── -->
+  {% if show_people_panels or show_offboarding_panel %}
   <div class="row g-4 mb-4">
 
     <!-- Work Anniversaries -->
@@ -526,10 +637,12 @@
     </div>
 
   </div>
+  {% endif %}
 
 </div><!-- /container -->
 
 
+{% if show_attendance_tools %}
 <!-- ═══════════ ATTENDANCE UPLOAD MODAL ═══════════ -->
 <div id="attendanceModal"
      style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;
@@ -583,8 +696,10 @@
     <p id="recalcResponseMessage" class="mt-2 small text-muted"></p>
   </div>
 </div>
+{% endif %}
 
 
+{% if show_correction_approvals %}
 <!-- ═══════════ ATTENDANCE CORRECTION MODAL ═══════════ -->
 <div class="modal fade" id="approvalModal" tabindex="-1">
   <div class="modal-dialog modal-lg">
@@ -610,6 +725,16 @@
         <h6 class="text-primary fw-bold mb-2"><i class="ri-file-text-line me-1"></i> Reason</h6>
         <div id="m_reason" class="p-3 border rounded-3 fs-6" style="white-space:pre-line;min-height:60px;background:#f7faff;border:1px solid #c9e6ff!important;color:#004085;"></div>
 
+        <div id="m_mom_section" style="display:none;">
+          <h6 class="text-primary fw-bold mb-2 mt-4"><i class="ri-group-line me-1"></i> Minutes of Meeting</h6>
+          <div class="row g-3 text-center mb-2">
+            <div class="col-md-4"><div class="border rounded-3 p-3 bg-info bg-opacity-10"><div class="text-info fw-bold">In-Call</div><div id="m_meeting_in" class="fs-5 mt-1"></div></div></div>
+            <div class="col-md-4"><div class="border rounded-3 p-3 bg-info bg-opacity-10"><div class="text-info fw-bold">Out-Call</div><div id="m_meeting_out" class="fs-5 mt-1"></div></div></div>
+            <div class="col-md-4"><div class="border rounded-3 p-3 bg-info bg-opacity-10"><div class="text-info fw-bold">Duration</div><div id="m_meeting_duration" class="fs-5 mt-1"></div></div></div>
+          </div>
+          <div id="m_mom_attachment_wrap"></div>
+        </div>
+
         <h6 class="text-primary fw-bold mb-2 mt-4"><i class="ri-checkbox-circle-line me-1"></i> Mark This Day As</h6>
         <div id="m_no_time_change_note" class="alert alert-warning py-2 px-3 small mb-2" style="display:none;">
           <i class="ri-information-line me-1"></i>
@@ -632,6 +757,9 @@
     </div>
   </div>
 </div>
+
+
+{% endif %}
 
 
 <!-- ═══════════ COMP-OFF REQUEST MODAL ═══════════ -->
@@ -703,21 +831,31 @@
 
 <!-- ═══════════ JAVASCRIPT ═══════════ -->
 <script>
-// Attendance upload modal
+// Attendance upload modal. The buttons and modals only render for users
+// with the attendance tools, so every lookup here has to tolerate absence --
+// an unguarded getElementById(...).addEventListener would throw and take the
+// rest of this script (bulk approve included) down with it.
 document.addEventListener("DOMContentLoaded", function () {
   const modal = document.getElementById("attendanceModal");
-  document.getElementById("openUploadModal").addEventListener("click", () => modal.style.display = "flex");
-  document.getElementById("closeUploadModal").addEventListener("click", () => modal.style.display = "none");
+  const openBtn = document.getElementById("openUploadModal");
+  const closeBtn = document.getElementById("closeUploadModal");
+  if (!modal || !openBtn || !closeBtn) return;
+  openBtn.addEventListener("click", () => modal.style.display = "flex");
+  closeBtn.addEventListener("click", () => modal.style.display = "none");
 });
 
 // Recalculate attendance modal
 document.addEventListener("DOMContentLoaded", function () {
   const modal = document.getElementById("recalcModal");
-  document.getElementById("openRecalcModal").addEventListener("click", () => modal.style.display = "flex");
-  document.getElementById("closeRecalcModal").addEventListener("click", () => modal.style.display = "none");
+  const openBtn = document.getElementById("openRecalcModal");
+  const closeBtn = document.getElementById("closeRecalcModal");
+  if (!modal || !openBtn || !closeBtn) return;
+  openBtn.addEventListener("click", () => modal.style.display = "flex");
+  closeBtn.addEventListener("click", () => modal.style.display = "none");
 });
 
-document.getElementById("startRecalcBtn").addEventListener("click", function () {
+const startRecalcBtn = document.getElementById("startRecalcBtn");
+if (startRecalcBtn) startRecalcBtn.addEventListener("click", function () {
   const btn = this;
   const bar = document.getElementById("recalcProgressBar");
   const wrap = document.getElementById("recalcProgressWrap");
@@ -789,7 +927,8 @@ document.getElementById("startRecalcBtn").addEventListener("click", function () 
   .catch(() => fail("Error starting recalculation."));
 });
 
-document.getElementById("attendanceUploadForm").addEventListener("submit", function(e) {
+const attendanceUploadForm = document.getElementById("attendanceUploadForm");
+if (attendanceUploadForm) attendanceUploadForm.addEventListener("submit", function(e) {
   e.preventDefault();
 
   const bar = document.getElementById("progressBar");
@@ -931,7 +1070,22 @@ function bulkApprove(type) {
 }
 
 // ── Attendance Correction ────────────────────────────────────────────
-function openApprovalModal(empId, name, date, oldIn, oldOut, newIn, newOut, reason, id, timesUnchanged) {
+function openApprovalModal(empId, name, date, oldIn, oldOut, newIn, newOut, reason, id, timesUnchanged, btn) {
+  // Minutes of Meeting details ride along on the button's data-* attributes
+  // rather than as five more positional arguments.
+  const mom = (btn && btn.dataset) || {};
+  const isMom = mom.mom === "1";
+  document.getElementById("m_mom_section").style.display = isMom ? "block" : "none";
+  if (isMom) {
+    document.getElementById("m_meeting_in").innerText = mom.momIn || "–";
+    document.getElementById("m_meeting_out").innerText = mom.momOut || "–";
+    document.getElementById("m_meeting_duration").innerText = mom.momDuration || "–";
+    const wrap = document.getElementById("m_mom_attachment_wrap");
+    wrap.innerHTML = mom.momUrl
+      ? `<a href="${mom.momUrl}" target="_blank" class="btn btn-sm btn-outline-info"><i class="ri-attachment-2 me-1"></i>Open attached minutes</a>`
+      : '<span class="text-muted small">No minutes attached.</span>';
+  }
+
   document.getElementById("m_emp_id").innerText = empId;
   document.getElementById("m_emp_name").innerText = name;
   document.getElementById("m_date").innerText = date;

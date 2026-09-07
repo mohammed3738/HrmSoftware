@@ -14,9 +14,11 @@
         <li class="breadcrumb-item active">Payroll Runs</li>
       </ol>
     </div>
+    {% if can_run_payroll %}
     <a href="{% url 'payroll-run-create' %}" class="btn btn-primary">
       <i class="ti ti-plus me-1"></i> New Payroll Run
     </a>
+    {% endif %}
   </div>
 
   <!-- Stats -->
@@ -151,9 +153,11 @@
                 {% endif %}
               </div>
               {% if not selected_company_id and not status_filter %}
+              {% if can_run_payroll %}
               <a href="{% url 'payroll-run-create' %}" class="btn btn-sm btn-primary mt-2">
                 <i class="ti ti-plus me-1"></i> Create First Run
               </a>
+              {% endif %}
               {% endif %}
             </td>
           </tr>

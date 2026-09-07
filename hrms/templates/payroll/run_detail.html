@@ -30,7 +30,7 @@
       <a href="{% url 'payroll-export-pdf' run.id %}" class="btn btn-sm btn-danger">
         <i class="ti ti-file-text me-1"></i> PDF
       </a>
-      {% if run.status != "finalized" %}
+      {% if can_run_payroll and run.status != "finalized" %}
       <button id="btnRecalculate" class="btn btn-sm btn-outline-primary"
               data-bs-toggle="modal" data-bs-target="#recalculateModal">
         <i class="ti ti-refresh me-1"></i> Recalculate
@@ -39,6 +39,11 @@
               data-bs-toggle="modal" data-bs-target="#finalizeModal">
         <i class="ti ti-lock me-1"></i> Finalize
       </button>
+      {% endif %}
+      {% if not can_run_payroll %}
+      <span class="badge bg-label-secondary px-3 py-2">
+        <i class="ti ti-eye me-1"></i>Read only
+      </span>
       {% endif %}
       <a href="{% url 'payroll-run-list' %}" class="btn btn-sm btn-outline-secondary">
         <i class="ti ti-arrow-left me-1"></i> Back
@@ -189,13 +194,13 @@
             <td class="text-center">{{ r.total_days }}</td>
             <td class="text-center">
               {% if run.status != "finalized" %}
-              <input class="form-control form-control-sm text-end present-days" value="{{ r.present_days }}" style="width:80px">
+              <input class="form-control form-control-sm text-end present-days" value="{{ r.present_days }}" style="width:80px"{% if not can_run_payroll %} readonly{% endif %}>
               {% else %}{{ r.present_days }}{% endif %}
             </td>
             <td class="text-center">{{ r.leave_taken }}</td>
             <td class="text-center">
               {% if run.status != "finalized" %}
-              <input class="form-control form-control-sm text-end lwp" value="{{ r.leave_without_pay }}" style="width:80px">
+              <input class="form-control form-control-sm text-end lwp" value="{{ r.leave_without_pay }}" style="width:80px"{% if not can_run_payroll %} readonly{% endif %}>
               {% else %}{{ r.leave_without_pay }}{% endif %}
             </td>
 
@@ -208,12 +213,12 @@
             <td class="text-end gross-proc fw-semibold">{{ r.gross_processed|floatformat:0 }}</td>
 
             {% if run.status != "finalized" %}
-            <td><input class="form-control form-control-sm text-end pf-emp" style="width:80px" value="{{ r.pf_employee|floatformat:0 }}"></td>
-            <td><input class="form-control form-control-sm text-end prof-tax" style="width:80px" value="{{ r.professional_tax|floatformat:0 }}"></td>
-            <td><input class="form-control form-control-sm text-end advance" style="width:80px" value="{{ r.advance|floatformat:0 }}"></td>
-            <td><input class="form-control form-control-sm text-end esic-emp" style="width:80px" value="{{ r.esic_employee|floatformat:0 }}"></td>
-            <td><input class="form-control form-control-sm text-end tds" style="width:80px" value="{{ r.tds|floatformat:0 }}"></td>
-            <td><input class="form-control form-control-sm text-end other-ded" style="width:80px" value="{{ r.other_deductions|floatformat:0 }}"></td>
+            <td><input class="form-control form-control-sm text-end pf-emp" style="width:80px" value="{{ r.pf_employee|floatformat:0 }}"{% if not can_run_payroll %} readonly{% endif %}></td>
+            <td><input class="form-control form-control-sm text-end prof-tax" style="width:80px" value="{{ r.professional_tax|floatformat:0 }}"{% if not can_run_payroll %} readonly{% endif %}></td>
+            <td><input class="form-control form-control-sm text-end advance" style="width:80px" value="{{ r.advance|floatformat:0 }}"{% if not can_run_payroll %} readonly{% endif %}></td>
+            <td><input class="form-control form-control-sm text-end esic-emp" style="width:80px" value="{{ r.esic_employee|floatformat:0 }}"{% if not can_run_payroll %} readonly{% endif %}></td>
+            <td><input class="form-control form-control-sm text-end tds" style="width:80px" value="{{ r.tds|floatformat:0 }}"{% if not can_run_payroll %} readonly{% endif %}></td>
+            <td><input class="form-control form-control-sm text-end other-ded" style="width:80px" value="{{ r.other_deductions|floatformat:0 }}"{% if not can_run_payroll %} readonly{% endif %}></td>
             {% else %}
             <td class="text-end">{{ r.pf_employee|floatformat:0 }}</td>
             <td class="text-end">{{ r.professional_tax|floatformat:0 }}</td>

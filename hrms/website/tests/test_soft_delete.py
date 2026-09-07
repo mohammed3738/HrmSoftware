@@ -77,9 +77,9 @@ class BranchSoftDeleteTest(SoftDeleteHelperMixin, TestCase):
         row = AuditLog.objects.filter(action=AuditLog.Action.RECORD_RESTORED, target_type="Branch").first()
         self.assertIsNotNone(row)
 
-    def test_manager_cannot_archive_branch(self):
+    def test_hod_cannot_archive_branch(self):
         manager = User.objects.create_user(username="branch_mgr", password="pass12345")
-        manager.groups.add(Group.objects.get(name="Manager"))
+        manager.groups.add(Group.objects.get(name="HOD"))
         client = Client()
         client.login(username="branch_mgr", password="pass12345")
         resp = client.post(reverse("delete_branch", args=[self.branch.id]))
@@ -90,7 +90,10 @@ class BranchSoftDeleteTest(SoftDeleteHelperMixin, TestCase):
 
 class CompanySoftDeleteTest(SoftDeleteHelperMixin, TestCase):
     def setUp(self):
-        self.admin = self.make_admin("company_admin")
+        # company_management:edit is Super Admin only -- Admin can read
+        # companies but not archive or restore one.
+        self.admin = User.objects.create_user(username="company_admin", password="pass12345")
+        self.admin.groups.add(Group.objects.get(name="Super Admin"))
         self.client = Client()
         self.client.login(username="company_admin", password="pass12345")
         self.company = Company.objects.create(

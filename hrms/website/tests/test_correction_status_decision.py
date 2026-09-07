@@ -59,7 +59,9 @@ class CorrectionStatusDecisionTest(TestCase):
         self.assertEqual(self.attendance.status, "Late Present")
 
         self.manager = User.objects.create_user(username="csd_mgr", password="pass12345")
-        self.manager.groups.add(Group.objects.get(name="Manager"))
+        # Approving corrections is Admin's -- HR administers people but
+        # signs off on nothing.
+        self.manager.groups.add(Group.objects.get(name="Admin"))
 
     def _client_as(self, user):
         client = Client()

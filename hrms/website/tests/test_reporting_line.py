@@ -203,9 +203,12 @@ class ReportingPersonApprovalTest(TestCase):
         leave.refresh_from_db()
         self.assertEqual(leave.status, "Pending")
 
-    def test_hr_keeps_blanket_approval_across_every_department(self):
+    def test_a_blanket_role_approves_across_every_department(self):
+        # Admin holds leave_management:approve for the whole company, unlike
+        # a HOD whose authority is scoped to their own reportees. (HR no
+        # longer approves anything.)
         hr_user = User.objects.create_user(username="rla_hr", password="pass12345")
-        hr_user.groups.add(Group.objects.get(name="HR"))
+        hr_user.groups.add(Group.objects.get(name="Admin"))
         leave = self._leave_for(self.outsider)
         resp = self._client_as(hr_user).post(reverse("approve_leave", args=[leave.id]))
         self.assertEqual(resp.status_code, 200)

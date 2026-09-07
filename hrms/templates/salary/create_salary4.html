@@ -132,10 +132,12 @@
               <i class="ri-more-2-line"></i>
             </button>
             <div class="dropdown-menu">
+{% if can_edit_salary %}
 <a href="{% url 'create-salary' %}?edit={{ employee.id }}"
    class="dropdown-item">
   Edit
 </a>
+{% endif %}
               <a class="dropdown-item"
                 onclick="viewSalaryDetails({{ employee.id }})">
                 <i class="ri-eye-line"></i> View

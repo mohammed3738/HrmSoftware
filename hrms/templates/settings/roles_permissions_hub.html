@@ -112,6 +112,7 @@
                       <tr>
                         <th style="min-width:220px;">Feature</th>
                         <th class="text-center" style="width:90px;">View</th>
+                        <th class="text-center" style="width:90px;">Create</th>
                         <th class="text-center" style="width:90px;">Edit</th>
                         <th class="text-center" style="width:90px;">Approve</th>
                       </tr>
@@ -119,7 +120,7 @@
                     <tbody>
                       {% for category, rows in features_by_category.items %}
                       <tr class="table-light">
-                        <td colspan="4" class="fw-semibold text-uppercase text-muted" style="font-size:.72rem;letter-spacing:.06em;">
+                        <td colspan="5" class="fw-semibold text-uppercase text-muted" style="font-size:.72rem;letter-spacing:.06em;">
                           {{ category }}
                         </td>
                       </tr>
@@ -135,6 +136,14 @@
                           {% if row.feature.has_view %}
                           <input type="checkbox" class="form-check-input" name="can_view_{{ row.feature.id }}"
                                  {% if row.permission.can_view %}checked{% endif %}>
+                          {% else %}
+                          <span class="text-muted">—</span>
+                          {% endif %}
+                        </td>
+                        <td class="text-center">
+                          {% if row.feature.has_create %}
+                          <input type="checkbox" class="form-check-input" name="can_create_{{ row.feature.id }}"
+                                 {% if row.permission.can_create %}checked{% endif %}>
                           {% else %}
                           <span class="text-muted">—</span>
                           {% endif %}

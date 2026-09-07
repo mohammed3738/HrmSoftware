@@ -33,6 +33,19 @@
             </li>
             {% endif %}
           </ul>
+
+          <!-- Self-service actions -->
+          <div class="mt-3 d-flex flex-wrap gap-2 justify-content-sm-start justify-content-center">
+            <a href="{% url 'leave_apply' %}" class="btn btn-primary">
+              <i class="ri-calendar-event-line me-1"></i> Apply for Leave
+            </a>
+            <a href="{% url 'employee_attendance_detail' employee.id %}" class="btn btn-outline-secondary">
+              <i class="ri-time-line me-1"></i> My Attendance
+            </a>
+            <a href="{% url 'my_profile' %}" class="btn btn-outline-secondary">
+              <i class="ri-id-card-line me-1"></i> My Details
+            </a>
+          </div>
         </div>
       </div>
     </div>
@@ -142,6 +155,83 @@
         </div>
       </div>
     </div>
+
+    {% if has_team %}
+    <!-- My Team — only for someone people actually report to -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center pb-1">
+          <h6 class="mb-0 fw-semibold"><i class="ri-team-line me-1 text-primary"></i> My Team</h6>
+          <a href="{% url 'my-approvals' %}" class="btn btn-sm btn-outline-primary">
+            Go to My Approvals
+            {% if team_pending_total %}<span class="badge bg-danger ms-1">{{ team_pending_total }}</span>{% endif %}
+          </a>
+        </div>
+        <div class="card-body">
+          <div class="row g-3 text-center mb-3">
+            <div class="col-6 col-md-3">
+              <div class="p-3 rounded-3 bg-label-primary">
+                <div class="fw-bold fs-4 text-primary">{{ team_size }}</div>
+                <div class="small text-muted">Reporting to me</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="p-3 rounded-3 bg-label-danger">
+                <div class="fw-bold fs-4 text-danger">{{ team_absent_today }}</div>
+                <div class="small text-muted">Absent today</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="p-3 rounded-3 bg-label-warning">
+                <div class="fw-bold fs-4 text-warning">{{ team_pending_leave }}</div>
+                <div class="small text-muted">Leave to review</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="p-3 rounded-3 bg-label-info">
+                <div class="fw-bold fs-4 text-info">{{ team_pending_compoff|add:team_pending_corrections }}</div>
+                <div class="small text-muted">Comp-off &amp; corrections</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-responsive" style="max-height:280px;">
+            <table class="table table-sm table-hover mb-0">
+              <thead class="table-light">
+                <tr><th>Employee Code</th><th>Name</th><th>Today's Status</th></tr>
+              </thead>
+              <tbody>
+                {% for row in team_today %}
+                <tr>
+                  <td class="fw-medium">{{ row.employee.employee_code }}</td>
+                  <td>{{ row.employee.first_name }} {{ row.employee.last_name }}</td>
+                  <td>
+                    {% if row.attendance %}
+                      {% if row.attendance.status == 'Absent' %}
+                      <span class="badge bg-label-danger">{{ row.attendance.status }}</span>
+                      {% elif row.attendance.status == 'Late Present' or row.attendance.status == 'Half Day' %}
+                      <span class="badge bg-label-warning">{{ row.attendance.status }}</span>
+                      {% else %}
+                      <span class="badge bg-label-success">{{ row.attendance.status }}</span>
+                      {% endif %}
+                    {% else %}
+                      <span class="text-muted small">Not marked</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Approve or reject your team's requests without leaving the page -->
+    <div class="col-12">
+      {% include 'approvals/_pending_queues.html' %}
+    </div>
+    {% endif %}
 
     <!-- Absent Today -->
     <div class="col-12">

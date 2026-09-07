@@ -5,6 +5,16 @@ from website.permissions_registry import FEATURES, SEED_GRANTS, SYSTEM_ROLES
 _DEPARTMENT_FEATURE = next(row for row in FEATURES if row["key"] == "department_management")
 
 
+def _defaults_for(model, row):
+    """Only pass fields the Feature model had *at this point in history*.
+
+    These seed migrations read the live permissions_registry, so a field
+    added to FEATURES later (has_create, say) would otherwise crash this
+    migration when a fresh database is built from scratch."""
+    known = {f.name for f in model._meta.get_fields()}
+    return {k: v for k, v in row.items() if k in known and k != "key"}
+
+
 def seed_department_feature(apps, schema_editor):
     """Register the 'department_management' Feature + its
     RoleFeaturePermission rows. Migration 0019 seeded the original matrix,
@@ -14,7 +24,7 @@ def seed_department_feature(apps, schema_editor):
     RoleFeaturePermission = apps.get_model("website", "RoleFeaturePermission")
 
     feature, _ = Feature.objects.get_or_create(
-        key=_DEPARTMENT_FEATURE["key"], defaults=_DEPARTMENT_FEATURE,
+        key=_DEPARTMENT_FEATURE["key"], defaults=_defaults_for(Feature, _DEPARTMENT_FEATURE),
     )
 
     for role_name in SYSTEM_ROLES:

@@ -85,6 +85,12 @@
       html.dark-style .app-logo-colour { display: none !important; }
       html.dark-style .app-logo-white  { display: inline-block !important; }
 
+      /* Push page content clear of the fixed header. The offset is measured
+         at runtime (see the script at the end of <body>) rather than
+         hardcoded, because the header's height changes with the logo size
+         and with the menu row wrapping on narrower screens. */
+      #app-content { padding-top: var(--app-header-offset, 0px); }
+
       /* Line the logo up with "Dashboards" in the menu row beneath it.
          Both rows sit in a .container-xxl, but the horizontal menu reserves
          space for its scroll arrow before the first item, so the navbar
@@ -906,7 +912,9 @@
             </aside>
             <!-- / Menu -->
 
-            {% block body %}{% endblock %}
+            <div id="app-content">
+              {% block body %}{% endblock %}
+            </div>
 
             <!-- Footer -->
             <footer class="content-footer footer bg-footer-theme">
@@ -1058,6 +1066,36 @@
 
       {% block page_scripts %}{% endblock %}
 
-    </body>
+  
+    <script>
+      // Keep #app-content clear of whatever the fixed header currently
+      // occupies. Runs on load, on resize, and whenever the header itself
+      // changes size (the logo image finishing loading counts).
+      (function () {
+        function syncHeaderOffset() {
+          var total = 0;
+          ['layout-navbar', 'layout-menu'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var fixed = getComputedStyle(el).position;
+            if (fixed === 'fixed' || fixed === 'sticky') total += el.offsetHeight;
+          });
+          document.documentElement.style.setProperty('--app-header-offset', total + 'px');
+        }
+
+        window.addEventListener('load', syncHeaderOffset);
+        window.addEventListener('resize', syncHeaderOffset);
+        document.addEventListener('DOMContentLoaded', syncHeaderOffset);
+
+        if (window.ResizeObserver) {
+          var ro = new ResizeObserver(syncHeaderOffset);
+          ['layout-navbar', 'layout-menu'].forEach(function (id) {
+            var el = document.getElementById(id);
+            if (el) ro.observe(el);
+          });
+        }
+      })();
+    </script>
+  </body>
   </html>
   

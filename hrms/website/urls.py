@@ -191,7 +191,8 @@ urlpatterns = [
     path("download-empty-excel/", views.download_empty_excel, name="download-empty-excel"),
 
     # Employee Excel import
-    path("import-employees/", views.import_employees_excel, name="import-employees"),
+    path("import-employees/init/", views.import_employees_init, name="import-employees-init"),
+    path("import-employees/<int:upload_id>/chunk/", views.import_employees_chunk, name="import-employees-chunk"),
     path("import-employees/template/", views.download_employee_import_template, name="employee-import-template"),
 
     # Salary Excel import

@@ -1905,6 +1905,35 @@ class AttendanceUpload(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class EmployeeImportUpload(models.Model):
+    """Tracks a bulk employee Excel import processed in chunks (see
+    import_employees_init/import_employees_chunk in website/views.py), the
+    same init+chunk shape AttendanceUpload uses -- so a large file is never
+    handled inside one long-running request, and the frontend can show a
+    real percentage instead of an indeterminate spinner."""
+    file = models.FileField(upload_to="employee_imports/")
+    total_rows = models.IntegerField(default=0)
+    processed_rows = models.IntegerField(default=0)
+    created_count = models.IntegerField(default=0)
+    skipped_count = models.IntegerField(default=0)
+    errors = models.JSONField(default=list, blank=True)
+    # Rows that WERE created but had a field (currently: shift start/end
+    # time) that couldn't be understood and was left blank -- same shape as
+    # `errors`, kept separate so the UI can say "these still imported" and
+    # not lump them in with the rows that were skipped entirely.
+    warnings = models.JSONField(default=list, blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ("processing", "Processing"),
+            ("completed", "Completed"),
+            ("failed", "Failed"),
+        ],
+        default="processing"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
 class SalaryUpload(models.Model):
     """Tracks a bulk salary-structure Excel import by the SHA-256 of its
     content, so re-uploading the exact same file after a dropped connection

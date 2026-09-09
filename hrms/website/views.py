@@ -9475,6 +9475,76 @@ def parse_excel_date(val):
     return None
 
 
+def parse_excel_shift_time(val):
+    """
+    Parse a Shift Start/End Time cell. The template header asks for "HH:MM",
+    but in practice a lot of real files have the hour and minute separated
+    by a period instead of a colon -- typed via a numpad, or because the
+    cell wasn't formatted as text so Excel/pandas silently turned "10:00"
+    into the number 10 (or "10.00") -- and that shape was previously not
+    recognised at all: pd.to_datetime(..., format="%H:%M") only matches an
+    actual colon, its flexible fallback doesn't understand a bare "10.00"
+    either, so both returned NaT and the shift time was dropped with no
+    indication anything had gone wrong.
+
+    Understands, in order:
+      - an already-parsed time/datetime (Excel time-formatted cell)
+      - "HH:MM" text -- the documented format
+      - "H.MM" / "H.M" text or number -- hour and minute separated by a
+        period, e.g. "10.00" -> 10:00, "9.30" -> 09:30
+      - a plain decimal-hour number as a last resort, e.g. 10.5 -> 10:30
+
+    Returns (time_or_None, note_or_None). `note` is set only when a
+    non-blank value could not be understood at all, so that case can be
+    surfaced to the user instead of silently leaving the field blank.
+    """
+    if val is None:
+        return None, None
+    try:
+        if isinstance(val, float) and pd.isna(val):
+            return None, None
+    except (TypeError, ValueError):
+        pass
+
+    # Already a datetime.time / datetime.datetime (openpyxl read an
+    # actual Excel time-formatted cell).
+    if hasattr(val, "hour") and hasattr(val, "minute"):
+        return (val.time() if hasattr(val, "date") else val), None
+
+    s = str(val).strip()
+    if s in ("", "nan", "NaT", "None"):
+        return None, None
+
+    # "HH:MM" -- the documented, unambiguous format.
+    t = pd.to_datetime(s, format="%H:%M", errors="coerce")
+    if t is not None and not pd.isna(t):
+        return t.time(), None
+
+    # "H.MM" -- period used in place of a colon. A 2-digit fraction is read
+    # as minutes directly (matches the HH:MM shape the template asks for);
+    # anything else falls through to being treated as a true decimal
+    # fraction of an hour just below.
+    m = re.match(r'^(\d{1,2})\.(\d{1,2})$', s)
+    if m:
+        hour = int(m.group(1))
+        frac = m.group(2)
+        minute = int(frac) if len(frac) == 2 else int(round(float("0." + frac) * 60))
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return time(hour, minute), None
+
+    # Plain decimal-hour number, e.g. 10.5 meaning 10:30.
+    try:
+        f = float(s)
+        hour = int(f)
+        minute = int(round((f - hour) * 60))
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return time(hour, minute), None
+    except (TypeError, ValueError):
+        pass
+
+    return None, f'"{s}" was not understood as a time and was left blank.'
+
+
 def safe_str(val):
     """Return clean string or empty string for NaN/None/0."""
     if val is None:
@@ -9530,201 +9600,195 @@ def download_employee_import_template(request):
 
 
 # ─── Main import view ─────────────────────────────────────────────────────────
+#
+# Chunked the same way attendance upload is (see upload_attendance_init /
+# upload_attendance_chunk above): step 1 parses+validates the file and
+# creates an EmployeeImportUpload record; step 2 is called repeatedly by the
+# frontend to process the file a slice at a time, so a large file never sits
+# inside one long-running request and the progress bar can show the real
+# processed/total percentage instead of an indeterminate spinner.
+#
+# Every row is wrapped in its OWN try/except -- including the column
+# parsing, not just the final .save() -- which used to be the actual cause
+# of "Server error" on import: a single unparsable cell anywhere in the
+# file raised an exception in the row-building code, outside any
+# try/except, which aborted the entire request (whatever had already been
+# created stayed created; nothing else was attempted) and surfaced as one
+# opaque message with no row number.
 
-@login_required
-@feature_required("employee_records", action="edit")
-def import_employees_excel(request):
-    if not request.user.is_authenticated:
-        return JsonResponse({"success": False, "error": "Not authenticated. Please log in."}, status=401)
-    if request.method != "POST":
-        return JsonResponse({"success": False, "error": "POST required"}, status=405)
+EMPLOYEE_IMPORT_CHUNK_SIZE = 100
 
-    try:
-        return _do_import_employees(request)
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        print(f"[IMPORT FATAL ERROR]\n{tb}")
-        return JsonResponse({
-            "success": False,
-            "error": f"Server error: {str(e)}",
-        })
+EMPLOYEE_IMPORT_COL_MAP = {
+    "Employee Code*":                          "employee_code",
+    "Salutation*":                             "salutation",
+    "First Name*":                             "first_name",
+    "Middle Name":                             "middle_name",
+    "Last Name*":                              "last_name",
+    "Father Name*":                            "father_name",
+    "Gender* (Male/Female)":                   "gender",
+    "Blood Group*":                            "blood_group",
+    "Date of Birth* (YYYY-MM-DD)":             "date_of_birth",
+    "Place of Birth*":                         "place_of_birth",
+    "Personal Email*":                         "personal_email",
+    "Personal Mobile*":                        "personal_mobile",
+    "Present Address*":                        "present_address",
+    "Permanent Address*":                      "permanent_address",
+    "Date of Marriage (YYYY-MM-DD)":           "date_of_marriage",
+    "Company Name*":                           "_company_name",
+    "Branch Name*":                            "_branch_name",
+    "Designation*":                            "designation",
+    "Department*":                             "department",
+    "Date of Joining* (YYYY-MM-DD)":           "date_of_joining",
+    "Date of Confirmation (YYYY-MM-DD)":       "date_of_confirmation",
+    "Location*":                               "location",
+    "On Payroll Of":                           "_skip_on_payroll",   # not in model
+    "Shift Start Time (HH:MM)":                "shift_start_time",
+    "Shift End Time (HH:MM)":                  "shift_end_time",
+    "PAN No*":                                 "pan_no",
+    "Aadhar No*":                              "aadhar_no",
+    "Voter ID":                                "voter_id",
+    "Passport":                                "passport",
+    "UAN No":                                  "uan_no",
+    "PF No":                                   "pf_no",
+    "ESIC No":                                 "esic_no",
+    "Name As Per Bank*":                       "name_as_per_bank",
+    "Salary Account Number*":                  "salary_account_number",
+    "IFSC Code*":                              "ifsc_code",
+    "Emergency Contact Name 1*":               "emergency_contact_name1",
+    "Emergency Contact Relation 1*":           "emergency_contact_relation1",
+    "Emergency Contact Mobile 1*":             "emergency_contact_mobile1",
+    "Emergency Contact Name 2":                "emergency_contact_name2",
+    "Emergency Contact Relation 2":            "emergency_contact_relation2",
+    "Emergency Contact Mobile 2":              "emergency_contact_mobile2",
+    "Status (Active/Pending/Left)":            "status",
+}
+
+EMPLOYEE_IMPORT_DATE_FIELDS = {"date_of_birth", "date_of_joining", "date_of_confirmation", "date_of_marriage"}
+EMPLOYEE_IMPORT_TIME_FIELDS = {"shift_start_time", "shift_end_time"}
 
 
-def _do_import_employees(request):
-    from .models import Employee, Company, Branch   # adjust import path if needed
-
-    print("[IMPORT] Request received")
-
-    uploaded_file = request.FILES.get("employee_file")
-    if not uploaded_file:
-        return JsonResponse({"success": False, "error": "No file uploaded."})
-
-    print(f"[IMPORT] Reading file: {uploaded_file.name}, size: {uploaded_file.size} bytes")
-
-    # ── 1. Read Excel ─────────────────────────────────────────────────────────
-    # Do NOT use dtype=str — let pandas parse dates natively.
-    # We convert to strings ourselves field-by-field below.
+def _read_employee_import_excel(uploaded_file):
+    """Parse an uploaded employee-import file into a DataFrame. Raises
+    ValueError with a message that is safe to show the user directly."""
     try:
         df = pd.read_excel(uploaded_file, engine="openpyxl")
     except Exception as e:
-        print(f"[IMPORT] File read error: {e}")
-        return JsonResponse({"success": False, "error": f"Cannot read file: {e}"})
+        raise ValueError(f"Cannot read this file as an Excel (.xlsx) file: {e}")
 
-    print(f"[IMPORT] Rows: {len(df)}, Columns: {list(df.columns)}")
     df.columns = df.columns.str.strip()
 
-    # ── 2. Column → field mapping ─────────────────────────────────────────────
-    # "_skip" prefix = read but ignore (column exists in template but not in model)
-    col_map = {
-        "Employee Code*":                          "employee_code",
-        "Salutation*":                             "salutation",
-        "First Name*":                             "first_name",
-        "Middle Name":                             "middle_name",
-        "Last Name*":                              "last_name",
-        "Father Name*":                            "father_name",
-        "Gender* (Male/Female)":                   "gender",
-        "Blood Group*":                            "blood_group",
-        "Date of Birth* (YYYY-MM-DD)":             "date_of_birth",
-        "Place of Birth*":                         "place_of_birth",
-        "Personal Email*":                         "personal_email",
-        "Personal Mobile*":                        "personal_mobile",
-        "Present Address*":                        "present_address",
-        "Permanent Address*":                      "permanent_address",
-        "Date of Marriage (YYYY-MM-DD)":           "date_of_marriage",
-        "Company Name*":                           "_company_name",
-        "Branch Name*":                            "_branch_name",
-        "Designation*":                            "designation",
-        "Department*":                             "department",
-        "Date of Joining* (YYYY-MM-DD)":           "date_of_joining",
-        "Date of Confirmation (YYYY-MM-DD)":       "date_of_confirmation",
-        "Location*":                               "location",
-        "On Payroll Of":                           "_skip_on_payroll",   # not in model
-        "Shift Start Time (HH:MM)":                "shift_start_time",
-        "Shift End Time (HH:MM)":                  "shift_end_time",
-        "PAN No*":                                 "pan_no",
-        "Aadhar No*":                              "aadhar_no",
-        "Voter ID":                                "voter_id",
-        "Passport":                                "passport",
-        "UAN No":                                  "uan_no",
-        "PF No":                                   "pf_no",
-        "ESIC No":                                 "esic_no",
-        "Name As Per Bank*":                       "name_as_per_bank",
-        "Salary Account Number*":                  "salary_account_number",
-        "IFSC Code*":                              "ifsc_code",
-        "Emergency Contact Name 1*":               "emergency_contact_name1",
-        "Emergency Contact Relation 1*":           "emergency_contact_relation1",
-        "Emergency Contact Mobile 1*":             "emergency_contact_mobile1",
-        "Emergency Contact Name 2":                "emergency_contact_name2",
-        "Emergency Contact Relation 2":            "emergency_contact_relation2",
-        "Emergency Contact Mobile 2":              "emergency_contact_mobile2",
-        "Status (Active/Pending/Left)":            "status",
-    }
+    # A duplicated header (a stray extra "Employee Code*" column, or a
+    # trailing-space variant that .strip() collapsed into an existing one)
+    # makes row.get(col) return more than one value further down, which
+    # then fails with a confusing pandas error deep inside date/text
+    # parsing. Catching it here up front gives a message that actually
+    # says what is wrong and how to fix it.
+    dupes = df.columns[df.columns.duplicated()].unique().tolist()
+    if dupes:
+        raise ValueError(
+            "This file has duplicate column headers: " + ", ".join(dupes) +
+            ". Please remove the duplicate column(s) and re-upload."
+        )
 
-    date_fields  = {"date_of_birth", "date_of_joining", "date_of_confirmation", "date_of_marriage"}
-    time_fields  = {"shift_start_time", "shift_end_time"}
+    if not any(c in EMPLOYEE_IMPORT_COL_MAP for c in df.columns):
+        raise ValueError(
+            'None of the columns in this file match the expected template. '
+            'Please use the "Download Excel Template" button and fill that file in.'
+        )
+    return df
 
-    # Fields that are truly optional — missing value is fine
-    optional_fields = {
-        "middle_name", "father_name", "blood_group", "place_of_birth",
-        "personal_email", "personal_mobile", "present_address", "permanent_address",
-        "date_of_marriage", "date_of_confirmation", "location",
-        "shift_start_time", "shift_end_time", "designation", "department",
-        "voter_id", "passport", "uan_no", "pf_no", "esic_no",
-        "name_as_per_bank", "salary_account_number", "ifsc_code",
-        "emergency_contact_name1", "emergency_contact_relation1", "emergency_contact_mobile1",
-        "emergency_contact_name2", "emergency_contact_relation2", "emergency_contact_mobile2",
-        "status", "salutation",
-    }
+
+def _process_employee_import_rows(df_chunk):
+    """Create employees for a slice of the import DataFrame. Returns
+    (created_count, skipped_count, errors, warnings). errors is a list of
+    {"row": <1-based Excel row>, "errors": [<message>]} for rows that were
+    skipped entirely; warnings is the same shape for rows that WERE created
+    but had a field (currently: shift start/end time) that couldn't be
+    understood and was left blank -- worth telling the user about without
+    implying anything was skipped."""
+    from .models import Employee, Company, Branch
 
     created_count = 0
     skipped_count = 0
-    errors        = []
+    errors = []
+    warnings = []
 
-    # ── 3. Process rows ───────────────────────────────────────────────────────
-    for row_idx, row in df.iterrows():
-        row_num  = row_idx + 2
-        row_data = {}
-
-        for excel_col, field in col_map.items():
-            if excel_col not in df.columns:
-                continue
-
-            raw = row.get(excel_col)
-
-            if field.startswith("_skip"):
-                continue
-
-            if field in date_fields:
-                row_data[field] = parse_excel_date(raw)
-                continue
-
-            if field in time_fields:
-                if raw is not None and not (isinstance(raw, float) and pd.isna(raw)):
-                    try:
-                        t = pd.to_datetime(str(raw), format="%H:%M", errors="coerce")
-                        if t is not None and not pd.isna(t):
-                            row_data[field] = t.time()
-                        else:
-                            t2 = pd.to_datetime(str(raw), errors="coerce")
-                            row_data[field] = t2.time() if t2 and not pd.isna(t2) else None
-                    except Exception:
-                        row_data[field] = None
-                else:
-                    row_data[field] = None
-                continue
-
-            if field in ("_company_name", "_branch_name"):
-                row_data[field] = safe_str(raw)
-                continue
-
-            if field == "blood_group":
-                row_data[field] = normalize_blood_group(raw)
-                continue
-
-            if field in ("emergency_contact_relation1", "emergency_contact_relation2"):
-                row_data[field] = normalize_relation(raw)
-                continue
-
-            if field == "gender":
-                val = safe_str(raw)
-                row_data[field] = "Male" if val.lower() == "male" else ("Female" if val.lower() == "female" else "")
-                continue
-
-            if field == "status":
-                val = safe_str(raw)
-                if val.lower() in ("left", "resigned"):
-                    row_data[field] = "Left"
-                elif val.lower() == "pending":
-                    row_data[field] = "Pending"
-                else:
-                    row_data[field] = "Active"
-                continue
-
-            val = safe_str(raw)
-            row_data[field] = "" if val == "0" else val
-
-        # Store employee_code as None when blank to avoid unique constraint clash
-        emp_code = str(row_data.get("employee_code", "")).strip() or None
-        row_data["employee_code"] = emp_code
-
-        # ── Resolve Company & Branch ──────────────────────────────────────────
-        company_name = row_data.pop("_company_name", "")
-        branch_name  = row_data.pop("_branch_name", "")
-
-        company = None
-        if company_name:
-            company = Company.objects.filter(name__iexact=company_name).first()
-            if not company:
-                # try partial match
-                company = Company.objects.filter(name__icontains=company_name.split()[0]).first()
-
-        branch = None
-        if branch_name:
-            branch = Branch.objects.filter(branch_name__iexact=branch_name).first()
-
-        # ── Save employee ─────────────────────────────────────────────────────
+    for row_idx, row in df_chunk.iterrows():
+        row_num = row_idx + 2  # +1 for 0-index, +1 for the header row
+        row_warnings = []
         try:
+            row_data = {}
+            for excel_col, field in EMPLOYEE_IMPORT_COL_MAP.items():
+                if excel_col not in df_chunk.columns:
+                    continue
+                raw = row.get(excel_col)
+
+                if field.startswith("_skip"):
+                    continue
+                if field in EMPLOYEE_IMPORT_DATE_FIELDS:
+                    row_data[field] = parse_excel_date(raw)
+                    continue
+                if field in EMPLOYEE_IMPORT_TIME_FIELDS:
+                    parsed_time, note = parse_excel_shift_time(raw)
+                    row_data[field] = parsed_time
+                    if note:
+                        label = "Shift Start Time" if field == "shift_start_time" else "Shift End Time"
+                        row_warnings.append(f"{label}: {note}")
+                    continue
+                if field in ("_company_name", "_branch_name"):
+                    row_data[field] = safe_str(raw)
+                    continue
+                if field == "blood_group":
+                    row_data[field] = normalize_blood_group(raw)
+                    continue
+                if field in ("emergency_contact_relation1", "emergency_contact_relation2"):
+                    row_data[field] = normalize_relation(raw)
+                    continue
+                if field == "gender":
+                    val = safe_str(raw)
+                    row_data[field] = "Male" if val.lower() == "male" else ("Female" if val.lower() == "female" else "")
+                    continue
+                if field == "status":
+                    val = safe_str(raw)
+                    if val.lower() in ("left", "resigned"):
+                        row_data[field] = "Left"
+                    elif val.lower() == "pending":
+                        row_data[field] = "Pending"
+                    else:
+                        row_data[field] = "Active"
+                    continue
+
+                val = safe_str(raw)
+                row_data[field] = "" if val == "0" else val
+
+            # Store employee_code as None when blank to avoid a unique
+            # constraint clash between multiple blank-code rows.
+            emp_code = str(row_data.get("employee_code", "")).strip() or None
+            row_data["employee_code"] = emp_code
+
+            if not emp_code:
+                errors.append({"row": row_num, "errors": ["Employee Code is required."]})
+                skipped_count += 1
+                continue
+            if Employee.objects.filter(employee_code__iexact=emp_code).exists():
+                errors.append({"row": row_num, "errors": [f'Employee Code "{emp_code}" already exists.']})
+                skipped_count += 1
+                continue
+
+            company_name = row_data.pop("_company_name", "")
+            branch_name = row_data.pop("_branch_name", "")
+
+            company = None
+            if company_name:
+                company = Company.objects.filter(name__iexact=company_name).first()
+                if not company:
+                    # try partial match
+                    company = Company.objects.filter(name__icontains=company_name.split()[0]).first()
+
+            branch = None
+            if branch_name:
+                branch = Branch.objects.filter(branch_name__iexact=branch_name).first()
+
             status_val = row_data.pop("status", "Active") or "Active"
 
             emp = Employee(
@@ -9738,8 +9802,8 @@ def _do_import_employees(request):
             # auto-create linked User if employee_code exists
             if emp_code:
                 username = emp_code.lower()
-                user, _ = User.objects.get_or_create(username=username)
-                if _:
+                user, user_created = User.objects.get_or_create(username=username)
+                if user_created:
                     user.set_unusable_password()
                     user.save()
                 emp.user = user
@@ -9747,25 +9811,106 @@ def _do_import_employees(request):
                 emp.save(update_fields=["user", "force_password_change"])
 
             created_count += 1
-            print(f"[IMPORT] Row {row_num}: created employee '{emp_code}'")
+            if row_warnings:
+                warnings.append({"row": row_num, "errors": row_warnings})
 
         except Exception as e:
-            import traceback
-            tb = traceback.format_exc()
-            print(f"[IMPORT] Row {row_num} save error: {tb}")
             errors.append({"row": row_num, "errors": [str(e)]})
             skipped_count += 1
 
-    print(f"[IMPORT] Done — created: {created_count}, skipped: {skipped_count}, errors: {len(errors)}")
+    return created_count, skipped_count, errors, warnings
+
+
+@login_required
+@feature_required("employee_records", action="edit")
+@require_http_methods(["POST"])
+def import_employees_init(request):
+    """Step 1 of the chunked employee-import flow: save the file and report
+    how many rows it has, without creating any employees yet."""
+    uploaded_file = request.FILES.get("employee_file")
+    if not uploaded_file:
+        return JsonResponse({"success": False, "error": "No file uploaded."})
+
+    try:
+        df = _read_employee_import_excel(uploaded_file)
+    except ValueError as e:
+        return JsonResponse({"success": False, "error": str(e)})
+
+    uploaded_file.seek(0)
+    upload = EmployeeImportUpload.objects.create(
+        file=uploaded_file,
+        total_rows=len(df),
+        status="processing" if len(df) else "completed",
+    )
 
     return JsonResponse({
-        "success":  True,
-        "created":  created_count,
-        "skipped":  skipped_count,
-        "errors":   errors,
+        "success": True,
+        "upload_id": upload.id,
+        "total_rows": upload.total_rows,
+        "chunk_size": EMPLOYEE_IMPORT_CHUNK_SIZE,
     })
 
-    
+
+@login_required
+@feature_required("employee_records", action="edit")
+@require_http_methods(["POST"])
+def import_employees_chunk(request, upload_id):
+    """Step 2 of the chunked employee-import flow: process the next batch
+    of rows for a previously-initialized upload and report cumulative
+    progress."""
+    upload = get_object_or_404(EmployeeImportUpload, id=upload_id)
+
+    if upload.status == "completed":
+        return JsonResponse({
+            "success": True, "done": True,
+            "upload_id": upload.id,
+            "processed_rows": upload.processed_rows,
+            "total_rows": upload.total_rows,
+            "created": upload.created_count,
+            "skipped": upload.skipped_count,
+            "errors": upload.errors,
+            "warnings": upload.warnings,
+        })
+
+    try:
+        upload.file.open("rb")
+        try:
+            df = _read_employee_import_excel(upload.file)
+        finally:
+            upload.file.close()
+    except ValueError as e:
+        upload.status = "failed"
+        upload.save(update_fields=["status"])
+        return JsonResponse({"success": False, "error": str(e)})
+
+    offset = upload.processed_rows
+    chunk = df.iloc[offset: offset + EMPLOYEE_IMPORT_CHUNK_SIZE]
+    created_count, skipped_count, errors, warnings = _process_employee_import_rows(chunk)
+
+    upload.processed_rows = min(offset + len(chunk), upload.total_rows)
+    upload.created_count += created_count
+    upload.skipped_count += skipped_count
+    if errors:
+        upload.errors = ((upload.errors or []) + errors)[:200]  # cap so it never grows unbounded
+    if warnings:
+        upload.warnings = ((upload.warnings or []) + warnings)[:200]
+    done = upload.processed_rows >= upload.total_rows
+    upload.status = "completed" if done else "processing"
+    upload.save(update_fields=["processed_rows", "created_count", "skipped_count", "errors", "warnings", "status"])
+
+    return JsonResponse({
+        "success": True,
+        "done": done,
+        "upload_id": upload.id,
+        "processed_rows": upload.processed_rows,
+        "total_rows": upload.total_rows,
+        "created": upload.created_count,
+        "skipped": upload.skipped_count,
+        "errors": upload.errors,
+        "warnings": upload.warnings,
+    })
+
+
 # ─── Salary Excel Import ──────────────────────────────────────────────────────
 
 @login_required

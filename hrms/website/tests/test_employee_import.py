@@ -167,8 +167,27 @@ class EmployeeImportTest(TestCase):
 
         emp = Employee.objects.get(employee_code="IMP020")
         self.assertIsNotNone(emp.user)
-        self.assertEqual(emp.user.username, "imp020")
+        # Login provisioning is handled by the sync_user signal (same path
+        # as manually adding an employee), which keeps the employee code's
+        # original case rather than lowercasing it.
+        self.assertEqual(emp.user.username, "IMP020")
         self.assertTrue(emp.force_password_change)
+
+    def test_a_row_whose_login_username_is_already_taken_still_creates_the_employee(self):
+        # A User with this exact username already exists but isn't linked
+        # to any employee (e.g. an orphaned/leftover account) -- this must
+        # not crash the whole row. The employee record itself is still
+        # useful even if the login has to be provisioned by hand afterwards
+        # via the existing Create User page.
+        User.objects.create_user(username="IMP021", password="whatever")
+        excel = build_excel(TEMPLATE_HEADERS, [minimal_row("IMP021")])
+        upload_id = self._init(excel).json()["upload_id"]
+        data = self._run_to_completion(upload_id)
+
+        self.assertEqual(data["created"], 1)
+        self.assertEqual(data["skipped"], 0)
+        emp = Employee.objects.get(employee_code="IMP021")
+        self.assertIsNone(emp.user)
 
     def test_company_and_branch_are_resolved_by_name(self):
         company = Company.objects.create(

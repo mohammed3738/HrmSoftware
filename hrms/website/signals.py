@@ -109,24 +109,33 @@ from django.contrib.auth.models import User, Group
 @receiver(post_save, sender=Employee)
 def sync_user(sender, instance, created, **kwargs):
     if created and not instance.user:
-        user = User.objects.create_user(
-            username=instance.employee_code,
-            email=instance.personal_email,
-            first_name=instance.first_name,
-            last_name=instance.last_name,
-            password="Temp@123"
-        )
-        # Give every auto-provisioned login a baseline role immediately --
-        # without this, the account has no group at all until someone
-        # separately assigns one via the employee form, and in the
-        # meantime login_view's fallback sends them to admin-dashboard,
-        # which they have no permission for -> 403 on first login. HR can
-        # still upgrade them to HR/Admin/Manager later as usual.
-        employee_group, _ = Group.objects.get_or_create(name="Employee")
-        user.groups.add(employee_group)
-        instance.user = user
-        instance.force_password_change = True
-        instance.save()
+        username = instance.employee_code
+        # A username collision here means an unrelated account already
+        # owns that exact username (e.g. a leftover/orphaned login) --
+        # auto-linking the new employee to someone else's account would be
+        # a real data/security mixup, not a minor glitch, so this skips
+        # provisioning rather than guessing. HR can finish it by hand via
+        # the existing Create User page, which already handles "no user
+        # yet" as a normal state.
+        if username and not User.objects.filter(username=username).exists():
+            user = User.objects.create_user(
+                username=username,
+                email=instance.personal_email,
+                first_name=instance.first_name,
+                last_name=instance.last_name,
+                password="Temp@123"
+            )
+            # Give every auto-provisioned login a baseline role immediately --
+            # without this, the account has no group at all until someone
+            # separately assigns one via the employee form, and in the
+            # meantime login_view's fallback sends them to admin-dashboard,
+            # which they have no permission for -> 403 on first login. HR can
+            # still upgrade them to HR/Admin/Manager later as usual.
+            employee_group, _ = Group.objects.get_or_create(name="Employee")
+            user.groups.add(employee_group)
+            instance.user = user
+            instance.force_password_change = True
+            instance.save()
 
     if instance.status == "Left" and instance.user:
         instance.user.is_active = False

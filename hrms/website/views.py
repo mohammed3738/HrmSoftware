@@ -9456,9 +9456,15 @@ def parse_excel_date(val):
     if s in ("", "nan", "NaT", "0", "None"):
         return None
 
-    # try standard pandas parsing first (handles most string formats)
+    # try standard pandas parsing first (handles most string formats).
+    # dayfirst only applies to ambiguous DD-MM-YYYY / DD/MM/YYYY strings --
+    # an ISO-style YYYY-MM-DD string has an unambiguous 4-digit year first,
+    # but pandas' dayfirst still swaps the remaining two parts if told to
+    # (e.g. "2026-03-04" -> April 3rd instead of March 4th), so it must be
+    # switched off for those.
+    iso_leading_year = bool(re.match(r"^\d{4}[-/]", s))
     try:
-        parsed = pd.to_datetime(s, dayfirst=False, errors="coerce")
+        parsed = pd.to_datetime(s, dayfirst=not iso_leading_year, errors="coerce")
         if parsed is not None and not pd.isna(parsed):
             return parsed.date()
     except Exception:
@@ -9798,17 +9804,10 @@ def _process_employee_import_rows(df_chunk):
                 **{k: v for k, v in row_data.items() if not k.startswith("_")},
             )
             emp.save()
-
-            # auto-create linked User if employee_code exists
-            if emp_code:
-                username = emp_code.lower()
-                user, user_created = User.objects.get_or_create(username=username)
-                if user_created:
-                    user.set_unusable_password()
-                    user.save()
-                emp.user = user
-                emp.force_password_change = True
-                emp.save(update_fields=["user", "force_password_change"])
+            # emp.save() above already triggers the sync_user signal
+            # (website/signals.py), which auto-provisions the linked login
+            # for a brand-new employee -- creating a second one here raced
+            # it and produced duplicate/mismatched-case accounts.
 
             created_count += 1
             if row_warnings:

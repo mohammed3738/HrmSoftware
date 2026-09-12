@@ -1,6 +1,12 @@
 {% extends 'base2.html' %}
 {% block body %}
 
+<script>
+  function exportIncrements() {
+    window.location.href = "{% url 'salary-increment-export-excel' %}?show={{ show|default:'active' }}";
+  }
+</script>
+
 <div class="container-xxl flex-grow-1 container-p-y">
 
   <div class="card">

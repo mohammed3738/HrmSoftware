@@ -18,14 +18,17 @@ urlpatterns = [
     path('employee-detail/<int:pk>/', views.employee_detail, name='employee_detail'),
     path('attachments/<int:pk>/download/', views.download_attachment, name='download_attachment'),
     path('offboarding/', views.offboarding_list, name='offboarding-list'),
-    
+    path('offboarding/export-excel/', views.offboarding_export_excel, name='offboarding-export-excel'),
+
     # AJAX endpoints for modals
     path('offboarding/<int:off_id>/details/', views.offboarding_detail, name='offboarding-detail'),
     path('offboarding/<int:id>/edit-data/', views.offboarding_edit_data, name='offboarding-edit-data'),
     path('delete-offboarding/<int:pk>/', views.offboarding_delete, name='offboarding-delete'),
     # path('create-branch',views.create_branch,name="create-branch"),
     path('create-branch',views.create_branchs,name="create-branch"),
+    path('branch/export-excel/', views.branch_export_excel, name='branch-export-excel'),
     path('create-company/',views.create_company,name="create-company"),
+    path('company/export-excel/', views.company_export_excel, name='company-export-excel'),
     path("company/<int:company_id>/edit/", views.edit_company, name="edit_company"),
     path("company/<int:company_id>/get/", views.get_company, name="get_company"),
 
@@ -50,6 +53,7 @@ urlpatterns = [
     path("change-password/", views.change_password, name="change-password"),
 
     path('create-salary',views.create_salary,name="create-salary"),
+    path("salary/export-excel/", views.salary_master_export_excel, name="salary-master-export-excel"),
     path("salary/details/<int:pk>/", views.salary_details, name="salary_details"),
     path("download-employees/", views.download_employees_excel, name="download_employees"),
     path("download-leave/", views.download_leave_excel, name="download_leave"),
@@ -91,7 +95,8 @@ urlpatterns = [
     
      # Main page - list and create (no pk needed)
     path('salary-increment/', views.create_salary_increment, name='salary_increment'),
-    
+    path('salary-increment/export-excel/', views.salary_increment_export_excel, name='salary-increment-export-excel'),
+
     # Specific actions (pk required)
     path('salary/increment/edit/<int:pk>/', views.edit_increment, name='edit_increment'),
     path('salary/increment/update/<int:pk>/', views.update_salary_increment, name='update_increment'),

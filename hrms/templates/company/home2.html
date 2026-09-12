@@ -1,5 +1,11 @@
 {% extends 'base2.html' %} {% block body %} {% load static %}
 
+<script>
+  function downloadCompanies() {
+    window.location.href = "{% url 'company-export-excel' %}?show={{ show|default:'active' }}";
+  }
+</script>
+
 <!-- //modal view close -->
 
 <!-- Page Wrapper -->
@@ -43,7 +49,7 @@
                 >
               </li>
               <li>
-                <a href="javascript:void(0);" class="dropdown-item rounded-1"
+                <a href="javascript:void(0);" onclick="downloadCompanies()" class="dropdown-item rounded-1"
                   ><i class="ti ti-file-type-xls me-1"></i>Export as Excel
                 </a>
               </li>

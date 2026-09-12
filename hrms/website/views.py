@@ -3275,6 +3275,44 @@ def offboarding_list(request):
         'show': show,
     })
 
+
+@login_required
+@feature_required("offboarding", action="view")
+def offboarding_export_excel(request):
+    """Export the Employees Offboarding listing -- its Export button only
+    called window.print(), so there was no actual Excel export."""
+    show = request.GET.get('show', 'active')
+    offboardings = Offboarding.objects.all().select_related('employee')
+    if show == 'active':
+        offboardings = offboardings.filter(is_active=True)
+    elif show == 'archived':
+        offboardings = offboardings.filter(is_active=False)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Offboarding"
+    ws.append([
+        "Employee Code", "Employee Name", "Date of Resignation",
+        "Date of Relieving", "Status",
+    ])
+    for off in offboardings:
+        emp = off.employee
+        ws.append([
+            getattr(emp, "employee_code", ""),
+            f"{getattr(emp, 'first_name', '') or ''} {getattr(emp, 'last_name', '') or ''}".strip(),
+            off.date_of_resignation.isoformat() if off.date_of_resignation else "",
+            off.date_of_relieving.isoformat() if off.date_of_relieving else "",
+            "Active" if off.is_active else "Archived",
+        ])
+
+    f = io.BytesIO()
+    wb.save(f)
+    f.seek(0)
+    resp = HttpResponse(f.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = 'attachment; filename="offboarding.xlsx"'
+    return resp
+
+
 @login_required
 def offboarding_detail(request, off_id):
     """Return JSON data for view modal"""
@@ -3428,6 +3466,37 @@ def create_branchs(request):
     elif show == "archived":
         branches = branches.filter(is_active=False)
     return render(request, "branch/create-branch.html", {"branches": branches, "show": show})
+
+
+@login_required
+@feature_required("branch_management", action="view")
+def branch_export_excel(request):
+    """Export the Branches listing -- its Export as PDF/Excel dropdown links
+    were both href="javascript:void(0);" placeholders that did nothing."""
+    show = request.GET.get("show", "active")
+    branches = Branch.objects.all()
+    if show == "active":
+        branches = branches.filter(is_active=True)
+    elif show == "archived":
+        branches = branches.filter(is_active=False)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Branches"
+    ws.append(["Branch Name", "Branch Address", "Status"])
+    for branch in branches:
+        ws.append([
+            branch.branch_name,
+            branch.branch_address or "",
+            "Active" if branch.is_active else "Archived",
+        ])
+
+    f = io.BytesIO()
+    wb.save(f)
+    f.seek(0)
+    resp = HttpResponse(f.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = 'attachment; filename="branches.xlsx"'
+    return resp
 
 
 @login_required
@@ -3750,6 +3819,42 @@ def create_company(request):
     elif show == "archived":
         companies = companies.filter(status="inactive")
     return render(request, "company/home2.html", {"companies": companies, "show": show})
+
+
+@login_required
+@feature_required("company_management", action="view")
+def company_export_excel(request):
+    """Export the Companies listing -- its Export as PDF/Excel dropdown links
+    were both href="javascript:void(0);" placeholders that did nothing."""
+    show = request.GET.get("show", "active")
+    companies = Company.objects.all()
+    if show == "active":
+        companies = companies.filter(status="active")
+    elif show == "archived":
+        companies = companies.filter(status="inactive")
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Companies"
+    headers = [
+        "Short Name", "Company Name", "Phone", "Email", "Address",
+        "TAN Number", "PAN Number", "Employer PF", "PTRC Number",
+        "PTEC Number", "ESIC Number", "Status",
+    ]
+    ws.append(headers)
+    for company in companies:
+        ws.append([
+            company.short_name, company.name, company.phone, company.email, company.address,
+            company.tan_number, company.pan_number, company.employer_pf, company.ptrc_number,
+            company.ptec_number, company.esic_number, company.status,
+        ])
+
+    f = io.BytesIO()
+    wb.save(f)
+    f.seek(0)
+    resp = HttpResponse(f.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = 'attachment; filename="companies.xlsx"'
+    return resp
 
 
 @login_required
@@ -5896,6 +6001,78 @@ def create_salary(request):
     })
 
 
+@login_required
+@feature_required("salary_structure", action="view")
+def salary_master_export_excel(request):
+    """Export the Salary Master listing -- previously the page's Export
+    button called the shared downloadEmployees() helper (defined once in
+    base2.html for the Employee list page) and had no override of its own,
+    so it silently downloaded the employee list instead of salary data."""
+    salaries = SalaryMaster.objects.select_related("employee").order_by(
+        "employee__first_name", "employee__last_name"
+    )
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Salary Master"
+
+    headers = [
+        "Employee Code", "Employee Name", "Status",
+        "Gross CTC (PM)", "Gross CTC (PA)",
+        "Basic (PM)", "Basic (PA)",
+        "HRA (PM)", "HRA (PA)",
+        "Statutory Bonus (PM)", "Statutory Bonus (PA)",
+        "Allowance 1 (PM)", "Allowance 1 (PA)",
+        "Allowance 2 (PM)", "Allowance 2 (PA)",
+        "Special Allowance (PM)", "Special Allowance (PA)",
+        "Guaranteed Cash (PM)", "Guaranteed Cash (PA)",
+        "Profession Tax (PM)", "Profession Tax (PA)",
+        "PF Employer Cont. (PM)", "PF Employer Cont. (PA)",
+        "PF Employee Cont. (PM)", "PF Employee Cont. (PA)",
+        "ESIC Employer Cont. (PM)", "ESIC Employer Cont. (PA)",
+        "ESIC Employee Cont. (PM)", "ESIC Employee Cont. (PA)",
+        "Gratuity (PM)", "Gratuity (PA)",
+        "Net Salary (PM)", "Net Salary (PA)",
+        "CTC (PM)", "CTC (PA)",
+        "PF Deducted", "Gratuity Applicable", "ESIC Applicable",
+    ]
+    ws.append(headers)
+
+    for sm in salaries:
+        emp = sm.employee
+        ws.append([
+            getattr(emp, "employee_code", ""),
+            f"{getattr(emp, 'first_name', '') or ''} {getattr(emp, 'last_name', '') or ''}".strip(),
+            getattr(emp, "status", ""),
+            sm.gross_ctc_pm, sm.gross_ctc_pa,
+            sm.basic_pm, sm.basic_pa,
+            sm.hra_pm, sm.hra_pa,
+            sm.stat_bonus_pm, sm.stat_bonus_pa,
+            sm.allowance1_pm, sm.allowance1_pa,
+            sm.allowance2_pm, sm.allowance2_pa,
+            sm.sp_allowance_pm, sm.sp_allowance_pa,
+            sm.guaranteed_cash_pm, sm.guaranteed_cash_pa,
+            sm.profession_tax_pm, sm.profession_tax_pa,
+            sm.pf_er_cont_pm, sm.pf_er_cont_pa,
+            sm.pf_ee_cont_pm, sm.pf_ee_cont_pa,
+            sm.esic_er_cont_pm, sm.esic_er_cont_pa,
+            sm.esic_ee_cont_pm, sm.esic_ee_cont_pa,
+            sm.gratuity_pm, sm.gratuity_pa,
+            sm.net_salary_pm, sm.net_salary_pa,
+            sm.ctc_pm, sm.ctc_pa,
+            "Yes" if sm.pf_deducted else "No",
+            "Yes" if sm.gratuity_applicable else "No",
+            "Yes" if sm.esic_applicable else "No",
+        ])
+
+    f = io.BytesIO()
+    wb.save(f)
+    f.seek(0)
+    resp = HttpResponse(f.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = 'attachment; filename="salary_master.xlsx"'
+    return resp
+
+
 # salary detail view
 
 @login_required
@@ -6126,6 +6303,64 @@ def create_salary_increment(request):
         "increments": increments,
         "show": show,
     })
+
+
+@login_required
+@feature_required("salary_structure", action="view")
+def salary_increment_export_excel(request):
+    """Export the Salary Increments listing -- its Export button called a
+    JS function (exportIncrements()) that was never actually defined
+    anywhere, so clicking it did nothing. Respects the same ?show= filter
+    (active/archived/all) as the page itself, so exporting matches whatever
+    tab is currently open."""
+    show = request.GET.get("show", "active")
+    increments = SalaryIncrement.objects.select_related("employee").order_by("-effective_date")
+    if show == "active":
+        increments = increments.filter(is_active=True)
+    elif show == "archived":
+        increments = increments.filter(is_active=False)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Salary Increments"
+
+    headers = [
+        "Employee Code", "Employee Name", "Effective Date", "Status", "Reason",
+        "Gross CTC (PM)", "Gross CTC (PA)", "Basic (PM)", "Basic (PA)",
+        "HRA (PM)", "HRA (PA)", "Net Salary (PM)", "Net Salary (PA)",
+        "CTC (PM)", "CTC (PA)",
+        "PF Deducted", "ESIC Applicable", "Gratuity Applicable",
+    ]
+    ws.append(headers)
+
+    for inc in increments:
+        emp = inc.employee
+        monthly = (inc.change_set or {}).get("monthly", {})
+        annual = (inc.change_set or {}).get("annual", {})
+        flags = (inc.change_set or {}).get("flags", {})
+        ws.append([
+            getattr(emp, "employee_code", ""),
+            f"{getattr(emp, 'first_name', '') or ''} {getattr(emp, 'last_name', '') or ''}".strip(),
+            inc.effective_date.isoformat() if inc.effective_date else "",
+            "Applied" if inc.is_processed else "Pending",
+            (inc.change_set or {}).get("reason", ""),
+            monthly.get("gross_ctc", ""), annual.get("gross_ctc", ""),
+            monthly.get("basic", ""), annual.get("basic", ""),
+            monthly.get("hra", ""), annual.get("hra", ""),
+            monthly.get("net_salary", ""), annual.get("net_salary", ""),
+            monthly.get("ctc", ""), annual.get("ctc", ""),
+            "Yes" if flags.get("pf_deducted") else "No",
+            "Yes" if flags.get("esic_applicable") else "No",
+            "Yes" if flags.get("gratuity_applicable") else "No",
+        ])
+
+    f = io.BytesIO()
+    wb.save(f)
+    f.seek(0)
+    resp = HttpResponse(f.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = 'attachment; filename="salary_increments.xlsx"'
+    return resp
+
 
 @login_required
 @feature_required("salary_structure", action="edit")

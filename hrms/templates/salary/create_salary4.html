@@ -1,5 +1,11 @@
 {% extends 'base2.html' %} {% block body %}
 
+<script>
+  function downloadSalaryMaster() {
+    window.location.href = "{% url 'salary-master-export-excel' %}";
+  }
+</script>
+
 <div class="container-xxl flex-grow-1 container-p-y">
   <!-- DataTable with Buttons -->
   <div class="card">
@@ -12,7 +18,7 @@
           <h5 class="card-header">Salary Master</h5>
         </div>
         <div class="col-auto d-flex align-items-center gap-2">
-          <button type="button" class="btn btn-secondary buttons-collection dropdown-toggle btn-label-primary waves-effect waves-light" onclick="downloadEmployees()">Export</button>
+          <button type="button" class="btn btn-secondary buttons-collection dropdown-toggle btn-label-primary waves-effect waves-light" onclick="downloadSalaryMaster()">Export</button>
           <a href="{% url 'salary-import-template' %}" class="btn btn-outline-success waves-effect waves-light">
             Download Template
           </a>

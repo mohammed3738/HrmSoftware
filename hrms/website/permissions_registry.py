@@ -54,7 +54,7 @@ FEATURES = [
     {"key": "leave_management", "name": "Leave Management", "category": "Leave & Comp-Off",
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": True, "sort_order": 10},
     {"key": "comp_off", "name": "Comp-Off", "category": "Leave & Comp-Off",
-     "has_view": True, "has_create": False, "has_edit": False, "has_approve": True, "sort_order": 20},
+     "has_view": True, "has_create": True, "has_edit": False, "has_approve": True, "sort_order": 20},
 
     {"key": "salary_structure", "name": "Salary Structure & History", "category": "Compensation",
      "has_view": True, "has_create": True, "has_edit": True, "has_approve": False, "sort_order": 10},
@@ -135,6 +135,10 @@ SEED_GRANTS = {
     ("leave_management", "edit"): _NOT_HR,
     ("leave_management", "approve"): _NOT_HR,
     ("comp_off", "view"): _ALL_STAFF,
+    # Bulk-importing comp-off requests from Excel is a drafting action, same
+    # as HR drafting a salary structure -- it raises Pending requests that
+    # still go through the normal approve/reject flow below.
+    ("comp_off", "create"): _ALL_STAFF,
     ("comp_off", "approve"): _NOT_HR,
 
     # ── Compensation ──────────────────────────────────────────────────

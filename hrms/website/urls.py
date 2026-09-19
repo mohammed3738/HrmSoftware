@@ -91,7 +91,9 @@ urlpatterns = [
     path('reject-compoff/<int:compoff_id>/', views.reject_compoff, name='reject_compoff'),
     path('bulk-approve-compoff/', views.bulk_approve_compoff, name='bulk_approve_compoff'),
     path("submit-comp-off-request/", views.submit_comp_off_request, name="submit_comp_off_request"),
-    
+    path("import-compoff/", views.import_compoff_excel, name="import-compoff"),
+    path("import-compoff/template/", views.download_compoff_import_template, name="compoff-import-template"),
+
     
      # Main page - list and create (no pk needed)
     path('salary-increment/', views.create_salary_increment, name='salary_increment'),

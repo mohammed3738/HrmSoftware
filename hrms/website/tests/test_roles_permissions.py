@@ -82,6 +82,7 @@ GOLDEN_TABLE = {
     ("leave_management", "edit"): NOT_HR,
     ("leave_management", "approve"): NOT_HR,
     ("comp_off", "view"): STAFF,
+    ("comp_off", "create"): STAFF,
     ("comp_off", "approve"): NOT_HR,
 
     # Compensation -- HR drafts a structure; Admin cannot run payroll.

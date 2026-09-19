@@ -1963,6 +1963,10 @@ def comp_off_requests_list(request):
         request.user.is_superuser or request.user.is_staff
         or has_feature_permission(request.user, "comp_off", "view")
     )
+    can_import = (
+        request.user.is_superuser or request.user.is_staff
+        or has_feature_permission(request.user, "comp_off", "create")
+    )
     own_employee = getattr(request.user, "employee_profile", None)
     if not can_see_all and own_employee is None:
         raise PermissionDenied
@@ -2046,6 +2050,7 @@ def comp_off_requests_list(request):
             "years": years,
             "months": months,
             "can_see_all_requests": can_see_all,
+            "can_import_compoff": can_import,
         },
     )
 
@@ -5697,6 +5702,145 @@ def submit_comp_off_request(request):
         except Exception as e:
             return JsonResponse({"message": f"Error: {str(e)}"}, status=400)
     return JsonResponse({"message": "Invalid request"}, status=400)
+
+
+@login_required
+@feature_required("comp_off", action="view")
+def download_compoff_import_template(request):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Comp-Off"
+
+    headers = [
+        "Employee Code*",
+        "From Date (YYYY-MM-DD)*",
+        "To Date (YYYY-MM-DD)*",
+        "Reason*",
+    ]
+
+    from openpyxl.styles import Font, PatternFill
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1F4E79")
+
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        ws.column_dimensions[cell.column_letter].width = max(len(header) + 4, 24)
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = 'attachment; filename="compoff_import_template.xlsx"'
+    wb.save(response)
+    return response
+
+
+@login_required
+@feature_required("comp_off", action="create")
+def import_compoff_excel(request):
+    if request.method != "POST":
+        return JsonResponse({"success": False, "error": "POST required"}, status=405)
+
+    uploaded_file = request.FILES.get("compoff_file")
+    if not uploaded_file:
+        return JsonResponse({"success": False, "error": "No file uploaded."})
+
+    try:
+        df = pd.read_excel(io.BytesIO(uploaded_file.read()), dtype=str)
+    except Exception as e:
+        return JsonResponse({"success": False, "error": f"Cannot read file: {e}"})
+
+    df.columns = df.columns.str.strip()
+
+    created_count = 0
+    duplicate_count = 0
+    skipped_count = 0
+    errors = []
+
+    for row_idx, row in df.iterrows():
+        row_num = row_idx + 2
+        row_errors = []
+
+        def get(col):
+            return str(row.get(col, "")).strip()
+
+        emp_code = get("Employee Code*")
+        if not emp_code or emp_code in ("nan", ""):
+            row_errors.append("Employee Code: required")
+
+        reason = get("Reason*")
+        if not reason or reason in ("nan", ""):
+            row_errors.append("Reason: required")
+
+        from_date_obj = None
+        from_raw = get("From Date (YYYY-MM-DD)*")
+        if not from_raw or from_raw in ("nan", ""):
+            row_errors.append("From Date: required")
+        else:
+            try:
+                from_date_obj = pd.to_datetime(from_raw).date()
+            except Exception:
+                row_errors.append("From Date: invalid date format")
+
+        to_date_obj = None
+        to_raw = get("To Date (YYYY-MM-DD)*")
+        if not to_raw or to_raw in ("nan", ""):
+            row_errors.append("To Date: required")
+        else:
+            try:
+                to_date_obj = pd.to_datetime(to_raw).date()
+            except Exception:
+                row_errors.append("To Date: invalid date format")
+
+        if from_date_obj and to_date_obj and to_date_obj < from_date_obj:
+            row_errors.append("To Date: cannot be before From Date")
+
+        if row_errors:
+            errors.append({"row": row_num, "errors": row_errors})
+            skipped_count += 1
+            continue
+
+        try:
+            employee = Employee.objects.get(employee_code=emp_code)
+        except Employee.DoesNotExist:
+            errors.append({"row": row_num, "errors": [f"Employee '{emp_code}' not found"]})
+            skipped_count += 1
+            continue
+
+        # Same employee + same date range already raised (any status) --
+        # skip rather than raise a second, identical request.
+        if CompOffRequest.objects.filter(
+            employee=employee, from_date=from_date_obj, to_date=to_date_obj
+        ).exists():
+            duplicate_count += 1
+            continue
+
+        locking_run = get_locking_run_for_period(employee.company, from_date_obj, to_date_obj)
+        if locking_run:
+            errors.append({"row": row_num, "errors": [_lock_message(locking_run, action="raise a comp-off request")]})
+            skipped_count += 1
+            continue
+
+        try:
+            CompOffRequest.objects.create(
+                employee=employee,
+                from_date=from_date_obj,
+                to_date=to_date_obj,
+                reason=reason,
+            )
+            created_count += 1
+        except Exception as e:
+            errors.append({"row": row_num, "errors": [str(e)]})
+            skipped_count += 1
+
+    return JsonResponse({
+        "success": True,
+        "created": created_count,
+        "duplicates": duplicate_count,
+        "skipped": skipped_count,
+        "errors": errors,
+    })
 
 
 

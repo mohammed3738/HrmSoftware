@@ -195,8 +195,21 @@ def money_int(v):
 
 
 def get_attendance_summary(employee, start_date, end_date):
-    total_days = (end_date - start_date).days + 1
-    qs = Attendance.objects.filter(employee=employee, date__range=[start_date, end_date])
+    """date_of_joining awareness: a joiner partway through the run's period
+    only had [date_of_joining, end_date] to be present or absent for -- the
+    days before that were never theirs to owe attendance for, so total_days
+    (and therefore leave_taken) is shrunk to that range. Callers are
+    responsible for excluding an employee entirely when their
+    date_of_joining is after end_date (not yet employed this period) --
+    see generate_records_for_month / recalculate_payroll_run."""
+    effective_start = start_date
+    if employee.date_of_joining and employee.date_of_joining > start_date:
+        effective_start = employee.date_of_joining
+    if effective_start > end_date:
+        return {"total_days": 0, "present_days": Decimal("0.00"), "leave_taken": Decimal("0.00")}
+
+    total_days = (end_date - effective_start).days + 1
+    qs = Attendance.objects.filter(employee=employee, date__range=[effective_start, end_date])
     present_sum = qs.aggregate(total=Sum("count"))["total"] or Decimal("0.00")
     leave_taken = Decimal(total_days) - Decimal(present_sum)
     return {
@@ -286,6 +299,8 @@ def _build_record_snapshot(emp, salary, run):
 def generate_records_for_month(run: PayrollRun):
     employees = Employee.objects.filter(company=run.company, status="Active")
     for emp in employees:
+        if emp.date_of_joining and emp.date_of_joining > run.end_date:
+            continue  # not yet employed during this run's period
         salary = SalaryMaster.objects.filter(employee=emp, is_active=True).first()
         if not salary:
             continue
@@ -305,8 +320,10 @@ def recalculate_payroll_run(run: PayrollRun):
     edit modal) are preserved rather than clobbered by the refresh. Active
     employees with a salary who aren't in the run yet (e.g. hired after it
     was first generated) get a new record added. Existing records for
-    employees who are no longer Active, or who no longer have an active
-    SalaryMaster, are left untouched rather than refreshed or removed.
+    employees who are no longer Active, who no longer have an active
+    SalaryMaster, or whose date_of_joining now falls after this run's
+    period (e.g. it was corrected to a future date after the record was
+    first created) are left untouched rather than refreshed or removed.
     """
     existing = {r.employee_id: r for r in run.records.all()}
     active_employee_ids = set()
@@ -314,6 +331,8 @@ def recalculate_payroll_run(run: PayrollRun):
 
     employees = Employee.objects.filter(company=run.company, status="Active")
     for emp in employees:
+        if emp.date_of_joining and emp.date_of_joining > run.end_date:
+            continue  # not yet employed during this run's period
         salary = SalaryMaster.objects.filter(employee=emp, is_active=True).first()
         if not salary:
             continue

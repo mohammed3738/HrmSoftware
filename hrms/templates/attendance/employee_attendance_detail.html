@@ -4,13 +4,29 @@
 
 <div class="container-fluid py-3">
     <div class="card shadow-sm rounded-3 p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <h4 class="mb-0 text-primary">
                 <i class="ri-calendar-check-line me-2"></i>Attendance History – {{ employee.first_name }}
             </h4>
-            <a href="" class="btn btn-sm btn-outline-secondary">
-                <i class="ri-arrow-left-line me-1"></i> Back
-            </a>
+            <div class="d-flex align-items-center gap-2">
+                <div class="position-relative" style="width: 260px;">
+                    <input
+                        type="text"
+                        id="employeeSearch"
+                        class="form-control form-control-sm"
+                        placeholder="Search employee (name / code)"
+                        autocomplete="off"
+                    />
+                    <ul
+                        id="employeeDropdown"
+                        class="list-group position-absolute w-100 shadow"
+                        style="z-index: 1000; display: none; max-height: 250px; overflow-y: auto; background-color: white; cursor: pointer;"
+                    ></ul>
+                </div>
+                <a href="" class="btn btn-sm btn-outline-secondary">
+                    <i class="ri-arrow-left-line me-1"></i> Back
+                </a>
+            </div>
         </div>
 
         <!-- Filter Section -->
@@ -61,9 +77,10 @@
                 <a href="{% url 'employee_attendance_detail' employee.id %}" class="btn btn-sm btn-outline-secondary mt-auto">
                     <i class="ri-refresh-line me-1"></i> Reset
                 </a>
-                
+
             </div>
 
+            {% if page_size %}<input type="hidden" name="per_page" value="{{ page_size }}">{% endif %}
         </form>
 
         <!-- Summary Stats (scoped to the selected period/year/month above) -->
@@ -146,6 +163,20 @@
 
             <!-- ===== LIST TAB ===== -->
             <div class="tab-pane fade" id="att-list" role="tabpanel">
+                <!-- Show entries -->
+                <form method="GET" class="d-flex align-items-center gap-2 mb-2" id="pageSizeForm">
+                    {% if selected_year %}<input type="hidden" name="year" value="{{ selected_year }}">{% endif %}
+                    {% if selected_month %}<input type="hidden" name="month" value="{{ selected_month }}">{% endif %}
+                    {% if selected_period %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
+                    <label class="text-muted small mb-0">Show</label>
+                    <select name="per_page" class="form-select form-select-sm" style="width:auto;" onchange="document.getElementById('pageSizeForm').submit()">
+                        {% for size in page_size_choices %}
+                        <option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}</option>
+                        {% endfor %}
+                    </select>
+                    <span class="text-muted small">entries</span>
+                </form>
+
                 <!-- Attendance Table -->
                 <div class="table-responsive">
                     <table class="table table-sm table-bordered align-middle mb-0">
@@ -217,10 +248,10 @@
                     </span>
                     <div>
                         {% if attendance_records.has_previous %}
-                            <a href="?page={{ attendance_records.previous_page_number }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+                            <a href="?page={{ attendance_records.previous_page_number }}{% if selected_year %}&year={{ selected_year }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
                         {% endif %}
                         {% if attendance_records.has_next %}
-                            <a href="?page={{ attendance_records.next_page_number }}" class="btn btn-sm btn-outline-primary">Next</a>
+                            <a href="?page={{ attendance_records.next_page_number }}{% if selected_year %}&year={{ selected_year }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary">Next</a>
                         {% endif %}
                     </div>
                 </div>
@@ -338,6 +369,12 @@
       <div class="form-group">
         <label>To Date</label>
         <input type="date" id="comp_off_to_date" name="to_date" required />
+      </div>
+
+      <div class="form-group form-check">
+        <input type="checkbox" class="form-check-input" id="comp_off_half_day" name="half_day">
+        <label class="form-check-label" for="comp_off_half_day">Half Day</label>
+        <div class="form-text">Only available when From Date and To Date are the same day.</div>
       </div>
 
       <div class="form-group">
@@ -673,12 +710,33 @@ function convertTo24Hour(time) {
     document.getElementById("comp_off_employee_id").value = employeeId;
     document.getElementById("comp_off_from_date").value = date;
     document.getElementById("comp_off_to_date").value = date;
+    updateHalfDayAvailability();
     document.getElementById("compOffModal").style.display = "block";
   }
 
   function closeCompOffModal() {
     document.getElementById("compOffModal").style.display = "none";
   }
+
+  // Half Day only makes sense for a single day -- disable and uncheck it
+  // the moment From/To stop matching, so a stray checked box can't submit
+  // a half-day comp-off across a multi-day range.
+  function updateHalfDayAvailability() {
+    const fromEl = document.getElementById("comp_off_from_date");
+    const toEl = document.getElementById("comp_off_to_date");
+    const halfDayEl = document.getElementById("comp_off_half_day");
+    const sameDay = fromEl.value && toEl.value && fromEl.value === toEl.value;
+    halfDayEl.disabled = !sameDay;
+    if (!sameDay) halfDayEl.checked = false;
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    const fromEl = document.getElementById("comp_off_from_date");
+    const toEl = document.getElementById("comp_off_to_date");
+    if (fromEl && toEl) {
+      fromEl.addEventListener("change", updateHalfDayAvailability);
+      toEl.addEventListener("change", updateHalfDayAvailability);
+    }
+  });
 
   // Handle correction request form submission
 
@@ -802,6 +860,63 @@ function convertTo24Hour(time) {
 
   document.addEventListener("DOMContentLoaded", renderCalendar);
 })();
+</script>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const input = document.getElementById("employeeSearch");
+  const dropdown = document.getElementById("employeeDropdown");
+  let controller = null;
+
+  input.addEventListener("input", async function () {
+    const query = this.value.trim();
+
+    if (query.length < 1) {
+      dropdown.style.display = "none";
+      dropdown.innerHTML = "";
+      return;
+    }
+
+    if (controller) controller.abort();
+    controller = new AbortController();
+
+    try {
+      const res = await fetch(
+        `/ajax/employees/search/?q=${encodeURIComponent(query)}`,
+        { signal: controller.signal }
+      );
+      const data = await res.json();
+
+      dropdown.innerHTML = "";
+
+      if (data.length === 0) {
+        dropdown.innerHTML = `<li class="list-group-item text-muted">No employees found</li>`;
+      } else {
+        data.forEach(emp => {
+          const li = document.createElement("li");
+          li.className = "list-group-item list-group-item-action";
+          li.innerHTML = `<strong>${emp.name}</strong> <small class="text-muted ms-1">(${emp.code})</small>`;
+          li.onclick = () => {
+            window.location.href = `/attendance/${emp.id}/`;
+          };
+          dropdown.appendChild(li);
+        });
+      }
+
+      dropdown.style.display = "block";
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        console.error("Search failed", err);
+      }
+    }
+  });
+
+  document.addEventListener("click", function (e) {
+    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.style.display = "none";
+    }
+  });
+});
 </script>
 
 {% endblock %}

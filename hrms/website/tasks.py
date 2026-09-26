@@ -423,8 +423,22 @@ def get_all_payroll_periods_from_attendance(company, payroll_settings):
 
 
 def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to_date):
-    """Calculate leave balance for a specific payroll period"""
-    
+    """Calculate leave balance for a specific payroll period.
+
+    date_of_joining awareness (mirrors website.views.calculate_leave_balance_for_period):
+    a not-yet-joined employee gets no row for this period at all; a
+    mid-period joiner has the period's day counts shrunk to start at
+    date_of_joining instead of from_date."""
+    if employee.date_of_joining and employee.date_of_joining > to_date:
+        LeaveBalance.objects.filter(
+            employee=employee, period_from_date=from_date, period_to_date=to_date,
+        ).delete()
+        return None
+
+    effective_from_date = from_date
+    if employee.date_of_joining and employee.date_of_joining > from_date:
+        effective_from_date = employee.date_of_joining
+
     # STEP 1: Opening Balance - Get PREVIOUS PERIOD's final balance
     prev_period_end = from_date - timedelta(days=1)
     prev_from, prev_to = get_payroll_period_for_date(payroll_settings, prev_period_end)
@@ -460,13 +474,14 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
 
     attendance_records = Attendance.objects.filter(
         employee=employee,
-        date__gte=from_date,
+        date__gte=effective_from_date,
         date__lte=to_date,
         is_holiday=False,
     ).exclude(date__week_day__in=weekend_exclude)
 
-    # Total days = actual calendar days in the payroll period (from_date to to_date inclusive)
-    total_days = (to_date - from_date).days + 1
+    # Total days = actual calendar days from whichever is later, the period
+    # start or the employee's date of joining, through to_date inclusive.
+    total_days = (to_date - effective_from_date).days + 1
 
     # Working days (non-weekend, non-holiday) for leave_taken calculation
     working_days = attendance_records.count()
@@ -480,7 +495,7 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     # Count weekend days in period — always treated as present
     sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
     weekend_day_count = 0
-    d = from_date
+    d = effective_from_date
     while d <= to_date:
         is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
         if is_weekend:

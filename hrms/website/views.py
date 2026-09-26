@@ -53,6 +53,7 @@ from .permissions_registry import GLOBAL_ACCESS_ROLES, SELF_SERVICE_ROLES, SYSTE
 from .utils.permissions import (
     can_access_employee_record, has_feature_permission,
     can_approve_for_employee, approvable_employees,
+    is_admin, is_super_admin,
 )
 from django.core.exceptions import PermissionDenied, ValidationError
 
@@ -530,6 +531,8 @@ def _normalize_attendance_excel(uploaded_file):
 def _process_attendance_rows(df_chunk):
     """Process a slice of the normalized attendance DataFrame.
     Returns (created_count, updated_count, skipped_count, errors)."""
+    from website.signals import suspend_leave_balance_auto_recalc, recalculate_leave_balance_for_employee
+
     created_count = 0
     updated_count = 0
     skipped_count = 0
@@ -538,80 +541,104 @@ def _process_attendance_rows(df_chunk):
     # Build the lock cache lazily — we'll add company ids as we discover them
     _lock_cache = {}
 
-    for row_idx, row in df_chunk.iterrows():
-        row_num = row_idx + 2
-        try:
-            emp_code_raw = row.get("Emp Code")
+    # Auto-recalculating leave balance per .save() would mean re-deriving
+    # the same employee's balance once per day uploaded for them -- wasted
+    # work at upload scale. Suspend it for the whole chunk and recalculate
+    # once per distinct employee touched (from their earliest affected
+    # date, so the recalc cascades through every date this chunk touched
+    # for them), after the loop.
+    touched_employees = {}
 
-            # Skip blank or header-repeat rows
-            if emp_code_raw is None or str(emp_code_raw).strip().lower() in ("nan", "none", "", "emp code"):
-                skipped_count += 1
-                continue
-
-            emp_code = str(emp_code_raw).strip()
-            # Remove trailing ".0" if pandas read it as float (e.g. 2.0 → "2")
-            if emp_code.endswith(".0"):
-                emp_code = emp_code[:-2]
-
-            employee = Employee.objects.filter(employee_code=emp_code).first()
-            if not employee:
-                errors.append(f"Row {row_num}: Employee code '{emp_code}' not found")
-                skipped_count += 1
-                continue
-
-            att_date_raw = row.get("Att.Date")
-            att_date = parse_excel_date(att_date_raw)
-            if not att_date:
-                errors.append(f"Row {row_num}: Invalid or missing date '{att_date_raw}'")
-                skipped_count += 1
-                continue
-
-            if employee.company_id and employee.company_id not in _lock_cache:
-                _lock_cache.update(build_date_locked_cache([employee.company_id]))
-            if date_in_cache(_lock_cache, employee.company_id, att_date):
-                errors.append(
-                    f"Row {row_num}: {att_date:%d %b %Y} is part of a finalized payroll run — attendance cannot be modified."
-                )
-                skipped_count += 1
-                continue
-
-            in_time  = _parse_excel_time(row.get("In Time"))
-            out_time = _parse_excel_time(row.get("Out Time"))
-
-            # A re-upload of the same employee/date must overwrite the punch
-            # times with the latest source data — get_or_create only applies
-            # its defaults when creating a NEW row, so a previously-blank
-            # row (e.g. left that way by a parsing bug) would never get
-            # fixed by a corrected re-upload. Deliberately NOT using
-            # Django's update_or_create() here: on the update path it calls
-            # save(update_fields=<only the defaults keys>), which silently
-            # drops status/count/late — calculate_status() computes them
-            # in-memory but update_fields excludes them from the SQL UPDATE,
-            # so the stale status would never actually persist. A plain
-            # full .save() (no update_fields) writes every field. A manual
-            # status override (status_overridden) is still preserved either
-            # way — calculate_status() skips recomputation for those rows
-            # regardless of what in/out time gets written here.
+    with suspend_leave_balance_auto_recalc():
+        for row_idx, row in df_chunk.iterrows():
+            row_num = row_idx + 2
             try:
-                attendance = Attendance.objects.get(employee=employee, date=att_date)
-                created = False
-            except Attendance.DoesNotExist:
-                attendance = Attendance(employee=employee, date=att_date)
-                created = True
-            attendance.in_time = in_time
-            attendance.out_time = out_time
-            attendance.save()
+                emp_code_raw = row.get("Emp Code")
 
-            if created:
-                created_count += 1
-            else:
-                updated_count += 1
+                # Skip blank or header-repeat rows
+                if emp_code_raw is None or str(emp_code_raw).strip().lower() in ("nan", "none", "", "emp code"):
+                    skipped_count += 1
+                    continue
 
-        except Exception as e:
-            import traceback
-            print(f"[ATTENDANCE] Row {row_num} error: {traceback.format_exc()}")
-            errors.append(f"Row {row_num}: {e}")
-            skipped_count += 1
+                emp_code = str(emp_code_raw).strip()
+                # Remove trailing ".0" if pandas read it as float (e.g. 2.0 → "2")
+                if emp_code.endswith(".0"):
+                    emp_code = emp_code[:-2]
+
+                employee = Employee.objects.filter(employee_code=emp_code).first()
+                if not employee:
+                    errors.append(f"Row {row_num}: Employee code '{emp_code}' not found")
+                    skipped_count += 1
+                    continue
+
+                att_date_raw = row.get("Att.Date")
+                att_date = parse_excel_date(att_date_raw)
+                if not att_date:
+                    errors.append(f"Row {row_num}: Invalid or missing date '{att_date_raw}'")
+                    skipped_count += 1
+                    continue
+
+                if employee.company_id and employee.company_id not in _lock_cache:
+                    _lock_cache.update(build_date_locked_cache([employee.company_id]))
+                if date_in_cache(_lock_cache, employee.company_id, att_date):
+                    errors.append(
+                        f"Row {row_num}: {att_date:%d %b %Y} is part of a finalized payroll run — attendance cannot be modified."
+                    )
+                    skipped_count += 1
+                    continue
+
+                if employee.date_of_joining and att_date < employee.date_of_joining:
+                    errors.append(
+                        f"Row {row_num}: {att_date:%d %b %Y} is before {employee.employee_code}'s date of joining "
+                        f"({employee.date_of_joining:%d %b %Y}) — not recorded."
+                    )
+                    skipped_count += 1
+                    continue
+
+                in_time  = _parse_excel_time(row.get("In Time"))
+                out_time = _parse_excel_time(row.get("Out Time"))
+
+                # A re-upload of the same employee/date must overwrite the punch
+                # times with the latest source data — get_or_create only applies
+                # its defaults when creating a NEW row, so a previously-blank
+                # row (e.g. left that way by a parsing bug) would never get
+                # fixed by a corrected re-upload. Deliberately NOT using
+                # Django's update_or_create() here: on the update path it calls
+                # save(update_fields=<only the defaults keys>), which silently
+                # drops status/count/late — calculate_status() computes them
+                # in-memory but update_fields excludes them from the SQL UPDATE,
+                # so the stale status would never actually persist. A plain
+                # full .save() (no update_fields) writes every field. A manual
+                # status override (status_overridden) is still preserved either
+                # way — calculate_status() skips recomputation for those rows
+                # regardless of what in/out time gets written here.
+                try:
+                    attendance = Attendance.objects.get(employee=employee, date=att_date)
+                    created = False
+                except Attendance.DoesNotExist:
+                    attendance = Attendance(employee=employee, date=att_date)
+                    created = True
+                attendance.in_time = in_time
+                attendance.out_time = out_time
+                attendance.save()
+
+                touched = touched_employees.get(employee.id)
+                if touched is None or att_date < touched[1]:
+                    touched_employees[employee.id] = (employee, att_date)
+
+                if created:
+                    created_count += 1
+                else:
+                    updated_count += 1
+
+            except Exception as e:
+                import traceback
+                print(f"[ATTENDANCE] Row {row_num} error: {traceback.format_exc()}")
+                errors.append(f"Row {row_num}: {e}")
+                skipped_count += 1
+
+    for employee, min_date in touched_employees.values():
+        recalculate_leave_balance_for_employee(employee, min_date)
 
     return created_count, updated_count, skipped_count, errors
 
@@ -744,7 +771,7 @@ def _recalculate_attendance_queryset(request):
     a rules change (or a bug fix) would silently rewrite the numbers behind
     payslips that have already gone out. Attendance upload takes the same
     stance row by row."""
-    qs = Attendance.objects.all()
+    qs = Attendance.objects.select_related('employee', 'employee__company')
     company = get_company_filter(request.user)
     if company:
         qs = qs.filter(employee__company=company)
@@ -794,10 +821,21 @@ def recalculate_attendance_chunk(request):
     except (TypeError, ValueError):
         offset = 0
 
+    from website.signals import suspend_leave_balance_auto_recalc, recalculate_leave_balance_for_employee
+
     qs = _recalculate_attendance_queryset(request)
     chunk = list(qs[offset: offset + ATTENDANCE_RECALC_CHUNK_SIZE])
-    for attendance in chunk:
-        attendance.save()  # triggers calculate_status() via Attendance.save()
+
+    touched_employees = {}
+    with suspend_leave_balance_auto_recalc():
+        for attendance in chunk:
+            attendance.save()  # triggers calculate_status() via Attendance.save()
+            touched = touched_employees.get(attendance.employee_id)
+            if touched is None or attendance.date < touched[1]:
+                touched_employees[attendance.employee_id] = (attendance.employee, attendance.date)
+
+    for employee, min_date in touched_employees.values():
+        recalculate_leave_balance_for_employee(employee, min_date)
 
     return JsonResponse({"success": True, "processed_in_chunk": len(chunk)})
 
@@ -996,6 +1034,8 @@ def bulk_override_attendance_status(request):
     if new_status not in ATTENDANCE_OVERRIDE_VALID_STATUSES:
         return JsonResponse({"success": False, "error": "Invalid status choice."}, status=400)
 
+    from website.signals import suspend_leave_balance_auto_recalc, recalculate_leave_balance_for_employee
+
     ids = _extract_bulk_ids(request)
     company_filter = get_company_filter(request.user)
 
@@ -1003,16 +1043,24 @@ def bulk_override_attendance_status(request):
     attendances = Attendance.objects.select_related("employee__company").filter(id__in=ids)
     attendances_by_id = {a.id: a for a in attendances}
 
-    for att_id in ids:
-        attendance = attendances_by_id.get(att_id)
-        if not attendance:
-            failed.append({"id": att_id, "error": "Record not found."})
-            continue
-        error = _override_attendance_status_item(attendance, new_status, company_filter)
-        if error:
-            failed.append({"id": att_id, "error": error})
-        else:
-            updated.append(att_id)
+    touched_employees = {}
+    with suspend_leave_balance_auto_recalc():
+        for att_id in ids:
+            attendance = attendances_by_id.get(att_id)
+            if not attendance:
+                failed.append({"id": att_id, "error": "Record not found."})
+                continue
+            error = _override_attendance_status_item(attendance, new_status, company_filter)
+            if error:
+                failed.append({"id": att_id, "error": error})
+            else:
+                updated.append(att_id)
+                touched = touched_employees.get(attendance.employee_id)
+                if touched is None or attendance.date < touched[1]:
+                    touched_employees[attendance.employee_id] = (attendance.employee, attendance.date)
+
+    for employee, min_date in touched_employees.values():
+        recalculate_leave_balance_for_employee(employee, min_date)
 
     return JsonResponse({"success": True, "status": new_status, "updated": updated, "failed": failed})
 
@@ -1285,27 +1333,85 @@ def attendance_list(request):
             return redirect("dashboard")
 
 
-    """View attendance by selected date (default: today)"""
+    """View attendance by selected date (default: today), or by a whole
+    calendar month / payroll period when one of those filters is used --
+    only one mode applies at a time, in that order of precedence, since a
+    single table of records (not a per-day grid) can show any date range."""
+    period_str = request.GET.get('period')
+    year_str = request.GET.get('year')
+    month_str = request.GET.get('month')
     date_str = request.GET.get('date')
-    if date_str:
+
+    available_periods = get_merged_payroll_periods_for_active_companies()
+
+    view_mode = 'date'
+    range_start = range_end = None
+
+    selected_period = None
+    if period_str:
+        for p in available_periods:
+            if p['to_date'].isoformat() == period_str:
+                selected_period = p
+                break
+        if selected_period:
+            view_mode = 'period'
+            range_start, range_end = selected_period['from_date'], selected_period['to_date']
+
+    if view_mode == 'date' and (year_str or month_str):
         try:
-            selected_date = date.fromisoformat(date_str)
-        except ValueError:
-            selected_date = now().date()
+            y = int(year_str) if year_str else now().year
+        except (TypeError, ValueError):
+            y = now().year
+        try:
+            m = int(month_str) if month_str else now().month
+        except (TypeError, ValueError):
+            m = now().month
+        if 1 <= m <= 12:
+            view_mode = 'month'
+            range_start = date(y, m, 1)
+            range_end = (range_start + relativedelta(months=1)) - timedelta(days=1)
+
+    selected_date = None
+    prev_date = next_date = None
+    if view_mode in ('period', 'month'):
+        attendance_records = (
+            Attendance.objects.filter(date__gte=range_start, date__lte=range_end)
+            .select_related('employee')
+            .order_by('-date', 'employee__first_name')
+        )
     else:
-        selected_date = now().date()
+        if date_str:
+            try:
+                selected_date = date.fromisoformat(date_str)
+            except ValueError:
+                selected_date = now().date()
+        else:
+            selected_date = now().date()
 
-    attendance_records = Attendance.objects.filter(date=selected_date)
+        attendance_records = Attendance.objects.filter(date=selected_date).select_related('employee')
 
-    # For navigation buttons
-    prev_date = selected_date - timedelta(days=1)
-    next_date = selected_date + timedelta(days=1)
+        # For navigation buttons
+        prev_date = selected_date - timedelta(days=1)
+        next_date = selected_date + timedelta(days=1)
+
+    # Year/month dropdown options, drawn from actual attendance history so
+    # the dropdown never offers an empty month (page has no company
+    # scoping, so this spans every company same as the records table).
+    years = Attendance.objects.dates('date', 'year', order='DESC')
+    months = [{'value': m, 'name': calendar.month_name[m]} for m in range(1, 13)]
 
     context = {
         "attendance_records": attendance_records,
-        "selected_date": selected_date.isoformat(),
-        "prev_date": prev_date.isoformat(),
-        "next_date": next_date.isoformat(),
+        "selected_date": selected_date.isoformat() if selected_date else "",
+        "prev_date": prev_date.isoformat() if prev_date else "",
+        "next_date": next_date.isoformat() if next_date else "",
+        "view_mode": view_mode,
+        "available_periods": available_periods,
+        "selected_period": period_str or "",
+        "years": years,
+        "months": months,
+        "selected_year": year_str or "",
+        "selected_month": month_str or "",
     }
     return render(request, "attendance/today.html", context)
 
@@ -1383,8 +1489,9 @@ def employee_attendance_detail(request, employee_id):
     # (at most ~31), so show it all on one page instead of splitting it
     # across "Next" pages. Only paginate the unfiltered "all time" view,
     # which can span years of records.
+    page_size = get_page_size(request, default=30)
     if not (range_start and range_end):
-        paginator = Paginator(attendance_records, 30)
+        paginator = Paginator(attendance_records, page_size)
         page = request.GET.get("page")
         attendance_records = paginator.get_page(page)
 
@@ -1424,6 +1531,8 @@ def employee_attendance_detail(request, employee_id):
         "calendar_start": calendar_start,
         "calendar_end": calendar_end,
         "calendar_attendance_json": json.dumps(calendar_attendance),
+        "page_size": page_size,
+        "page_size_choices": PAGE_SIZE_CHOICES,
     }
     return render(request, "attendance/employee_attendance_detail.html", context)
 
@@ -2285,10 +2394,14 @@ def _dashboard_panels_for(user, active_qs, company_filter):
     return panels
 
 
-def _approve_compoff_item(compoff, actor=None):
-    """Approve a single CompOffRequest. Returns an error message string on
-    failure (e.g. payroll lock, not this approver's reportee), or None on
-    success."""
+def _approve_compoff_item(compoff, actor=None, half_day=None):
+    """Approve a single CompOffRequest. `half_day`, if not None, lets the
+    approver override the employee's original Full/Half Day choice at
+    approval time (e.g. granting only half of what was requested) --
+    True/False sets is_half_day (only valid for a single-day request),
+    None leaves whatever the request already had. Returns an error message
+    string on failure (e.g. payroll lock, half day on a multi-day request,
+    not this approver's reportee), or None on success."""
     if actor is not None and not can_approve_for_employee(actor, compoff.employee, "comp_off"):
         return "You aren't authorised to approve this employee's request."
 
@@ -2298,12 +2411,27 @@ def _approve_compoff_item(compoff, actor=None):
     if locking_run:
         return _lock_message(locking_run, action="approve this comp-off")
 
+    if half_day is not None:
+        if half_day and compoff.from_date != compoff.to_date:
+            return "Half Day only applies to a single-day request."
+        compoff.is_half_day = half_day
+
     compoff.status = "Approved"
     compoff.save()
 
     log_audit(actor, AuditLog.Action.COMPOFF_APPROVED, compoff,
-               summary=f"Approved comp-off request for {compoff.employee}")
+               summary=f"Approved comp-off request for {compoff.employee}"
+               + (f" ({'half' if compoff.is_half_day else 'full'} day)" if half_day is not None else ""))
     return None
+
+
+def _parse_half_day_param(raw):
+    """Read an optional half_day override from a POST body: None/absent
+    means "leave as-is", otherwise True/False. Shared by approve_compoff
+    and bulk_approve_compoff so both interpret the same values the same way."""
+    if raw is None or raw == "":
+        return None
+    return raw in ("true", "1", "on", "yes", "half")
 
 
 def _extract_bulk_ids(request):
@@ -2334,7 +2462,8 @@ def approve_compoff(request, compoff_id):
     except CompOffRequest.DoesNotExist:
         return JsonResponse({"message": "Request not found!"}, status=404)
 
-    error = _approve_compoff_item(compoff, actor=request.user)
+    half_day = _parse_half_day_param(request.POST.get("half_day"))
+    error = _approve_compoff_item(compoff, actor=request.user, half_day=half_day)
     if error:
         return JsonResponse({"success": False, "error": error}, status=400)
     return JsonResponse({"message": "CompOff request approved successfully!"})
@@ -4164,6 +4293,24 @@ from website.models import LeaveBalance, Employee, PayrollSettings, Attendance, 
 from django.db import transaction
 
 
+PAGE_SIZE_CHOICES = (10, 15, 25, 50, 100)
+
+
+def get_page_size(request, default=15, param='per_page'):
+    """Read a "Show N entries" page-size choice from the querystring for a
+    server-paginated (non-DataTables) table -- Django's own Paginator has
+    to actually change how many rows it queries, unlike a client-side
+    DataTables length menu which just re-slices rows already in the DOM.
+    Falls back to `default` for anything missing or not one of
+    PAGE_SIZE_CHOICES, so a hand-edited URL can't request an unbounded
+    page size."""
+    try:
+        size = int(request.GET.get(param, default))
+    except (TypeError, ValueError):
+        return default
+    return size if size in PAGE_SIZE_CHOICES else default
+
+
 def get_user_company(user):
     """Get the company linked to this user via their employee profile.
     Returns None for global users (superuser/staff) without an employee profile
@@ -4311,6 +4458,26 @@ def get_all_payroll_periods_from_attendance(company, payroll_settings):
     return periods
 
 
+def get_merged_payroll_periods_for_active_companies():
+    """Union of every active company's payroll periods, deduplicated by
+    exact date range (companies sharing a payroll cycle collapse to one
+    entry). For report pages that show every company's attendance together
+    and need one payroll-period dropdown -- see attendance_register_view's
+    "All Companies" mode and attendance_list's "Payroll Month" filter."""
+    from website.models import Company
+
+    companies = list(Company.objects.filter(status='active'))
+    ps_by_company = {ps.company_id: ps for ps in PayrollSettings.objects.filter(company__in=companies)}
+    periods_by_range = {}
+    for comp in companies:
+        ps = ps_by_company.get(comp.id)
+        if not ps:
+            continue
+        for period in get_all_payroll_periods_from_attendance(comp, ps):
+            periods_by_range[(period['from_date'], period['to_date'])] = period
+    return sorted(periods_by_range.values(), key=lambda p: p['to_date'], reverse=True)
+
+
 def get_monthly_earned_leaves(payroll_settings, month, year):
     """Get earned leaves for a specific month, falling back to earned_leaves_per_year / 12."""
     try:
@@ -4327,8 +4494,31 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     """
     ✅ UPDATED: Calculate leave balance for a specific payroll period
     Now reads monthly credit from MonthlyEarnedLeaves table
+
+    date_of_joining awareness: an employee who hasn't joined yet as of
+    to_date gets no LeaveBalance row at all for this period (returns None
+    without touching the DB) -- nothing is owed or deducted for someone not
+    yet employed. An employee who joined partway through the period has the
+    period effectively shrunk to [date_of_joining, to_date] for every day
+    count below (total days, working days, leave taken, weekends) -- the
+    days before they joined were never theirs to be present/absent for.
+    The row itself still keys off the real period_from_date/period_to_date
+    (from_date/to_date) so it lines up with the payroll-period dropdowns
+    elsewhere; only the maths inside is shrunk.
     """
-    
+    if employee.date_of_joining and employee.date_of_joining > to_date:
+        # Self-heals a row that was wrongly created for this employee/period
+        # before date_of_joining was set/corrected, or before this check
+        # existed -- e.g. attendance uploaded for a future joiner.
+        LeaveBalance.objects.filter(
+            employee=employee, period_from_date=from_date, period_to_date=to_date,
+        ).delete()
+        return None
+
+    effective_from_date = from_date
+    if employee.date_of_joining and employee.date_of_joining > from_date:
+        effective_from_date = employee.date_of_joining
+
     # ============================================
     # STEP 1: Opening Balance
     # Get PREVIOUS PERIOD's final balance (by period dates!)
@@ -4370,13 +4560,14 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
 
     attendance_records = Attendance.objects.filter(
         employee=employee,
-        date__gte=from_date,
+        date__gte=effective_from_date,
         date__lte=to_date,
         is_holiday=False,
     ).exclude(date__week_day__in=weekend_exclude)
 
-    # Total days = actual calendar days in the payroll period (from_date to to_date inclusive)
-    total_days = (to_date - from_date).days + 1
+    # Total days = actual calendar days from whichever is later, the period
+    # start or the employee's date of joining, through to_date inclusive.
+    total_days = (to_date - effective_from_date).days + 1
 
     # Working days (excluding weekends/holidays) used for leave taken calculation
     working_days = attendance_records.count()
@@ -4392,7 +4583,7 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     # Count weekend days in the period — always treated as present
     sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
     weekend_day_count = 0
-    d = from_date
+    d = effective_from_date
     while d <= to_date:
         is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
         if is_weekend:
@@ -4559,13 +4750,14 @@ def generate_leave_balances_for_all_periods(company, payroll_settings):
         for employee in employees:
             try:
                 with transaction.atomic():
-                    calculate_leave_balance_for_period(
+                    result = calculate_leave_balance_for_period(
                         employee,
                         payroll_settings,
                         from_date,
                         to_date
                     )
-                    total_calculated += 1
+                    if result is not None:  # None = not joined yet as of this period
+                        total_calculated += 1
             except Exception as e:
                 print(f"Error: {employee.employee_code} {from_date}-{to_date}: {e}")
                 continue
@@ -4871,10 +5063,12 @@ def attendance_register_view(request):
     via the existing override_attendance_status endpoint (same one used on
     the Late Attendance Review page) -- no new override mechanism needed.
 
-    Deliberately single-company scoped, unlike leave_balance_view's "all
-    companies" mode -- that aggregation is disproportionate for a wide
-    day-by-day report, and the existing Leave Balance report already
-    covers the cross-company summary need."""
+    company_id=all lists every active company's employees together in the
+    exact same layout, rather than a separate view -- the payroll-period
+    dropdown is the union of every company's periods (deduplicated by exact
+    date range), and each employee's own company still supplies their
+    weekend days / late-deduction rule and LeaveBalance row for whichever
+    period is selected."""
     from website.models import Company
 
     user = request.user
@@ -4882,7 +5076,10 @@ def attendance_register_view(request):
     user_own_company = get_user_company(user)
 
     company_id_param = request.GET.get('company_id', '').strip()
-    if is_global and company_id_param:
+    is_all_companies = is_global and company_id_param == 'all'
+    if is_all_companies:
+        company = None
+    elif is_global and company_id_param:
         company = Company.objects.filter(id=company_id_param).first()
     elif is_global:
         company = None
@@ -4892,7 +5089,7 @@ def attendance_register_view(request):
     context = {
         'is_global': is_global,
         'all_companies': Company.objects.filter(status='active').order_by('name') if is_global else None,
-        'selected_company_id': company.id if company else None,
+        'selected_company_id': 'all' if is_all_companies else (company.id if company else None),
         # Comp Off directly feeds into LWP/pay, same gate as override_lwp_view.
         # Set here rather than only on the fully-populated path so every
         # early return still carries the key the template reads.
@@ -4907,20 +5104,26 @@ def attendance_register_view(request):
         ),
     }
 
-    if not company:
+    if not is_all_companies and not company:
         context.update({'rows': [], 'day_columns': [], 'available_periods': []})
         return render(request, 'attendance/attendance_register.html', context)
 
-    try:
-        payroll_settings = PayrollSettings.objects.get(company=company)
-    except PayrollSettings.DoesNotExist:
-        context.update({
-            'rows': [], 'day_columns': [], 'available_periods': [],
-            'error': 'Payroll settings not configured for this company.',
-        })
-        return render(request, 'attendance/attendance_register.html', context)
-
-    available_periods = get_all_payroll_periods_from_attendance(company, payroll_settings)
+    if is_all_companies:
+        ps_by_company = {
+            ps.company_id: ps
+            for ps in PayrollSettings.objects.filter(company__status='active')
+        }
+        available_periods = get_merged_payroll_periods_for_active_companies()
+    else:
+        try:
+            payroll_settings = PayrollSettings.objects.get(company=company)
+        except PayrollSettings.DoesNotExist:
+            context.update({
+                'rows': [], 'day_columns': [], 'available_periods': [],
+                'error': 'Payroll settings not configured for this company.',
+            })
+            return render(request, 'attendance/attendance_register.html', context)
+        available_periods = get_all_payroll_periods_from_attendance(company, payroll_settings)
 
     selected_period_str = request.GET.get('period')
     selected_period = None
@@ -4935,15 +5138,22 @@ def attendance_register_view(request):
     if not selected_period:
         context.update({
             'rows': [], 'day_columns': [], 'available_periods': [],
-            'user_company_id': company.id,
+            'user_company_id': company.id if company else None,
         })
         return render(request, 'attendance/attendance_register.html', context)
 
     from_date, to_date = selected_period['from_date'], selected_period['to_date']
 
-    # Day columns for the selected period, same weekend logic already used
-    # by calculate_leave_balance_for_period / Attendance.calculate_status().
-    sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
+    # Day columns for the selected period. In All Companies mode, companies
+    # can disagree on their weekend rule (Sat+Sun vs Sun-only) -- rather
+    # than a per-employee override, this uses Sun-only only if every
+    # company in scope agrees on it, and falls back to the ordinary
+    # Sat+Sun default otherwise (the common case).
+    if is_all_companies:
+        weekend_days_seen = {ps.weekend_days for ps in ps_by_company.values()}
+        sunday_only = weekend_days_seen == {'sun'}
+    else:
+        sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
     day_columns = []
     d = from_date
     while d <= to_date:
@@ -4951,11 +5161,18 @@ def attendance_register_view(request):
         day_columns.append({'date': d, 'weekday': d.strftime('%a'), 'is_weekend': is_weekend})
         d += timedelta(days=1)
 
-    employees_qs = (
-        Employee.objects.filter(company=company, status='Active')
-        .select_related('branch')
-        .order_by('first_name', 'last_name')
-    )
+    if is_all_companies:
+        employees_qs = (
+            Employee.objects.filter(company__status='active', status='Active')
+            .select_related('branch', 'company')
+            .order_by('first_name', 'last_name')
+        )
+    else:
+        employees_qs = (
+            Employee.objects.filter(company=company, status='Active')
+            .select_related('branch')
+            .order_by('first_name', 'last_name')
+        )
 
     search_query = request.GET.get('q', '').strip()
     if search_query:
@@ -4969,7 +5186,8 @@ def attendance_register_view(request):
     else:
         employees_list = list(employees_qs)
 
-    paginator = Paginator(employees_list, 15)
+    page_size = get_page_size(request)
+    paginator = Paginator(employees_list, page_size)
     page_obj = paginator.get_page(request.GET.get('page', 1))
     page_employees = list(page_obj)
     page_employee_ids = [e.id for e in page_employees]
@@ -4993,7 +5211,10 @@ def attendance_register_view(request):
     ).values('id', 'employee_id', 'date', 'status', 'count'):
         att_lookup[(a['employee_id'], a['date'])] = a
 
-    late_marks_affect_lwp = getattr(payroll_settings, 'late_marks_affect_lwp', True)
+    # Same simplification as the weekend rule above: use each company's own
+    # setting in single-company mode, and the ordinary default when
+    # companies in scope might disagree.
+    late_marks_affect_lwp = True if is_all_companies else getattr(payroll_settings, 'late_marks_affect_lwp', True)
 
     def format_count(count):
         """What a day's cell shows. A zero-count day is an absence, marked
@@ -5041,6 +5262,63 @@ def attendance_register_view(request):
 
         rows.append({'employee': emp, 'lb': lb, 'late_deduction': late_deduction, 'days': days})
 
+    # Totals row: summed across every employee matching the current filter,
+    # not just this page -- a payroll-time register is only as useful as
+    # its grand total, and that shouldn't depend on which 15 rows happen
+    # to be on screen.
+    all_employee_ids = [e.id for e in employees_list]
+    lb_qs = LeaveBalance.objects.filter(
+        employee_id__in=all_employee_ids,
+        period_from_date=from_date,
+        period_to_date=to_date,
+    )
+    lb_totals = lb_qs.aggregate(
+        opening_balance=Sum('opening_balance'),
+        leave_taken=Sum('leave_taken'),
+        late=Sum('late'),
+        compoff=Sum('compoff'),
+        leave_without_pay=Sum('leave_without_pay'),
+        number_of_days_present=Sum('number_of_days_present'),
+        total_number_of_days=Sum('total_number_of_days'),
+        closing_balance=Sum('closing_balance'),
+        final_leave_balance=Sum('final_leave_balance'),
+    )
+    # Late Deduction isn't a stored field (see the per-row comment above),
+    # and its grace-period formula isn't linear, so the total has to be
+    # summed from each employee's own deduction, not derived from the
+    # summed late count.
+    late_deduction_total = 0
+    for late_count in lb_qs.values_list('late', flat=True):
+        if late_marks_affect_lwp and late_count and late_count > 5:
+            late_deduction_total += (late_count - 5) // 3
+
+    day_totals_lookup = dict(
+        Attendance.objects.filter(
+            employee_id__in=all_employee_ids, date__gte=from_date, date__lte=to_date,
+        ).values('date').annotate(total=Sum('count')).values_list('date', 'total')
+    )
+    total_employee_count = len(all_employee_ids)
+    day_totals = [
+        Decimal(total_employee_count) if col['is_weekend']
+        else (day_totals_lookup.get(col['date']) or Decimal('0.00'))
+        for col in day_columns
+    ]
+
+    totals = {
+        'employee_count': total_employee_count,
+        'opening_balance': lb_totals['opening_balance'] or Decimal('0.00'),
+        'leave_taken': lb_totals['leave_taken'] or Decimal('0.00'),
+        'late': lb_totals['late'] or 0,
+        'compoff': lb_totals['compoff'] or Decimal('0.00'),
+        'leave_without_pay': lb_totals['leave_without_pay'] or Decimal('0.00'),
+        'number_of_days_present': lb_totals['number_of_days_present'] or Decimal('0.00'),
+        'total_number_of_days': lb_totals['total_number_of_days'] or 0,
+        'closing_balance': lb_totals['closing_balance'] or Decimal('0.00'),
+        'final_leave_balance': lb_totals['final_leave_balance'] or Decimal('0.00'),
+        'late_deduction': late_deduction_total,
+        'days': day_totals,
+    }
+
     context.update({
         'rows': rows,
         'day_columns': day_columns,
@@ -5050,8 +5328,11 @@ def attendance_register_view(request):
         'search_query': search_query,
         'page_obj': page_obj,
         'paginator': paginator,
-        'user_company_id': company.id,
+        'user_company_id': company.id if company else None,
         'total_employees': len(employees_list),
+        'totals': totals,
+        'page_size': page_size,
+        'page_size_choices': PAGE_SIZE_CHOICES,
     })
     return render(request, 'attendance/attendance_register.html', context)
 
@@ -5612,17 +5893,13 @@ def employee_compoff_details(request, employee_id):
         to_date__lte=to_date
     )
 
-    total_days = 0 # Initialize total counter
+    total_days = Decimal("0.00")  # Initialize total counter
 
-    # ✅ Compute total days in Python so template stays simple
+    # Use the stored count (not a recompute from dates) so a half-day
+    # request contributes 0.5, not a full day.
     for c in compoffs:
-        if c.from_date and c.to_date:
-            # Calculate days for this individual request
-            c.days = (c.to_date - c.from_date).days + 1
-            # Add to the running total
-            total_days += c.days 
-        else:
-            c.days = 0
+        c.days = c.count or Decimal("0.00")
+        total_days += c.days
 
     html = render_to_string(
         "leave_balance/_compoff_modal_table.html", 
@@ -5671,6 +5948,7 @@ def submit_comp_off_request(request):
             from_date = request.POST.get("from_date")
             to_date = request.POST.get("to_date")
             reason = request.POST.get("reason")
+            half_day = request.POST.get("half_day") in ("on", "true", "1", "yes")
 
             if not all([employee_id, from_date, to_date, reason]):
                 return JsonResponse({"message": "Missing required fields"}, status=400)
@@ -5679,8 +5957,8 @@ def submit_comp_off_request(request):
             from_date_obj = datetime.strptime(from_date, "%Y-%m-%d").date()
             to_date_obj = datetime.strptime(to_date, "%Y-%m-%d").date()
 
-            # ✅ Calculate count
-            count = (to_date_obj - from_date_obj).days + 1
+            if half_day and from_date_obj != to_date_obj:
+                return JsonResponse({"message": "Half Day only applies to a single day — From Date and To Date must match."}, status=400)
 
             employee = Employee.objects.get(id=employee_id)
 
@@ -5694,7 +5972,7 @@ def submit_comp_off_request(request):
                 from_date=from_date_obj,
                 to_date=to_date_obj,
                 reason=reason,
-                count=count
+                is_half_day=half_day,
             )
 
             return JsonResponse({"message": "Comp-Off request submitted successfully!"})
@@ -5715,6 +5993,7 @@ def download_compoff_import_template(request):
         "Employee Code*",
         "From Date (YYYY-MM-DD)*",
         "To Date (YYYY-MM-DD)*",
+        "Half Day (yes/no)",
         "Reason*",
     ]
 
@@ -5796,6 +6075,10 @@ def import_compoff_excel(request):
         if from_date_obj and to_date_obj and to_date_obj < from_date_obj:
             row_errors.append("To Date: cannot be before From Date")
 
+        half_day = get("Half Day (yes/no)").lower() == "yes"
+        if half_day and from_date_obj and to_date_obj and from_date_obj != to_date_obj:
+            row_errors.append("Half Day: only valid when From Date and To Date are the same")
+
         if row_errors:
             errors.append({"row": row_num, "errors": row_errors})
             skipped_count += 1
@@ -5828,6 +6111,7 @@ def import_compoff_excel(request):
                 from_date=from_date_obj,
                 to_date=to_date_obj,
                 reason=reason,
+                is_half_day=half_day,
             )
             created_count += 1
         except Exception as e:
@@ -7835,6 +8119,7 @@ def advance_list(request):
             request.user.is_superuser or request.user.is_staff
             or has_feature_permission(request.user, "advances", "edit")
         ),
+        'can_manage_advance_records': _can_manage_advance_records(request.user),
     })
 
 
@@ -7860,6 +8145,127 @@ def advance_create(request):
     else:
         form = AdvanceCreateForm(initial={'start_date': date.today().replace(day=1)})
     return render(request, 'advances/advance_create.html', {'form': form})
+
+
+def _can_manage_advance_records(user):
+    """Editing or deleting an advance record itself (not just paying or
+    skipping an EMI on one) is Admin/Super Admin only -- stricter than the
+    ordinary advances:edit grant used elsewhere in this module, which also
+    covers the Payroll Officer role."""
+    return (
+        user.is_superuser or user.is_staff
+        or is_admin(user) or is_super_admin(user)
+    )
+
+
+@login_required
+def advance_edit(request, pk):
+    """Admin/Super Admin only: correct an advance's amount, term or start
+    date after the fact. If no EMI has been paid yet, the whole schedule is
+    safely rebuilt from scratch. Once a payment exists, the paid/skipped
+    EMIs are left alone as history and only the still-pending tail is
+    resized to match the new amount/months -- the start date can no longer
+    move, since it's already baked into due dates real payments were
+    recorded against."""
+    adv = get_object_or_404(AdvanceMaster, pk=pk)
+    if not _can_manage_advance_records(request.user):
+        raise PermissionDenied
+
+    has_payments = adv.payments.exists()
+    # Captured before the form touches `adv` -- ModelForm.is_valid() calls
+    # construct_instance() internally and mutates the bound instance's
+    # fields from cleaned_data even before .save(), so reading "old" values
+    # off `adv` after is_valid() would already see the new ones.
+    old_amount = adv.advance_amount
+    old_months = adv.default_months
+    paid_so_far = old_amount - adv.outstanding_amount
+
+    form = AdvanceEditForm(request.POST or None, instance=adv)
+    if has_payments:
+        form.fields['start_date'].disabled = True
+
+    if request.method == 'POST' and form.is_valid():
+        new_amount = form.cleaned_data['advance_amount']
+        new_months = form.cleaned_data['default_months']
+
+        if new_amount < paid_so_far:
+            form.add_error('advance_amount', f"Can't be less than what's already been paid (₹{paid_so_far}).")
+        else:
+            with transaction.atomic():
+                if not has_payments:
+                    # Nothing paid yet -- safe to rebuild the schedule from
+                    # scratch with the new numbers, same as a fresh create.
+                    adv.schedules.all().delete()
+                    adv.advance_amount = new_amount
+                    adv.default_months = new_months
+                    adv.outstanding_amount = new_amount
+                    adv.start_date = form.cleaned_data['start_date']
+                    adv.save()
+                    parts = distribute_integer_rupees(new_amount, new_months)
+                    for i, amt in enumerate(parts):
+                        AdvanceSchedule.objects.create(
+                            advance=adv, due_month=add_months(adv.start_date, i), scheduled_amount=amt,
+                        )
+                else:
+                    # Payments exist -- keep settled EMIs as history, resize
+                    # only the pending tail to match the new total months.
+                    adv.advance_amount = new_amount
+                    adv.default_months = new_months
+                    adv.outstanding_amount = new_amount - paid_so_far
+                    adv.save()
+
+                    settled_count = adv.schedules.exclude(status=AdvanceSchedule.STATUS_PENDING).count()
+                    target_pending = max(0, new_months - settled_count)
+                    pending = list(adv.schedules.filter(status=AdvanceSchedule.STATUS_PENDING).order_by('due_month'))
+
+                    if len(pending) > target_pending:
+                        for s in pending[target_pending:]:
+                            s.delete()
+                    elif len(pending) < target_pending:
+                        last = adv.schedules.order_by('due_month').last()
+                        next_due = add_months(last.due_month, 1) if last else adv.start_date
+                        for _ in range(target_pending - len(pending)):
+                            AdvanceSchedule.objects.create(advance=adv, due_month=next_due, scheduled_amount=0)
+                            next_due = add_months(next_due, 1)
+
+                    recompute_future_schedule(adv)
+
+                log_audit(
+                    request.user, AuditLog.Action.ADVANCE_UPDATED, adv,
+                    summary=(
+                        f"Updated advance for {adv.employee}: amount ₹{old_amount}→₹{new_amount}, "
+                        f"months {old_months}→{new_months}"
+                    ),
+                )
+
+            messages.success(request, "Advance updated.")
+            return redirect('advance-detail', pk=adv.pk)
+
+    return render(request, 'advances/advance_edit.html', {
+        'form': form,
+        'advance': adv,
+        'has_payments': has_payments,
+    })
+
+
+@login_required
+@require_POST
+def advance_delete(request, pk):
+    """Admin/Super Admin only: permanently delete an advance and its whole
+    schedule/payment history (cascade). No soft-delete/archive for this
+    model, so this is irreversible -- the confirmation lives client-side
+    (see advance_list.html / advance_detail.html)."""
+    adv = get_object_or_404(AdvanceMaster, pk=pk)
+    if not _can_manage_advance_records(request.user):
+        raise PermissionDenied
+
+    log_audit(
+        request.user, AuditLog.Action.ADVANCE_DELETED, adv,
+        summary=f"Deleted advance for {adv.employee} (₹{adv.advance_amount}, outstanding ₹{adv.outstanding_amount})",
+    )
+    adv.delete()
+    messages.success(request, "Advance deleted.")
+    return redirect('advances-list')
 
 
 
@@ -7899,6 +8305,7 @@ def advance_detail(request, pk):
             request.user.is_superuser or request.user.is_staff
             or has_feature_permission(request.user, "advances", "edit")
         ),
+        'can_manage_advance_records': _can_manage_advance_records(request.user),
     })
 
 @login_required

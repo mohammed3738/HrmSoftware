@@ -629,6 +629,7 @@ document.addEventListener("DOMContentLoaded", function () {
       <div class="modal-body">
         <p class="text-muted">
           Download the template, fill in one row per comp-off (employee, from/to date, reason), then upload.
+          Set <b>Half Day</b> to "yes" for a 0.5-day comp-off — From Date and To Date must be the same day in that case.
           Requests are created as <b>Pending</b> and still need to go through the normal approval flow.
         </p>
         <a href="{% url 'compoff-import-template' %}" class="btn btn-outline-secondary btn-sm mb-3">

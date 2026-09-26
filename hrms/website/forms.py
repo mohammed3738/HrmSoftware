@@ -463,6 +463,19 @@ class AdvanceCreateForm(forms.ModelForm):
             'start_date': forms.DateInput(attrs={'type': 'date'}),
         }
 
+
+class AdvanceEditForm(forms.ModelForm):
+    """Edit an existing advance's amount/months/start date -- the employee
+    isn't editable here (that's a different advance, not a correction to
+    this one). See advance_edit in views.py for how a change is actually
+    applied to the schedule once already-paid EMIs exist."""
+    class Meta:
+        model = AdvanceMaster
+        fields = ['advance_amount', 'default_months', 'start_date']
+        widgets = {
+            'start_date': forms.DateInput(attrs={'type': 'date'}),
+        }
+
 class PaymentForm(forms.Form):
     amount = forms.IntegerField(min_value=1, label="Amount (₹)")
     note = forms.CharField(widget=forms.Textarea(attrs={'rows':2}), required=False)

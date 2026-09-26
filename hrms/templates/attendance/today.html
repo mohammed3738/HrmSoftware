@@ -6,6 +6,7 @@
     <!-- 🔹 Date Filter Section -->
     <div class="d-flex align-items-center justify-content-between mb-3">
       <div class="d-flex align-items-center gap-2">
+        {% if view_mode == 'date' %}
         <button type="button" class="btn btn-outline-secondary" id="prevDay">
           <i class="ri-arrow-left-line"></i> Previous
         </button>
@@ -26,6 +27,11 @@
         <button type="button" class="btn btn-outline-secondary" id="nextDay">
           Next <i class="ri-arrow-right-line"></i>
         </button>
+        {% elif view_mode == 'month' %}
+        <span class="text-muted">Showing the whole selected month below — use Reset to go back to a single day.</span>
+        {% elif view_mode == 'period' %}
+        <span class="text-muted">Showing the whole selected payroll month below — use Reset to go back to a single day.</span>
+        {% endif %}
       </div>
 
       <!-- 🔍 Name Filter -->
@@ -43,10 +49,50 @@
             id="employeeDropdown"
             class="list-group position-absolute w-100 shadow"
             style="z-index: 1000; display: none; max-height: 250px; overflow-y: auto; background-color: white; cursor: pointer;"
-          </ul>
+          ></ul>
         </div>
       </div>
     </div>
+
+    <!-- 🔹 Month / Payroll Period Filter -->
+    <form method="get" class="row g-2 align-items-end mb-3">
+      <div class="col-md-2">
+        <label class="form-label fw-semibold">Month</label>
+        <select name="month" class="form-select form-select-sm">
+          <option value="">-- Any --</option>
+          {% for m in months %}
+          <option value="{{ m.value }}" {% if selected_month == m.value|stringformat:"s" %}selected{% endif %}>{{ m.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label fw-semibold">Year</label>
+        <select name="year" class="form-select form-select-sm">
+          <option value="">-- Any --</option>
+          {% for y in years %}
+          <option value="{{ y.year }}" {% if selected_year == y.year|stringformat:"s" %}selected{% endif %}>{{ y.year }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Payroll Month</label>
+        <select name="period" class="form-select form-select-sm">
+          <option value="">-- None --</option>
+          {% for p in available_periods %}
+          <option value="{{ p.to_date|date:'Y-m-d' }}" {% if selected_period == p.to_date|date:'Y-m-d' %}selected{% endif %}>{{ p.label }}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Union of every active company's payroll cycle.</div>
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary mt-auto">
+          <i class="ri-filter-2-line me-1"></i> Filter
+        </button>
+        <a href="{% url 'attendance' %}" class="btn btn-sm btn-outline-secondary mt-auto">
+          <i class="ri-refresh-line me-1"></i> Reset
+        </a>
+      </div>
+    </form>
 
     <!-- 🔹 Attendance Table -->
     {% if attendance_records %}
@@ -120,7 +166,13 @@
     </div>
     {% else %}
     <div class="alert alert-warning text-center mt-4">
+      {% if view_mode == 'month' %}
+      No attendance found for the selected month.
+      {% elif view_mode == 'period' %}
+      No attendance found for the selected payroll month.
+      {% else %}
       No attendance found for <b>{{ selected_date }}</b>.
+      {% endif %}
     </div>
     {% endif %}
   </div>
@@ -231,6 +283,12 @@
       <div class="form-group">
         <label>To Date</label>
         <input type="date" id="comp_off_to_date" name="to_date" required />
+      </div>
+
+      <div class="form-group form-check">
+        <input type="checkbox" class="form-check-input" id="comp_off_half_day" name="half_day">
+        <label class="form-check-label" for="comp_off_half_day">Half Day</label>
+        <div class="form-text">Only available when From Date and To Date are the same day.</div>
       </div>
 
       <div class="form-group">
@@ -391,6 +449,7 @@
     const dateInput = document.getElementById("datePicker");
     const prevBtn = document.getElementById("prevDay");
     const nextBtn = document.getElementById("nextDay");
+    if (!dateInput || !prevBtn || !nextBtn) return; // not in single-day view mode
 
     prevBtn.addEventListener("click", function () {
       let currentDate = new Date(dateInput.value);
@@ -484,12 +543,33 @@
     document.getElementById("comp_off_employee_id").value = employeeId;
     document.getElementById("comp_off_from_date").value = date;
     document.getElementById("comp_off_to_date").value = date;
+    updateHalfDayAvailability();
     document.getElementById("compOffModal").style.display = "block";
   }
 
   function closeCompOffModal() {
     document.getElementById("compOffModal").style.display = "none";
   }
+
+  // Half Day only makes sense for a single day -- disable and uncheck it
+  // the moment From/To stop matching, so a stray checked box can't submit
+  // a half-day comp-off across a multi-day range.
+  function updateHalfDayAvailability() {
+    const fromEl = document.getElementById("comp_off_from_date");
+    const toEl = document.getElementById("comp_off_to_date");
+    const halfDayEl = document.getElementById("comp_off_half_day");
+    const sameDay = fromEl.value && toEl.value && fromEl.value === toEl.value;
+    halfDayEl.disabled = !sameDay;
+    if (!sameDay) halfDayEl.checked = false;
+  }
+  document.addEventListener("DOMContentLoaded", function () {
+    const fromEl = document.getElementById("comp_off_from_date");
+    const toEl = document.getElementById("comp_off_to_date");
+    if (fromEl && toEl) {
+      fromEl.addEventListener("change", updateHalfDayAvailability);
+      toEl.addEventListener("change", updateHalfDayAvailability);
+    }
+  });
 
   // Handle correction request form submission
 
@@ -557,36 +637,17 @@
 </script>
 
 
-{% comment %} <script>
-document.addEventListener("DOMContentLoaded", function () {
-    let table = $('.datatable').DataTable({
-        pageLength: 10,
-        responsive: true,
-        dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
-    });
- 
-    // Convert DataTables elements into Bootstrap style
-    $('.dataTables_filter input').addClass('form-control');
-    $('.dataTables_length select').addClass('form-select');
-});
-</script> {% endcomment %}
-
-
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 
   const table = $('.datatable').DataTable({
     pageLength: 10,
     responsive: true,
+    dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
   });
 
-  // 🔍 Filter by employee name (column index = 1)
-  document.getElementById("nameFilter").addEventListener("input", function () {
-    table.column(1).search(this.value).draw();
-  });
-
-      $('.dataTables_filter input').addClass('form-control');
-    $('.dataTables_length select').addClass('form-select');
+  $('.dataTables_filter input').addClass('form-control');
+  $('.dataTables_length select').addClass('form-select');
 
 
 });

@@ -546,6 +546,11 @@ class CompOffRequest(models.Model):
     reason = models.TextField(null=True, blank=True)
     rejection_reason = models.TextField(null=True, blank=True)
     count = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    # Only meaningful when from_date == to_date -- a half day across a
+    # multi-day range doesn't mean anything, so callers must not set this
+    # unless the two dates match (see submit_comp_off_request / the bulk
+    # import's validation in website/views.py).
+    is_half_day = models.BooleanField(default=False)
     status = models.CharField(
         max_length=20,
         choices=[('Pending', 'Pending'), ('Approved', 'Approved'), ('Rejected', 'Rejected')],
@@ -554,7 +559,10 @@ class CompOffRequest(models.Model):
 
     def save(self, *args, **kwargs):
         if self.from_date and self.to_date:
-            self.count = (self.to_date - self.from_date).days + 1
+            if self.is_half_day:
+                self.count = Decimal("0.50")
+            else:
+                self.count = (self.to_date - self.from_date).days + 1
         super().save(*args, **kwargs)
 
 
@@ -2252,6 +2260,8 @@ class AuditLog(models.Model):
         EMPLOYEE_RESTORED = "employee_restored", "Employee restored"
         OFFBOARDING_ARCHIVED = "offboarding_archived", "Offboarding archived"
         OFFBOARDING_RESTORED = "offboarding_restored", "Offboarding restored"
+        ADVANCE_UPDATED = "advance_updated", "Advance updated"
+        ADVANCE_DELETED = "advance_deleted", "Advance deleted"
 
     actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_logs")
     action = models.CharField(max_length=40, choices=Action.choices, db_index=True)

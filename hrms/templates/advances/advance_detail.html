@@ -21,6 +21,18 @@
         <i class="ti ti-cash me-1"></i> Make Payment
       </button>
       {% endif %}
+      {% if can_manage_advance_records %}
+      <a href="{% url 'advance-edit' advance.id %}" class="btn btn-outline-secondary">
+        <i class="ti ti-edit me-1"></i> Edit
+      </a>
+      <form method="post" action="{% url 'advance-delete' advance.id %}" class="d-inline"
+            onsubmit="return confirm('Delete this advance for {{ advance.employee.first_name|escapejs }} {{ advance.employee.last_name|escapejs }}? This also deletes its schedule and payment history and cannot be undone.');">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-danger">
+          <i class="ti ti-trash me-1"></i> Delete
+        </button>
+      </form>
+      {% endif %}
       <a href="{% url 'advances-list' %}" class="btn btn-outline-secondary">
         <i class="ti ti-arrow-left me-1"></i> Back
       </a>

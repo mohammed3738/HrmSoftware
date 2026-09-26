@@ -48,7 +48,7 @@ Expects: leave_requests, compoff_requests, correction_requests.
     <div class="table-responsive">
       <table class="table table-sm table-hover mb-0">
         <thead class="table-light">
-          <tr><th>Employee</th><th>From</th><th>To</th><th>Reason</th><th class="text-end">Action</th></tr>
+          <tr><th>Employee</th><th>From</th><th>To</th><th>Reason</th><th>Grant As</th><th class="text-end">Action</th></tr>
         </thead>
         <tbody>
           {% for c in compoff_requests %}
@@ -57,13 +57,23 @@ Expects: leave_requests, compoff_requests, correction_requests.
             <td class="text-muted">{{ c.from_date|date:"d M Y" }}</td>
             <td class="text-muted">{{ c.to_date|date:"d M Y" }}</td>
             <td class="text-muted small">{{ c.reason|default:"—"|truncatechars:60 }}</td>
+            <td>
+              {% if c.from_date == c.to_date %}
+              <select class="form-select form-select-sm compoff-half-day" style="width:auto;">
+                <option value="false" {% if not c.is_half_day %}selected{% endif %}>Full Day</option>
+                <option value="true" {% if c.is_half_day %}selected{% endif %}>Half Day</option>
+              </select>
+              {% else %}
+              <span class="text-muted small">Full Day ({{ c.count }}d)</span>
+              {% endif %}
+            </td>
             <td class="text-end text-nowrap">
-              <button class="btn btn-sm btn-success" onclick="actOn('compoff', {{ c.id }}, 'approve')">Approve</button>
+              <button class="btn btn-sm btn-success" onclick="actOn('compoff', {{ c.id }}, 'approve', this)">Approve</button>
               <button class="btn btn-sm btn-outline-danger" onclick="actOn('compoff', {{ c.id }}, 'reject')">Reject</button>
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="5" class="text-center text-muted py-3">Nothing pending</td></tr>
+          <tr><td colspan="6" class="text-center text-muted py-3">Nothing pending</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -143,6 +153,13 @@ function actOn(kind, id, action, btn) {
     const decision = row.querySelector('.correction-status').value;
     headers['Content-Type'] = 'application/x-www-form-urlencoded';
     body = new URLSearchParams({ status_decision: decision });
+  } else if (kind === 'compoff' && action === 'approve' && btn) {
+    const row = btn.closest('tr');
+    const halfDaySelect = row.querySelector('.compoff-half-day');
+    if (halfDaySelect) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      body = new URLSearchParams({ half_day: halfDaySelect.value });
+    }
   }
 
   fetch(url, { method: 'POST', headers: headers, body: body })

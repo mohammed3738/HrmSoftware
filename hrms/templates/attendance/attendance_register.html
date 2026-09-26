@@ -21,6 +21,7 @@
         <label class="form-label fw-semibold">Company</label>
         <select name="company_id" class="form-select form-select-sm" onchange="document.getElementById('registerFilterForm').submit()">
           <option value="">-- Select Company --</option>
+          <option value="all" {% if selected_company_id == "all" %}selected{% endif %}>All Companies</option>
           {% for c in all_companies %}
           <option value="{{ c.id }}" {% if selected_company_id == c.id %}selected{% endif %}>{{ c.name }}</option>
           {% endfor %}
@@ -46,6 +47,8 @@
         <input type="text" name="q" value="{{ search_query }}" class="form-control form-control-sm" placeholder="Name or code">
       </div>
 
+      {% if page_size %}<input type="hidden" name="per_page" value="{{ page_size }}">{% endif %}
+
       <div class="col-md-3">
         <button type="submit" class="btn btn-sm btn-primary"><i class="ri-filter-2-line me-1"></i>Filter</button>
         <a href="{% url 'attendance-register' %}{% if selected_company_id %}?company_id={{ selected_company_id }}{% endif %}" class="btn btn-sm btn-outline-secondary">Reset</a>
@@ -57,6 +60,21 @@
     {% elif not day_columns %}
     <div class="alert alert-info mx-2">No attendance data found for this company/period yet.</div>
     {% else %}
+
+    <div class="d-flex align-items-center mb-2 px-2">
+      <form method="GET" class="d-flex align-items-center gap-2" id="pageSizeForm">
+        {% if selected_company_id %}<input type="hidden" name="company_id" value="{{ selected_company_id }}">{% endif %}
+        {% if selected_period %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
+        {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+        <label class="text-muted small mb-0">Show</label>
+        <select name="per_page" class="form-select form-select-sm" style="width:auto;" onchange="document.getElementById('pageSizeForm').submit()">
+          {% for size in page_size_choices %}
+          <option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}</option>
+          {% endfor %}
+        </select>
+        <span class="text-muted small">entries</span>
+      </form>
+    </div>
 
     <div class="table-responsive" style="max-height:75vh;">
       <table class="table table-sm table-bordered align-middle mb-0" style="font-size:0.78rem;">
@@ -132,7 +150,31 @@
           <tr><td colspan="13">No employees found.</td></tr>
           {% endfor %}
         </tbody>
+        {% if rows %}
+        <tfoot class="table-light fw-bold" style="position:sticky; bottom:0;">
+          <tr>
+            <td colspan="2">Totals ({{ totals.employee_count }} employee{{ totals.employee_count|pluralize }})</td>
+            <td class="text-end">{{ totals.opening_balance|floatformat:2 }}</td>
+            <td class="text-end">{{ totals.leave_taken|floatformat:2 }}</td>
+            <td class="text-end">{{ totals.late }}</td>
+            <td class="text-end">{{ totals.compoff|floatformat:2 }}</td>
+            <td class="text-end">{{ totals.leave_without_pay|floatformat:2 }}</td>
+            <td class="text-end">{{ totals.number_of_days_present|floatformat:2 }}</td>
+            <td class="text-end">{{ totals.total_number_of_days }}</td>
+            <td class="text-end">{{ totals.closing_balance|floatformat:2 }}</td>
+            <td class="text-end">{{ totals.final_leave_balance|floatformat:2 }}</td>
+            <td>—</td>
+            {% for dtotal in totals.days %}
+            <td class="text-center">{{ dtotal|floatformat:-2 }}</td>
+            {% endfor %}
+            <td class="text-end">{{ totals.late_deduction }}</td>
+          </tr>
+        </tfoot>
+        {% endif %}
       </table>
+    </div>
+    <div class="text-muted small px-2 mt-1">
+      Totals cover every employee matching the current filters (not just this page).
     </div>
 
     {% if paginator.num_pages > 1 %}
@@ -140,10 +182,10 @@
       <span class="text-muted small">Page {{ page_obj.number }} of {{ paginator.num_pages }} ({{ total_employees }} employees)</span>
       <div>
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+        <a href="?page={{ page_obj.previous_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
         {% endif %}
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}" class="btn btn-sm btn-outline-primary">Next</a>
+        <a href="?page={{ page_obj.next_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary">Next</a>
         {% endif %}
       </div>
     </div>

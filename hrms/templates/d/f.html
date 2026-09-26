@@ -451,7 +451,7 @@
                 <td class="text-muted">{{ c.to_date|date:"d M Y" }}</td>
                 <td>
                   <button class="btn btn-sm btn-info action-btn"
-                    onclick="openCompOffModalView('{{ c.employee.employee_code }}','{{ c.employee.first_name }} {{ c.employee.last_name }}','{{ c.from_date }}','{{ c.to_date }}',`{{ c.reason|escapejs }}`,{{ c.id }})">
+                    onclick="openCompOffModalView('{{ c.employee.employee_code }}','{{ c.employee.first_name }} {{ c.employee.last_name }}','{{ c.from_date }}','{{ c.to_date }}',`{{ c.reason|escapejs }}`,{{ c.id }},{{ c.is_half_day|yesno:'true,false' }})">
                     View
                   </button>
                 </td>
@@ -785,6 +785,15 @@
         <hr>
         <h6 class="text-primary fw-bold mb-2"><i class="ri-file-text-line me-1"></i> Reason</h6>
         <div id="c_reason" class="p-3 rounded-3 fs-6" style="white-space:pre-line;min-height:60px;background:#f7faff;border:1px solid #c9e6ff;color:#003f6b;"></div>
+
+        <div id="c_half_day_group" class="mt-3">
+          <h6 class="text-primary fw-bold mb-2"><i class="ri-scales-3-line me-1"></i> Grant As</h6>
+          <select id="c_half_day" class="form-select form-select-sm" style="width:auto;">
+            <option value="false">Full Day</option>
+            <option value="true">Half Day</option>
+          </select>
+          <div class="form-text">Only available for a single-day request — overrides what the employee originally asked for.</div>
+        </div>
       </div>
       <div class="modal-footer justify-content-between border-0 px-4 pb-4">
         <button class="btn btn-success px-4 rounded-pill" id="c_approveBtn"><i class="ri-check-line me-1"></i>Approve</button>
@@ -1156,23 +1165,36 @@ function rejectRequest(id) {
 }
 
 // ── Comp-Off ─────────────────────────────────────────────────────────
-function openCompOffModalView(id, name, fromDate, toDate, reason, compId) {
+function openCompOffModalView(id, name, fromDate, toDate, reason, compId, isHalfDay) {
   document.getElementById("c_emp_id").innerText = id;
   document.getElementById("c_emp_name").innerText = name;
   document.getElementById("c_from_date").innerText = fromDate;
   document.getElementById("c_to_date").innerText = toDate;
   document.getElementById("c_reason").innerText = reason;
+
+  const halfDayGroup = document.getElementById("c_half_day_group");
+  const halfDaySelect = document.getElementById("c_half_day");
+  const singleDay = fromDate === toDate;
+  halfDayGroup.style.display = singleDay ? "block" : "none";
+  halfDaySelect.value = isHalfDay ? "true" : "false";
+
   document.getElementById("c_approveBtn").setAttribute("onclick", `approveCompOff(${compId})`);
   document.getElementById("c_rejectBtn").setAttribute("onclick", `rejectCompOff(${compId})`);
   new bootstrap.Modal(document.getElementById('compOffModalView')).show();
 }
 
 function approveCompOff(id) {
+  const halfDayGroup = document.getElementById("c_half_day_group");
+  const halfDayValue = halfDayGroup.style.display !== "none" ? document.getElementById("c_half_day").value : null;
+
   let m = bootstrap.Modal.getInstance(document.getElementById('compOffModalView'));
   m.hide(); document.querySelector('.modal-backdrop')?.remove();
   Swal.fire({ title:'Approve Comp-Off?', icon:'question', showCancelButton:true, confirmButtonColor:'#28a745', confirmButtonText:'Yes, Approve' })
   .then(r => { if (r.isConfirmed) {
-    fetch(`/approve-compoff/${id}/`, { method:"POST", headers:{"X-CSRFToken": getCSRFToken()} })
+    const body = halfDayValue !== null ? new URLSearchParams({ half_day: halfDayValue }) : null;
+    const headers = { "X-CSRFToken": getCSRFToken() };
+    if (body) headers["Content-Type"] = "application/x-www-form-urlencoded";
+    fetch(`/approve-compoff/${id}/`, { method:"POST", headers, body })
     .then(res => res.json())
     .then(data => { Swal.fire({icon:'success', title:'Approved!', text:data.message, timer:1500, showConfirmButton:false}); setTimeout(() => location.reload(), 1600); });
   }});

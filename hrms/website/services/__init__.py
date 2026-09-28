@@ -320,18 +320,28 @@ def recalculate_payroll_run(run: PayrollRun):
     edit modal) are preserved rather than clobbered by the refresh. Active
     employees with a salary who aren't in the run yet (e.g. hired after it
     was first generated) get a new record added. Existing records for
-    employees who are no longer Active, who no longer have an active
-    SalaryMaster, or whose date_of_joining now falls after this run's
-    period (e.g. it was corrected to a future date after the record was
-    first created) are left untouched rather than refreshed or removed.
+    employees who are no longer Active or who no longer have an active
+    SalaryMaster are left untouched rather than refreshed or removed --
+    that may well be a legitimate record for the part of the period they
+    were still employed/paid. A record for an employee whose
+    date_of_joining now falls after this run's period is different: that's
+    not a legitimate historical record at all (e.g. the record was created
+    before date_of_joining was set/corrected to a later date, or before
+    generation started excluding future joiners) -- it self-heals by being
+    deleted here, the same way calculate_leave_balance_for_period deletes
+    its own equivalent stale row.
     """
     existing = {r.employee_id: r for r in run.records.all()}
     active_employee_ids = set()
-    refreshed = added = 0
+    refreshed = added = deleted = 0
 
     employees = Employee.objects.filter(company=run.company, status="Active")
     for emp in employees:
         if emp.date_of_joining and emp.date_of_joining > run.end_date:
+            stale = existing.get(emp.id)
+            if stale is not None:
+                stale.delete()
+                deleted += 1
             continue  # not yet employed during this run's period
         salary = SalaryMaster.objects.filter(employee=emp, is_active=True).first()
         if not salary:
@@ -355,8 +365,8 @@ def recalculate_payroll_run(run: PayrollRun):
 
         recalc_and_save_record(rec, manual_overrides=manual)
 
-    skipped = sum(1 for emp_id in existing if emp_id not in active_employee_ids)
-    return {"refreshed": refreshed, "added": added, "skipped": skipped}
+    skipped = sum(1 for emp_id in existing if emp_id not in active_employee_ids) - deleted
+    return {"refreshed": refreshed, "added": added, "skipped": skipped, "deleted": deleted}
 
 
 def calculate_pro_rata(component_pm, total_days, leave_without_pay):

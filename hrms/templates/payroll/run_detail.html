@@ -817,6 +817,7 @@ if (btnConfirmRecalc) {
         const parts = [`${json.refreshed} refreshed`];
         if (json.added)   parts.push(`${json.added} added`);
         if (json.skipped) parts.push(`${json.skipped} skipped`);
+        if (json.deleted) parts.push(`${json.deleted} removed (not yet joined)`);
         showToast(`Recalculated — ${parts.join(", ")}. Page will refresh…`, "success");
         setTimeout(() => location.reload(), 1800);
       } else {

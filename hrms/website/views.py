@@ -5053,22 +5053,16 @@ def leave_balance_view(request):
     return render(request, 'leave_balance/leave_balance_report.html', context)
 
 
-@login_required
-@feature_required("attendance_review", action="view")
-def attendance_register_view(request):
-    """Day-by-day attendance register (muster roll): one row per employee
-    with the same Leave Balance summary columns (Opening/Leave Taken/Late/
-    Comp Off/LWP/Paid Days/Total Days/Closing/Balance) plus one column per
-    calendar day in the selected payroll period. Per-day cells are edited
-    via the existing override_attendance_status endpoint (same one used on
-    the Late Attendance Review page) -- no new override mechanism needed.
+def _resolve_attendance_register_scope(request):
+    """Resolve company scope, payroll period, day columns and the full
+    (unpaginated) employee list for the Attendance Register -- shared by
+    the HTML view and the Excel export so the two can never disagree about
+    what a given set of filters means.
 
-    company_id=all lists every active company's employees together in the
-    exact same layout, rather than a separate view -- the payroll-period
-    dropdown is the union of every company's periods (deduplicated by exact
-    date range), and each employee's own company still supplies their
-    weekend days / late-deduction rule and LeaveBalance row for whichever
-    period is selected."""
+    Returns a dict. If scope['early_context'] is not None, there's nothing
+    to show (no company selected / no payroll settings / no period yet):
+    the caller should render attendance_register.html with
+    {**scope['early_context']} directly rather than trying to build rows."""
     from website.models import Company
 
     user = request.user
@@ -5086,7 +5080,7 @@ def attendance_register_view(request):
     else:
         company = user_own_company
 
-    context = {
+    base_context = {
         'is_global': is_global,
         'all_companies': Company.objects.filter(status='active').order_by('name') if is_global else None,
         'selected_company_id': 'all' if is_all_companies else (company.id if company else None),
@@ -5105,8 +5099,7 @@ def attendance_register_view(request):
     }
 
     if not is_all_companies and not company:
-        context.update({'rows': [], 'day_columns': [], 'available_periods': []})
-        return render(request, 'attendance/attendance_register.html', context)
+        return {'early_context': {**base_context, 'rows': [], 'day_columns': [], 'available_periods': []}}
 
     if is_all_companies:
         ps_by_company = {
@@ -5114,16 +5107,17 @@ def attendance_register_view(request):
             for ps in PayrollSettings.objects.filter(company__status='active')
         }
         available_periods = get_merged_payroll_periods_for_active_companies()
+        payroll_settings = None
     else:
         try:
             payroll_settings = PayrollSettings.objects.get(company=company)
         except PayrollSettings.DoesNotExist:
-            context.update({
-                'rows': [], 'day_columns': [], 'available_periods': [],
+            return {'early_context': {
+                **base_context, 'rows': [], 'day_columns': [], 'available_periods': [],
                 'error': 'Payroll settings not configured for this company.',
-            })
-            return render(request, 'attendance/attendance_register.html', context)
+            }}
         available_periods = get_all_payroll_periods_from_attendance(company, payroll_settings)
+        ps_by_company = None
 
     selected_period_str = request.GET.get('period')
     selected_period = None
@@ -5136,11 +5130,10 @@ def attendance_register_view(request):
         selected_period = available_periods[0]
 
     if not selected_period:
-        context.update({
-            'rows': [], 'day_columns': [], 'available_periods': [],
+        return {'early_context': {
+            **base_context, 'rows': [], 'day_columns': [], 'available_periods': [],
             'user_company_id': company.id if company else None,
-        })
-        return render(request, 'attendance/attendance_register.html', context)
+        }}
 
     from_date, to_date = selected_period['from_date'], selected_period['to_date']
 
@@ -5186,50 +5179,65 @@ def attendance_register_view(request):
     else:
         employees_list = list(employees_qs)
 
-    page_size = get_page_size(request)
-    paginator = Paginator(employees_list, page_size)
-    page_obj = paginator.get_page(request.GET.get('page', 1))
-    page_employees = list(page_obj)
-    page_employee_ids = [e.id for e in page_employees]
-
-    # Bulk-fetch this page's LeaveBalance summary rows in one query.
-    lb_lookup = {
-        lb.employee_id: lb
-        for lb in LeaveBalance.objects.filter(
-            employee_id__in=page_employee_ids,
-            period_from_date=from_date,
-            period_to_date=to_date,
-        )
-    }
-
-    # Bulk-fetch ALL of this page's Attendance across the whole period in
-    # one query, grouped by (employee_id, date) -- avoids an N+1 across
-    # employees x days that a naive per-cell lookup would cause.
-    att_lookup = {}
-    for a in Attendance.objects.filter(
-        employee_id__in=page_employee_ids, date__gte=from_date, date__lte=to_date,
-    ).values('id', 'employee_id', 'date', 'status', 'count'):
-        att_lookup[(a['employee_id'], a['date'])] = a
-
     # Same simplification as the weekend rule above: use each company's own
     # setting in single-company mode, and the ordinary default when
     # companies in scope might disagree.
     late_marks_affect_lwp = True if is_all_companies else getattr(payroll_settings, 'late_marks_affect_lwp', True)
 
-    def format_count(count):
-        """What a day's cell shows. A zero-count day is an absence, marked
-        "A" -- distinct from a blank cell, which means no attendance was
-        ever recorded for that day."""
-        if count == 0:
-            return 'A'
-        if count == 1:
-            return '1'
-        if count == Decimal('0.5'):
-            return '0.5'
-        return str(count)
+    return {
+        'early_context': None,
+        'base_context': base_context,
+        'is_all_companies': is_all_companies,
+        'company': company,
+        'day_columns': day_columns,
+        'from_date': from_date,
+        'to_date': to_date,
+        'available_periods': available_periods,
+        'selected_period': selected_period,
+        'employees_list': employees_list,
+        'search_query': search_query,
+        'late_marks_affect_lwp': late_marks_affect_lwp,
+    }
+
+
+def _format_attendance_register_count(count):
+    """What a day's cell shows. A zero-count day is an absence, marked "A"
+    -- distinct from a blank cell, which means no attendance was ever
+    recorded for that day."""
+    if count == 0:
+        return 'A'
+    if count == 1:
+        return '1'
+    if count == Decimal('0.5'):
+        return '0.5'
+    return str(count)
+
+
+def _build_attendance_register_rows(employees, day_columns, from_date, to_date, late_marks_affect_lwp):
+    """Build one register row per employee (their LeaveBalance summary plus
+    a day-by-day attendance cell for every column) -- used both for the
+    page of employees the HTML view displays and for the full,
+    unpaginated set the Excel export writes out."""
+    employee_ids = [e.id for e in employees]
+
+    lb_lookup = {
+        lb.employee_id: lb
+        for lb in LeaveBalance.objects.filter(
+            employee_id__in=employee_ids, period_from_date=from_date, period_to_date=to_date,
+        )
+    }
+
+    # Bulk-fetch every relevant Attendance row in one query, grouped by
+    # (employee_id, date) -- avoids an N+1 across employees x days that a
+    # naive per-cell lookup would cause.
+    att_lookup = {}
+    for a in Attendance.objects.filter(
+        employee_id__in=employee_ids, date__gte=from_date, date__lte=to_date,
+    ).values('id', 'employee_id', 'date', 'status', 'count'):
+        att_lookup[(a['employee_id'], a['date'])] = a
 
     rows = []
-    for emp in page_employees:
+    for emp in employees:
         lb = lb_lookup.get(emp.id)
         # Late Deduction: derived on the fly from the stored late count,
         # using the exact same grace-period formula already used inside
@@ -5255,17 +5263,20 @@ def attendance_register_view(request):
             days.append({
                 'date': col['date'],
                 'is_weekend': False,
-                'display': format_count(att['count'] or Decimal('0.00')),
+                'display': _format_attendance_register_count(att['count'] or Decimal('0.00')),
                 'attendance_id': att['id'],
                 'status': att['status'],
             })
 
         rows.append({'employee': emp, 'lb': lb, 'late_deduction': late_deduction, 'days': days})
+    return rows
 
-    # Totals row: summed across every employee matching the current filter,
-    # not just this page -- a payroll-time register is only as useful as
-    # its grand total, and that shouldn't depend on which 15 rows happen
-    # to be on screen.
+
+def _compute_attendance_register_totals(employees_list, day_columns, from_date, to_date, late_marks_affect_lwp):
+    """Totals row: summed across every employee matching the current
+    filter, not just one page of them -- a payroll-time register is only
+    as useful as its grand total, and that shouldn't depend on which rows
+    happen to be on screen (or in this export)."""
     all_employee_ids = [e.id for e in employees_list]
     lb_qs = LeaveBalance.objects.filter(
         employee_id__in=all_employee_ids,
@@ -5304,7 +5315,7 @@ def attendance_register_view(request):
         for col in day_columns
     ]
 
-    totals = {
+    return {
         'employee_count': total_employee_count,
         'opening_balance': lb_totals['opening_balance'] or Decimal('0.00'),
         'leave_taken': lb_totals['leave_taken'] or Decimal('0.00'),
@@ -5319,22 +5330,146 @@ def attendance_register_view(request):
         'days': day_totals,
     }
 
+
+@login_required
+@feature_required("attendance_review", action="view")
+def attendance_register_view(request):
+    """Day-by-day attendance register (muster roll): one row per employee
+    with the same Leave Balance summary columns (Opening/Leave Taken/Late/
+    Comp Off/LWP/Paid Days/Total Days/Closing/Balance) plus one column per
+    calendar day in the selected payroll period. Per-day cells are edited
+    via the existing override_attendance_status endpoint (same one used on
+    the Late Attendance Review page) -- no new override mechanism needed.
+
+    company_id=all lists every active company's employees together in the
+    exact same layout, rather than a separate view -- the payroll-period
+    dropdown is the union of every company's periods (deduplicated by exact
+    date range), and each employee's own company still supplies their
+    weekend days / late-deduction rule and LeaveBalance row for whichever
+    period is selected."""
+    scope = _resolve_attendance_register_scope(request)
+    if scope['early_context'] is not None:
+        return render(request, 'attendance/attendance_register.html', scope['early_context'])
+
+    day_columns = scope['day_columns']
+    from_date, to_date = scope['from_date'], scope['to_date']
+    employees_list = scope['employees_list']
+    late_marks_affect_lwp = scope['late_marks_affect_lwp']
+
+    page_size = get_page_size(request)
+    paginator = Paginator(employees_list, page_size)
+    page_obj = paginator.get_page(request.GET.get('page', 1))
+    page_employees = list(page_obj)
+
+    rows = _build_attendance_register_rows(page_employees, day_columns, from_date, to_date, late_marks_affect_lwp)
+    totals = _compute_attendance_register_totals(employees_list, day_columns, from_date, to_date, late_marks_affect_lwp)
+
+    context = dict(scope['base_context'])
     context.update({
         'rows': rows,
         'day_columns': day_columns,
-        'available_periods': available_periods,
-        'selected_period': str(selected_period['to_date']),
-        'display_period': selected_period['label'],
-        'search_query': search_query,
+        'available_periods': scope['available_periods'],
+        'selected_period': str(scope['selected_period']['to_date']),
+        'display_period': scope['selected_period']['label'],
+        'search_query': scope['search_query'],
         'page_obj': page_obj,
         'paginator': paginator,
-        'user_company_id': company.id if company else None,
+        'user_company_id': scope['company'].id if scope['company'] else None,
         'total_employees': len(employees_list),
         'totals': totals,
         'page_size': page_size,
         'page_size_choices': PAGE_SIZE_CHOICES,
     })
     return render(request, 'attendance/attendance_register.html', context)
+
+
+@login_required
+@feature_required("attendance_review", action="view")
+def attendance_register_export_excel(request):
+    """Export the Attendance Register exactly as currently filtered
+    (company/all-companies, payroll period, employee search) -- every
+    matching employee, not just the page on screen, same columns and the
+    same totals row as the HTML view (built from the same shared helpers
+    so the two can never disagree)."""
+    scope = _resolve_attendance_register_scope(request)
+    if scope['early_context'] is not None:
+        return HttpResponse("Nothing to export for the current filters.", status=400)
+
+    day_columns = scope['day_columns']
+    from_date, to_date = scope['from_date'], scope['to_date']
+    employees_list = scope['employees_list']
+    late_marks_affect_lwp = scope['late_marks_affect_lwp']
+
+    rows = _build_attendance_register_rows(employees_list, day_columns, from_date, to_date, late_marks_affect_lwp)
+    totals = _compute_attendance_register_totals(employees_list, day_columns, from_date, to_date, late_marks_affect_lwp)
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Attendance Register"
+
+    from openpyxl.styles import Font, PatternFill
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="1F4E79")
+    total_font = Font(bold=True)
+    total_fill = PatternFill("solid", fgColor="D9E1F2")
+
+    fixed_headers = [
+        "Emp Code", "Name", "Opening", "Leave Taken", "Late", "Comp Off", "LWP",
+        "Paid Days", "Total Days", "Closing Balance", "Leave Balance", "Branch",
+    ]
+    day_headers = [col['date'].strftime("%d-%b") for col in day_columns]
+    headers = fixed_headers + day_headers + ["Late Deduction"]
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+
+    for row in rows:
+        lb = row['lb']
+        line = [
+            row['employee'].employee_code,
+            f"{row['employee'].first_name} {row['employee'].last_name}".strip(),
+            lb.opening_balance if lb else Decimal('0.00'),
+            lb.leave_taken if lb else Decimal('0.00'),
+            lb.late if lb else 0,
+            lb.compoff if lb else Decimal('0.00'),
+            lb.leave_without_pay if lb else Decimal('0.00'),
+            lb.number_of_days_present if lb else Decimal('0.00'),
+            lb.total_number_of_days if lb else 0,
+            lb.closing_balance if lb else Decimal('0.00'),
+            lb.final_leave_balance if lb else Decimal('0.00'),
+            row['employee'].branch.branch_name if row['employee'].branch else '',
+        ]
+        line += [day['display'] for day in row['days']]
+        line.append(row['late_deduction'])
+        ws.append(line)
+
+    totals_row = [
+        f"Totals ({totals['employee_count']} employees)", '',
+        totals['opening_balance'], totals['leave_taken'], totals['late'], totals['compoff'],
+        totals['leave_without_pay'], totals['number_of_days_present'], totals['total_number_of_days'],
+        totals['closing_balance'], totals['final_leave_balance'], '',
+    ]
+    totals_row += [str(d) for d in totals['days']]
+    totals_row.append(totals['late_deduction'])
+    ws.append(totals_row)
+    for cell in ws[ws.max_row]:
+        cell.font = total_font
+        cell.fill = total_fill
+
+    for col_idx, header in enumerate(headers, start=1):
+        ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = max(len(str(header)) + 2, 10)
+
+    period_label = f"{from_date:%Y-%m-%d}_to_{to_date:%Y-%m-%d}"
+    company_slug = "all_companies" if scope['is_all_companies'] else (scope['company'].short_name or scope['company'].name)
+    filename = f"attendance_register_{company_slug}_{period_label}.xlsx".replace(" ", "_")
+
+    f = io.BytesIO()
+    wb.save(f)
+    f.seek(0)
+    resp = HttpResponse(f.read(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
 
 
 @login_required

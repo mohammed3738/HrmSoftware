@@ -52,6 +52,12 @@
       <div class="col-md-3">
         <button type="submit" class="btn btn-sm btn-primary"><i class="ri-filter-2-line me-1"></i>Filter</button>
         <a href="{% url 'attendance-register' %}{% if selected_company_id %}?company_id={{ selected_company_id }}{% endif %}" class="btn btn-sm btn-outline-secondary">Reset</a>
+        {% if day_columns %}
+        <a href="{% url 'attendance-register-export' %}?{% if selected_company_id %}company_id={{ selected_company_id }}&{% endif %}{% if selected_period %}period={{ selected_period }}&{% endif %}{% if search_query %}q={{ search_query }}{% endif %}"
+           class="btn btn-sm btn-outline-success" title="Export the current view to Excel">
+          <i class="ri-file-excel-2-line me-1"></i>Export
+        </a>
+        {% endif %}
       </div>
     </form>
 

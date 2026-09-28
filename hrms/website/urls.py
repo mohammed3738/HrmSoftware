@@ -69,6 +69,7 @@ urlpatterns = [
     path("attendance/override-status/", views.override_attendance_status, name="override_attendance_status"),
     path("attendance/bulk-override-status/", views.bulk_override_attendance_status, name="bulk_override_attendance_status"),
     path("attendance/register/", views.attendance_register_view, name="attendance-register"),
+    path("attendance/register/export/", views.attendance_register_export_excel, name="attendance-register-export"),
 
     path("attendance/shift-roster/", views.shift_roster_list, name="shift_roster_list"),
     path("attendance/shift-roster/add/", views.add_shift_assignment, name="add_shift_assignment"),

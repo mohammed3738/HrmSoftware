@@ -180,28 +180,28 @@
             <td>{{ r.branch_name }}</td>
             <td class="text-nowrap">{{ r.date_of_joining|date:"d M Y" }}</td>
 
-            <td class="text-end">{{ r.gross_ctc|floatformat:0 }}</td>
+            <td class="text-end gross-ctc-cell">{{ r.gross_ctc|floatformat:0 }}</td>
             <td class="text-center">
               {% if r.opted_for_pf %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-label-secondary">No</span>{% endif %}
             </td>
-            <td class="text-end">{{ r.basic_pm|floatformat:0 }}</td>
-            <td class="text-end">{{ r.hra_pm|floatformat:0 }}</td>
-            <td class="text-end">{{ r.sp_allowance_pm|floatformat:0 }}</td>
-            <td class="text-end">{{ r.stat_bonus_pm|floatformat:0 }}</td>
-            <td class="text-end">{{ r.allowance1_pm|floatformat:0 }}</td>
-            <td class="text-end">{{ r.allowance2_pm|floatformat:0 }}</td>
+            <td class="text-end basic-pm-cell">{{ r.basic_pm|floatformat:0 }}</td>
+            <td class="text-end hra-pm-cell">{{ r.hra_pm|floatformat:0 }}</td>
+            <td class="text-end spallow-pm-cell">{{ r.sp_allowance_pm|floatformat:0 }}</td>
+            <td class="text-end statbonus-pm-cell">{{ r.stat_bonus_pm|floatformat:0 }}</td>
+            <td class="text-end allow1-pm-cell">{{ r.allowance1_pm|floatformat:0 }}</td>
+            <td class="text-end allow2-pm-cell">{{ r.allowance2_pm|floatformat:0 }}</td>
 
-            <td class="text-center">{{ r.total_days }}</td>
+            <td class="text-center total-days-cell">{{ r.total_days }}</td>
             <td class="text-center">
               {% if run.status != "finalized" %}
               <input class="form-control form-control-sm text-end present-days" value="{{ r.present_days }}" style="width:80px"{% if not can_run_payroll %} readonly{% endif %}>
-              {% else %}{{ r.present_days }}{% endif %}
+              {% else %}<span class="present-days">{{ r.present_days }}</span>{% endif %}
             </td>
-            <td class="text-center">{{ r.leave_taken }}</td>
+            <td class="text-center leave-taken-cell">{{ r.leave_taken }}</td>
             <td class="text-center">
               {% if run.status != "finalized" %}
               <input class="form-control form-control-sm text-end lwp" value="{{ r.leave_without_pay }}" style="width:80px"{% if not can_run_payroll %} readonly{% endif %}>
-              {% else %}{{ r.leave_without_pay }}{% endif %}
+              {% else %}<span class="lwp">{{ r.leave_without_pay }}</span>{% endif %}
             </td>
 
             <td class="text-end basic-proc">{{ r.basic_processed|floatformat:0 }}</td>
@@ -220,12 +220,12 @@
             <td><input class="form-control form-control-sm text-end tds" style="width:80px" value="{{ r.tds|floatformat:0 }}"{% if not can_run_payroll %} readonly{% endif %}></td>
             <td><input class="form-control form-control-sm text-end other-ded" style="width:80px" value="{{ r.other_deductions|floatformat:0 }}"{% if not can_run_payroll %} readonly{% endif %}></td>
             {% else %}
-            <td class="text-end">{{ r.pf_employee|floatformat:0 }}</td>
-            <td class="text-end">{{ r.professional_tax|floatformat:0 }}</td>
-            <td class="text-end">{{ r.advance|floatformat:0 }}</td>
-            <td class="text-end">{{ r.esic_employee|floatformat:0 }}</td>
-            <td class="text-end">{{ r.tds|floatformat:0 }}</td>
-            <td class="text-end">{{ r.other_deductions|floatformat:0 }}</td>
+            <td class="text-end pf-emp">{{ r.pf_employee|floatformat:0 }}</td>
+            <td class="text-end prof-tax">{{ r.professional_tax|floatformat:0 }}</td>
+            <td class="text-end advance">{{ r.advance|floatformat:0 }}</td>
+            <td class="text-end esic-emp">{{ r.esic_employee|floatformat:0 }}</td>
+            <td class="text-end tds">{{ r.tds|floatformat:0 }}</td>
+            <td class="text-end other-ded">{{ r.other_deductions|floatformat:0 }}</td>
             {% endif %}
 
             <td class="text-end total-ded fw-semibold text-danger">{{ r.total_deductions|floatformat:0 }}</td>
@@ -249,6 +249,46 @@
           </tr>
           {% endfor %}
         </tbody>
+        {% if records %}
+        <tfoot class="table-light fw-bold payroll-tfoot">
+          <tr>
+            <td></td>
+            <td></td>
+            <td>Totals (<span id="tot-count">{{ records|length }}</span>)</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td class="text-end" id="tot-gross-ctc">0</td>
+            <td></td>
+            <td class="text-end" id="tot-basic-pm">0</td>
+            <td class="text-end" id="tot-hra-pm">0</td>
+            <td class="text-end" id="tot-spallow-pm">0</td>
+            <td class="text-end" id="tot-statbonus-pm">0</td>
+            <td class="text-end" id="tot-allow1-pm">0</td>
+            <td class="text-end" id="tot-allow2-pm">0</td>
+            <td class="text-center" id="tot-total-days">0</td>
+            <td class="text-center" id="tot-present-days">0</td>
+            <td class="text-center" id="tot-leave-taken">0</td>
+            <td class="text-center" id="tot-lwp">0</td>
+            <td class="text-end" id="tot-basic-proc">0</td>
+            <td class="text-end" id="tot-hra-proc">0</td>
+            <td class="text-end" id="tot-sp-proc">0</td>
+            <td class="text-end" id="tot-stat-proc">0</td>
+            <td class="text-end" id="tot-a1-proc">0</td>
+            <td class="text-end" id="tot-a2-proc">0</td>
+            <td class="text-end" id="tot-gross-proc">0</td>
+            <td class="text-end" id="tot-pf-emp">0</td>
+            <td class="text-end" id="tot-prof-tax">0</td>
+            <td class="text-end" id="tot-advance">0</td>
+            <td class="text-end" id="tot-esic-emp">0</td>
+            <td class="text-end" id="tot-tds">0</td>
+            <td class="text-end" id="tot-other-ded">0</td>
+            <td class="text-end text-danger" id="tot-total-ded">0</td>
+            <td class="text-end text-primary" id="tot-net-pay">0</td>
+            <td></td>
+          </tr>
+        </tfoot>
+        {% endif %}
       </table>
 
       <!-- No-results row (search) -->
@@ -326,6 +366,21 @@
 .payroll-table tbody tr:hover td:nth-child(2),
 .payroll-table tbody tr:hover td:nth-child(3) {
   background: #e9ecef;
+}
+/* Totals row: sticks to the bottom of the scroll area, same as the header
+   sticks to the top, so it stays visible while scrolling a long list. */
+.payroll-tfoot td {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  background: #e7ecf5;
+  white-space: nowrap;
+}
+.payroll-tfoot td:nth-child(1),
+.payroll-tfoot td:nth-child(2),
+.payroll-tfoot td:nth-child(3) {
+  z-index: 4;
+  background: #dbe3f2;
 }
 </style>
 
@@ -561,21 +616,78 @@ function computeRow(tr) {
   updateSummary();
 }
 
+// A cell in this table is either an <input> (draft mode, editable) or a
+// plain element carrying the same class (finalized mode, read-only) --
+// read .value for the former, .textContent for the latter, either way
+// stripping the ₹/comma formatting some cells display.
+function numFrom(tr, selector) {
+  const el = tr.querySelector(selector);
+  if (!el) return 0;
+  const raw = ("value" in el) ? el.value : el.textContent;
+  return Number(String(raw).replace(/[₹,]/g, "")) || 0;
+}
+
+// Every column the totals row (and the four summary cards) sum, keyed by
+// the cell selector to read from each row and the <td id> to write the
+// total into.
+const TOTAL_COLUMNS = [
+  [".gross-ctc-cell",   "tot-gross-ctc"],
+  [".basic-pm-cell",    "tot-basic-pm"],
+  [".hra-pm-cell",      "tot-hra-pm"],
+  [".spallow-pm-cell",  "tot-spallow-pm"],
+  [".statbonus-pm-cell","tot-statbonus-pm"],
+  [".allow1-pm-cell",   "tot-allow1-pm"],
+  [".allow2-pm-cell",   "tot-allow2-pm"],
+  [".total-days-cell",  "tot-total-days"],
+  [".present-days",     "tot-present-days"],
+  [".leave-taken-cell", "tot-leave-taken"],
+  [".lwp",              "tot-lwp"],
+  [".basic-proc",       "tot-basic-proc"],
+  [".hra-proc",         "tot-hra-proc"],
+  [".sp-proc",          "tot-sp-proc"],
+  [".stat-proc",        "tot-stat-proc"],
+  [".a1-proc",          "tot-a1-proc"],
+  [".a2-proc",          "tot-a2-proc"],
+  [".gross-proc",       "tot-gross-proc"],
+  [".pf-emp",           "tot-pf-emp"],
+  [".prof-tax",         "tot-prof-tax"],
+  [".advance",          "tot-advance"],
+  [".esic-emp",         "tot-esic-emp"],
+  [".tds",              "tot-tds"],
+  [".other-ded",        "tot-other-ded"],
+  [".total-ded",        "tot-total-ded"],
+  [".net-pay",          "tot-net-pay"],
+];
+
 // Only sum visible rows so search-filtered rows don't inflate totals
 function updateSummary() {
-  let totalGross = 0, totalDed = 0, totalNet = 0, visible = 0;
+  const sums = {};
+  TOTAL_COLUMNS.forEach(([sel]) => { sums[sel] = 0; });
+  let visible = 0;
+
   document.querySelectorAll("tr.payrow").forEach(tr => {
     if (tr.style.display === "none") return;
     visible++;
-    totalGross += Number(tr.querySelector(".gross-proc")?.textContent?.replace(/[₹,]/g, "")) || 0;
-    totalDed   += Number(tr.querySelector(".total-ded")?.textContent?.replace(/[₹,]/g, ""))  || 0;
-    totalNet   += Number(tr.querySelector(".net-pay")?.textContent?.replace(/[₹,]/g, ""))    || 0;
+    TOTAL_COLUMNS.forEach(([sel]) => { sums[sel] += numFrom(tr, sel); });
   });
+
   const s = n => "₹" + Math.round(n).toLocaleString("en-IN");
   document.getElementById("summaryCount").textContent = visible;
-  document.getElementById("summaryGross").textContent = s(totalGross);
-  document.getElementById("summaryDed").textContent   = s(totalDed);
-  document.getElementById("summaryNet").textContent   = s(totalNet);
+  document.getElementById("summaryGross").textContent = s(sums[".gross-proc"]);
+  document.getElementById("summaryDed").textContent   = s(sums[".total-ded"]);
+  document.getElementById("summaryNet").textContent   = s(sums[".net-pay"]);
+
+  const totCount = document.getElementById("tot-count");
+  if (totCount) totCount.textContent = visible;
+
+  TOTAL_COLUMNS.forEach(([sel, id]) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    // Day-count columns (total/present/leave-taken/LWP) read more
+    // naturally as a plain number than a rupee amount.
+    const isDayColumn = [".total-days-cell", ".present-days", ".leave-taken-cell", ".lwp"].includes(sel);
+    el.textContent = isDayColumn ? sums[sel].toFixed(2).replace(/\.00$/, "") : s(sums[sel]);
+  });
 }
 
 // Mark PF/ESIC as manually set when user edits

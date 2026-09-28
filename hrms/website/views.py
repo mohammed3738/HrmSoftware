@@ -4576,19 +4576,31 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
         weekend_exclude = [1]       # Sunday only
     else:
         weekend_exclude = [1, 7]    # Saturday & Sunday
+    sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
 
+    # A weekend day is normally excluded here entirely (same as a holiday)
+    # -- it isn't a "working day" that could be absent from -- UNLESS the
+    # register was used to manually override that specific Sunday/Saturday
+    # (e.g. Absent because the employee took a day off in lieu of it, or
+    # Present because they actually came in). An overridden weekend then
+    # joins this exact same pool a normal weekday attendance row would, so
+    # it moves Leave Taken / LWP the same way a weekday absence does, not
+    # just the Days Present total. calculate_status() never lets a weekend
+    # Attendance row hold anything but Weekend/0.00 on its own, so a row
+    # only carries real content here when status_overridden is set.
     attendance_records = Attendance.objects.filter(
         employee=employee,
         date__gte=effective_from_date,
         date__lte=to_date,
         is_holiday=False,
-    ).exclude(date__week_day__in=weekend_exclude)
+    ).filter(Q(status_overridden=True) | ~Q(date__week_day__in=weekend_exclude))
 
     # Total days = actual calendar days from whichever is later, the period
     # start or the employee's date of joining, through to_date inclusive.
     total_days = (to_date - effective_from_date).days + 1
 
-    # Working days (excluding weekends/holidays) used for leave taken calculation
+    # Working days (weekdays, plus any overridden weekend) used for leave
+    # taken calculation.
     working_days = attendance_records.count()
 
     # ============================================
@@ -4599,34 +4611,31 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     )["total"]
     paid_days = paid_days_sum if paid_days_sum else Decimal("0.00")
 
-    # Count weekend days in the period — normally treated as a free present
-    # day each, unless the register was used to manually override a
-    # specific Sunday/Saturday (e.g. marking it Absent because the
-    # employee actually took that day off in lieu, or Present because they
-    # came in) -- calculate_status() never lets a weekend Attendance row
-    # hold anything but Weekend/0.00 on its own, so a row only carries real
-    # content here when status_overridden is set.
-    sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
-    weekend_overrides = {
-        a.date: a.count
-        for a in Attendance.objects.filter(
+    # Weekend days that were NOT overridden still get their normal free
+    # present-day credit -- this is the only place they're counted at all;
+    # an overridden one is already inside attendance_records/paid_days above.
+    overridden_dates = set(
+        Attendance.objects.filter(
             employee=employee, date__gte=effective_from_date, date__lte=to_date, status_overridden=True,
-        )
-    }
-    weekend_day_count = Decimal('0.00')
+        ).values_list('date', flat=True)
+    )
+    free_weekend_days = 0
     d = effective_from_date
     while d <= to_date:
         is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
-        if is_weekend:
-            weekend_day_count += weekend_overrides.get(d, Decimal('1.00'))
+        if is_weekend and d not in overridden_dates:
+            free_weekend_days += 1
         d += timedelta(days=1)
 
-    # Days present = actual paid working days + all weekends in period
-    days_present = paid_days + weekend_day_count
+    # Days present = actual paid working days (including any overridden
+    # weekend) + every still-free weekend day in the period.
+    days_present = paid_days + Decimal(free_weekend_days)
 
     # ============================================
     # STEP 4: Leave Taken
-    # Based on working days only — weekends are never counted as leave taken
+    # Based on working_days/paid_days above, which already fold in any
+    # overridden weekend -- an un-overridden weekend still never counts
+    # toward leave taken (it's not in that pool at all).
     # ============================================
     leave_taken = Decimal(str(working_days)) - paid_days
     if leave_taken < 0:

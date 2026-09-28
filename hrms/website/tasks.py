@@ -466,24 +466,30 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
             opening_balance = Decimal("0.00")
     
     # STEP 2: Attendance for THIS period
-    # Exclude weekends and holidays — respect PayrollSettings.weekend_days
+    # Exclude weekends and holidays — respect PayrollSettings.weekend_days,
+    # unless a weekend day was manually overridden (mirrors
+    # website.views.calculate_leave_balance_for_period -- an overridden
+    # weekend joins the same working-day pool a weekday would, so it moves
+    # Leave Taken / LWP too, not just Days Present).
+    from django.db.models import Q
     if getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun':
         weekend_exclude = [1]       # Django week_day: 1=Sunday
     else:
         weekend_exclude = [1, 7]    # 1=Sunday, 7=Saturday
+    sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
 
     attendance_records = Attendance.objects.filter(
         employee=employee,
         date__gte=effective_from_date,
         date__lte=to_date,
         is_holiday=False,
-    ).exclude(date__week_day__in=weekend_exclude)
+    ).filter(Q(status_overridden=True) | ~Q(date__week_day__in=weekend_exclude))
 
     # Total days = actual calendar days from whichever is later, the period
     # start or the employee's date of joining, through to_date inclusive.
     total_days = (to_date - effective_from_date).days + 1
 
-    # Working days (non-weekend, non-holiday) for leave_taken calculation
+    # Working days (weekdays, plus any overridden weekend) for leave_taken
     working_days = attendance_records.count()
 
     # STEP 3: Paid Days
@@ -492,26 +498,26 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     )["total"]
     paid_days = paid_days_sum if paid_days_sum else Decimal("0.00")
 
-    # Count weekend days in period — always present unless manually
-    # overridden for a specific date (mirrors website.views's version).
-    sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
-    weekend_overrides = {
-        a.date: a.count
-        for a in Attendance.objects.filter(
+    # Weekend days that were NOT overridden still get their normal free
+    # present-day credit -- an overridden one is already inside
+    # attendance_records/paid_days above.
+    overridden_dates = set(
+        Attendance.objects.filter(
             employee=employee, date__gte=effective_from_date, date__lte=to_date, status_overridden=True,
-        )
-    }
-    weekend_day_count = Decimal('0.00')
+        ).values_list('date', flat=True)
+    )
+    free_weekend_days = 0
     d = effective_from_date
     while d <= to_date:
         is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
-        if is_weekend:
-            weekend_day_count += weekend_overrides.get(d, Decimal('1.00'))
+        if is_weekend and d not in overridden_dates:
+            free_weekend_days += 1
         d += timedelta(days=1)
 
-    days_present = paid_days + weekend_day_count
+    days_present = paid_days + Decimal(free_weekend_days)
 
-    # STEP 4: Leave Taken — based on working days only, weekends never count as absent
+    # STEP 4: Leave Taken — based on working_days/paid_days above, which
+    # already fold in any overridden weekend
     leave_taken = Decimal(str(working_days)) - paid_days
     if leave_taken < 0:
         leave_taken = Decimal("0.00")

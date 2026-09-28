@@ -144,8 +144,12 @@
             <td class="text-end reg-final-val">{{ row.lb.final_leave_balance|default:"0.00" }}</td>
             <td class="text-nowrap">{{ row.employee.branch.branch_name|default:"—" }}</td>
             {% for day in row.days %}
-              {% if day.attendance_id and can_edit_attendance %}
-              <td class="text-center day-cell{% if day.display == 'A' %} text-danger fw-bold{% endif %}" data-attendance-id="{{ day.attendance_id }}" data-current-status="{{ day.status }}" onclick="openDayOverride(this)" style="cursor:pointer; padding:2px;" title="Click to correct">{{ day.display }}</td>
+              {% if can_edit_attendance %}
+              <td class="text-center day-cell{% if day.is_weekend %} table-danger{% endif %}{% if day.display == 'A' %} text-danger fw-bold{% endif %}"
+                  {% if day.attendance_id %}data-attendance-id="{{ day.attendance_id }}"{% endif %}
+                  data-employee-id="{{ day.employee_id }}" data-date="{{ day.date|date:'Y-m-d' }}"
+                  data-current-status="{{ day.status }}" onclick="openDayOverride(this)"
+                  style="cursor:pointer; padding:2px;" title="Click to correct">{{ day.display }}</td>
               {% else %}
               <td class="text-center {% if day.is_weekend %}table-danger{% elif day.display == 'A' %}text-danger fw-bold{% endif %}" style="padding:2px;">{{ day.display }}</td>
               {% endif %}
@@ -274,6 +278,8 @@ function openDayOverride(cellEl) {
 
   const currentStatus = cellEl.dataset.currentStatus || "Absent";
   const attendanceId = cellEl.dataset.attendanceId;
+  const employeeId = cellEl.dataset.employeeId;
+  const cellDate = cellEl.dataset.date;
   const originalHtml = cellEl.innerHTML;
 
   const select = document.createElement('select');
@@ -321,7 +327,9 @@ function openDayOverride(cellEl) {
         'Content-Type': 'application/x-www-form-urlencoded',
         'X-CSRFToken': getCSRFToken(),
       },
-      body: new URLSearchParams({ attendance_id: attendanceId, new_status: newStatus }),
+      body: new URLSearchParams(attendanceId
+        ? { attendance_id: attendanceId, new_status: newStatus }
+        : { employee_id: employeeId, date: cellDate, new_status: newStatus }),
     })
     .then(function (res) { return res.json().then(function (data) { return { ok: res.ok, data: data }; }); })
     .then(function (result) {
@@ -336,6 +344,12 @@ function openDayOverride(cellEl) {
       if (countNum === 1) display = '1';
       else if (countNum > 0) display = String(countNum);
       cellEl.dataset.currentStatus = result.data.status;
+      // A weekend cell with no prior Attendance row gets one created on its
+      // first override -- remember its id so a second edit in the same
+      // page view updates that row directly instead of re-resolving it by
+      // employee/date (still works either way, this just avoids the extra
+      // get_or_create lookup).
+      cellEl.dataset.attendanceId = result.data.attendance_id;
       cellEl.classList.toggle('text-danger', display === 'A');
       cellEl.classList.toggle('fw-bold', display === 'A');
       closeEditor(display);

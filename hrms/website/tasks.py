@@ -492,17 +492,24 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     )["total"]
     paid_days = paid_days_sum if paid_days_sum else Decimal("0.00")
 
-    # Count weekend days in period — always treated as present
+    # Count weekend days in period — always present unless manually
+    # overridden for a specific date (mirrors website.views's version).
     sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
-    weekend_day_count = 0
+    weekend_overrides = {
+        a.date: a.count
+        for a in Attendance.objects.filter(
+            employee=employee, date__gte=effective_from_date, date__lte=to_date, status_overridden=True,
+        )
+    }
+    weekend_day_count = Decimal('0.00')
     d = effective_from_date
     while d <= to_date:
         is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
         if is_weekend:
-            weekend_day_count += 1
+            weekend_day_count += weekend_overrides.get(d, Decimal('1.00'))
         d += timedelta(days=1)
 
-    days_present = paid_days + Decimal(str(weekend_day_count))
+    days_present = paid_days + weekend_day_count
 
     # STEP 4: Leave Taken — based on working days only, weekends never count as absent
     leave_taken = Decimal(str(working_days)) - paid_days

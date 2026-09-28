@@ -991,17 +991,35 @@ def _override_attendance_status_item(attendance, new_status, company_filter=None
 def override_attendance_status(request):
     """Manually convert a single Attendance record's status — used on the
     late-attendance review page to forgive/reclassify late days at payroll
-    time. Choosing 'Late Present' clears any prior override and lets the
-    normal calculate_status() logic run again."""
+    time, and on the Attendance Register (including weekend cells, which
+    have no Attendance row at all until the first time one gets
+    overridden -- calculate_status() already auto-credits an
+    un-overridden weekend as a free day, so no row is created for one
+    unless someone actually changes it). Choosing 'Late Present' clears any
+    prior override and lets the normal calculate_status() logic run again
+    (a weekend reverts to its normal free-day credit, not literally
+    "Late Present")."""
     attendance_id = request.POST.get("attendance_id")
     new_status = request.POST.get("new_status", "").strip()
 
     if new_status not in ATTENDANCE_OVERRIDE_VALID_STATUSES:
         return JsonResponse({"success": False, "error": "Invalid status choice."}, status=400)
 
-    attendance = get_object_or_404(
-        Attendance.objects.select_related("employee__company"), id=attendance_id
-    )
+    if attendance_id:
+        attendance = get_object_or_404(
+            Attendance.objects.select_related("employee__company"), id=attendance_id
+        )
+    else:
+        employee_id = request.POST.get("employee_id")
+        date_str = request.POST.get("date")
+        if not employee_id or not date_str:
+            return JsonResponse({"success": False, "error": "Missing attendance_id or employee_id/date."}, status=400)
+        try:
+            att_date = date.fromisoformat(date_str)
+        except ValueError:
+            return JsonResponse({"success": False, "error": "Invalid date."}, status=400)
+        employee = get_object_or_404(Employee.objects.select_related("company"), id=employee_id)
+        attendance, _ = Attendance.objects.get_or_create(employee=employee, date=att_date)
 
     company_filter = get_company_filter(request.user)
     error = _override_attendance_status_item(attendance, new_status, company_filter)
@@ -4580,18 +4598,30 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     )["total"]
     paid_days = paid_days_sum if paid_days_sum else Decimal("0.00")
 
-    # Count weekend days in the period — always treated as present
+    # Count weekend days in the period — normally treated as a free present
+    # day each, unless the register was used to manually override a
+    # specific Sunday/Saturday (e.g. marking it Absent because the
+    # employee actually took that day off in lieu, or Present because they
+    # came in) -- calculate_status() never lets a weekend Attendance row
+    # hold anything but Weekend/0.00 on its own, so a row only carries real
+    # content here when status_overridden is set.
     sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
-    weekend_day_count = 0
+    weekend_overrides = {
+        a.date: a.count
+        for a in Attendance.objects.filter(
+            employee=employee, date__gte=effective_from_date, date__lte=to_date, status_overridden=True,
+        )
+    }
+    weekend_day_count = Decimal('0.00')
     d = effective_from_date
     while d <= to_date:
         is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
         if is_weekend:
-            weekend_day_count += 1
+            weekend_day_count += weekend_overrides.get(d, Decimal('1.00'))
         d += timedelta(days=1)
 
     # Days present = actual paid working days + all weekends in period
-    days_present = paid_days + Decimal(str(weekend_day_count))
+    days_present = paid_days + weekend_day_count
 
     # ============================================
     # STEP 4: Leave Taken
@@ -5233,7 +5263,7 @@ def _build_attendance_register_rows(employees, day_columns, from_date, to_date, 
     att_lookup = {}
     for a in Attendance.objects.filter(
         employee_id__in=employee_ids, date__gte=from_date, date__lte=to_date,
-    ).values('id', 'employee_id', 'date', 'status', 'count'):
+    ).values('id', 'employee_id', 'date', 'status', 'count', 'status_overridden'):
         att_lookup[(a['employee_id'], a['date'])] = a
 
     rows = []
@@ -5251,14 +5281,33 @@ def _build_attendance_register_rows(employees, day_columns, from_date, to_date, 
         days = []
         for col in day_columns:
             if col['is_weekend']:
-                # Weekends are always fully credited (matches days_present's
-                # own treatment of weekends as automatically-present), and
-                # aren't backed by an editable Attendance row here.
-                days.append({'date': col['date'], 'is_weekend': True, 'display': '1', 'attendance_id': None})
+                # Weekends are auto-credited as a full free day UNLESS
+                # someone has deliberately overridden this specific date --
+                # calculate_status() never lets a weekend Attendance row
+                # keep anything but Weekend/0.00 on its own, so a row only
+                # exists here with real content when it's status_overridden.
+                att = att_lookup.get((emp.id, col['date']))
+                if att and att['status_overridden']:
+                    days.append({
+                        'date': col['date'],
+                        'is_weekend': True,
+                        'display': _format_attendance_register_count(att['count'] or Decimal('0.00')),
+                        'attendance_id': att['id'],
+                        'status': att['status'],
+                        'employee_id': emp.id,
+                    })
+                else:
+                    days.append({
+                        'date': col['date'], 'is_weekend': True, 'display': '1',
+                        'attendance_id': None, 'status': 'Weekend', 'employee_id': emp.id,
+                    })
                 continue
             att = att_lookup.get((emp.id, col['date']))
             if not att:
-                days.append({'date': col['date'], 'is_weekend': False, 'display': '', 'attendance_id': None})
+                days.append({
+                    'date': col['date'], 'is_weekend': False, 'display': '',
+                    'attendance_id': None, 'status': 'Absent', 'employee_id': emp.id,
+                })
                 continue
             days.append({
                 'date': col['date'],
@@ -5266,6 +5315,7 @@ def _build_attendance_register_rows(employees, day_columns, from_date, to_date, 
                 'display': _format_attendance_register_count(att['count'] or Decimal('0.00')),
                 'attendance_id': att['id'],
                 'status': att['status'],
+                'employee_id': emp.id,
             })
 
         rows.append({'employee': emp, 'lb': lb, 'late_deduction': late_deduction, 'days': days})
@@ -5308,12 +5358,25 @@ def _compute_attendance_register_totals(employees_list, day_columns, from_date, 
             employee_id__in=all_employee_ids, date__gte=from_date, date__lte=to_date,
         ).values('date').annotate(total=Sum('count')).values_list('date', 'total')
     )
+    # Weekend overrides, keyed by date -> {employee_id: count} -- everyone
+    # else on that weekend still gets the normal +1 free-day credit, same
+    # as the per-row rendering above.
+    weekend_overrides_by_date = {}
+    for a in Attendance.objects.filter(
+        employee_id__in=all_employee_ids, date__gte=from_date, date__lte=to_date, status_overridden=True,
+    ).values('employee_id', 'date', 'count'):
+        weekend_overrides_by_date.setdefault(a['date'], {})[a['employee_id']] = a['count']
+
     total_employee_count = len(all_employee_ids)
-    day_totals = [
-        Decimal(total_employee_count) if col['is_weekend']
-        else (day_totals_lookup.get(col['date']) or Decimal('0.00'))
-        for col in day_columns
-    ]
+    day_totals = []
+    for col in day_columns:
+        if col['is_weekend']:
+            overrides_today = weekend_overrides_by_date.get(col['date'], {})
+            total = sum(overrides_today.values(), Decimal('0.00'))
+            total += Decimal(total_employee_count - len(overrides_today))
+            day_totals.append(total)
+        else:
+            day_totals.append(day_totals_lookup.get(col['date']) or Decimal('0.00'))
 
     return {
         'employee_count': total_employee_count,

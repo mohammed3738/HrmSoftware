@@ -955,10 +955,11 @@ ATTENDANCE_OVERRIDE_STATUS_MAP = {
     "Present":  Decimal("1.00"),
     "Half Day": Decimal("0.50"),
     "Holiday":  Decimal("1.00"),
+    "Absent":   Decimal("0.00"),
 }
 
 
-ATTENDANCE_OVERRIDE_VALID_STATUSES = {"Present", "Half Day", "Holiday", "Late Present"}
+ATTENDANCE_OVERRIDE_VALID_STATUSES = {"Present", "Half Day", "Holiday", "Absent", "Late Present"}
 
 
 def _override_attendance_status_item(attendance, new_status, company_filter=None):

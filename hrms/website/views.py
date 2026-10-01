@@ -9049,17 +9049,51 @@ def salary_slip_view(request, record_id):
         raise PermissionDenied
     company  = record.payroll.company
 
+    # Earnings and deductions are independently filtered down to only the
+    # components that actually apply (nonzero monthly amount / nonzero
+    # deduction) -- a row is positional (e.g. Basic+PF share a row,
+    # HRA+Professional Tax share the next), not thematically paired, so
+    # filtering whole rows by one side being zero would wrongly hide a
+    # nonzero value on the other side. Each list is filtered on its own,
+    # then zipped together for display.
+    earning_rows = [
+        ("Basic Salary", record.basic_pm, record.basic_processed),
+        ("HRA", record.hra_pm, record.hra_processed),
+        ("Special Allowance", record.sp_allowance_pm, record.sp_allowance_processed),
+        ("Statutory Bonus", record.stat_bonus_pm, record.stat_bonus_processed),
+        ("Allowance 1", record.allowance1_pm, record.allowance1_processed),
+        ("Allowance 2", record.allowance2_pm, record.allowance2_processed),
+    ]
+    earning_rows = [row for row in earning_rows if row[1]]
+
+    deduction_rows = [
+        ("PF (Employee)", record.pf_employee),
+        ("Professional Tax", record.professional_tax),
+        ("ESIC (Employee)", record.esic_employee),
+        ("Advance Recovery", record.advance),
+        ("TDS", record.tds),
+        ("Other Deductions", record.other_deductions),
+    ]
+    deduction_rows = [row for row in deduction_rows if row[1]]
+
+    is_pdf = request.GET.get('format') == 'pdf'
     context = {
-        'record':       record,
-        'run':          record.payroll,
-        'employee':     employee,
-        'company':      company,
-        'net_in_words': _amount_to_words(int(record.net_salary)),
-        'is_pdf':       request.GET.get('format') == 'pdf',
+        'record':         record,
+        'run':            record.payroll,
+        'employee':       employee,
+        'company':        company,
+        'net_in_words':   _amount_to_words(int(record.net_salary)),
+        'earning_rows':   earning_rows,
+        'deduction_rows': deduction_rows,
+        'is_pdf':         is_pdf,
+        # xhtml2pdf's default fonts have no glyph for "₹" (renders as a
+        # black box), so the PDF falls back to "Rs." -- the browser view
+        # keeps the real symbol since browsers render it fine.
+        'currency':     'Rs.' if is_pdf else '₹',
     }
 
     if context['is_pdf']:
-        tpl  = get_template('payroll/salary_slip.html')
+        tpl  = get_template('payroll/salary_slip_pdf.html')
         html = tpl.render(context)
         buf  = BytesIO()
         if pisa.CreatePDF(html, dest=buf).err:

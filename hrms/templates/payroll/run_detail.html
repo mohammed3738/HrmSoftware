@@ -121,8 +121,12 @@
         <thead class="table-dark small payroll-thead">
           <tr>
             <th>#</th>
-            <th>Code</th>
-            <th>Name</th>
+            <th class="sortable-col" data-sort-key="empcode" onclick="sortPayrollRows('empcode')" style="cursor:pointer;" title="Click to sort">
+              Code <i class="ti ti-arrows-sort sort-icon" data-sort-icon="empcode"></i>
+            </th>
+            <th class="sortable-col" data-sort-key="empname" onclick="sortPayrollRows('empname')" style="cursor:pointer;" title="Click to sort">
+              Name <i class="ti ti-arrows-sort sort-icon" data-sort-icon="empname"></i>
+            </th>
             <th>Designation</th>
             <th>Branch</th>
             <th>DOJ</th>
@@ -317,6 +321,8 @@
   background: #343a40;
   white-space: nowrap;
 }
+.sortable-col:hover { background: #495057; }
+.sort-icon { font-size: 0.85rem; vertical-align: -1px; opacity: 0.7; }
 /* ── Sticky columns: fixed widths + explicit left offsets ── */
 /* Col 1: serial # — 44 px */
 .payroll-table th:nth-child(1),
@@ -552,6 +558,43 @@ function applySearch() {
 
 searchInput.addEventListener("input", applySearch);
 clearBtn.addEventListener("click", () => { searchInput.value = ""; applySearch(); searchInput.focus(); });
+
+// ── Sort (Code / Name) ──────────────────────────────────────────────────────
+// Client-side, like the search filter above -- a server round-trip would
+// reload the page and lose any unsaved edits in the Present/LWP/deduction
+// inputs, so sorting just reorders the existing <tr> elements in place.
+let currentSortKey = null;
+let currentSortDir = "asc";
+
+function sortPayrollRows(key) {
+  currentSortDir = (currentSortKey === key && currentSortDir === "asc") ? "desc" : "asc";
+  currentSortKey = key;
+
+  const tbody = document.getElementById("payrollRows");
+  const rows = Array.from(tbody.querySelectorAll("tr.payrow"));
+  const dir = currentSortDir === "asc" ? 1 : -1;
+
+  rows.sort((a, b) => {
+    const av = a.dataset[key] || "";
+    const bv = b.dataset[key] || "";
+    return av < bv ? -dir : av > bv ? dir : 0;
+  });
+
+  rows.forEach(tr => tbody.appendChild(tr));
+
+  // Renumber the "#" column to match the new order (only counts actual
+  // data rows, so the "No payroll records found" empty-state row is safe).
+  let n = 1;
+  rows.forEach(tr => { tr.children[0].textContent = n++; });
+
+  document.querySelectorAll(".sort-icon").forEach(icon => {
+    if (icon.dataset.sortIcon === key) {
+      icon.className = "ti sort-icon " + (currentSortDir === "asc" ? "ti-sort-ascending" : "ti-sort-descending");
+    } else {
+      icon.className = "ti ti-arrows-sort sort-icon";
+    }
+  });
+}
 
 // ── Calc helpers ─────────────────────────────────────────────────────────────
 // Payroll amounts round to the nearest whole rupee, not paise.

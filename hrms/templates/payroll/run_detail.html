@@ -195,7 +195,11 @@
             <td class="text-end allow1-pm-cell">{{ r.allowance1_pm|floatformat:0 }}</td>
             <td class="text-end allow2-pm-cell">{{ r.allowance2_pm|floatformat:0 }}</td>
 
-            <td class="text-center total-days-cell">{{ r.total_days }}</td>
+            <td class="text-center">
+              {% if run.status != "finalized" %}
+              <input class="form-control form-control-sm text-end total-days-cell" value="{{ r.total_days }}" style="width:80px"{% if not can_run_payroll %} readonly{% endif %}>
+              {% else %}<span class="total-days-cell">{{ r.total_days }}</span>{% endif %}
+            </td>
             <td class="text-center">
               {% if run.status != "finalized" %}
               <input class="form-control form-control-sm text-end present-days" value="{{ r.present_days }}" style="width:80px"{% if not can_run_payroll %} readonly{% endif %}>
@@ -602,7 +606,8 @@ function money(n) { return Math.round(Number(n) || 0); }
 function fmt(n)   { return "₹" + money(n).toLocaleString("en-IN"); }
 
 function computeRow(tr) {
-  const td    = Number(tr.dataset.totalDays);
+  const tdInput = tr.querySelector(".total-days-cell");
+  const td    = tdInput ? (Number(tdInput.value) || 0) : Number(tr.dataset.totalDays);
   const basic = Number(tr.dataset.basicPm);
   const hra   = Number(tr.dataset.hraPm);
   const sp    = Number(tr.dataset.spallowPm);
@@ -747,6 +752,7 @@ async function saveRow(tr) {
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader-2"></i>'; }
 
   const payload = {
+    total_days:        tr.querySelector(".total-days-cell")?.value,
     present_days:      tr.querySelector(".present-days")?.value,
     leave_without_pay: tr.querySelector(".lwp")?.value,
     professional_tax:  tr.querySelector(".prof-tax")?.value,

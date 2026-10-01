@@ -426,9 +426,12 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     """Calculate leave balance for a specific payroll period.
 
     date_of_joining awareness (mirrors website.views.calculate_leave_balance_for_period):
-    a not-yet-joined employee gets no row for this period at all; a
-    mid-period joiner has the period's day counts shrunk to start at
-    date_of_joining instead of from_date."""
+    a not-yet-joined employee gets no row for this period at all. A
+    mid-period joiner gets Total Days as the FULL period (matching payroll's
+    pro-rata denominator), with the whole pre-joining stretch (weekday and
+    weekend alike) added to Leave Taken as a flat gap -- everything from
+    the joining date onward keeps the normal attendance-based maths,
+    including its usual tolerance for a day with no Attendance row yet."""
     if employee.date_of_joining and employee.date_of_joining > to_date:
         LeaveBalance.objects.filter(
             employee=employee, period_from_date=from_date, period_to_date=to_date,
@@ -438,6 +441,7 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     effective_from_date = from_date
     if employee.date_of_joining and employee.date_of_joining > from_date:
         effective_from_date = employee.date_of_joining
+    pre_joining_gap_days = (effective_from_date - from_date).days
 
     # STEP 1: Opening Balance - Get PREVIOUS PERIOD's final balance
     prev_period_end = from_date - timedelta(days=1)
@@ -485,9 +489,9 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
         is_holiday=False,
     ).filter(Q(status_overridden=True) | ~Q(date__week_day__in=weekend_exclude))
 
-    # Total days = actual calendar days from whichever is later, the period
-    # start or the employee's date of joining, through to_date inclusive.
-    total_days = (to_date - effective_from_date).days + 1
+    # Total days = the full period's calendar days, regardless of joining
+    # date -- matches payroll's pro-rata denominator.
+    total_days = (to_date - from_date).days + 1
 
     # Working days (weekdays, plus any overridden weekend) for leave_taken
     working_days = attendance_records.count()
@@ -516,9 +520,9 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
 
     days_present = paid_days + Decimal(free_weekend_days)
 
-    # STEP 4: Leave Taken — based on working_days/paid_days above, which
-    # already fold in any overridden weekend
-    leave_taken = Decimal(str(working_days)) - paid_days
+    # STEP 4: Leave Taken — working_days/paid_days already fold in any
+    # overridden weekend; the flat pre-joining gap is added on top.
+    leave_taken = Decimal(str(working_days)) - paid_days + Decimal(pre_joining_gap_days)
     if leave_taken < 0:
         leave_taken = Decimal("0.00")
 

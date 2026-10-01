@@ -4517,13 +4517,21 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     date_of_joining awareness: an employee who hasn't joined yet as of
     to_date gets no LeaveBalance row at all for this period (returns None
     without touching the DB) -- nothing is owed or deducted for someone not
-    yet employed. An employee who joined partway through the period has the
-    period effectively shrunk to [date_of_joining, to_date] for every day
-    count below (total days, working days, leave taken, weekends) -- the
-    days before they joined were never theirs to be present/absent for.
-    The row itself still keys off the real period_from_date/period_to_date
-    (from_date/to_date) so it lines up with the payroll-period dropdowns
-    elsewhere; only the maths inside is shrunk.
+    yet employed.
+
+    An employee who joined partway through the period gets Total Days as
+    the FULL period (matching standard pro-rata payroll convention -- see
+    website.services.get_attendance_summary, which this mirrors), with the
+    entire pre-joining stretch (weekdays AND weekends alike -- a day you
+    weren't employed for isn't "yours" to get a free weekend credit for
+    either) folded into Leave Taken as a fixed gap. Everything from the
+    joining date onward still uses the normal day-by-day attendance maths
+    below, including its usual tolerance for a day that simply has no
+    Attendance row yet (e.g. a not-yet-elapsed day later in an ongoing
+    period) -- only the pre-joining stretch is unconditionally "taken",
+    nothing else changes. The row itself still keys off the real
+    period_from_date/period_to_date (from_date/to_date) so it lines up with
+    the payroll-period dropdowns elsewhere.
     """
     if employee.date_of_joining and employee.date_of_joining > to_date:
         # Self-heals a row that was wrongly created for this employee/period
@@ -4537,6 +4545,9 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     effective_from_date = from_date
     if employee.date_of_joining and employee.date_of_joining > from_date:
         effective_from_date = employee.date_of_joining
+    # Every day (weekday or weekend) from the period's real start up to the
+    # day before they joined -- added to Leave Taken as a flat gap below.
+    pre_joining_gap_days = (effective_from_date - from_date).days
 
     # ============================================
     # STEP 1: Opening Balance
@@ -4595,9 +4606,9 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
         is_holiday=False,
     ).filter(Q(status_overridden=True) | ~Q(date__week_day__in=weekend_exclude))
 
-    # Total days = actual calendar days from whichever is later, the period
-    # start or the employee's date of joining, through to_date inclusive.
-    total_days = (to_date - effective_from_date).days + 1
+    # Total days = the full period's calendar days, regardless of joining
+    # date -- matches payroll's pro-rata denominator (see docstring above).
+    total_days = (to_date - from_date).days + 1
 
     # Working days (weekdays, plus any overridden weekend) used for leave
     # taken calculation.
@@ -4633,11 +4644,12 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
 
     # ============================================
     # STEP 4: Leave Taken
-    # Based on working_days/paid_days above, which already fold in any
-    # overridden weekend -- an un-overridden weekend still never counts
-    # toward leave taken (it's not in that pool at all).
+    # working_days/paid_days already fold in any overridden weekend (an
+    # un-overridden one never counts here, it's not in that pool at all).
+    # The flat pre-joining gap (both weekdays and weekends) is added on top
+    # -- see docstring above.
     # ============================================
-    leave_taken = Decimal(str(working_days)) - paid_days
+    leave_taken = Decimal(str(working_days)) - paid_days + Decimal(pre_joining_gap_days)
     if leave_taken < 0:
         leave_taken = Decimal("0.00")
     
@@ -8810,7 +8822,7 @@ def payroll_record_update(request, record_id):
         return HttpResponseBadRequest("Invalid JSON")
 
     # apply edits to record fields
-    editable = ["present_days", "leave_without_pay", "professional_tax", "advance", "tds", "other_deductions"]
+    editable = ["total_days", "present_days", "leave_without_pay", "professional_tax", "advance", "tds", "other_deductions"]
     manual = {}
     for k in editable:
         if k in payload:
@@ -8818,6 +8830,8 @@ def payroll_record_update(request, record_id):
                 val = Decimal(payload[k])
             except Exception:
                 val = Decimal(0)
+            if k == "total_days":
+                val = int(val)
             setattr(record, k, val)
             manual[k] = float(val)
 
@@ -8841,6 +8855,33 @@ def payroll_record_update(request, record_id):
     # save then recalc authoritative
     record.save()
     recalc_and_save_record(record, manual_overrides=manual)
+
+    # Push Total Days / Present Days / LWP overrides back into the matching
+    # LeaveBalance row so Payroll and Leave Balance never show conflicting
+    # numbers for the same employee/period. LWP is marked overridden so a
+    # later leave-balance recalculation preserves it instead of silently
+    # reverting this edit (same protection the Leave Balance screen's own
+    # manual LWP edit already gets).
+    if any(k in manual for k in ("total_days", "present_days", "leave_without_pay")):
+        run = record.payroll
+        lb = (
+            LeaveBalance.objects.filter(employee=record.employee, period_to_date=run.end_date).first()
+            or LeaveBalance.objects.filter(
+                employee=record.employee,
+                period_from_date__lte=run.end_date,
+                period_to_date__gte=run.start_date,
+                period_to_date__isnull=False,
+            ).order_by('-period_to_date').first()
+        )
+        if lb:
+            if "total_days" in manual:
+                lb.total_number_of_days = int(record.total_days)
+            if "present_days" in manual:
+                lb.number_of_days_present = record.present_days
+            if "leave_without_pay" in manual:
+                lb.leave_without_pay = record.leave_without_pay
+                lb.lwp_overridden = True
+            lb.save()
 
     return JsonResponse({
         "success": True,

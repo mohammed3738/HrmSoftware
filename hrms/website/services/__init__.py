@@ -177,7 +177,7 @@ def revert_skip(advance: AdvanceMaster, due_month: date):
 # ── Payroll services ──────────────────────────────────────────────────────────
 
 from decimal import Decimal, ROUND_HALF_UP
-from django.db.models import Sum
+from django.db.models import Sum, Q
 from ..models import PayrollRun, PayrollRecord, SalaryMaster, Attendance, PayrollSettings, LeaveBalance
 
 
@@ -195,27 +195,69 @@ def money_int(v):
 
 
 def get_attendance_summary(employee, start_date, end_date):
-    """date_of_joining awareness: a joiner partway through the run's period
-    only had [date_of_joining, end_date] to be present or absent for -- the
-    days before that were never theirs to owe attendance for, so total_days
-    (and therefore leave_taken) is shrunk to that range. Callers are
-    responsible for excluding an employee entirely when their
-    date_of_joining is after end_date (not yet employed this period) --
-    see generate_records_for_month / recalculate_payroll_run."""
-    effective_start = start_date
-    if employee.date_of_joining and employee.date_of_joining > start_date:
-        effective_start = employee.date_of_joining
-    if effective_start > end_date:
+    """date_of_joining awareness: Total Days is always the FULL payroll
+    period (e.g. 31 for a calendar month), never shrunk to the employment
+    window -- standard pro-rata salary math divides the monthly component
+    by the whole period, so a joiner on the 20th with 7 days present gets
+    7/31 of their monthly pay, not 7/7 (their full monthly pay for a
+    7-day stretch). Callers are responsible for excluding an employee
+    entirely when their date_of_joining is after end_date (not yet
+    employed this period at all) -- see generate_records_for_month /
+    recalculate_payroll_run.
+
+    present_days/leave_taken mirror calculate_leave_balance_for_period's
+    methodology exactly (same weekend-credit/override rules, same
+    pre-joining-gap handling) so Payroll and Leave Balance always agree
+    for the same employee/period instead of two independent formulas
+    drifting apart -- see that function's docstring for the full rationale.
+    """
+    if employee.date_of_joining and employee.date_of_joining > end_date:
         return {"total_days": 0, "present_days": Decimal("0.00"), "leave_taken": Decimal("0.00")}
 
-    total_days = (end_date - effective_start).days + 1
-    qs = Attendance.objects.filter(employee=employee, date__range=[effective_start, end_date])
-    present_sum = qs.aggregate(total=Sum("count"))["total"] or Decimal("0.00")
-    leave_taken = Decimal(total_days) - Decimal(present_sum)
+    total_days = (end_date - start_date).days + 1
+
+    effective_from_date = start_date
+    if employee.date_of_joining and employee.date_of_joining > start_date:
+        effective_from_date = employee.date_of_joining
+    pre_joining_gap_days = (effective_from_date - start_date).days
+
+    payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
+    sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
+    weekend_exclude = [1] if sunday_only else [1, 7]
+
+    attendance_records = Attendance.objects.filter(
+        employee=employee,
+        date__gte=effective_from_date,
+        date__lte=end_date,
+        is_holiday=False,
+    ).filter(Q(status_overridden=True) | ~Q(date__week_day__in=weekend_exclude))
+
+    working_days = attendance_records.count()
+    paid_days = attendance_records.aggregate(total=Sum("count"))["total"] or Decimal("0.00")
+
+    overridden_dates = set(
+        Attendance.objects.filter(
+            employee=employee, date__gte=effective_from_date, date__lte=end_date, status_overridden=True,
+        ).values_list('date', flat=True)
+    )
+    free_weekend_days = 0
+    d = effective_from_date
+    while d <= end_date:
+        is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
+        if is_weekend and d not in overridden_dates:
+            free_weekend_days += 1
+        d += timedelta(days=1)
+
+    present_days = paid_days + Decimal(free_weekend_days)
+
+    leave_taken = Decimal(str(working_days)) - paid_days + Decimal(pre_joining_gap_days)
+    if leave_taken < 0:
+        leave_taken = Decimal("0.00")
+
     return {
         "total_days": int(total_days),
-        "present_days": money_d(present_sum),
-        "leave_taken": money_d(max(Decimal(0), leave_taken))
+        "present_days": money_d(present_days),
+        "leave_taken": money_d(leave_taken),
     }
 
 
@@ -248,6 +290,12 @@ def _build_record_snapshot(emp, salary, run):
     salary master, attendance, leave balance, advance schedule) as of right
     now for this run's period. Shared by generate_records_for_month (first
     creation) and recalculate_payroll_run (refresh before finalizing)."""
+    # Total Days / Present Days / Leave Taken are computed independently
+    # here using the exact same weekend-crediting method LeaveBalance uses
+    # (see get_attendance_summary), so the two always agree without one
+    # having to defer to the other -- deferring to a LeaveBalance row is
+    # fragile when that row was created by a different path (e.g. a bare
+    # LWP-only override) and never had its day-count fields populated.
     att = get_attendance_summary(emp, run.start_date, run.end_date)
     advance_amt = get_advance_for_employee_month(emp, run.start_date, run.end_date)
 

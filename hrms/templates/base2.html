@@ -796,6 +796,16 @@
                   </li>
                   {% endif %}
 
+                  <!-- Salary slips: self-service for employees, any employee for payroll officers. -->
+                  {% if request.user|has_feature:"payroll:edit" or request.user|has_employee_profile %}
+                  <li class="menu-item">
+                    <a href="{% url 'salary-slips' %}" class="menu-link">
+                      <i class="menu-icon tf-icons ri-file-list-3-line"></i>
+                      <div>{% if request.user|has_feature:"payroll:edit" %}Salary Slips{% else %}My Salary Slips{% endif %}</div>
+                    </a>
+                  </li>
+                  {% endif %}
+
 
                   <!-- Advances -->
                   {% if request.user|has_feature:"advances:view" or request.user|has_employee_profile %}

@@ -99,10 +99,20 @@ class EmployeeRecordAccessControlTest(TestCase):
     def test_employee_can_view_own_payslip(self):
         run = PayrollRun.objects.create(
             company=self.company, month=date(2026, 1, 1), start_date=date(2026, 1, 1), end_date=date(2026, 1, 31),
+            status=PayrollRun.STATUS_FINALIZED,
         )
         record = PayrollRecord.objects.create(payroll=run, employee=self.self_employee, employee_code="EAC001")
         resp = self._client_as(self.self_user).get(reverse("salary-slip", args=[record.id]))
         self.assertEqual(resp.status_code, 200)
+
+    def test_employee_cannot_view_own_draft_payslip(self):
+        # Draft-run numbers can still change; employees only see finalized slips.
+        run = PayrollRun.objects.create(
+            company=self.company, month=date(2026, 1, 1), start_date=date(2026, 1, 1), end_date=date(2026, 1, 31),
+        )
+        record = PayrollRecord.objects.create(payroll=run, employee=self.self_employee, employee_code="EAC001")
+        resp = self._client_as(self.self_user).get(reverse("salary-slip", args=[record.id]))
+        self.assertEqual(resp.status_code, 404)
 
     def test_employee_cannot_view_other_employees_payslip(self):
         run = PayrollRun.objects.create(

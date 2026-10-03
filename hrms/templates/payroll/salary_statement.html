@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Salary Statement – {{ employee.first_name }} {{ employee.last_name }} – {{ period_label }}</title>
+{# Same xhtml2pdf rules as salary_slip.html: every line is a border on a table cell, no rowspan/colspan, every cell non-empty, whole-number % widths. #}
+<style>
+  @page { size: A4 landscape; margin: 12mm 12mm; }
+
+  body {
+    font-family: Calibri, Carlito, Helvetica, Arial, sans-serif;
+    font-size: 10pt; color: #000; background-color: #eeeeee; margin: 0; padding: 20px;
+  }
+  body.pdf-mode { background-color: #ffffff; padding: 0; }
+
+  .action-bar { max-width: 1100px; margin: 0 auto 12px auto; text-align: right; }
+  .btn {
+    display: inline-block; padding: 7px 16px; margin-left: 6px; font-size: 13px;
+    color: #fff; text-decoration: none; border: none; border-radius: 4px; cursor: pointer;
+  }
+  .btn-success { background-color: #1a7f3c; }
+  .btn-primary { background-color: #003d99; }
+  .btn-secondary { background-color: #555555; }
+
+  .slip { max-width: 1100px; margin: 0 auto; background-color: #ffffff; }
+
+  table { width: 100%; border-collapse: collapse; }
+  td, th { padding: 2px 4px; vertical-align: top; }
+
+  .bl { border-left: 1px solid #000; }
+  .br { border-right: 1px solid #000; }
+  .bt { border-top: 1px solid #000; }
+  .bb { border-bottom: 1px solid #000; }
+
+  .company { font-size: 16pt; font-weight: bold; text-align: center; padding-top: 8px; }
+  .address { text-align: center; padding-top: 4px; padding-bottom: 12px; }
+  .title { font-weight: bold; text-align: center; padding: 4px; }
+
+  .lbl { font-weight: bold; }
+  .spacer { height: 12px; }
+
+  .months th { font-weight: bold; text-align: center; font-size: 8.5pt; padding: 4px 3px; }
+  .months td { font-size: 8.5pt; padding: 3px 3px; }
+  .r { text-align: right; }
+  .b { font-weight: bold; }
+
+  .net-amount { border-top: 1px solid #000; border-bottom: 1px solid #000; }
+  .underline2 { font-size: 1pt; line-height: 1pt; padding: 0 4px 0 0; }
+  .note { text-align: center; padding-top: 30px; padding-bottom: 10px; }
+
+  @media print {
+    body { background-color: #fff; padding: 0; }
+    .action-bar { display: none; }
+  }
+</style>
+</head>
+<body{% if is_pdf %} class="pdf-mode"{% endif %}>
+
+{% if not is_pdf %}
+<div class="action-bar">
+  <a href="?{{ pdf_query }}" class="btn btn-success">Download PDF</a>
+  <button class="btn btn-primary" onclick="window.print()">Print</button>
+  <a href="javascript:history.back()" class="btn btn-secondary">Back</a>
+</div>
+{% endif %}
+
+<div class="slip">
+
+<table>
+  <tr><td class="bl br bt company">{{ company.name }}</td></tr>
+  <tr><td class="bl br address">{{ company.address|default:"&nbsp;" }}</td></tr>
+  <tr><td class="bl br bt bb title">SALARY STATEMENT</td></tr>
+</table>
+
+<table>
+  <tr>
+    <td class="bl lbl" style="width:20%">Name of the Employee</td>
+    <td class="br" style="width:30%">{{ latest.employee_name|default:"NA" }}</td>
+    <td class="lbl" style="width:20%">Statement Period</td>
+    <td class="br" style="width:30%">{{ period_label }}</td>
+  </tr>
+  <tr>
+    <td class="bl lbl">Employee Code</td>
+    <td class="br">{{ latest.employee_code|default:"NA" }}</td>
+    <td class="lbl">No of Months</td>
+    <td class="br">{{ month_count }}</td>
+  </tr>
+  <tr>
+    <td class="bl lbl">Date of Joining</td>
+    <td class="br">{{ employee.date_of_joining|date:"d-M-y"|default:"NA" }}</td>
+    <td class="lbl">Designation</td>
+    <td class="br">{{ latest.designation|default:"NA" }}</td>
+  </tr>
+  <tr>
+    <td class="bl lbl">Bank Account No.</td>
+    <td class="br">{{ employee.salary_account_number|default:"NA" }}</td>
+    <td class="lbl">PAN</td>
+    <td class="br">{{ employee.pan_no|default:"NA" }}</td>
+  </tr>
+  <tr>
+    <td class="bl lbl">UAN No.</td>
+    <td class="br">{{ employee.uan_no|default:"NA" }}</td>
+    <td class="lbl">Department</td>
+    <td class="br">{{ employee.department|default:"NA" }}</td>
+  </tr>
+  <tr>
+    <td class="bl bb lbl">PF No.</td>
+    <td class="br bb">{{ employee.pf_no|default:"NA" }}</td>
+    <td class="bb lbl">Location</td>
+    <td class="br bb">{{ employee.location|default:latest.branch_name|default:"NA" }}</td>
+  </tr>
+</table>
+
+<table>
+  <tr><td class="bl br spacer">&nbsp;</td></tr>
+</table>
+
+<table class="months">
+  <tr>
+    {% for col in columns %}
+    <th class="{% if forloop.first %}bl {% endif %}br bt bb" style="width:{{ col.width }}%">{{ col.label }}</th>
+    {% endfor %}
+  </tr>
+  {% for cells in rows %}
+  <tr>
+    {% for cell in cells %}
+    <td class="{% if forloop.first %}bl {% endif %}br{% if cell.num %} r{% endif %}{% if cell.bold %} b{% endif %}">{{ cell.value|default:"&nbsp;" }}</td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+  <tr>
+    {% for cell in total_cells %}
+    <td class="{% if forloop.first %}bl {% endif %}br bt bb{% if cell.num %} r{% endif %} b">{{ cell.value|default:"&nbsp;" }}</td>
+    {% endfor %}
+  </tr>
+</table>
+
+<table>
+  <tr>
+    <td class="bl spacer" style="width:62%">&nbsp;</td>
+    <td style="width:22%">&nbsp;</td>
+    <td class="br" style="width:16%">&nbsp;</td>
+  </tr>
+  <tr>
+    <td class="bl">&nbsp;</td>
+    <td>Total Net take-home Pay</td>
+    <td class="br net-amount r b">Rs. {{ net_total }}</td>
+  </tr>
+  {# Second line of the double underline -- xhtml2pdf can't draw "double" borders. #}
+  <tr>
+    <td class="bl underline2">&nbsp;</td>
+    <td class="underline2">&nbsp;</td>
+    <td class="br underline2"><div class="bb">&nbsp;</div></td>
+  </tr>
+</table>
+
+<table>
+  <tr><td class="bl br bb note">This is computer generated Salary statement doesn&#8217;t require signature</td></tr>
+</table>
+
+</div>
+</body>
+</html>

@@ -121,10 +121,10 @@
         <thead class="table-dark small payroll-thead">
           <tr>
             <th>#</th>
-            <th class="sortable-col" data-sort-key="empcode" onclick="sortPayrollRows('empcode')" style="cursor:pointer;" title="Click to sort">
+            <th class="sortable-col" data-sort-key="empcode" style="cursor:pointer;" title="Click to sort">
               Code <i class="ti ti-arrows-sort sort-icon" data-sort-icon="empcode"></i>
             </th>
-            <th class="sortable-col" data-sort-key="empname" onclick="sortPayrollRows('empname')" style="cursor:pointer;" title="Click to sort">
+            <th class="sortable-col" data-sort-key="empname" style="cursor:pointer;" title="Click to sort">
               Name <i class="ti ti-arrows-sort sort-icon" data-sort-icon="empname"></i>
             </th>
             <th>Designation</th>
@@ -578,11 +578,9 @@ function sortPayrollRows(key) {
   const rows = Array.from(tbody.querySelectorAll("tr.payrow"));
   const dir = currentSortDir === "asc" ? 1 : -1;
 
-  rows.sort((a, b) => {
-    const av = a.dataset[key] || "";
-    const bv = b.dataset[key] || "";
-    return av < bv ? -dir : av > bv ? dir : 0;
-  });
+  rows.sort((a, b) =>
+    dir * (a.dataset[key] || "").localeCompare(b.dataset[key] || "", undefined, { numeric: true })
+  );
 
   rows.forEach(tr => tbody.appendChild(tr));
 
@@ -599,6 +597,10 @@ function sortPayrollRows(key) {
     }
   });
 }
+
+document.querySelectorAll(".sortable-col").forEach(th => {
+  th.addEventListener("click", () => sortPayrollRows(th.dataset.sortKey));
+});
 
 // ── Calc helpers ─────────────────────────────────────────────────────────────
 // Payroll amounts round to the nearest whole rupee, not paise.

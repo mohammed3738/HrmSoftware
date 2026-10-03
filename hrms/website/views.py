@@ -2135,7 +2135,11 @@ def comp_off_requests_list(request):
         except ValueError:
             pass
 
-    # group by employee + year + month and count requests
+    # Group by employee + year + month and total the comp-off DAYS (each
+    # request's `count` is its day span, or 0.5 for a half day) rather than
+    # counting requests -- one request for 3 days must show 3, not 1.
+    # Approved days are what's actually credited to Leave Balance; pending
+    # days are shown alongside; rejected ones don't count at all.
     grouped = (
         qs.values(
             "employee__id",
@@ -2145,7 +2149,10 @@ def comp_off_requests_list(request):
             "year",
             "month",
         )
-        .annotate(requests_count=Count("id"))
+        .annotate(
+            approved_days=Sum("count", filter=Q(status="Approved")),
+            pending_days=Sum("count", filter=Q(status="Pending")),
+        )
         .order_by("employee__employee_code", "year", "month")
     )
 
@@ -2164,7 +2171,8 @@ def comp_off_requests_list(request):
                 "year": g.get("year"),
                 "month": month_name,
                 "month_number": month_num,
-                "count": g["requests_count"],
+                "count": g["approved_days"] or Decimal("0"),
+                "pending": g["pending_days"] or Decimal("0"),
             }
         )
 
@@ -9006,36 +9014,49 @@ def payroll_export_pdf(request, run_id):
 # SALARY SLIP
 # ---------------------------------------------------------------------------
 
-def _amount_to_words(amount: int) -> str:
-    """Return amount in Indian English words (e.g. 'Rupees Fifty Thousand Five Hundred Only')."""
-    ones = [
-        '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-        'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
-        'Seventeen', 'Eighteen', 'Nineteen',
-    ]
-    tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+def _slip_amount(value):
+    """Whole rupees with Indian digit grouping (1,23,456); zero shows as "-"."""
+    n = int(Decimal(value or 0).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if n == 0:
+        return "-"
+    sign, s = ("-" if n < 0 else ""), str(abs(n))
+    if len(s) > 3:
+        head, tail = s[:-3], s[-3:]
+        groups = []
+        while len(head) > 2:
+            groups.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            groups.insert(0, head)
+        s = ",".join(groups) + "," + tail
+    return sign + s
 
-    def _below_hundred(n):
-        return ones[n] if n < 20 else tens[n // 10] + (' ' + ones[n % 10] if n % 10 else '')
 
-    def _below_thousand(n):
-        if n < 100:
-            return _below_hundred(n)
-        return ones[n // 100] + ' Hundred' + (' ' + _below_hundred(n % 100) if n % 100 else '')
+def _slip_days(value):
+    """Day counts without a pointless ".00" (27, not 27.00) but keeping half days (26.5)."""
+    d = Decimal(value or 0).normalize()
+    return f"{d:f}"
 
-    if amount == 0:
-        return 'Rupees Zero Only'
 
-    n = int(amount)
-    parts = []
-    for divisor, label in [(10_000_000, 'Crore'), (100_000, 'Lakh'), (1_000, 'Thousand')]:
-        if n >= divisor:
-            parts.append(_below_thousand(n // divisor) + ' ' + label)
-            n %= divisor
-    if n > 0:
-        parts.append(_below_thousand(n))
+def _slip_days_paid(record):
+    return max(Decimal(record.total_days or 0) - Decimal(record.leave_without_pay or 0), Decimal(0))
 
-    return 'Rupees ' + ' '.join(parts) + ' Only'
+
+def _can_view_all_salary_slips(user):
+    """Payroll officers/admins see anyone's slips (the same grant
+    salary_slip_view has always required for other people's slips);
+    everyone else sees only their own."""
+    return user.is_superuser or user.is_staff or has_feature_permission(user, "payroll", "edit")
+
+
+def _pdf_response(template_name, context, filename):
+    html = get_template(template_name).render(context)
+    buf = BytesIO()
+    if pisa.CreatePDF(html, dest=buf).err:
+        return HttpResponse('PDF generation failed', status=500)
+    resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
+    resp['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return resp
 
 
 @login_required
@@ -9047,66 +9068,231 @@ def salary_slip_view(request, record_id):
     employee = record.employee
     if not can_access_employee_record(request.user, employee, "payroll", "edit"):
         raise PermissionDenied
+    # A draft run's numbers can still change, so employees only ever see
+    # slips from finalized runs (matching what their dashboard lists).
+    if record.payroll.status != PayrollRun.STATUS_FINALIZED and not _can_view_all_salary_slips(request.user):
+        raise Http404
     company  = record.payroll.company
 
-    # Earnings and deductions are independently filtered down to only the
-    # components that actually apply (nonzero monthly amount / nonzero
-    # deduction) -- a row is positional (e.g. Basic+PF share a row,
-    # HRA+Professional Tax share the next), not thematically paired, so
-    # filtering whole rows by one side being zero would wrongly hide a
-    # nonzero value on the other side. Each list is filtered on its own,
-    # then zipped together for display.
-    earning_rows = [
-        ("Basic Salary", record.basic_pm, record.basic_processed),
-        ("HRA", record.hra_pm, record.hra_processed),
-        ("Special Allowance", record.sp_allowance_pm, record.sp_allowance_processed),
-        ("Statutory Bonus", record.stat_bonus_pm, record.stat_bonus_processed),
-        ("Allowance 1", record.allowance1_pm, record.allowance1_processed),
-        ("Allowance 2", record.allowance2_pm, record.allowance2_processed),
+    # The standard components always appear (zero shows as "-"); the two
+    # extra allowances / other deductions only when actually used.
+    earnings = [
+        ("Basic Salary", record.basic_pm, record.basic_processed, True),
+        ("H.R.A", record.hra_pm, record.hra_processed, True),
+        ("Statutory Bonus", record.stat_bonus_pm, record.stat_bonus_processed, True),
+        ("Special Allowance", record.sp_allowance_pm, record.sp_allowance_processed, True),
+        ("Allowance 1", record.allowance1_pm, record.allowance1_processed, False),
+        ("Allowance 2", record.allowance2_pm, record.allowance2_processed, False),
     ]
-    earning_rows = [row for row in earning_rows if row[1]]
-
-    deduction_rows = [
-        ("PF (Employee)", record.pf_employee),
-        ("Professional Tax", record.professional_tax),
-        ("ESIC (Employee)", record.esic_employee),
-        ("Advance Recovery", record.advance),
-        ("TDS", record.tds),
-        ("Other Deductions", record.other_deductions),
+    earnings = [e for e in earnings if e[3] or e[1] or e[2]]
+    deductions = [
+        ("Employee Provident Fund", record.pf_employee, True),
+        ("ESIC", record.esic_employee, True),
+        ("Professional Tax", record.professional_tax, True),
+        ("T D S", record.tds, True),
+        ("Staff Advance", record.advance, True),
+        ("Other Deductions", record.other_deductions, False),
     ]
-    deduction_rows = [row for row in deduction_rows if row[1]]
+    deductions = [d for d in deductions if d[2] or d[1]]
 
-    is_pdf = request.GET.get('format') == 'pdf'
+    # Pad to a fixed body height so the slip keeps the same shape whatever
+    # the employee's component mix.
+    body_rows = max(8, len(earnings), len(deductions))
+    rows = []
+    for i in range(body_rows):
+        e = earnings[i] if i < len(earnings) else None
+        d = deductions[i] if i < len(deductions) else None
+        rows.append({
+            "earning": e[0] if e else "",
+            "gross": _slip_amount(e[1]) if e else "",
+            "payable": _slip_amount(e[2]) if e else "",
+            "deduction": d[0] if d else "",
+            "amount": _slip_amount(d[1]) if d else "",
+        })
+
     context = {
-        'record':         record,
-        'run':            record.payroll,
-        'employee':       employee,
-        'company':        company,
-        'net_in_words':   _amount_to_words(int(record.net_salary)),
-        'earning_rows':   earning_rows,
-        'deduction_rows': deduction_rows,
-        'is_pdf':         is_pdf,
-        # xhtml2pdf's default fonts have no glyph for "₹" (renders as a
-        # black box), so the PDF falls back to "Rs." -- the browser view
-        # keeps the real symbol since browsers render it fine.
-        'currency':     'Rs.' if is_pdf else '₹',
+        'record':       record,
+        'run':          record.payroll,
+        'employee':     employee,
+        'company':      company,
+        'rows':         rows,
+        'days_paid':    _slip_days(_slip_days_paid(record)),
+        'lwp':          _slip_days(record.leave_without_pay),
+        'total_gross':  _slip_amount(sum(Decimal(e[1] or 0) for e in earnings)),
+        'total_payable': _slip_amount(sum(Decimal(e[2] or 0) for e in earnings)),
+        'total_deductions': _slip_amount(record.total_deductions),
+        'net_pay':      _slip_amount(record.net_salary),
+        'is_pdf':       request.GET.get('format') == 'pdf',
     }
 
     if context['is_pdf']:
-        tpl  = get_template('payroll/salary_slip_pdf.html')
-        html = tpl.render(context)
-        buf  = BytesIO()
-        if pisa.CreatePDF(html, dest=buf).err:
-            return HttpResponse('PDF generation failed', status=500)
-        fname = (
-            f"SalarySlip_{employee.employee_code or employee.id}_"
-            f"{record.payroll.month.strftime('%b_%Y')}.pdf"
+        return _pdf_response(
+            'payroll/salary_slip.html', context,
+            f"SalarySlip_{employee.employee_code or employee.id}_{record.payroll.month.strftime('%b_%Y')}.pdf",
         )
-        resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
-        resp['Content-Disposition'] = f'attachment; filename="{fname}"'
-        return resp
 
     return render(request, 'payroll/salary_slip.html', context)
+
+
+def _natural_key(text):
+    return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", text or "")]
+
+
+@login_required
+def salary_slips_list(request):
+    """Every salary slip for one employee, across all months/years, with
+    per-month view/download and a "combine selected months" action.
+    Employees get their own finalized slips; payroll officers/admins can
+    pick any employee and also see draft-run slips (marked as such)."""
+    can_view_all = _can_view_all_salary_slips(request.user)
+    own_employee = getattr(request.user, "employee_profile", None)
+    if not can_view_all and own_employee is None:
+        raise PermissionDenied
+
+    employee = own_employee
+    employee_choices = []
+    if can_view_all:
+        employee_choices = sorted(
+            Employee.objects.filter(payrollrecord__isnull=False).distinct(),
+            key=lambda e: _natural_key(e.employee_code),
+        )
+        emp_id = request.GET.get("employee")
+        if emp_id:
+            employee = get_object_or_404(Employee, pk=emp_id)
+
+    records, years = [], []
+    selected_year = request.GET.get("year", "")
+    if employee is not None:
+        qs = (
+            PayrollRecord.objects.filter(employee=employee)
+            .select_related("payroll")
+            .order_by("-payroll__month", "-payroll__start_date")
+        )
+        if not can_view_all:
+            qs = qs.filter(payroll__status=PayrollRun.STATUS_FINALIZED)
+        years = sorted({r.payroll.month.year for r in qs}, reverse=True)
+        if selected_year.isdigit():
+            qs = qs.filter(payroll__month__year=int(selected_year))
+        records = list(qs)
+        for r in records:
+            r.days_paid_display = _slip_days(_slip_days_paid(r))
+
+    return render(request, "payroll/salary_slips_list.html", {
+        "employee": employee,
+        "employee_choices": employee_choices,
+        "can_view_all": can_view_all,
+        "records": records,
+        "years": years,
+        "selected_year": selected_year,
+    })
+
+
+@login_required
+def salary_slip_statement(request):
+    """One combined slip for several months of a single employee: each
+    month is a row (days, earnings, deductions, net pay) with a totals row."""
+    ids = [i for i in request.GET.getlist("ids") if i.isdigit()]
+    if not ids:
+        return HttpResponseBadRequest("Select at least one month.")
+
+    records = list(
+        PayrollRecord.objects.filter(id__in=ids)
+        .select_related("payroll", "payroll__company", "employee")
+        .order_by("payroll__month", "payroll__start_date")
+    )
+    if not records:
+        raise Http404
+    employees = {r.employee_id for r in records}
+    if len(employees) != 1:
+        return HttpResponseBadRequest("A combined slip can only cover one employee.")
+
+    employee = records[0].employee
+    if not can_access_employee_record(request.user, employee, "payroll", "edit"):
+        raise PermissionDenied
+    if not _can_view_all_salary_slips(request.user) and any(
+        r.payroll.status != PayrollRun.STATUS_FINALIZED for r in records
+    ):
+        raise Http404
+
+    # Columns: optional components appear only if some selected month uses them.
+    amount_cols = [
+        ("Basic", "basic_processed", True),
+        ("H.R.A", "hra_processed", True),
+        ("Stat. Bonus", "stat_bonus_processed", True),
+        ("Spl. Allow.", "sp_allowance_processed", True),
+        ("Allow. 1", "allowance1_processed", False),
+        ("Allow. 2", "allowance2_processed", False),
+        ("Gross Payable", "gross_processed", True),
+        ("EPF", "pf_employee", True),
+        ("ESIC", "esic_employee", True),
+        ("Prof. Tax", "professional_tax", True),
+        ("TDS", "tds", True),
+        ("Staff Adv.", "advance", True),
+        ("Other Ded.", "other_deductions", False),
+        ("Total Ded.", "total_deductions", True),
+        ("Net Pay", "net_salary", True),
+    ]
+    amount_cols = [
+        (label, field) for label, field, always in amount_cols
+        if always or any(getattr(r, field) for r in records)
+    ]
+    bold_fields = {"gross_processed", "total_deductions", "net_salary"}
+
+    # Month/Days/LWP take a fixed share; amounts split the rest evenly.
+    # Whole-number widths only -- xhtml2pdf ignores fractional percentages.
+    fixed = [("Month", 9), ("Days Paid", 6), ("LWP", 5)]
+    remaining = 100 - sum(w for _, w in fixed)
+    each, extra = divmod(remaining, len(amount_cols))
+    widths = [each + (1 if i >= len(amount_cols) - extra else 0) for i in range(len(amount_cols))]
+    columns = [{"label": l, "width": w, "num": False} for l, w in fixed] + [
+        {"label": label, "width": w, "num": True} for (label, _), w in zip(amount_cols, widths)
+    ]
+
+    rows, totals = [], {field: Decimal(0) for _, field in amount_cols}
+    total_days_paid = total_lwp = Decimal(0)
+    for r in records:
+        days_paid = _slip_days_paid(r)
+        total_days_paid += days_paid
+        total_lwp += Decimal(r.leave_without_pay or 0)
+        cells = [
+            {"value": r.payroll.month.strftime("%b-%y")
+                      + ("" if r.payroll.status == PayrollRun.STATUS_FINALIZED else " (Draft)")},
+            {"value": _slip_days(days_paid), "num": True},
+            {"value": _slip_days(r.leave_without_pay), "num": True},
+        ]
+        for _, field in amount_cols:
+            value = Decimal(getattr(r, field) or 0)
+            totals[field] += value
+            cells.append({"value": _slip_amount(value), "num": True, "bold": field in bold_fields})
+        rows.append(cells)
+
+    total_cells = [
+        {"value": "Total", "bold": True},
+        {"value": _slip_days(total_days_paid), "num": True, "bold": True},
+        {"value": _slip_days(total_lwp), "num": True, "bold": True},
+    ] + [{"value": _slip_amount(totals[field]), "num": True, "bold": True} for _, field in amount_cols]
+
+    first, last = records[0].payroll, records[-1].payroll
+    context = {
+        "employee": employee,
+        "latest": records[-1],
+        "company": last.company,
+        "columns": columns,
+        "rows": rows,
+        "total_cells": total_cells,
+        "net_total": _slip_amount(totals["net_salary"]),
+        "month_count": len(records),
+        "period_label": first.month.strftime("%b-%y") if first.month == last.month
+                        else f"{first.month:%b-%y} to {last.month:%b-%y}",
+        "pdf_query": request.GET.urlencode() + "&format=pdf",
+        "is_pdf": request.GET.get("format") == "pdf",
+    }
+    if context["is_pdf"]:
+        return _pdf_response(
+            "payroll/salary_statement.html", context,
+            f"SalaryStatement_{employee.employee_code or employee.id}_{first.month:%b_%Y}_to_{last.month:%b_%Y}.pdf",
+        )
+    return render(request, "payroll/salary_statement.html", context)
 
 
 @login_required

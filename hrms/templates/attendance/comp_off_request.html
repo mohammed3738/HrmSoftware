@@ -79,7 +79,10 @@
               {{ comp_off.emp_name }} 
             </td>
             <td>{{ comp_off.month }} {{ comp_off.year}}</td>
-            <td>{{ comp_off.count }}</td>
+            <td>
+              {{ comp_off.count|floatformat:"-1" }}
+              {% if comp_off.pending %}<span class="badge bg-label-warning ms-1">+{{ comp_off.pending|floatformat:"-1" }} pending</span>{% endif %}
+            </td>
             <td>
                   <div class="dropdown">
                     <a class="text-muted" href="#" data-bs-toggle="dropdown">

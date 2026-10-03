@@ -12,20 +12,43 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 
 from pathlib import Path
 import os
+
+from dotenv import load_dotenv
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Server configuration lives in hrms/.env (see DEPLOYMENT.md). Without that
+# file every setting below falls back to the local-development value.
+load_dotenv(BASE_DIR / '.env')
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-7o9%azh!(65zeu619gay11-&^5kzime&x@o71gc_!o&s*ed$=#'
+def env_bool(name, default):
+    value = os.environ.get(name)
+    return default if value is None else value.strip().lower() in ('1', 'true', 'yes', 'on')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
 
-ALLOWED_HOSTS = ['*']
+def env_list(name, default):
+    value = os.environ.get(name)
+    return default if value is None else [item.strip() for item in value.split(',') if item.strip()]
+
+
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-7o9%azh!(65zeu619gay11-&^5kzime&x@o71gc_!o&s*ed$=#',
+)
+
+DEBUG = env_bool('DJANGO_DEBUG', True)
+
+ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS', ['*'])
+
+CSRF_TRUSTED_ORIGINS = env_list('DJANGO_CSRF_TRUSTED_ORIGINS', [])
+
+# nginx terminates HTTPS and forwards plain HTTP to gunicorn; trust its
+# X-Forwarded-Proto header so Django knows the original request was HTTPS.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_SECURE = env_bool('DJANGO_SECURE_COOKIES', False)
+CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 
 
 # Application definition
@@ -101,15 +124,29 @@ WSGI_APPLICATION = 'hrms.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-        'OPTIONS': {
-            'timeout': 30,  # wait up to 30s for write lock instead of failing immediately
-        },
+if os.environ.get('DB_ENGINE', 'sqlite').lower() == 'postgres':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ['DB_NAME'],
+            'USER': os.environ['DB_USER'],
+            'PASSWORD': os.environ['DB_PASSWORD'],
+            'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+            'CONN_MAX_AGE': 60,
+            'CONN_HEALTH_CHECKS': True,
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.environ.get('SQLITE_PATH', BASE_DIR / 'db.sqlite3'),
+            'OPTIONS': {
+                'timeout': 30,  # wait up to 30s for write lock instead of failing immediately
+            },
+        }
+    }
 
 
 
@@ -177,10 +214,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 
+# The server's Redis is shared with other projects, so each project gets its
+# own Redis database numbers (set in .env) -- sharing one would let another
+# project's Celery workers pick up this project's tasks.
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "LOCATION": os.environ.get('REDIS_CACHE_URL', "redis://127.0.0.1:6379/1"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         }
@@ -191,10 +231,17 @@ CACHES = {
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "admin-dashboard"
 
-# settings.py
+# Errors go to stderr, which gunicorn/celery hand to systemd's journal
+# (read them with journalctl, see DEPLOYMENT.md).
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {'console': {'class': 'logging.StreamHandler'}},
+    'root': {'handlers': ['console'], 'level': 'WARNING'},
+}
 
-# settings.py
-CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Replace with your broker URL (Redis in this case)
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TASK_SERIALIZER = 'json'

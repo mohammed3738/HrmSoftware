@@ -27,7 +27,8 @@ Every command block is meant to be pasted into the SSH session as `multihost`. R
 | Web server | nginx site `/etc/nginx/sites-available/hrms_prod`, HTTPS via Let's Encrypt |
 | Static files | `/home/multihost/hrms_prod/hrms/staticfiles` (served by nginx) |
 | Uploaded files | `/home/multihost/hrms_prod/hrms/media` (served by nginx) |
-| Backups | `/home/multihost/hrms_prod_backups` |
+| Backups | Emailed nightly, nothing stored on the server (see [Backups](#backups)) |
+| Import working files | `/home/multihost/hrms_prod_backups` (Option B only; delete after go-live) |
 
 ---
 
@@ -153,11 +154,11 @@ sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=${SECRET}|" .env
 sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DBPASS}|" .env
 unset SECRET DBPASS
 
-grep -c "change-me" .env || true
+grep -n "change-me" .env | grep -v BACKUP_EMAIL || echo "Secrets filled in"
 grep -v -E "^#|^$|SECRET_KEY|PASSWORD" .env
 ```
 
-`grep -c "change-me"` must print `0`, meaning both placeholders were replaced. The last command shows the settings with the two secrets hidden. If you ever need the database password, it's in `.env` (`grep DB_PASSWORD .env`).
+The first `grep` must print `Secrets filled in`. The `change-me` values left on the `BACKUP_EMAIL_*` lines are filled in later, in [Backups](#backups). The last command shows the settings with the two secrets hidden. If you ever need the database password, it's in `.env` (`grep DB_PASSWORD .env`).
 
 ---
 
@@ -488,6 +489,14 @@ grep -l "HrmSoftware" /etc/systemd/system/*.service          # lists the old ins
 # sudo systemctl disable --now OLD_SERVICE_NAME              # <-- for each one listed
 ```
 
+(Option B) The import working files contain a full copy of the data, so delete them once everything checks out, in line with keeping no backups on the server:
+
+```bash
+rm -rf /home/multihost/hrms_prod_backups
+```
+
+Finally, set up the nightly email backup: see [Backups](#backups).
+
 ---
 
 ## Routine updates (every later deploy)
@@ -520,42 +529,90 @@ Lines starting with `<` are in the template but missing from `.env`.
 
 ## Backups
 
-### Nightly automatic backup
+### Nightly backup by email
 
-This keeps 14 days of database dumps and media archives:
+Every night, [`hrms/scripts/email_backup.py`](hrms/scripts/email_backup.py):
+
+1. dumps the database into a temporary folder;
+2. archives the uploaded files there too;
+3. emails both as attachments;
+4. deletes the temporary folder.
+
+**Nothing is kept on the server.** The subject line says `OK` or `FAILED`. If the backup fails, an email still arrives with the error, so a silent failure can't go unnoticed.
+
+**1. Get an App Password (Gmail).** Gmail doesn't accept your normal password from scripts:
+
+- Google Account → **Security** → turn on **2-Step Verification** if it isn't on yet.
+- Same page → **App passwords** → create one named `hrms_prod backup`.
+- Copy the 16-character password. You enter it below; type it without spaces.
+
+Ideally use a mailbox dedicated to backups, because each email contains the full database: employee personal details, bank accounts and salaries.
+
+**2. Put the mail settings in `.env`:**
 
 ```bash
-mkdir -p /home/multihost/hrms_prod_backups/nightly
-cat > /home/multihost/hrms_prod_backups/backup.sh <<'EOF'
-#!/bin/bash
-set -euo pipefail
-DIR=/home/multihost/hrms_prod_backups/nightly
-ENV=/home/multihost/hrms_prod/hrms/.env
-STAMP=$(date +%Y%m%d_%H%M)
-PGPASSWORD=$(grep '^DB_PASSWORD=' "$ENV" | cut -d= -f2) \
-  pg_dump -h 127.0.0.1 -U hrms_prod_user -Fc hrms_prod_db > "$DIR/hrms_prod_db_$STAMP.dump"
-tar -czf "$DIR/media_$STAMP.tar.gz" -C /home/multihost/hrms_prod/hrms media
-find "$DIR" -type f -mtime +14 -delete
-EOF
-chmod 700 /home/multihost/hrms_prod_backups/backup.sh
-/home/multihost/hrms_prod_backups/backup.sh && ls -lh /home/multihost/hrms_prod_backups/nightly
-( crontab -l 2>/dev/null | grep -v hrms_prod_backups/backup.sh; echo "30 2 * * * /home/multihost/hrms_prod_backups/backup.sh" ) | crontab -
-crontab -l | grep backup.sh
+cd /home/multihost/hrms_prod/hrms
+nano .env
 ```
 
-The script runs once immediately as a test, then nightly at 02:30. Copy a dump off the server now and then; a backup on the same disk doesn't protect you if the disk fails.
+Fill in the four `change-me` values on the `BACKUP_EMAIL_*` lines:
 
-### Restoring a database dump
+| Line | Fill in |
+|---|---|
+| `BACKUP_EMAIL_USER` | The Gmail address that sends the backups |
+| `BACKUP_EMAIL_PASSWORD` | The App Password from part 1 |
+| `BACKUP_EMAIL_FROM` | Same address as `BACKUP_EMAIL_USER` |
+| `BACKUP_EMAIL_TO` | Where backups should arrive; several addresses can be separated by commas |
 
-This replaces the live database with the backup:
+For a non-Gmail mailbox, also change `BACKUP_EMAIL_HOST` and `BACKUP_EMAIL_PORT` to your provider's SMTP settings. Save with `Ctrl+O`, `Enter`, then `Ctrl+X`.
+
+**3. Send a test backup now, then schedule it nightly at 02:30:**
+
+```bash
+cd /home/multihost/hrms_prod/hrms
+grep -n "change-me" .env || echo "Mail settings filled in"
+/home/multihost/hrms_prod/venv/bin/python scripts/email_backup.py
+
+( crontab -l 2>/dev/null | grep -v email_backup.py; \
+  echo "30 2 * * * /home/multihost/hrms_prod/venv/bin/python /home/multihost/hrms_prod/hrms/scripts/email_backup.py >> /tmp/hrms_prod_backup.log 2>&1" ) | crontab -
+crontab -l | grep email_backup
+```
+
+What to expect:
+
+- The `grep` line prints `Mail settings filled in`.
+- The test run prints `Backup ... emailed: ...`, and the email arrives within a minute.
+- If the test run prints `Authentication failed` / `Username and Password not accepted`, the App Password is wrong. If it hangs and times out, the hosting provider is blocking outgoing mail on port 587; ask them to open it, or try port `465`.
+- `/tmp/hrms_prod_backup.log` only holds the script's messages, never the backup itself.
+
+**Size limit:** Gmail rejects emails over 25 MB, so the script attaches at most 18 MB of files (`BACKUP_EMAIL_MAX_MB`).
+
+- **Uploads too big:** if the uploaded files grow past this, the email still arrives with the database. The body says the media archive was left out.
+- **Database too big:** if one day the *database alone* is over the limit, you get a `FAILED` email saying so. Email backups are then no longer enough and you'll need another destination.
+
+Keep the emails in a dedicated label or folder, and delete old ones from time to time.
+
+### Restoring a backup
+
+1. Download the `.dump` file (and the `media` `.tar.gz` if needed) from the backup email.
+2. Copy it to the server from your PC:
+
+   ```bash
+   scp hrms_prod_db_YYYYMMDD_HHMM.dump multihost@SERVER_IP:/tmp/
+   ```
+
+3. Restore it. This **replaces** the live database:
 
 ```bash
 sudo systemctl stop hrms-prod-gunicorn hrms-prod-celery hrms-prod-celerybeat
 cd /home/multihost/hrms_prod/hrms
 PGPASSWORD=$(grep '^DB_PASSWORD=' .env | cut -d= -f2) \
   pg_restore -h 127.0.0.1 -U hrms_prod_user -d hrms_prod_db --clean --if-exists \
-  /home/multihost/hrms_prod_backups/nightly/hrms_prod_db_YYYYMMDD_HHMM.dump     # <-- pick the file
+  /tmp/hrms_prod_db_YYYYMMDD_HHMM.dump          # <-- the file you uploaded
+# Only if you also need the uploaded files back (replaces the current media folder):
+# tar -xzf /tmp/hrms_prod_media_YYYYMMDD_HHMM.tar.gz -C /home/multihost/hrms_prod/hrms
 sudo systemctl start hrms-prod-gunicorn hrms-prod-celery hrms-prod-celerybeat
+rm /tmp/hrms_prod_*.dump /tmp/hrms_prod_*.tar.gz 2>/dev/null
 ```
 
 ---
@@ -590,7 +647,7 @@ sudo -u postgres psql -c "DROP ROLE IF EXISTS hrms_prod_user;"
 rm -rf /home/multihost/hrms_prod
 ```
 
-Backups in `/home/multihost/hrms_prod_backups` are kept.
+Option B's import files in `/home/multihost/hrms_prod_backups` are kept. Also remove the backup cron job with `crontab -e`: delete the `email_backup.py` line.
 
 ---
 
@@ -645,5 +702,10 @@ The template is [`hrms/.env.example`](hrms/.env.example). Its comments explain e
 | `SQLITE_PATH` | Location of the SQLite file when `DB_ENGINE=sqlite` | `hrms/db.sqlite3` (default) |
 | `CELERY_BROKER_URL` | Redis database for the Celery task queue | `redis://127.0.0.1:6379/10` |
 | `REDIS_CACHE_URL` | Redis database for Django's cache | `redis://127.0.0.1:6379/11` |
+| `BACKUP_EMAIL_HOST` / `BACKUP_EMAIL_PORT` | SMTP server for the nightly backup email | `smtp.gmail.com` / `587` |
+| `BACKUP_EMAIL_USER` / `BACKUP_EMAIL_PASSWORD` | Sending mailbox and its App Password | Your backup Gmail account |
+| `BACKUP_EMAIL_FROM` / `BACKUP_EMAIL_TO` | Sender, and recipient(s) separated by commas | Your addresses |
+| `BACKUP_EMAIL_MAX_MB` | Most MB of files attached per email | `18` |
+| `BACKUP_NAME` | Name used in the email subject and file names | `hrms_prod` |
 
 Without a `.env` file, for example on a developer PC, every value falls back to the development defaults: SQLite, `DEBUG=True`, local Redis databases `0` and `1`.

@@ -2386,7 +2386,10 @@ def admin_dashboard(request):
         .order_by('date_of_relieving')[:5]
     )
 
+    birthdays = _upcoming_birthdays(active_qs, today)
+
     return render(request, 'd/f.html', {
+        'birthdays': birthdays,
         'user': user,
         'today': today,
         'user_company': user_company,
@@ -3221,6 +3224,27 @@ def my_attendance(request):
     return redirect('employee_attendance_detail', employee_id=request.user.employee_profile.pk)
 
 
+def _upcoming_birthdays(employees, today, days=7):
+    """Birthdays from today through the next `days` days, soonest first.
+    Only the day and month are used (never the year, so no ages are shown).
+    A 29 February birthday falls on 28 February in non-leap years."""
+    def this_year(dob, year):
+        try:
+            return dob.replace(year=year)
+        except ValueError:  # 29 Feb in a non-leap year
+            return date(year, 2, 28)
+
+    found = []
+    for emp in employees.filter(date_of_birth__isnull=False):
+        upcoming = this_year(emp.date_of_birth, today.year)
+        if upcoming < today:
+            upcoming = this_year(emp.date_of_birth, today.year + 1)
+        days_away = (upcoming - today).days
+        if days_away <= days:
+            found.append({"employee": emp, "date": upcoming, "days_away": days_away, "is_today": days_away == 0})
+    return sorted(found, key=lambda b: (b["days_away"], b["employee"].first_name or ""))
+
+
 @login_required
 def employee_dashboard(request):
     """Self-service landing page for an Employee-role login: only ever
@@ -3273,7 +3297,16 @@ def employee_dashboard(request):
         .order_by("-payroll__end_date")[:6]
     )
 
+    # Colleagues in the same company (everyone, for an employee with none).
+    colleagues = Employee.objects.filter(status="Active")
+    if employee.company_id:
+        colleagues = colleagues.filter(company_id=employee.company_id)
+    birthdays = _upcoming_birthdays(colleagues, today)
+    my_birthday_today = any(b["is_today"] and b["employee"].pk == employee.pk for b in birthdays)
+
     return render(request, "employee/employee_dashboard.html", {
+        "birthdays": birthdays,
+        "my_birthday_today": my_birthday_today,
         "employee": employee,
         "today_attendance": today_attendance,
         "period_from": period_from,

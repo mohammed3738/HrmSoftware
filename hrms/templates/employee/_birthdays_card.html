@@ -1,0 +1,40 @@
+{# Today's and upcoming birthdays. Expects `birthdays` from views._upcoming_birthdays. #}
+<div class="card h-100">
+  <div class="card-header pb-1">
+    <h6 class="mb-0"><i class="ri-cake-2-line me-1 text-danger"></i> Birthdays</h6>
+    <small class="text-muted">Today and the next 7 days</small>
+  </div>
+  <div class="card-body">
+    {% if birthdays %}
+    <ul class="list-unstyled mb-0">
+      {% for b in birthdays %}
+      {% with emp=b.employee %}
+      <li class="d-flex align-items-center gap-3 mb-3 {% if b.is_today %}p-2 rounded bg-label-danger{% endif %}">
+        {% if emp.photo %}
+          <img src="{{ emp.photo.url }}" alt="" class="rounded-circle flex-shrink-0" style="width:40px;height:40px;object-fit:cover;">
+        {% else %}
+          <div class="rounded-circle bg-label-danger d-flex align-items-center justify-content-center fw-semibold flex-shrink-0"
+               style="width:40px;height:40px;">{{ emp.first_name|first|upper }}{{ emp.last_name|first|upper }}</div>
+        {% endif %}
+        <div class="flex-grow-1">
+          <div class="fw-semibold">{{ emp.first_name }} {{ emp.last_name }}{% if b.is_today %} 🎂{% endif %}</div>
+          <div class="text-muted small">{{ emp.designation|default:"" }}{% if emp.department %} · {{ emp.department }}{% endif %}</div>
+        </div>
+        <div class="text-end">
+          {% if b.is_today %}
+            <span class="badge bg-danger">Today</span>
+          {% elif b.days_away == 1 %}
+            <span class="badge bg-label-danger">Tomorrow</span>
+          {% else %}
+            <span class="badge bg-label-secondary">{{ b.date|date:"d M" }}</span>
+          {% endif %}
+        </div>
+      </li>
+      {% endwith %}
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-muted text-center mt-3 mb-0">No birthdays in the next 7 days</p>
+    {% endif %}
+  </div>
+</div>

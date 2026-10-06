@@ -569,6 +569,13 @@
 
     {% endif %}
 
+  <!-- ── Birthdays ─────────────────────────────────────────────────── -->
+  <div class="row g-4 mb-4">
+    <div class="col-lg-6">
+      {% include "employee/_birthdays_card.html" %}
+    </div>
+  </div>
+
   <!-- ── Row 5: Anniversaries + Upcoming Offboarding ───────────────── -->
   {% if show_people_panels or show_offboarding_panel %}
   <div class="row g-4 mb-4">

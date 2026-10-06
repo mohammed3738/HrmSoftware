@@ -1,0 +1,34 @@
+{% load static %}
+{# Who `subject` reports to. Expects `subject` (an Employee) and optional `heading`. #}
+{% with rp=subject.reporting_person mgr=subject.manager %}
+<div class="card h-100">
+  <div class="card-header d-flex justify-content-between align-items-center pb-2">
+    <h6 class="mb-0 fw-semibold"><i class="ri-git-merge-line me-1 text-primary"></i> {{ heading|default:"Reporting Line" }}</h6>
+    <small class="text-muted">
+      {% if subject.use_department_defaults and subject.department %}From department: {{ subject.department }}{% else %}Set individually{% endif %}
+    </small>
+  </div>
+  <div class="card-body pt-2">
+    {% if not rp and not mgr %}
+      <p class="text-muted mb-0">No reporting person or manager has been set yet. Contact HR.</p>
+    {% else %}
+    <div class="row g-3">
+      {% if rp and mgr and rp.pk == mgr.pk %}
+        {% include "employee/_reporting_person_tile.html" with person=rp role="Reporting Person &amp; Manager" note="Approves your leave and requests" %}
+      {% else %}
+        {% if rp %}
+          {% include "employee/_reporting_person_tile.html" with person=rp role="Reporting Person" note="Approves your leave and requests" %}
+        {% else %}
+          <div class="col-md-6"><div class="text-muted small">Reporting Person</div><div class="text-muted">Not set</div></div>
+        {% endif %}
+        {% if mgr %}
+          {% include "employee/_reporting_person_tile.html" with person=mgr role="Manager" note="Above your reporting person; can also approve" %}
+        {% else %}
+          <div class="col-md-6"><div class="text-muted small">Manager</div><div class="text-muted">Not set</div></div>
+        {% endif %}
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endwith %}

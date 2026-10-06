@@ -11,8 +11,8 @@
   <div class="card mb-4">
     <div class="user-profile-header d-flex flex-column flex-sm-row text-sm-start text-center">
       <div class="flex-shrink-0 mt-n2 mx-sm-0 mx-auto">
-        <img src="{% static 'assets/img/avatars/1.png' %}" alt="profile"
-             class="d-block h-auto ms-0 ms-sm-5 rounded-4 user-profile-img">
+        <img src="{% if employee.photo %}{{ employee.photo.url }}{% else %}{% static 'assets/img/avatars/1.png' %}{% endif %}" alt="profile"
+             class="d-block ms-0 ms-sm-5 rounded-4 user-profile-img" style="width:120px;height:120px;object-fit:cover;">
       </div>
       <div class="flex-grow-1 mt-4 mt-sm-5 mb-4">
         <div class="mx-5">
@@ -49,6 +49,11 @@
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- Who this employee reports to -->
+  <div class="mb-4">
+    {% include "employee/_reporting_line.html" with subject=employee heading="My Reporting Line" %}
   </div>
 
   <!-- Quick stats -->

@@ -30,6 +30,8 @@ user.
 FEATURES = [
     {"key": "employee_records", "name": "Employee Records", "category": "Employee Lifecycle",
      "has_view": True, "has_create": True, "has_edit": True, "has_approve": False, "sort_order": 10},
+    {"key": "employee_delete", "name": "Delete Employees", "category": "Employee Lifecycle",
+     "has_view": False, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 12},
     {"key": "department_management", "name": "Departments & Reporting Line", "category": "Employee Lifecycle",
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 15},
     {"key": "offboarding", "name": "Offboarding", "category": "Employee Lifecycle",
@@ -97,11 +99,13 @@ _NOT_HR = ("Super Admin", "Admin", "Payroll Officer")
 # {(feature_key, action): (role names granted access,)}
 SEED_GRANTS = {
     # ── Employee Lifecycle ────────────────────────────────────────────
-    # HR onboards and offboards, but corrections to an existing record
-    # are Admin's -- hence create without edit.
+    # HR onboards, offboards and edits employee details. Deleting
+    # (archiving) an employee is a separate permission HR doesn't hold, and
+    # changing anyone's login role needs user_accounts:edit (also not HR).
     ("employee_records", "view"): _ALL_STAFF,
     ("employee_records", "create"): _ALL_STAFF,
-    ("employee_records", "edit"): _NOT_HR,
+    ("employee_records", "edit"): _ALL_STAFF,
+    ("employee_delete", "edit"): _NOT_HR,
     ("department_management", "view"): _ALL_STAFF,
     ("department_management", "edit"): _ALL_STAFF,
     ("offboarding", "view"): _ALL_STAFF,

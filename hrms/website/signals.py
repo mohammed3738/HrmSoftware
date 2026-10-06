@@ -50,48 +50,86 @@ def _auto_recalc_suspended():
     return getattr(_recalc_suspend_state, "depth", 0) > 0
 
 
-def recalculate_leave_balance_for_employee(employee, from_date):
-    """Recalculate one employee's LeaveBalance for the payroll period
-    containing from_date, and every later period known to have attendance
-    -- a change to an old period must also refresh every later period's
-    carried-forward opening balance, not just the one that changed.
-    Finalized payroll periods are left alone: those numbers are what
-    payslips were already computed from."""
-    from website.views import (
-        calculate_leave_balance_for_period,
-        get_all_payroll_periods_from_attendance,
-        get_payroll_period_for_date,
-        get_locking_run_for_period,
-    )
+def _leave_balance_periods(employee, payroll_settings):
+    """Payroll periods to keep a LeaveBalance for: every period with
+    attendance anywhere in the employee's company, or -- for an employee
+    with no company -- in their own attendance."""
+    from website.views import get_all_payroll_periods_from_attendance, _employee_payroll_periods
 
-    if not employee.company_id:
-        return
-    payroll_settings = PayrollSettings.objects.filter(company_id=employee.company_id).first()
-    if not payroll_settings:
-        return
+    if employee.company_id:
+        return get_all_payroll_periods_from_attendance(employee.company, payroll_settings)
+    return _employee_payroll_periods(employee, payroll_settings)
 
-    period_start, period_end = get_payroll_period_for_date(payroll_settings, from_date)
-    # get_all_payroll_periods_from_attendance only returns periods that
-    # currently HAVE an attendance row, so a delete that empties the
-    # affected period out entirely would otherwise never get recalculated
-    # (the stale LeaveBalance row would just be left standing) -- the
-    # directly-affected period is always included explicitly below.
-    later_periods = [
-        p for p in get_all_payroll_periods_from_attendance(employee.company, payroll_settings)
-        if p["from_date"] > period_start
-    ]
-    periods_to_recalc = sorted(
-        [{"from_date": period_start, "to_date": period_end}] + later_periods,
-        key=lambda p: p["from_date"],
-    )
 
-    for period in periods_to_recalc:
+def _recalculate_periods(employee, payroll_settings, periods):
+    """Recalculate the given periods oldest first (each one's closing balance
+    is the next one's opening). Finalized payroll periods are left alone:
+    those numbers are what payslips were already computed from. Returns
+    how many periods were recalculated."""
+    from website.views import calculate_leave_balance_for_period, get_locking_run_for_period
+
+    done = 0
+    for period in sorted(periods, key=lambda p: p["from_date"]):
         if get_locking_run_for_period(employee.company, period["from_date"], period["to_date"]):
             continue
         try:
             calculate_leave_balance_for_period(employee, payroll_settings, period["from_date"], period["to_date"])
+            done += 1
         except Exception:
             pass
+    return done
+
+
+def recalculate_leave_balance_for_employee(employee, from_date):
+    """Recalculate one employee's LeaveBalance for the payroll period
+    containing from_date, and every later period known to have attendance
+    -- a change to an old period must also refresh every later period's
+    carried-forward opening balance, not just the one that changed."""
+    from website.views import _payroll_settings_with_cycle, get_payroll_period_for_date
+
+    # Employees without a company (or whose company has no cycle) use the
+    # cycle the other companies use, same as their attendance page.
+    payroll_settings = _payroll_settings_with_cycle(employee.company)
+    if not payroll_settings:
+        return
+
+    period_start, period_end = get_payroll_period_for_date(payroll_settings, from_date)
+    # The periods list only has periods that currently HAVE an attendance
+    # row, so a delete that empties the affected period out entirely would
+    # otherwise never get recalculated (the stale LeaveBalance row would just
+    # be left standing) -- the directly-affected period is always included.
+    later_periods = [
+        p for p in _leave_balance_periods(employee, payroll_settings)
+        if p["from_date"] > period_start
+    ]
+    _recalculate_periods(
+        employee, payroll_settings, [{"from_date": period_start, "to_date": period_end}] + later_periods,
+    )
+
+
+def recalculate_all_leave_balances():
+    """Every active employee, every payroll period -- the scheduled monthly
+    full refresh. Same calculation, same finalized-period protection and
+    same no-company fallback as the per-change recalculation above.
+    Returns (periods recalculated, employees skipped for lack of a cycle)."""
+    from website.views import _payroll_settings_with_cycle
+
+    done = skipped = 0
+    periods_cache = {}
+    for employee in Employee.objects.filter(status="Active").select_related("company"):
+        payroll_settings = _payroll_settings_with_cycle(employee.company)
+        if not payroll_settings:
+            skipped += 1
+            continue
+        if employee.company_id:
+            key = employee.company_id
+            if key not in periods_cache:
+                periods_cache[key] = _leave_balance_periods(employee, payroll_settings)
+            periods = periods_cache[key]
+        else:
+            periods = _leave_balance_periods(employee, payroll_settings)
+        done += _recalculate_periods(employee, payroll_settings, periods)
+    return done, skipped
 
 
 @receiver(post_save, sender=Attendance)
@@ -101,9 +139,19 @@ def auto_recalc_leave_balance_on_attendance_save(sender, instance, **kwargs):
     recalculate_leave_balance_for_employee(instance.employee, instance.date)
 
 
+def _deleted_on_its_own(sender, origin):
+    """True when the row itself (or a queryset of that model) was deleted,
+    False when it's being removed as a cascade of deleting its employee or
+    company. In the cascade case, recalculating would re-create LeaveBalance
+    rows for the employee that is about to disappear, leaving rows that
+    point at nobody -- PostgreSQL then refuses to commit the delete."""
+    model = origin.model if hasattr(origin, "model") else type(origin)
+    return model is sender
+
+
 @receiver(post_delete, sender=Attendance)
-def auto_recalc_leave_balance_on_attendance_delete(sender, instance, **kwargs):
-    if _auto_recalc_suspended():
+def auto_recalc_leave_balance_on_attendance_delete(sender, instance, origin=None, **kwargs):
+    if _auto_recalc_suspended() or not _deleted_on_its_own(sender, origin):
         return
     recalculate_leave_balance_for_employee(instance.employee, instance.date)
 
@@ -120,8 +168,8 @@ def auto_recalc_leave_balance_on_compoff_save(sender, instance, **kwargs):
 
 
 @receiver(post_delete, sender=CompOffRequest)
-def auto_recalc_leave_balance_on_compoff_delete(sender, instance, **kwargs):
-    if _auto_recalc_suspended() or not instance.from_date:
+def auto_recalc_leave_balance_on_compoff_delete(sender, instance, origin=None, **kwargs):
+    if _auto_recalc_suspended() or not instance.from_date or not _deleted_on_its_own(sender, origin):
         return
     recalculate_leave_balance_for_employee(instance.employee, instance.from_date)
 

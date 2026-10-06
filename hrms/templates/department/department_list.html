@@ -57,7 +57,32 @@
               {% else %}<span class="text-muted">— not set —</span>{% endif %}
             </td>
             <td class="text-center">
-              <span class="badge bg-label-primary">{{ dept.employee_count }}</span>
+              {% if dept.employee_count %}
+              <button type="button" class="btn btn-sm badge bg-label-primary border-0 dept-members-btn"
+                      data-dept-id="{{ dept.id }}" data-dept-name="{{ dept.name }}" title="Show employees">
+                {{ dept.employee_count }}
+              </button>
+              {% else %}
+              <span class="badge bg-label-secondary">0</span>
+              {% endif %}
+              <template id="dept-members-{{ dept.id }}">
+                {% for emp in dept.members %}
+                <tr>
+                  <td class="text-muted">{{ emp.employee_code|default:"—" }}</td>
+                  <td>
+                    {% if can_open_employee %}
+                    <a href="{% url 'employee_detail' emp.id %}" target="_blank">{{ emp.first_name }} {{ emp.last_name }}</a>
+                    {% else %}{{ emp.first_name }} {{ emp.last_name }}{% endif %}
+                  </td>
+                  <td>{{ emp.designation|default:"—" }}</td>
+                  <td>{{ emp.company.name|default:"—" }}</td>
+                  <td>
+                    {% if emp.reporting_person %}{{ emp.reporting_person.first_name }} {{ emp.reporting_person.last_name }}{% else %}<span class="text-muted">—</span>{% endif %}
+                    {% if not emp.use_department_defaults %}<span class="badge bg-label-warning ms-1" title="Reporting line set individually, not from the department">Own</span>{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </template>
             </td>
             <td class="text-end">
               {% if request.user|has_feature:"department_management:edit" %}
@@ -84,6 +109,54 @@
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="deptMembersModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span id="deptMembersTitle"></span> – <span id="deptMembersCount"></span> active employee(s)</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="search" id="deptMembersSearch" class="form-control form-control-sm mb-2" placeholder="Search by name, code, designation…">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr><th>Code</th><th>Name</th><th>Designation</th><th>Company</th><th>Reporting Person</th></tr>
+            </thead>
+            <tbody id="deptMembersBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const modalEl = document.getElementById("deptMembersModal");
+    const body = document.getElementById("deptMembersBody");
+    const search = document.getElementById("deptMembersSearch");
+
+    document.querySelectorAll(".dept-members-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const rows = document.getElementById("dept-members-" + btn.dataset.deptId).content.cloneNode(true);
+        body.replaceChildren(rows);
+        document.getElementById("deptMembersTitle").textContent = btn.dataset.deptName;
+        document.getElementById("deptMembersCount").textContent = body.rows.length;
+        search.value = "";
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+      });
+    });
+
+    search.addEventListener("input", () => {
+      const q = search.value.trim().toLowerCase();
+      Array.from(body.rows).forEach(tr => {
+        tr.style.display = tr.textContent.toLowerCase().includes(q) ? "" : "none";
+      });
+    });
+  })();
+</script>
 
 {% if request.user|has_feature:"department_management:edit" %}
 <div class="modal fade" id="departmentModal" tabindex="-1">

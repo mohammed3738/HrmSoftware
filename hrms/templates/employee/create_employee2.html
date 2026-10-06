@@ -55,6 +55,7 @@
     </select>
   </div>
 
+  {% if can_assign_roles %}
   <div class="d-flex align-items-center gap-2">
     <label class="text-muted small mb-0">Role:</label>
     <select id="bulkRole" class="form-select form-select-sm" style="width:130px">
@@ -64,6 +65,7 @@
       {% endfor %}
     </select>
   </div>
+  {% endif %}
 
   <button class="btn btn-primary btn-sm" onclick="applyBulkAction()">Apply</button>
   <button class="btn btn-outline-secondary btn-sm" onclick="clearBulkSelection()">Clear</button>
@@ -126,10 +128,12 @@
                 <i class="ti ti-edit me-2"></i> Edit
               </a>
               {% if employee.status != "Archived" %}
+              {% if can_delete_employees %}
               <a class="dropdown-item text-danger" href="javascript:void(0);"
                  onclick="confirmEmployeeDelete({{ employee.id }})">
                 <i class="ri-archive-line me-2"></i> Archive
               </a>
+              {% endif %}
               {% else %}
               <a class="dropdown-item text-success" href="javascript:void(0);"
                  onclick="restoreEmployee({{ employee.id }})">
@@ -238,7 +242,8 @@
                       {% endfor %}
                     </div>
                   </div>
-                  <!-- GROUP -->
+                  <!-- GROUP: only for users allowed to change login roles -->
+                {% if can_assign_roles %}
                 <div class="col-md-4">
                   <div class="mb-3">
                     <label class="form-label">
@@ -255,6 +260,7 @@
                     </select>
                   </div>
                 </div>
+                {% endif %}
 
                   <!-- SECTION: Personal Details -->
                   <div class="col-12 mt-2 mb-1">
@@ -1710,14 +1716,14 @@ function clearBulkSelection() {
   document.querySelectorAll('.emp-checkbox').forEach(cb => cb.checked = false);
   document.getElementById('selectAll').checked = false;
   document.getElementById('bulkStatus').value = '';
-  document.getElementById('bulkRole').value = '';
+  const bulkRoleEl = document.getElementById('bulkRole'); if (bulkRoleEl) bulkRoleEl.value = '';
   updateBulkToolbar();
 }
 
 function applyBulkAction() {
   const ids    = getSelectedIds();
   const status = document.getElementById('bulkStatus').value;
-  const role   = document.getElementById('bulkRole').value;
+  const role   = document.getElementById('bulkRole')?.value || '';
 
   if (!ids.length) { alert('No employees selected.'); return; }
   if (!status && !role) { alert('Please choose a status or role to apply.'); return; }

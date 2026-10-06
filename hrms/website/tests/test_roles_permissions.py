@@ -51,10 +51,11 @@ STAFF = {"Super Admin", "Admin", "Payroll Officer", "HR"}
 NOT_HR = {"Super Admin", "Admin", "Payroll Officer"}
 
 GOLDEN_TABLE = {
-    # Employee lifecycle -- HR adds but cannot change.
+    # Employee lifecycle -- HR adds and edits, but cannot delete.
     ("employee_records", "view"): STAFF,
     ("employee_records", "create"): STAFF,
-    ("employee_records", "edit"): NOT_HR,
+    ("employee_records", "edit"): STAFF,
+    ("employee_delete", "edit"): NOT_HR,
     ("department_management", "view"): STAFF,
     ("department_management", "edit"): STAFF,
     ("offboarding", "view"): STAFF,
@@ -260,7 +261,7 @@ class RolesPermissionsEndToEndTest(TestCase):
     def test_hr_can_open_the_new_employee_form(self):
         self.assertNotEqual(self._status(self.hr_user, reverse("employee_create")), 403)
 
-    def test_hr_cannot_open_an_existing_employee_for_editing(self):
+    def test_hr_can_open_an_existing_employee_for_editing(self):
         employee = Employee.objects.create(
             company=self.company, salutation="Mr", first_name="Ed", last_name="Itable",
             father_name="Father", gender="Male", date_of_birth=date(1990, 1, 1),
@@ -268,7 +269,7 @@ class RolesPermissionsEndToEndTest(TestCase):
             designation="Dev", department="IT", date_of_joining=date(2020, 1, 1), status="Active",
         )
         url = reverse("employee_edit", args=[employee.id])
-        self.assertEqual(self._status(self.hr_user, url), 403)
+        self.assertNotEqual(self._status(self.hr_user, url), 403)
         self.assertNotEqual(self._status(self.admin_user, url), 403)
 
     def test_hr_can_open_the_salary_structure_form(self):

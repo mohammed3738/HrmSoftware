@@ -35,14 +35,14 @@
             <div class="col-md-5">
                 <label class="form-label fw-semibold">Payroll Period</label>
                 <select name="period" class="form-select form-select-sm">
-                    <option value="" {% if not selected_period %}selected{% endif %}>All Periods</option>
+                    <option value="all" {% if selected_period == "all" %}selected{% endif %}>All Periods</option>
                     {% for period in payroll_periods %}
                     <option value="{{ period.to_date|date:'Y-m-d' }}" {% if selected_period == period.to_date|date:'Y-m-d' %}selected{% endif %}>
                         {{ period.to_date|date:"F Y" }} ({{ period.from_date|date:"d M" }} - {{ period.to_date|date:"d M" }})
                     </option>
                     {% endfor %}
                 </select>
-                <div class="form-text">Matches this company's configured payroll cycle (day {{ payroll_settings.from_date|default:"" }} to day {{ payroll_settings.to_date|default:"" }} of each month).</div>
+                <div class="form-text">Payroll cycle: day {{ payroll_settings.from_date }} to day {{ payroll_settings.to_date }} of each month.</div>
             </div>
             {% else %}
             <div class="col-md-3">
@@ -141,7 +141,8 @@
             <div class="tab-pane fade show active" id="att-calendar" role="tabpanel">
                 <div class="card border">
                     <div class="card-header d-flex justify-content-between align-items-center bg-light">
-                        <h6 class="mb-0 fw-semibold">{{ calendar_start|date:"F Y" }}</h6>
+                        {# Named after the month the period ends in, like the Payroll Period dropdown ("October 2026" = 27 Sep - 26 Oct). #}
+                        <h6 class="mb-0 fw-semibold">{{ calendar_end|date:"F Y" }}</h6>
                         <small class="text-muted">{{ calendar_start|date:"d M" }} – {{ calendar_end|date:"d M Y" }}</small>
                     </div>
                     <div class="card-body">
@@ -248,10 +249,10 @@
                     </span>
                     <div>
                         {% if attendance_records.has_previous %}
-                            <a href="?page={{ attendance_records.previous_page_number }}{% if selected_year %}&year={{ selected_year }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+                            <a href="?page={{ attendance_records.previous_page_number }}{% if selected_year %}&year={{ selected_year }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
                         {% endif %}
                         {% if attendance_records.has_next %}
-                            <a href="?page={{ attendance_records.next_page_number }}{% if selected_year %}&year={{ selected_year }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary">Next</a>
+                            <a href="?page={{ attendance_records.next_page_number }}{% if selected_year %}&year={{ selected_year }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary">Next</a>
                         {% endif %}
                     </div>
                 </div>
@@ -807,8 +808,11 @@ function convertTo24Hour(time) {
 <script>
 (function () {
   const CAL_DATA  = {{ calendar_attendance_json|safe }};
-  const CAL_YEAR  = {{ calendar_start|date:"Y" }};
-  const CAL_MONTH = {{ calendar_start|date:"n" }}; // 1-12
+  // The range can cross a month boundary (a 27th-26th payroll period), so
+  // the grid walks day by day from start to end rather than drawing one month.
+  const CAL_START = new Date({{ calendar_start|date:"Y" }}, {{ calendar_start|date:"n" }} - 1, {{ calendar_start|date:"j" }});
+  const CAL_END   = new Date({{ calendar_end|date:"Y" }}, {{ calendar_end|date:"n" }} - 1, {{ calendar_end|date:"j" }});
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
   function statusClass(status) {
     switch (status) {
@@ -819,7 +823,7 @@ function convertTo24Hour(time) {
       case "Absent":             return "att-status-absent";
       case "Holiday":            return "att-status-holiday";
       case "Weekend":            return "att-status-weekend";
-      default:                   return "att-empty";
+      default:                   return "att-no-record";
     }
   }
 
@@ -835,24 +839,23 @@ function convertTo24Hour(time) {
       grid.appendChild(h);
     });
 
-    const firstDay = new Date(CAL_YEAR, CAL_MONTH - 1, 1);
-    const daysInMonth = new Date(CAL_YEAR, CAL_MONTH, 0).getDate();
-    const startWeekday = firstDay.getDay(); // 0 = Sunday
-
-    for (let i = 0; i < startWeekday; i++) {
+    for (let i = 0; i < CAL_START.getDay(); i++) {  // 0 = Sunday
       const blank = document.createElement("div");
       blank.className = "att-day-cell att-empty";
       grid.appendChild(blank);
     }
 
-    for (let day = 1; day <= daysInMonth; day++) {
-      const dateStr = `${CAL_YEAR}-${String(CAL_MONTH).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    for (const d = new Date(CAL_START); d <= CAL_END; d.setDate(d.getDate() + 1)) {
+      const day = d.getDate();
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
       const status = CAL_DATA[dateStr];
+      // Month name on the first cell and wherever a new month begins.
+      const label = (d.getTime() === CAL_START.getTime() || day === 1) ? `${day} ${MONTHS[d.getMonth()]}` : day;
 
       const cell = document.createElement("div");
       cell.className = "att-day-cell " + statusClass(status);
-      cell.title = status || "No record";
-      cell.innerHTML = `<div class="att-day-number">${day}</div>` +
+      cell.title = `${day} ${MONTHS[d.getMonth()]} – ${status || "No record"}`;
+      cell.innerHTML = `<div class="att-day-number">${label}</div>` +
         (status ? `<div class="att-day-label">${status}</div>` : "");
       grid.appendChild(cell);
     }

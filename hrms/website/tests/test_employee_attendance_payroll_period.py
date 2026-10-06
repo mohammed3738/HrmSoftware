@@ -73,11 +73,9 @@ class EmployeeAttendancePayrollPeriodTest(TestCase):
         self.assertNotIn(date(2026, 5, 26), dates_shown)
         self.assertNotIn(date(2026, 6, 27), dates_shown)
 
-    def test_falls_back_to_calendar_month_when_no_custom_period_configured(self):
-        other_company = Company.objects.create(name="Calendar Co", short_name="CALC")
-        # No PayrollSettings row at all for this company -> naive calendar month.
-        other_employee = Employee.objects.create(
-            company=other_company,
+    def _other_employee(self, company):
+        return Employee.objects.create(
+            company=company,
             salutation="Mr", first_name="Jane", last_name="Roe",
             father_name="Bob Roe", gender="Female", blood_group="O+",
             date_of_birth=date(1990, 1, 1), place_of_birth="Test City",
@@ -91,12 +89,31 @@ class EmployeeAttendancePayrollPeriodTest(TestCase):
             emergency_contact_relation1="Spouse", emergency_contact_mobile1="0987654323",
             status="Active",
         )
-        Attendance.objects.create(
-            employee=other_employee, date=date(2026, 6, 1), in_time=time(9, 0), out_time=time(18, 0),
-        )
 
-        resp = self.client.get(reverse("employee_attendance_detail", args=[other_employee.id]))
+    def test_company_without_cycle_uses_the_common_cycle(self):
+        # No PayrollSettings for this company (or no company at all): the
+        # cycle other companies use applies, not naive calendar months.
+        for company in (Company.objects.create(name="Calendar Co", short_name="CALC"), None):
+            Employee.objects.filter(employee_code="EMP002").delete()
+            other_employee = self._other_employee(company)
+            Attendance.objects.create(
+                employee=other_employee, date=date(2026, 6, 1), in_time=time(9, 0), out_time=time(18, 0),
+            )
+            resp = self.client.get(
+                reverse("employee_attendance_detail", args=[other_employee.id]), {"period": "2026-06-26"},
+            )
+            self.assertTrue(resp.context["uses_custom_period"])
+            self.assertEqual(resp.context["calendar_start"], date(2026, 5, 27))
+
+    def test_falls_back_to_calendar_month_when_no_cycle_configured_anywhere(self):
+        PayrollSettings.objects.update(from_date=None, to_date=None)
+        resp = self.client.get(
+            reverse("employee_attendance_detail", args=[self.employee.id]), {"month": "6"},
+        )
         self.assertFalse(resp.context["uses_custom_period"])
+        # A month without a year picks that month's latest year with data.
+        self.assertEqual(resp.context["calendar_start"], date(2026, 6, 1))
+        self.assertEqual(resp.context["calendar_end"], date(2026, 6, 30))
 
     def test_summary_stats_scoped_to_selected_payroll_period(self):
         """Days Present / Late Remarks / Half Days / Leaves Taken must be
@@ -159,26 +176,34 @@ class EmployeeAttendancePayrollPeriodTest(TestCase):
         self.assertEqual(len(dates_shown), 31)
         self.assertFalse(hasattr(resp.context["attendance_records"], "has_other_pages"))
 
-    def test_unfiltered_view_still_paginates(self):
-        """Without a period/year/month filter selected, the 'all time' view
-        (which can span years) should still be paginated."""
+    def test_all_periods_view_still_paginates(self):
+        """'All Periods' (which can span years) is still paginated."""
         for i in range(35):
             Attendance.objects.create(
                 employee=self.employee, date=date(2020, 1, 1) + timedelta(days=i),
                 in_time=time(9, 0), out_time=time(18, 0),
             )
-        resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]))
+        resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]), {"period": "all"})
         self.assertTrue(resp.context["attendance_records"].has_other_pages())
 
-    def test_summary_stats_unfiltered_covers_all_time(self):
-        """With no period/year/month selected, the summary must cover the
+    def test_opens_on_current_payroll_period(self):
+        resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]))
+        today = date.today()
+        self.assertEqual(resp.context["selected_period"], resp.context["calendar_end"].isoformat())
+        self.assertLessEqual(resp.context["calendar_start"], today)
+        self.assertGreaterEqual(resp.context["calendar_end"], today)
+        self.assertEqual(resp.context["calendar_start"].day, 27)
+        self.assertEqual(resp.context["calendar_end"].day, 26)
+
+    def test_summary_stats_all_periods_covers_all_time(self):
+        """With "All Periods" selected, the summary must cover the
         employee's whole history, not just one period."""
         LeaveApplication.objects.create(
             employee=self.employee, leave_type="CL", start_date=date(2026, 4, 1),
             end_date=date(2026, 4, 3), reason="test", status="Approved",
         )
 
-        resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]))
+        resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]), {"period": "all"})
         # 4 of the 5 setUp records are "Present" (9h worked each); the 5th
         # (27 Jun 2026) falls on a Saturday, so it's "Weekend" regardless of
         # its punch times — weekend status takes priority in calculate_status().
@@ -252,13 +277,15 @@ class EmployeeAttendanceCalendarTabTest(TestCase):
         self.assertNotIn("2026-05-26", data)
         self.assertNotIn("2026-06-27", data)
 
-    def test_calendar_defaults_to_current_month_when_no_filter_selected(self):
-        from datetime import date as _date
+    def test_calendar_defaults_to_current_payroll_period_when_no_filter_selected(self):
         resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]))
         calendar_start = resp.context["calendar_start"]
         calendar_end = resp.context["calendar_end"]
-        today = _date.today()
-        self.assertEqual(calendar_start, today.replace(day=1))
-        self.assertEqual(calendar_start.year, calendar_end.year)
-        self.assertEqual(calendar_start.month, calendar_end.month)
-        self.assertEqual((calendar_end + timedelta(days=1)).day, 1)  # last day of that month
+        today = date.today()
+        self.assertTrue(calendar_start <= today <= calendar_end)
+        self.assertEqual((calendar_start.day, calendar_end.day), (27, 26))
+
+    def test_calendar_on_all_periods_shows_current_payroll_period(self):
+        resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]), {"period": "all"})
+        self.assertTrue(resp.context["calendar_start"] <= date.today() <= resp.context["calendar_end"])
+        self.assertEqual(resp.context["calendar_start"].day, 27)

@@ -101,8 +101,15 @@ def company_details_api(request, pk):
     return JsonResponse(data)
 
 
+def _can_assign_roles(user):
+    """Changing someone's login role (e.g. to Admin) is account
+    administration, not employee-record editing: HR may edit details but
+    must not be able to promote anyone."""
+    return user.is_superuser or user.is_staff or has_feature_permission(user, "user_accounts", "edit")
+
+
 @login_required
-@feature_required("employee_records", action="edit")
+@feature_required("employee_delete", action="edit")
 def delete_employee(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
 
@@ -1435,6 +1442,45 @@ def attendance_list(request):
     return render(request, "attendance/today.html", context)
 
 
+def _payroll_settings_with_cycle(company):
+    """The PayrollSettings whose 27th-to-26th style cycle applies to `company`.
+    Falls back to the cycle most companies use when the company has none
+    configured, or when there is no company at all (an employee not yet
+    assigned to one) -- otherwise those pages silently dropped to calendar
+    months. Returns None only if no company anywhere has a cycle."""
+    ps = PayrollSettings.objects.filter(company=company).first() if company else None
+    if ps and ps.from_date and ps.to_date:
+        return ps
+    configured = list(
+        PayrollSettings.objects.exclude(from_date__isnull=True).exclude(to_date__isnull=True)
+    )
+    if not configured:
+        return None
+    from collections import Counter
+    dominant = Counter((p.from_date, p.to_date) for p in configured).most_common(1)[0][0]
+    return next(p for p in configured if (p.from_date, p.to_date) == dominant)
+
+
+def _employee_payroll_periods(employee, payroll_settings):
+    """Every payroll period this employee has attendance in, plus the current
+    one (so it's selectable before any attendance is uploaded), newest first."""
+    stats = Attendance.objects.filter(employee=employee).aggregate(first=Min("date"), last=Max("date"))
+    today = date.today()
+    first = min(filter(None, [stats["first"], today]))
+    last = max(filter(None, [stats["last"], today]))
+    with_attendance = set(
+        Attendance.objects.filter(employee=employee).values_list("date", flat=True)
+    )
+    periods = []
+    from_d, to_d = get_payroll_period_for_date(payroll_settings, first)
+    while from_d <= last:
+        has_rows = any(from_d <= d <= to_d for d in with_attendance)
+        if has_rows or from_d <= today <= to_d:
+            periods.append({"from_date": from_d, "to_date": to_d})
+        from_d, to_d = get_payroll_period_for_date(payroll_settings, to_d + timedelta(days=1))
+    return list(reversed(periods))
+
+
 @login_required
 def employee_attendance_detail(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
@@ -1443,15 +1489,13 @@ def employee_attendance_detail(request, employee_id):
 
     attendance_records = Attendance.objects.filter(employee=employee)
 
-    # If the company has a custom payroll cycle configured (e.g. 27th to
-    # 26th), filter by that actual payroll period instead of the naive
-    # calendar month — "June" should mean 27 May - 26 Jun, not 1-30 Jun.
-    payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
-    uses_custom_period = bool(payroll_settings and payroll_settings.from_date and payroll_settings.to_date)
+    # Filter by the actual payroll period (e.g. 27th to 26th) instead of the
+    # naive calendar month — "June" should mean 27 May - 26 Jun, not 1-30 Jun.
+    payroll_settings = _payroll_settings_with_cycle(employee.company)
+    uses_custom_period = payroll_settings is not None
 
     selected_year = request.GET.get("year")
     selected_month = request.GET.get("month")
-    selected_period = request.GET.get("period", "")
     years = months = []
     payroll_periods = []
 
@@ -1461,19 +1505,26 @@ def employee_attendance_detail(request, employee_id):
     range_start = range_end = None
 
     if uses_custom_period:
-        payroll_periods = get_all_payroll_periods_from_attendance(employee.company, payroll_settings)
-        if selected_period:
-            for p in payroll_periods:
-                if p["to_date"].isoformat() == selected_period:
-                    range_start, range_end = p["from_date"], p["to_date"]
-                    attendance_records = attendance_records.filter(
-                        date__gte=range_start, date__lte=range_end
-                    )
-                    break
+        payroll_periods = _employee_payroll_periods(employee, payroll_settings)
+        # Opens on the current payroll period; "all" shows everything.
+        current_from, current_to = get_payroll_period_for_date(payroll_settings, date.today())
+        selected_period = request.GET.get("period") or current_to.isoformat()
+        for p in payroll_periods:
+            if p["to_date"].isoformat() == selected_period:
+                range_start, range_end = p["from_date"], p["to_date"]
+                attendance_records = attendance_records.filter(
+                    date__gte=range_start, date__lte=range_end
+                )
+                break
     else:
+        selected_period = ""
         dates_qs = Attendance.objects.filter(employee=employee)
         years = dates_qs.dates("date", "year", order="DESC")
         months = dates_qs.dates("date", "month", order="DESC")
+        if selected_month and not selected_year:
+            # A month on its own means its latest occurrence that has data.
+            latest = dates_qs.filter(date__month=selected_month).order_by("-date").first()
+            selected_year = str(latest.date.year if latest else date.today().year)
         if selected_year:
             attendance_records = attendance_records.filter(date__year=selected_year)
         if selected_month:
@@ -1515,11 +1566,13 @@ def employee_attendance_detail(request, employee_id):
         attendance_records = paginator.get_page(page)
 
     # ── Calendar tab: a day -> status map for whichever range the filter
-    # above currently selects (period, or year+month), or the current
-    # calendar month when nothing is selected -- same range the List tab
-    # is scoped to, so the one filter control drives both tabs.
+    # above currently selects (period, or year+month). With nothing
+    # selected it shows the current payroll period (or the current calendar
+    # month for companies without a custom cycle).
     if range_start and range_end:
         calendar_start, calendar_end = range_start, range_end
+    elif uses_custom_period:
+        calendar_start, calendar_end = get_payroll_period_for_date(payroll_settings, date.today())
     else:
         today = date.today()
         calendar_start = today.replace(day=1)
@@ -2888,9 +2941,11 @@ def create_or_edit_employee(request, employee_id=None):
                 emp_obj = form.save(commit=False)
                 emp_obj.save()
 
-                # ✅ HANDLE GROUP ASSIGNMENT
+                # Role changes need user_accounts:edit; without it the field
+                # isn't shown and anything posted is ignored. New employees
+                # still get the default "Employee" role (sync_user signal).
                 selected_group_id = request.POST.get("employee_group")
-                if selected_group_id:
+                if selected_group_id and _can_assign_roles(request.user):
                     try:
                         group = Group.objects.get(id=selected_group_id)
                         assign_employee_role(emp_obj, group, actor=request.user)
@@ -2984,6 +3039,8 @@ def create_or_edit_employee(request, employee_id=None):
         "groups": Group.objects.all(),
         "current_group_id": current_group_id,
         "all_groups": Group.objects.all(),
+        "can_assign_roles": _can_assign_roles(request.user),
+        "can_delete_employees": request.user.is_superuser or request.user.is_staff or has_feature_permission(request.user, "employee_delete", "edit"),
         "open_modal": request.method == "POST",
     })
 
@@ -3012,6 +3069,8 @@ def employee_list(request):
         "groups": Group.objects.all(),
         "current_group_id": None,
         "all_groups": Group.objects.all(),
+        "can_assign_roles": _can_assign_roles(request.user),
+        "can_delete_employees": request.user.is_superuser or request.user.is_staff or has_feature_permission(request.user, "employee_delete", "edit"),
     })
 
 
@@ -3051,6 +3110,8 @@ def bulk_employee_action(request):
         return JsonResponse({"success": False, "error": "No employees selected."}, status=400)
     if not new_status and not new_role:
         return JsonResponse({"success": False, "error": "No action specified."}, status=400)
+    if new_role and not _can_assign_roles(request.user):
+        return JsonResponse({"success": False, "error": "You don't have permission to change roles."}, status=403)
 
     valid_statuses = {"Active", "Pending", "Left"}
     if new_status and new_status not in valid_statuses:
@@ -3714,18 +3775,28 @@ def department_list(request):
     elif show == "archived":
         departments = departments.filter(is_active=False)
 
-    # How many employees currently sit in each department, so it's obvious
-    # who a change to the reporting person will affect.
+    # Who currently sits in each department (listed when the count is
+    # clicked), so it's obvious who a change to the reporting person will
+    # affect. Employee.department is free text, matched case-insensitively.
     departments = list(departments)
+    members_by_name = {}
+    active = (
+        Employee.objects.filter(status="Active")
+        .select_related("company", "reporting_person")
+        .order_by("first_name", "last_name")
+    )
+    for emp in active:
+        members_by_name.setdefault((emp.department or "").strip().lower(), []).append(emp)
     for dept in departments:
-        dept.employee_count = Employee.objects.filter(
-            department__iexact=dept.name, status="Active"
-        ).count()
+        dept.members = members_by_name.get(dept.name.strip().lower(), [])
+        dept.employee_count = len(dept.members)
 
     return render(request, "department/department_list.html", {
         "departments": departments,
         "show": show,
         "employees": Employee.objects.filter(status="Active").order_by("first_name", "last_name"),
+        "can_open_employee": has_feature_permission(request.user, "employee_records", "view")
+                             or request.user.is_superuser or request.user.is_staff,
     })
 
 

@@ -307,9 +307,10 @@ def sync_user(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=PayrollSettings)
 def generate_monthly_earned_leaves(sender, instance, created, **kwargs):
-    """
-    Auto-generate monthly earned leaves whenever PayrollSettings
-    is created or updated.
-    """
-
+    """Keep Holiday Management's monthly earned leaves in step with
+    PayrollSettings on every save, whichever screen saved it: add the
+    current financial year's missing months, then bring every
+    auto-generated month to earned_leaves_per_year / 12. Months someone set
+    by hand (Auto-Generated unticked) are left alone."""
     MonthlyEarnedLeaves.generate_for_payroll_settings(instance)
+    MonthlyEarnedLeaves.sync_with_payroll_settings(instance)

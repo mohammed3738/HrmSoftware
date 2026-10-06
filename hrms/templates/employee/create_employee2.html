@@ -104,7 +104,11 @@
         </td>
         <td><a href="{% url 'employee_detail' employee.pk %}">{{ employee.employee_code }}</a></td>
         <td><a href="{% url 'create-company' %}">{{ employee.company }}</a></td>
-        <td>{{ employee.first_name }}</td>
+        <td class="text-nowrap">
+          {% if employee.photo %}
+          <img src="{{ employee.photo.url }}" alt="" class="rounded-circle me-2" style="width:28px;height:28px;object-fit:cover;">
+          {% endif %}{{ employee.first_name }}
+        </td>
         <td>{{ employee.last_name }}</td>
         <td>{{ employee.gender }}</td>
         <td>
@@ -217,6 +221,36 @@
               <!-- BASIC INFO TAB -->
               <div class="tab-pane fade show active" id="basic-info">
                 <div class="row">
+                  <!-- PHOTO -->
+                  <div class="col-12">
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                      <img id="employeePhotoPreview"
+                           src="{% if employee and employee.photo %}{{ employee.photo.url }}{% endif %}"
+                           alt="Employee photo"
+                           class="rounded-circle border {% if not employee or not employee.photo %}d-none{% endif %}"
+                           style="width:84px;height:84px;object-fit:cover;">
+                      <div id="employeePhotoPlaceholder"
+                           class="rounded-circle border d-flex align-items-center justify-content-center text-muted {% if employee and employee.photo %}d-none{% endif %}"
+                           style="width:84px;height:84px;">
+                        <i class="ri-user-3-line" style="font-size:2rem;"></i>
+                      </div>
+                      <div>
+                        <label class="form-label mb-1" for="employeePhotoInput">Photo</label>
+                        <input type="file" name="photo" id="employeePhotoInput" class="form-control form-control-sm"
+                               accept="image/jpeg,image/png,image/webp" style="max-width:280px;">
+                        <div class="form-text">JPG, PNG or WEBP, up to 2 MB.</div>
+                        {% if employee and employee.photo %}
+                        <label class="form-check-label small mt-1">
+                          <input type="checkbox" name="photo-clear" id="employeePhotoClear" class="form-check-input me-1"> Remove photo
+                        </label>
+                        {% endif %}
+                        {% for error in form.photo.errors %}
+                        <div class="text-danger small">{{ error }}</div>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  </div>
+
                   <!-- COMPANY -->
                   <div class="col-md-4">
                     <div class="mb-3">
@@ -1832,4 +1866,27 @@ function applyBulkAction() {
 })();
 </script>
 
+<script>
+  // Live preview of a newly chosen employee photo (before saving).
+  (function () {
+    const input = document.getElementById("employeePhotoInput");
+    if (!input) return;
+    const img = document.getElementById("employeePhotoPreview");
+    const placeholder = document.getElementById("employeePhotoPlaceholder");
+    input.addEventListener("change", () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) {
+        alert("Photo must be 2 MB or smaller.");
+        input.value = "";
+        return;
+      }
+      img.src = URL.createObjectURL(file);
+      img.classList.remove("d-none");
+      placeholder.classList.add("d-none");
+      const clear = document.getElementById("employeePhotoClear");
+      if (clear) clear.checked = false;
+    });
+  })();
+</script>
 {% endblock %}

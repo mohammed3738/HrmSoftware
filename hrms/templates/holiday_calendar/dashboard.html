@@ -1087,7 +1087,25 @@
             <div class="table-container">
                 <div class="table-header">
                     <h2>Monthly Earned Leaves Configuration</h2>
+                    {% if settings_companies %}
+                    <label style="display:flex;align-items:center;gap:8px;margin:6px 0;">
+                        <span style="color:var(--text-muted);">Company:</span>
+                        <select onchange="window.location.search = '?tab=earned&company_id=' + this.value + '&year={{ year }}&month={{ month }}';"
+                                style="padding:4px 8px;border-radius:6px;">
+                            {% for c in settings_companies %}
+                            <option value="{{ c.id }}" {% if selected_company and c.id == selected_company.id %}selected{% endif %}>{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    {% endif %}
+                    {% if payroll_settings %}
+                    <small style="color:var(--text-muted);">
+                        {{ selected_company.name }}: {{ payroll_settings.earned_leaves_per_year }} earned leaves per year.
+                        Months marked Auto follow that setting automatically; edit a month and untick Auto-Generated to keep a custom value.
+                    </small>
+                    {% else %}
                     <small style="color:var(--text-muted);">Click <strong>Edit</strong> on any row to adjust its credit.</small>
+                    {% endif %}
                 </div>
                 <table>
                     <thead>

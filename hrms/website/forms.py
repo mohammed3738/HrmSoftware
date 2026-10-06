@@ -60,11 +60,12 @@ class EmployeeForm(forms.ModelForm):
             'name_as_per_bank', 'salary_account_number', 'ifsc_code',
             'emergency_contact_name1', 'emergency_contact_relation1', 'emergency_contact_mobile1',
             'emergency_contact_name2', 'emergency_contact_relation2', 'emergency_contact_mobile2',
-            'status',
+            'status', 'photo',
         ]
 
 
         widgets = {
+            "photo": forms.ClearableFileInput(attrs={"accept": "image/jpeg,image/png,image/webp"}),
             "date_of_birth": forms.DateInput(attrs={"type": "date"}),
             "date_of_joining": forms.DateInput(attrs={"type": "date"}),
             "date_of_confirmation": forms.DateInput(attrs={"type": "date"}),
@@ -73,6 +74,20 @@ class EmployeeForm(forms.ModelForm):
             'shift_end_time': forms.TimeInput(attrs={'type': 'time'}),
         }
         
+    PHOTO_MAX_BYTES = 2 * 1024 * 1024
+    PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}
+
+    def clean_photo(self):
+        # ImageField already rejects files Pillow can't open as an image;
+        # this narrows it to common web formats and caps the size.
+        photo = self.cleaned_data.get("photo")
+        if photo and hasattr(photo, "image"):  # a newly uploaded file
+            if photo.size > self.PHOTO_MAX_BYTES:
+                raise forms.ValidationError("Photo must be 2 MB or smaller.")
+            if (photo.image.format or "").upper() not in self.PHOTO_FORMATS:
+                raise forms.ValidationError("Photo must be a JPG, PNG or WEBP image.")
+        return photo
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():

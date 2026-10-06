@@ -7693,6 +7693,7 @@ def save_payroll_settings(request):
         # Capture which leave-affecting flags changed before overwriting them
         old_late_marks_affect_lwp = settings.late_marks_affect_lwp
         old_weekend_days = settings.weekend_days
+        old_earned_leaves_per_year = settings.earned_leaves_per_year
 
         # Boolean
         settings.is_auto = request.POST.get("is_auto") == "on"
@@ -7762,14 +7763,15 @@ def save_payroll_settings(request):
                 msg for messages_ in exc.message_dict.values() for msg in messages_
             )}, status=400)
 
-        settings.save()
-        MonthlyEarnedLeaves.sync_with_payroll_settings(settings)
+        settings.save()  # the PayrollSettings signal regenerates the monthly earned leaves
 
-        # If late-mark or weekend setting changed, auto-recalculate leave balances so
-        # the report reflects the new rules immediately without a manual recalculate step.
+        # If a leave-affecting setting changed (earned leaves per year caps the
+        # monthly credit), auto-recalculate leave balances so the report
+        # reflects the new rules immediately without a manual recalculate step.
         recalc_msg = ''
         if (settings.late_marks_affect_lwp != old_late_marks_affect_lwp
-                or settings.weekend_days != old_weekend_days):
+                or settings.weekend_days != old_weekend_days
+                or settings.earned_leaves_per_year != old_earned_leaves_per_year):
             try:
                 recalc_count = generate_leave_balances_for_all_periods(company, settings)
                 recalc_msg = f' Leave balances auto-recalculated ({recalc_count} record(s) updated).'
@@ -9559,12 +9561,17 @@ def holiday_calendar_dashboard(request):
     # 2️⃣ Company & Payroll Settings resolution
     # ----------------------------------------------------
     _company = get_user_company(request.user)
+    # Users not tied to one company pick which company's earned leaves to
+    # see; without a choice this used to silently show the first company,
+    # so changes made for any other company looked like they hadn't saved.
+    settings_companies = []
     if _company is None and user_has_global_access(request.user):
+        settings_companies = list(Company.objects.filter(payrollsettings__isnull=False).order_by("name"))
         _cid = request.GET.get('company_id')
         if _cid:
             _company = Company.objects.filter(pk=_cid).first()
         else:
-            _company = Company.objects.filter(payrollsettings__isnull=False).first()
+            _company = settings_companies[0] if settings_companies else None
     payroll_settings = PayrollSettings.objects.filter(company=_company).first() if _company else None
 
     # ----------------------------------------------------
@@ -9705,6 +9712,8 @@ def holiday_calendar_dashboard(request):
         'month': month,
         'month_name': month_name,
         'show': show,
+        'settings_companies': settings_companies,
+        'selected_company': _company,
 
         # Holidays
         'all_holidays': all_holidays,

@@ -134,6 +134,15 @@ SALUTATION_CHOICES = [
 ]
 
 
+def employee_photo_path(instance, filename):
+    # Random name: media files are served publicly, so the URL must not be
+    # guessable from the employee code.
+    import os
+    import uuid
+    ext = os.path.splitext(filename)[1].lower() or ".jpg"
+    return f"employees/photos/{uuid.uuid4().hex}{ext}"
+
+
 class Employee(models.Model):
 
     user = models.OneToOneField(
@@ -162,6 +171,7 @@ class Employee(models.Model):
     permanent_address = models.TextField(null=True, blank=True, verbose_name="Permanent Address")
     personal_mobile = models.CharField(max_length=30, null=True, blank=True, verbose_name="Personal Mobile No")
     date_of_marriage = models.DateField(blank=True, null=True, verbose_name="Date of Marriage")
+    photo = models.ImageField(upload_to=employee_photo_path, null=True, blank=True, verbose_name="Photo")
 
     # ZCPL Office Details
     employee_code = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="Employee Code")

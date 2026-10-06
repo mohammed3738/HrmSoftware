@@ -16,9 +16,10 @@
         >
           <div class="flex-shrink-0 mt-n2 mx-sm-0 mx-auto">
             <img
-              src="{% static "assets/img/avatars/1.png" %}"
-              alt="user image"
-              class="d-block h-auto ms-0 ms-sm-5 rounded-4 user-profile-img"
+              src="{% if display.photo_url %}{{ display.photo_url }}{% else %}{% static "assets/img/avatars/1.png" %}{% endif %}"
+              alt="{{ display.full_name }}"
+              class="d-block ms-0 ms-sm-5 rounded-4 user-profile-img"
+              style="width:120px;height:120px;object-fit:cover;"
             />
           </div>
           <div class="flex-grow-1 mt-4 mt-sm-12">

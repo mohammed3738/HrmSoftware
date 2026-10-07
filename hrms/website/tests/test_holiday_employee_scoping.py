@@ -4,7 +4,7 @@ selected set of employees (e.g. Eid for Muslim employees, Ganesh Chaturthi
 for Hindu employees) instead of applying to everyone.
 Run with: python manage.py test website.tests.test_holiday_employee_scoping
 """
-from datetime import date, time
+from datetime import date, time, timedelta
 
 from django.contrib.auth.models import User
 from django.test import TestCase, Client
@@ -88,8 +88,10 @@ class HolidayEmployeeScopingTest(TestCase):
         self.assertEqual(att2.status, "Holiday")
 
     def test_add_holiday_view_persists_specific_employees(self):
+        # Relative date: the form rejects holidays in the past, so a fixed
+        # date stops working once it goes by.
         resp = self.client.post(reverse("add-holiday"), {
-            "holiday_date": "2026-09-15",
+            "holiday_date": (date.today() + timedelta(days=30)).isoformat(),
             "name": "Ganesh Chaturthi",
             "holiday_type": self.htype.id,
             "status": "declared",

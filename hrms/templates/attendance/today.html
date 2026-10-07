@@ -3,40 +3,12 @@
   <div class="card shadow p-3 rounded-4">
     <h4 class="mb-3 fw-bold">Attendance Records</h4>
 
-    <!-- 🔹 Date Filter Section -->
-    <div class="d-flex align-items-center justify-content-between mb-3">
-      <div class="d-flex align-items-center gap-2">
-        {% if view_mode == 'date' %}
-        <button type="button" class="btn btn-outline-secondary" id="prevDay">
-          <i class="ri-arrow-left-line"></i> Previous
-        </button>
-
-        <form method="get" class="d-flex align-items-center gap-2 mb-0">
-          <input
-            type="date"
-            name="date"
-            id="datePicker"
-            class="form-control"
-            value="{{ selected_date }}"
-          />
-          <button type="submit" class="btn btn-primary">
-            <i class="ri-search-line"></i> View
-          </button>
-        </form>
-
-        <button type="button" class="btn btn-outline-secondary" id="nextDay">
-          Next <i class="ri-arrow-right-line"></i>
-        </button>
-        {% elif view_mode == 'month' %}
-        <span class="text-muted">Showing the whole selected month below — use Reset to go back to a single day.</span>
-        {% elif view_mode == 'period' %}
-        <span class="text-muted">Showing the whole selected payroll month below — use Reset to go back to a single day.</span>
-        {% endif %}
-      </div>
-
+    <!-- 🔹 Date navigation + employee search. Phones: search on top at full
+         width, then a compact ← date View → row. Desktop: side by side. -->
+    <div class="row g-2 align-items-center mb-3">
       <!-- 🔍 Name Filter -->
-      <div class="d-flex align-items-center gap-2">
-        <div class="position-relative" style="width: 300px;">
+      <div class="col-12 col-lg-4 order-lg-2 ms-lg-auto">
+        <div class="position-relative">
           <input
             type="text"
             id="employeeSearch"
@@ -48,9 +20,41 @@
           <ul
             id="employeeDropdown"
             class="list-group position-absolute w-100 shadow"
-            style="z-index: 1000; display: none; max-height: 250px; overflow-y: auto; background-color: white; cursor: pointer;"
+            style="z-index: 1000; display: none; max-height: 250px; overflow-y: auto; background-color: var(--bs-card-bg, white); cursor: pointer;"
           ></ul>
         </div>
+      </div>
+
+      <div class="col-12 col-lg-auto order-lg-1">
+        {% if view_mode == 'date' %}
+        <div class="d-flex align-items-center gap-2 flex-nowrap">
+          <button type="button" class="btn btn-outline-secondary flex-shrink-0" id="prevDay" title="Previous day">
+            <i class="ri-arrow-left-line"></i><span class="d-none d-sm-inline ms-1">Previous</span>
+          </button>
+
+          <form method="get" class="d-flex align-items-center gap-2 mb-0 flex-nowrap flex-grow-1" style="min-width: 0;">
+            <input
+              type="date"
+              name="date"
+              id="datePicker"
+              class="form-control"
+              style="min-width: 0;"
+              value="{{ selected_date }}"
+            />
+            <button type="submit" class="btn btn-primary flex-shrink-0">
+              <i class="ri-search-line"></i><span class="d-none d-sm-inline ms-1">View</span>
+            </button>
+          </form>
+
+          <button type="button" class="btn btn-outline-secondary flex-shrink-0" id="nextDay" title="Next day">
+            <span class="d-none d-sm-inline me-1">Next</span><i class="ri-arrow-right-line"></i>
+          </button>
+        </div>
+        {% elif view_mode == 'month' %}
+        <span class="text-muted">Showing the whole selected month below — use Reset to go back to a single day.</span>
+        {% elif view_mode == 'period' %}
+        <span class="text-muted">Showing the whole selected payroll month below — use Reset to go back to a single day.</span>
+        {% endif %}
       </div>
     </div>
 

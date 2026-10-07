@@ -1,132 +1,56 @@
+"""Recalculate leave balances from the command line.
+
+Uses the same calculation as the Leave Balance page and the automatic
+recalculation: every payroll period with attendance, oldest first, leaving
+finalized payroll periods untouched.
+
+    python manage.py calculate_leave_balance --employee-id=12
+    python manage.py calculate_leave_balance --company-id=1
+    python manage.py calculate_leave_balance --all
 """
-Django management command for calculating leave balance
-Prevents duplicates by using update_or_create
-Usage: python manage.py calculate_leave_balance --company-id=1
-       python manage.py calculate_leave_balance --all
-"""
-from django.core.management.base import BaseCommand
-from django.db import transaction
-from website.models import Company, Employee, PayrollSettings
-from website.services.leave_balance_service import calculate_leave_balance
+from django.core.management.base import BaseCommand, CommandError
+
+from website.models import Company, Employee
+from website.signals import _leave_balance_periods, _recalculate_periods, recalculate_all_leave_balances
 
 
 class Command(BaseCommand):
-    help = 'Calculate monthly leave balance for employees (no duplicates)'
+    help = "Recalculate leave balances for one employee, one company, or everyone."
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '--company-id',
-            type=int,
-            help='Calculate for specific company ID',
-        )
-        parser.add_argument(
-            '--employee-id',
-            type=int,
-            help='Calculate for specific employee ID',
-        )
-        parser.add_argument(
-            '--all',
-            action='store_true',
-            help='Calculate for all companies',
-        )
+        parser.add_argument("--employee-id", type=int, help="Recalculate one employee")
+        parser.add_argument("--company-id", type=int, help="Recalculate every active employee of one company")
+        parser.add_argument("--all", action="store_true", help="Recalculate every active employee")
 
     def handle(self, *args, **options):
-        company_id = options.get('company_id')
-        employee_id = options.get('employee_id')
-        process_all = options.get('all')
+        if options["all"]:
+            done, skipped = recalculate_all_leave_balances()
+            self.stdout.write(self.style.SUCCESS(
+                f"Recalculated {done} leave balance period(s); {skipped} employee(s) skipped (no payroll cycle)."
+            ))
+            return
 
-        if employee_id:
-            # Process single employee
-            self.process_employee(employee_id)
-            
-        elif company_id:
-            # Process single company
-            self.process_company(company_id)
-            
-        elif process_all:
-            # Process all companies
-            companies = Company.objects.all()
-            for company in companies:
-                self.process_company(company.id)
-                
+        if options["employee_id"]:
+            employees = Employee.objects.filter(pk=options["employee_id"])
+            if not employees.exists():
+                raise CommandError(f"No employee with id {options['employee_id']}.")
+        elif options["company_id"]:
+            if not Company.objects.filter(pk=options["company_id"]).exists():
+                raise CommandError(f"No company with id {options['company_id']}.")
+            employees = Employee.objects.filter(company_id=options["company_id"], status="Active")
         else:
-            self.stdout.write(
-                self.style.ERROR('Please specify --company-id, --employee-id, or --all')
-            )
+            raise CommandError("Specify --employee-id, --company-id or --all.")
 
-    def process_employee(self, employee_id):
-        """Process a single employee"""
-        try:
-            employee = Employee.objects.get(id=employee_id)
-            payroll = PayrollSettings.objects.get(company=employee.company)
-            
-            with transaction.atomic():
-                final_balance = calculate_leave_balance(employee, payroll)
-                
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f'✓ {employee.employee_code}: Balance = {final_balance} (no duplicates created)'
-                )
-            )
-            
-        except Employee.DoesNotExist:
-            self.stdout.write(
-                self.style.ERROR(f'Employee {employee_id} not found')
-            )
-        except PayrollSettings.DoesNotExist:
-            self.stdout.write(
-                self.style.ERROR(f'No payroll settings for employee\'s company')
-            )
-        except Exception as e:
-            self.stdout.write(
-                self.style.ERROR(f'Error processing employee {employee_id}: {str(e)}')
-            )
+        from website.views import _payroll_settings_with_cycle
 
-    def process_company(self, company_id):
-        """Process all active employees in a company"""
-        try:
-            company = Company.objects.get(id=company_id)
-            payroll = PayrollSettings.objects.get(company=company)
-            
-            self.stdout.write(f'\n📊 Processing company: {company.name}')
-            
-            employees = Employee.objects.filter(
-                company=company,
-                status="Active"
-            )
-            
-            success_count = 0
-            error_count = 0
-            
-            for employee in employees:
-                try:
-                    with transaction.atomic():
-                        final_balance = calculate_leave_balance(employee, payroll)
-                        
-                    self.stdout.write(
-                        f'  ✓ {employee.employee_code}: {final_balance}'
-                    )
-                    success_count += 1
-                    
-                except Exception as e:
-                    self.stdout.write(
-                        self.style.ERROR(
-                            f'  ✗ {employee.employee_code}: {str(e)}'
-                        )
-                    )
-                    error_count += 1
-            
-            self.stdout.write(
-                self.style.SUCCESS(
-                    f'\n✅ Completed: {success_count} successful, {error_count} errors\n'
-                )
-            )
-            
-        except Company.DoesNotExist:
-            self.stdout.write(
-                self.style.ERROR(f'Company {company_id} not found')
-            )
-        except PayrollSettings.DoesNotExist:
-            self.stdout.write(
-                self.style.ERROR(f'No payroll settings for company {company_id}')
-            )
+        done = 0
+        for employee in employees.select_related("company"):
+            payroll_settings = _payroll_settings_with_cycle(employee.company)
+            if not payroll_settings:
+                self.stdout.write(self.style.WARNING(f"{employee.employee_code}: no payroll cycle configured, skipped"))
+                continue
+            periods = _leave_balance_periods(employee, payroll_settings)
+            count = _recalculate_periods(employee, payroll_settings, periods)
+            done += count
+            self.stdout.write(f"{employee.employee_code}: {count} period(s)")
+        self.stdout.write(self.style.SUCCESS(f"Recalculated {done} leave balance period(s)."))

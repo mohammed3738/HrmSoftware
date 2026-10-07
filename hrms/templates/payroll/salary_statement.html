@@ -49,6 +49,14 @@
   .underline2 { font-size: 1pt; line-height: 1pt; padding: 0 4px 0 0; }
   .note { text-align: center; padding-top: 30px; padding-bottom: 10px; }
 
+  /* On screen the month-by-month table scrolls sideways inside the slip on
+     narrow phones instead of shrinking the whole page (the PDF has no
+     wrapper and keeps its landscape layout). */
+  .months-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  @media (max-width: 700px) {
+    .months-scroll .months { min-width: 680px; }
+  }
+
   @media print {
     body { background-color: #fff; padding: 0; }
     .action-bar { display: none; }
@@ -116,6 +124,7 @@
   <tr><td class="bl br spacer">&nbsp;</td></tr>
 </table>
 
+{% if not is_pdf %}<div class="months-scroll">{% endif %}
 <table class="months">
   <tr>
     {% for col in columns %}
@@ -135,6 +144,7 @@
     {% endfor %}
   </tr>
 </table>
+{% if not is_pdf %}</div>{% endif %}
 
 <table>
   <tr>

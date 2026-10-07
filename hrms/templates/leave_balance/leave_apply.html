@@ -36,7 +36,7 @@
     <div class="card shadow-sm mt-3">
         <div class="card-body p-0">
 
-            <table class="table table-hover text-center align-middle mb-0">
+            <table class="table table-hover text-center align-middle mb-0 table-stack">
                 <thead class="table-light">
                     <tr>
                         <th>Employee</th>
@@ -52,13 +52,13 @@
                 <tbody>
                     {% for l in leaves %}
                     <tr>
-                        <td class="fw-semibold">{{ l.employee.first_name }}</td>
-                        <td>{{ l.get_leave_type_display }}</td>
-                        <td>{{ l.start_date }}</td>
-                        <td>{{ l.end_date }}</td>
-                        <td>{{ l.total_days }}</td>
+                        <td class="fw-semibold" data-label="Employee">{{ l.employee.first_name }}</td>
+                        <td data-label="Leave Type">{{ l.get_leave_type_display }}</td>
+                        <td data-label="Start">{{ l.start_date }}</td>
+                        <td data-label="End">{{ l.end_date }}</td>
+                        <td data-label="Total Days">{{ l.total_days }}</td>
 
-                        <td>
+                        <td data-label="Status">
                             <span class="badge 
                                   {% if l.status == 'Approved' %} bg-success
                                   {% elif l.status == 'Rejected' %} bg-danger
@@ -67,7 +67,7 @@
                             </span>
                         </td>
 
-                        <td>
+                        <td data-label="">
                             <button class="btn btn-outline-primary btn-sm"
                                     onclick="openLeaveView('{{l.id}}')">
                                 View

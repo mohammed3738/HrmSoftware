@@ -101,6 +101,7 @@
       #layout-navbar .app-brand-link { align-items: center; }
       .app-brand-logo img { display: block; }
     </style>
+    <link rel="stylesheet" href="{% static 'assets/css/mobile.css' %}" />
   </head>
 
   <body>
@@ -932,19 +933,54 @@
 
   
     <script>
+      // Give every table that isn't already inside a scrolling box its own
+      // sideways-scrolling wrapper, so wide tables scroll inside their card
+      // on phones instead of stretching the whole page.
+      (function () {
+        function scrolls(el) {
+          var ox = getComputedStyle(el).overflowX;
+          return ox === 'auto' || ox === 'scroll';
+        }
+        function wrapTables() {
+          document.querySelectorAll('#app-content table').forEach(function (table) {
+            for (var el = table.parentElement, depth = 0; el && depth < 4; el = el.parentElement, depth++) {
+              if (scrolls(el) || el.classList.contains('dataTables_wrapper')) return;
+            }
+            var wrap = document.createElement('div');
+            wrap.className = 'mobile-table-scroll';
+            table.parentNode.insertBefore(wrap, table);
+            wrap.appendChild(table);
+          });
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wrapTables);
+        else wrapTables();
+      })();
+    </script>
+    <script>
       // Keep #app-content clear of whatever the fixed header currently
       // occupies. Runs on load, on resize, and whenever the header itself
       // changes size (the logo image finishing loading counts).
       (function () {
+        // Pad by however far the fixed header actually reaches below where
+        // the content starts, rather than adding up heights: on phones the
+        // theme already offsets the content by the navbar, and the menu
+        // turns into a full-height slide-out sidebar that must not count.
         function syncHeaderOffset() {
-          var total = 0;
+          var content = document.getElementById('app-content');
+          if (!content) return;
+          var headerBottom = 0;
           ['layout-navbar', 'layout-menu'].forEach(function (id) {
             var el = document.getElementById(id);
             if (!el) return;
-            var fixed = getComputedStyle(el).position;
-            if (fixed === 'fixed' || fixed === 'sticky') total += el.offsetHeight;
+            var pos = getComputedStyle(el).position;
+            if (pos !== 'fixed' && pos !== 'sticky') return;
+            var r = el.getBoundingClientRect();
+            if (id === 'layout-menu' && r.height > r.width) return;  // sidebar, not a bar
+            headerBottom = Math.max(headerBottom, r.bottom);  // fixed: viewport position, same at any scroll
           });
-          document.documentElement.style.setProperty('--app-header-offset', total + 'px');
+          var contentTop = content.parentElement.getBoundingClientRect().top + window.scrollY;
+          var offset = Math.max(0, Math.round(headerBottom - contentTop));
+          document.documentElement.style.setProperty('--app-header-offset', offset + 'px');
         }
 
         window.addEventListener('load', syncHeaderOffset);

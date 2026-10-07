@@ -55,7 +55,7 @@
       </div>
 
       <div class="table-responsive">
-        <table class="table table-sm table-bordered align-middle mb-0">
+        <table class="table table-sm table-bordered align-middle mb-0 table-stack">
           <thead class="table-light">
             <tr>
               <th style="width:36px;" class="text-center">
@@ -73,19 +73,19 @@
           <tbody>
             {% for r in records %}
             <tr>
-              <td class="text-center">
+              <td class="text-center" data-label="Combine">
                 <input type="checkbox" class="form-check-input slip-check" name="ids" value="{{ r.id }}">
               </td>
-              <td class="fw-semibold">
+              <td class="fw-semibold" data-label="Month">
                 {{ r.payroll.month|date:"M Y" }}
                 {% if r.payroll.status != "finalized" %}<span class="badge bg-label-warning ms-1">Draft</span>{% endif %}
               </td>
-              <td class="text-nowrap">{{ r.payroll.start_date|date:"d M Y" }} – {{ r.payroll.end_date|date:"d M Y" }}</td>
-              <td class="text-end">{{ r.days_paid_display }}</td>
-              <td class="text-end">₹ {{ r.gross_processed|floatformat:"0g" }}</td>
-              <td class="text-end">₹ {{ r.total_deductions|floatformat:"0g" }}</td>
-              <td class="text-end fw-semibold">₹ {{ r.net_salary|floatformat:"0g" }}</td>
-              <td class="text-center text-nowrap">
+              <td class="text-nowrap" data-label="Period">{{ r.payroll.start_date|date:"d M Y" }} – {{ r.payroll.end_date|date:"d M Y" }}</td>
+              <td class="text-end" data-label="Days Paid">{{ r.days_paid_display }}</td>
+              <td class="text-end" data-label="Gross">₹ {{ r.gross_processed|floatformat:"0g" }}</td>
+              <td class="text-end" data-label="Deductions">₹ {{ r.total_deductions|floatformat:"0g" }}</td>
+              <td class="text-end fw-semibold" data-label="Net Pay">₹ {{ r.net_salary|floatformat:"0g" }}</td>
+              <td class="text-center text-nowrap" data-label="">
                 <a href="{% url 'salary-slip' r.id %}" target="_blank" class="btn btn-sm btn-outline-secondary">
                   <i class="ri-eye-line me-1"></i>View
                 </a>

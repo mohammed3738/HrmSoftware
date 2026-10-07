@@ -327,6 +327,13 @@
 }
 .sortable-col:hover { background: #495057; }
 .sort-icon { font-size: 0.85rem; vertical-align: -1px; opacity: 0.7; }
+/* Separate (not collapsed) borders so each pinned cell carries its own
+   border; with collapsed borders the scrolling columns' borders show
+   through beside the pinned ones as stray dots. */
+.payroll-table { border-collapse: separate; border-spacing: 0; }
+.payroll-table > :not(caption) > * > * { border-width: 0 1px 1px 0; }
+.payroll-table thead tr:first-child > * { border-top-width: 1px; }
+.payroll-table > :not(caption) > * > *:first-child { border-left-width: 1px; }
 /* ── Sticky columns: fixed widths + explicit left offsets ── */
 /* Col 1: serial # — 44 px */
 .payroll-table th:nth-child(1),
@@ -391,6 +398,21 @@
 .payroll-tfoot td:nth-child(3) {
   z-index: 4;
   background: #dbe3f2;
+}
+/* Phones: the three pinned columns would take ~334px of a 375px screen,
+   so shrink them to ~200px (names wrap) and leave room for the data. */
+@media (max-width: 575.98px) {
+  .payroll-table-wrap { max-height: 70vh; }
+  .payroll-table th:nth-child(1),
+  .payroll-table td:nth-child(1) { width: 30px; min-width: 30px; max-width: 30px; padding-left: 4px; padding-right: 4px; }
+  .payroll-table th:nth-child(2),
+  .payroll-table td:nth-child(2) { left: 30px; width: 56px; min-width: 56px; max-width: 56px; padding-left: 4px; padding-right: 4px; }
+  .payroll-table th:nth-child(3),
+  .payroll-table td:nth-child(3) {
+    left: 86px; min-width: 112px; max-width: 112px;
+    white-space: normal !important; word-break: break-word; line-height: 1.2;
+  }
+  .payroll-tfoot td:nth-child(3) { white-space: normal; }
 }
 </style>
 

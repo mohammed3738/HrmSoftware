@@ -1,0 +1,132 @@
+/* ==========================================================================
+   Mobile layer -- loaded on every page by base2.html, after the theme CSS.
+   Keeps pages usable on phones without touching each template:
+   wide content scrolls inside its card instead of pushing the page sideways.
+   ========================================================================== */
+
+/* Nothing may make the page itself wider than the screen. */
+html, body { overflow-x: hidden; }
+img, video, canvas, iframe { max-width: 100%; }
+
+/* Tables: scroll sideways inside their own box (base2.html wraps any table
+   that isn't already in a scrolling container). */
+.table-responsive,
+.mobile-table-scroll,
+.dataTables_wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.mobile-table-scroll { width: 100%; }
+
+/* Tab bars and pill bars scroll instead of wrapping into a tall stack. */
+@media (max-width: 767.98px) {
+  .nav-tabs, .nav-pills, .nav-underline {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .nav-tabs::-webkit-scrollbar, .nav-pills::-webkit-scrollbar, .nav-underline::-webkit-scrollbar { display: none; }
+  .nav-tabs .nav-link, .nav-pills .nav-link, .nav-underline .nav-link { white-space: nowrap; }
+}
+
+@media (max-width: 575.98px) {
+  /* Tighter page padding so content gets the width. */
+  .container-xxl, .container-xl, .container-lg, .container-fluid {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+  .card-body { padding: 1rem; }
+  .card-header { padding: 0.875rem 1rem; }
+
+  /* Headings scale down a step. */
+  h1, .h1 { font-size: 1.6rem; }
+  h2, .h2 { font-size: 1.35rem; }
+  h3, .h3 { font-size: 1.2rem; }
+  h4, .h4 { font-size: 1.1rem; }
+
+  /* Rows of buttons / filters / header actions wrap instead of overflowing. */
+  .d-flex:not(.flex-nowrap):not(.flex-column) { flex-wrap: wrap; }
+  .card-header.d-flex, .card-header .d-flex { gap: 0.5rem; }
+
+  /* Form controls take the full width; fixed inline widths are capped. */
+  .form-control, .form-select, .select2-container, input, select, textarea {
+    max-width: 100% !important;
+  }
+  .select2-container { width: 100% !important; }
+  /* Filter forms built from inline "col-auto" / fixed-width columns. */
+  form .row > [class*="col-md-"], form .row > [class*="col-lg-"] { width: 100%; }
+
+  /* Pop-ups use the whole screen. */
+  .modal-dialog {
+    margin: 0;
+    max-width: 100% !important;
+    min-height: 100%;
+  }
+  .modal-content {
+    min-height: 100vh;
+    border-radius: 0;
+  }
+
+  /* Table text and buttons a little smaller so more fits. */
+  .table { font-size: 0.85rem; }
+  .table > :not(caption) > * > * { padding: 0.5rem 0.6rem; }
+  .table .btn-sm, .table .btn { padding: 0.2rem 0.45rem; }
+
+  /* Any element with a large fixed width (inline style) is capped. */
+  [style*="width:6"]:not(table):not(th):not(td),
+  [style*="width: 6"]:not(table):not(th):not(td),
+  [style*="width:7"]:not(table):not(th):not(td),
+  [style*="width: 7"]:not(table):not(th):not(td),
+  [style*="width:8"]:not(table):not(th):not(td),
+  [style*="width: 8"]:not(table):not(th):not(td),
+  [style*="width:9"]:not(table):not(th):not(td),
+  [style*="width: 9"]:not(table):not(th):not(td),
+  [style*="min-width:6"]:not(table):not(th):not(td),
+  [style*="min-width: 6"]:not(table):not(th):not(td) {
+    max-width: 100% !important;
+  }
+
+  /* SweetAlert pop-ups fit the screen. */
+  .swal2-popup { width: calc(100% - 1.5rem) !important; }
+}
+
+/* --------------------------------------------------------------------------
+   .table-stack: on phones each row becomes a small card of "Label  value"
+   lines instead of a sideways-scrolling table. Give every <td> a
+   data-label="Column name" (an empty data-label shows the value alone,
+   e.g. for a row's action buttons).
+   -------------------------------------------------------------------------- */
+@media (max-width: 575.98px) {
+  .table-stack thead { display: none; }
+  .table-stack, .table-stack tbody, .table-stack tr, .table-stack td { display: block; width: 100%; }
+  .table-stack tr {
+    border: 1px solid var(--bs-border-color, #e6e6e8);
+    border-radius: 0.5rem;
+    margin-bottom: 0.75rem;
+    padding: 0.35rem 0.75rem;
+    background: var(--bs-body-bg, #fff);
+  }
+  .table-stack > :not(caption) > * > * { border-width: 0 !important; box-shadow: none !important; }
+  .table-stack, .table-stack.table-bordered { border: 0 !important; }
+  .table-stack td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.35rem 0 !important;
+    text-align: right !important;
+    white-space: normal !important;
+  }
+  .table-stack td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    text-align: left;
+    color: var(--bs-secondary-color, #6d6b77);
+    flex-shrink: 0;
+  }
+  .table-stack td[data-label=""]::before { content: none; }
+  .table-stack td[data-label=""] { justify-content: flex-end; }
+  .table-stack td.text-center { justify-content: space-between; }
+}

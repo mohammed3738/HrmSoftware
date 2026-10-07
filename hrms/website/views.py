@@ -5948,38 +5948,6 @@ def recalc_all_employees(request):
     return redirect("leave-balance")
 
 
-@login_required
-def employee_leave_detail(request, employee_id):
-    """Show detailed leave history for specific employee"""
-    try:
-        employee = Employee.objects.select_related('company').get(id=employee_id)
-        
-        if not request.user.is_staff:
-            user_employee = Employee.objects.filter(user=request.user).first()
-            if not user_employee or user_employee.id != employee_id:
-                messages.error(request, "Permission denied.")
-                return redirect("leave-balance")
-        
-        history = LeaveBalance.objects.filter(
-            employee=employee
-        ).order_by('-period_to_date')
-        
-        current_balance = history.first()
-        
-        context = {
-            'employee': employee,
-            'history': history,
-            'current_balance': current_balance,
-        }
-        
-        return render(request, 'leave_balance/employee_detail.html', context)
-    
-    except Employee.DoesNotExist:
-        messages.error(request, "Employee not found.")
-        return redirect("leave-balance")
-    except Exception as e:
-        messages.error(request, f"Error: {str(e)}")
-        return redirect("leave-balance")
 
         
 
@@ -7578,67 +7546,6 @@ def salary_timeline_data(request, employee_id):
 
 from django.core.files.storage import default_storage
 
-@login_required
-def upload_salary_increment(request):
-    if request.method == "POST" and request.FILES.get("excel_file"):
-        excel_file = request.FILES["excel_file"]
-        file_path = default_storage.save(f"temp/{excel_file.name}", excel_file)
-        
-        try:
-            df = pd.read_excel(file_path)
-            for _, row in df.iterrows():
-                try:
-                    employee = Employee.objects.get(pk=int(row["employee_id"]))
-                    
-                    new_increment = SalaryIncrement(
-                        employee=employee,
-                        pf_deducted=str(row["pf_deducted"]).lower() == 'yes',
-                        gratuity_applicable=str(row["gratuity_applicable"]).lower() == 'yes',
-                        esic_applicable=str(row["esic_applicable"]).lower() == 'yes',
-                        
-                        gross_ctc_pm=Decimal(row["gross_ctc_pm"]),
-                        gross_ctc_pa=Decimal(row["gross_ctc_pm"]) * 12,
-                        basic_pm=Decimal(row["basic_pm"]),
-                        basic_pa=Decimal(row["basic_pm"]) * 12,
-                        hra_pm=Decimal(row["hra_pm"]),
-                        hra_pa=Decimal(row["hra_pm"]) * 12,
-                        stat_bonus_pm=Decimal(row["stat_bonus_pm"]),
-                        stat_bonus_pa=Decimal(row["stat_bonus_pm"]) * 12,
-                        sp_allowance_pm=Decimal(row["special_allowance_pm"]),
-                        sp_allowance_pa=Decimal(row["special_allowance_pm"]) * 12,
-                        allowance1_pm=Decimal(row["allowance1_pm"]),
-                        allowance1_pa=Decimal(row["allowance1_pm"]) * 12,
-                        allowance2_pm=Decimal(row["allowance2_pm"]),
-                        allowance2_pa=Decimal(row["allowance2_pm"]) * 12,
-                        guaranteed_cash_pm=Decimal(row["guaranteed_cash_pm"]),
-                        guaranteed_cash_pa=Decimal(row["guaranteed_cash_pm"]) * 12,
-                        ctc_pm=Decimal(row["cost_to_company_pm"]),
-                        ctc_pa=Decimal(row["cost_to_company_pm"]) * 12,
-                        pf_er_cont_pm=Decimal(row["pf_er_cont_pm"]),
-                        pf_er_cont_pa=Decimal(row["pf_er_cont_pm"]) * 12,
-                        esic_er_cont_pm=Decimal(row["esic_er_cont_pm"]),
-                        esic_er_cont_pa=Decimal(row["esic_er_cont_pm"]) * 12,
-                        pf_ee_cont_pm=Decimal(row["pf_ee_cont_pm"]),
-                        pf_ee_cont_pa=Decimal(row["pf_ee_cont_pm"]) * 12,
-                        esic_ee_cont_pm=Decimal(row["esic_ee_cont_pm"]),
-                        esic_ee_cont_pa=Decimal(row["esic_ee_cont_pm"]) * 12,
-                        profession_tax_pm=Decimal(row["profession_tax_pm"]),
-                        profession_tax_pa=Decimal(row["profession_tax_pm"]) * 12,
-                        net_salary_pm=Decimal(row["net_salary_pm"]),
-                        net_salary_pa=Decimal(row["net_salary_pm"]) * 12,
-                    )
-                    new_increment.save()
-                except Exception as e:
-                    messages.error(request, f"Error processing row {row}: {str(e)}")
-        except Exception as e:
-            messages.error(request, f"Error reading file: {str(e)}")
-        finally:
-            default_storage.delete(file_path)
-        
-        messages.success(request, "Salary increments uploaded successfully!")
-        return redirect("upload_salary_increment")
-
-    return render(request, "salary_increment/upload_increment.html")
 
 
 

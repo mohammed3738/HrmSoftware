@@ -215,7 +215,6 @@ urlpatterns = [
     path('leave-balance/recalculate/', views.recalculate_leave_balances_view, name='recalculate_leave_balances'),
 
     path('leave-balance/employee/<int:employee_id>/recalc/', views.recalc_employee_leave_balance, name='recalc-employee-leave'),
-    path('leave-balance/employee/<int:employee_id>/', views.employee_leave_detail, name='employee-leave-detail'),
     # Departments & reporting line
     path('my-approvals/', views.my_approvals, name='my-approvals'),
     path('departments/', views.department_list, name='department-list'),

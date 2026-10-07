@@ -83,11 +83,11 @@
     </div>
 
     <div class="table-responsive" style="max-height:75vh;">
-      <table class="table table-sm table-bordered align-middle mb-0" style="font-size:0.78rem;">
+      <table class="table table-sm table-bordered align-middle mb-0 reg-table" style="font-size:0.78rem;">
         <thead class="table-light" style="position:sticky; top:0; z-index:2;">
           <tr>
-            <th rowspan="2" style="min-width:90px;">Emp Code</th>
-            <th rowspan="2" style="min-width:150px;">Name</th>
+            <th rowspan="2" class="reg-pin-code">Emp Code</th>
+            <th rowspan="2" class="reg-pin-name">Name</th>
             <th rowspan="2" class="text-end">Opening</th>
             <th rowspan="2" class="text-end">Leave<br>Taken</th>
             <th rowspan="2" class="text-end">Late</th>
@@ -114,8 +114,8 @@
         <tbody>
           {% for row in rows %}
           <tr data-lb-id="{% if row.lb %}{{ row.lb.id }}{% endif %}">
-            <td>{{ row.employee.employee_code }}</td>
-            <td class="fw-medium text-nowrap">{{ row.employee.first_name }} {{ row.employee.last_name }}</td>
+            <td class="reg-pin-code">{{ row.employee.employee_code }}</td>
+            <td class="fw-medium reg-pin-name">{{ row.employee.first_name }} {{ row.employee.last_name }}</td>
             <td class="text-end">{{ row.lb.opening_balance|default:"0.00" }}</td>
             <td class="text-end">{{ row.lb.leave_taken|default:"0.00" }}</td>
             <td class="text-end">{{ row.lb.late|default:"0" }}</td>
@@ -163,7 +163,7 @@
         {% if rows %}
         <tfoot class="table-light fw-bold" style="position:sticky; bottom:0;">
           <tr>
-            <td colspan="2">Totals ({{ totals.employee_count }} employee{{ totals.employee_count|pluralize }})</td>
+            <td colspan="2" class="reg-pin-totals">Totals ({{ totals.employee_count }} employee{{ totals.employee_count|pluralize }})</td>
             <td class="text-end">{{ totals.opening_balance|floatformat:2 }}</td>
             <td class="text-end">{{ totals.leave_taken|floatformat:2 }}</td>
             <td class="text-end">{{ totals.late }}</td>
@@ -220,6 +220,46 @@
   }
   .compoff-save-btn { color: #71dd37; }
   .compoff-cancel-btn { color: #ff3e1d; }
+  /* Touch screens have no hover, so the edit pencil must always show. */
+  @media (hover: none) { .compoff-edit-btn { opacity: 0.6; } }
+
+  /* Collapsed borders belong to the table, not the cells, so pinned cells
+     would let the scrolling columns' borders show through as stray dots;
+     separate borders drawn on each cell move with it. */
+  .reg-table { border-collapse: separate; border-spacing: 0; }
+  .reg-table > :not(caption) > * > * { border-width: 0 1px 1px 0; }
+  .reg-table > :not(caption) > tr:first-child > *,
+  .reg-table thead tr:first-child > * { border-top-width: 1px; }
+  .reg-table > :not(caption) > * > *:first-child { border-left-width: 1px; }
+
+  /* Emp Code + Name stay pinned while scrolling through the day columns.
+     Fixed widths so the Name column knows where Emp Code ends. */
+  .reg-table .reg-pin-code,
+  .reg-table .reg-pin-name,
+  .reg-table .reg-pin-totals {
+    position: sticky;
+    z-index: 1;
+    background-color: var(--bs-card-bg, #fff);
+  }
+  .reg-table .reg-pin-code { left: 0; width: 80px; min-width: 80px; max-width: 80px; }
+  .reg-table .reg-pin-name {
+    left: 80px; width: 160px; min-width: 160px; max-width: 160px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    box-shadow: 3px 0 5px rgba(0, 0, 0, 0.12);
+  }
+  .reg-table .reg-pin-totals { left: 0; box-shadow: 3px 0 5px rgba(0, 0, 0, 0.12); }
+  .reg-table thead .reg-pin-code,
+  .reg-table thead .reg-pin-name { z-index: 3; top: 0; background-color: var(--bs-table-bg, #f6f6f7); }
+  .reg-table tfoot { z-index: 2; }
+  .reg-table tfoot .reg-pin-totals { z-index: 3; background-color: var(--bs-table-bg, #f6f6f7); }
+
+  @media (max-width: 575.98px) {
+    .reg-table .reg-pin-code { width: 52px; min-width: 52px; max-width: 52px; padding-left: 4px !important; padding-right: 4px !important; }
+    .reg-table .reg-pin-name {
+      left: 52px; width: 100px; min-width: 100px; max-width: 100px;
+      white-space: normal; line-height: 1.2;
+    }
+  }
 </style>
 <script>
 function getCSRFToken() {

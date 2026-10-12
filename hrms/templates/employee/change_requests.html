@@ -16,10 +16,31 @@
         are held here until an approver accepts or rejects them.
       </p>
 
+      {% with bulk=can_approve_changes %}
+      {% if bulk and status == "pending" and change_requests %}
+      <form method="post" action="{% url 'employee_change_requests_bulk' %}" id="bulkDecisionForm">
+        {% csrf_token %}
+        <input type="hidden" name="decision" id="bulkDecision">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-3 p-2 rounded border" id="bulkBar">
+          <span class="small fw-semibold" id="bulkSelected">0 selected</span>
+          <input type="text" name="note" class="form-control form-control-sm" style="max-width:280px"
+                 placeholder="Note (optional, saved with each request)">
+          <button type="button" class="btn btn-sm btn-success" data-decision="approve" disabled>
+            <i class="ri-check-double-line me-1"></i> Approve selected
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-danger" data-decision="reject" disabled>
+            <i class="ri-close-line me-1"></i> Reject selected
+          </button>
+        </div>
+      {% endif %}
+
       <div class="table-responsive">
         <table class="table table-stack align-middle">
           <thead>
             <tr>
+              {% if bulk and status == "pending" and change_requests %}
+              <th style="width:36px"><input type="checkbox" class="form-check-input" id="selectAllRequests" title="Select all"></th>
+              {% endif %}
               <th>Employee</th>
               <th>Changes</th>
               <th>Requested by</th>
@@ -31,6 +52,9 @@
           <tbody>
             {% for cr in change_requests %}
             <tr>
+              {% if bulk and status == "pending" %}
+              <td data-label="Select"><input type="checkbox" class="form-check-input request-box" name="ids" value="{{ cr.pk }}" form="bulkDecisionForm"></td>
+              {% endif %}
               <td data-label="Employee">
                 <a href="{% url 'employee_detail' cr.employee.pk %}">{{ cr.employee.employee_code }}</a>
                 {{ cr.employee.first_name }} {{ cr.employee.last_name }}
@@ -55,12 +79,45 @@
               </td>
             </tr>
             {% empty %}
-            <tr><td colspan="6" class="text-center text-muted py-4">No change requests here.</td></tr>
+            <tr><td colspan="7" class="text-center text-muted py-4">No change requests here.</td></tr>
             {% endfor %}
           </tbody>
         </table>
       </div>
+      {% if bulk and status == "pending" and change_requests %}</form>{% endif %}
+      {% endwith %}
     </div>
   </div>
 </div>
+<script>
+(function () {
+  const form = document.getElementById("bulkDecisionForm");
+  if (!form) return;
+  const boxes = () => Array.from(document.querySelectorAll(".request-box"));
+  const all = document.getElementById("selectAllRequests");
+  const label = document.getElementById("bulkSelected");
+  const buttons = form.querySelectorAll("[data-decision]");
+
+  function refresh() {
+    const n = boxes().filter(b => b.checked).length;
+    label.textContent = n + " selected";
+    buttons.forEach(b => b.disabled = n === 0);
+    all.checked = n > 0 && n === boxes().length;
+    all.indeterminate = n > 0 && n < boxes().length;
+  }
+  all.addEventListener("change", () => { boxes().forEach(b => b.checked = all.checked); refresh(); });
+  boxes().forEach(b => b.addEventListener("change", refresh));
+  buttons.forEach(btn => btn.addEventListener("click", () => {
+    const n = boxes().filter(b => b.checked).length;
+    const approve = btn.dataset.decision === "approve";
+    const msg = approve
+      ? `Approve and apply ${n} change request${n === 1 ? "" : "s"}? The changes will be written to the employees straight away.`
+      : `Reject ${n} change request${n === 1 ? "" : "s"}? Files uploaded with them will be discarded.`;
+    if (!confirm(msg)) return;
+    document.getElementById("bulkDecision").value = btn.dataset.decision;
+    form.submit();
+  }));
+  refresh();
+})();
+</script>
 {% endblock %}

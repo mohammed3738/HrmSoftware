@@ -377,3 +377,51 @@ class ApprovalEdgeCasesTest(OnboardingTestBase):
         self._post_edit(self.hr, self.emp, {"designation": "Lead", "present_address": "Line 1\r\nLine 2"})
         cr = EmployeeChangeRequest.objects.get()
         self.assertEqual(list(cr.field_changes), ["designation"])
+
+
+class BulkApprovalTest(OnboardingTestBase):
+    def setUp(self):
+        super().setUp()
+        self.a = self._employee(code="BLK-A", started=date.today() - timedelta(days=30))
+        self.b = self._employee(code="BLK-B", started=date.today() - timedelta(days=30))
+        self._post_edit(self.hr, self.a, {"designation": "Lead A"})
+        self._post_edit(self.hr, self.b, {"designation": "Lead B"})
+        self.ra = EmployeeChangeRequest.objects.get(employee=self.a)
+        self.rb = EmployeeChangeRequest.objects.get(employee=self.b)
+
+    def _bulk(self, client, decision, ids, note=""):
+        return client.post(reverse("employee_change_requests_bulk"),
+                           {"decision": decision, "ids": ids, "note": note}, follow=True)
+
+    def test_list_offers_checkboxes_to_approvers_only(self):
+        self.assertContains(self.admin.client.get(reverse("employee_change_requests")), 'id="selectAllRequests"')
+        self.assertNotContains(self.hr.client.get(reverse("employee_change_requests")), 'id="selectAllRequests"')
+
+    def test_approve_selected(self):
+        resp = self._bulk(self.admin.client, "approve", [self.ra.pk, self.rb.pk], "bulk ok")
+        self.assertContains(resp, "2 change requests approved and applied.")
+        self.a.refresh_from_db(); self.b.refresh_from_db()
+        self.assertEqual((self.a.designation, self.b.designation), ("Lead A", "Lead B"))
+        self.assertEqual(set(EmployeeChangeRequest.objects.values_list("status", "decision_note")),
+                         {("approved", "bulk ok")})
+
+    def test_reject_selected(self):
+        self._bulk(self.admin.client, "reject", [self.ra.pk])
+        self.ra.refresh_from_db(); self.rb.refresh_from_db()
+        self.assertEqual((self.ra.status, self.rb.status), ("rejected", "pending"))
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.designation, "Dev")
+
+    def test_already_decided_requests_are_left_alone(self):
+        self._bulk(self.admin.client, "reject", [self.ra.pk])
+        resp = self._bulk(self.admin.client, "approve", [self.ra.pk, self.rb.pk])
+        self.assertContains(resp, "1 change request approved and applied.")
+        self.assertContains(resp, "1 request was already decided")
+        self.ra.refresh_from_db()
+        self.assertEqual(self.ra.status, "rejected")
+
+    def test_hr_cannot_bulk_decide(self):
+        resp = self.hr.client.post(reverse("employee_change_requests_bulk"), {"decision": "approve", "ids": [self.ra.pk]})
+        self.assertEqual(resp.status_code, 403)
+        self.ra.refresh_from_db()
+        self.assertEqual(self.ra.status, "pending")

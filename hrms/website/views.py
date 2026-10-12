@@ -3078,6 +3078,50 @@ def employee_change_requests(request):
 
 @login_required
 @feature_required("employee_records", action="view")
+@require_http_methods(["POST"])
+def employee_change_requests_bulk(request):
+    """Approve or reject several pending change requests at once. Each is
+    decided on its own (one failing doesn't undo the others), oldest first
+    so later requests for the same employee apply on top of earlier ones."""
+    if not can_approve_changes(request.user):
+        raise PermissionDenied
+    decision = request.POST.get("decision")
+    if decision not in ("approve", "reject"):
+        messages.error(request, "Choose approve or reject.")
+        return redirect("employee_change_requests")
+    ids = [int(i) for i in request.POST.getlist("ids") if i.isdigit()]
+    if not ids:
+        messages.error(request, "Select at least one request.")
+        return redirect("employee_change_requests")
+    note = request.POST.get("note", "").strip()
+
+    done, failed = 0, []
+    pending = (EmployeeChangeRequest.objects.filter(pk__in=ids, status=EmployeeChangeRequest.STATUS_PENDING)
+               .select_related("employee").order_by("requested_at"))
+    for cr in pending:
+        try:
+            if decision == "approve":
+                apply_change_request(cr, request.user, note)
+            else:
+                reject_change_request(cr, request.user, note)
+            done += 1
+        except Exception as exc:
+            logging.getLogger(__name__).exception("Bulk %s of change request %s failed", decision, cr.pk)
+            failed.append(f"{cr.employee} ({exc})")
+    skipped = len(ids) - done - len(failed)
+
+    verb = "approved and applied" if decision == "approve" else "rejected"
+    if done:
+        messages.success(request, f"{done} change request{'s' if done != 1 else ''} {verb}.")
+    if skipped:
+        messages.info(request, f"{skipped} request{'s were' if skipped != 1 else ' was'} already decided and left as is.")
+    if failed:
+        messages.error(request, "Could not process: " + "; ".join(failed))
+    return redirect("employee_change_requests")
+
+
+@login_required
+@feature_required("employee_records", action="view")
 def employee_change_request_detail(request, pk):
     cr = get_object_or_404(
         EmployeeChangeRequest.objects.select_related("employee", "requested_by", "decided_by"), pk=pk,

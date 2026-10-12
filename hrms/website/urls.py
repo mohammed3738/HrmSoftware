@@ -17,6 +17,7 @@ urlpatterns = [
     path('employee/<int:employee_id>/', views.create_or_edit_employee, name='employee_edit'),
     path('employee-detail/<int:pk>/', views.employee_detail, name='employee_detail'),
     path('employee-changes/', views.employee_change_requests, name='employee_change_requests'),
+    path('employee-changes/bulk/', views.employee_change_requests_bulk, name='employee_change_requests_bulk'),
     path('employee-changes/<int:pk>/', views.employee_change_request_detail, name='employee_change_request_detail'),
     path('attachments/<int:pk>/download/', views.download_attachment, name='download_attachment'),
     path('previous-employment-documents/<int:pk>/download/', views.download_previous_attachment, name='download_previous_attachment'),

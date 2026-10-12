@@ -111,7 +111,7 @@
             <th>Out Time</th>
             <th>Status</th>
             <th>View History</th>
-            <th>Raise Approval</th>
+            <th>Raise Attendance</th>
             <th>Raise Comp-Off</th>
           </tr>
         </thead>
@@ -147,21 +147,25 @@
               </a>
             </td>
             <td>
+              {% if raise_correction_for_others or record.employee_id == own_employee_id %}
               <button
                 class="btn btn-warning btn-sm"
                 onclick="openCorrectionModal('{{ record.id }}', '{{ record.in_time }}', '{{ record.out_time }}', '{{ record.date }}')"
               >
-                Raise an Approval
+                Raise Attendance
               </button>
+              {% else %}<span class="text-muted">&mdash;</span>{% endif %}
             </td>
 
             <td>
+              {% if raise_compoff_for_others or record.employee_id == own_employee_id %}
               <button
                 class="btn btn-info btn-sm"
                 onclick="openCompOffModal('{{ record.employee.id }}', '{{ record.date }}')"
               >
                 Raise Comp-Off
               </button>
+              {% else %}<span class="text-muted">&mdash;</span>{% endif %}
             </td>
           </tr>
           {% endfor %}

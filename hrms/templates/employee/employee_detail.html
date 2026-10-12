@@ -88,6 +88,43 @@
   </div>
   <!--/ Navbar pills -->
 
+  <!-- Onboarding -->
+  <div class="card mb-6">
+    <div class="card-body">
+      {% include "employee/_onboarding_bar.html" with progress=onboarding %}
+      {% if not onboarding.complete %}
+      <div class="row g-3 mt-1">
+        {% for sec in onboarding.sections %}
+        <div class="col-sm-6 col-lg-4">
+          <div class="d-flex align-items-start gap-2">
+            {% if sec.done == sec.count %}
+            <i class="ri-checkbox-circle-fill text-success fs-5"></i>
+            {% else %}
+            <i class="ri-checkbox-blank-circle-line text-warning fs-5"></i>
+            {% endif %}
+            <div>
+              <div class="fw-semibold">{{ sec.title }} <small class="text-muted fw-normal">({{ sec.weight }}%)</small></div>
+              {% if sec.missing %}
+              <small class="text-muted">Missing: {{ sec.missing|join:", " }}</small>
+              {% else %}
+              <small class="text-success">Done</small>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if pending_change %}
+      <div class="alert alert-warning py-2 small mt-3 mb-0">
+        <i class="ri-time-line me-1"></i>
+        Changes submitted on {{ pending_change.requested_at|date:"d M Y" }} are waiting for approval.
+        {% if can_approve_changes %}<a href="{% url 'employee_change_request_detail' pending_change.pk %}">Review</a>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
   <!-- Reporting line -->
   <div class="mb-6">
     {% include "employee/_reporting_line.html" with subject=employee heading="Reporting Line" %}
@@ -423,7 +460,7 @@
             data-bs-target="#tab-prev-attachments"
             type="button"
             role="tab">
-            Previous Employeement Attachments
+            Previous Employment Attachments
           </button>
         </li>
         {% if request.user|has_feature:"audit_log:view" %}
@@ -495,7 +532,8 @@
               <table class="table datatable-project table-border-bottom-0">
                 <thead>
                   <tr>
-                    <th>File Name</th>
+                    <th>Document</th>
+                    <th>File</th>
                     <th>Uploaded At</th>
                   </tr>
                 </thead>
@@ -503,9 +541,13 @@
                   {% if attachments %}
                     {% for attachment in attachments %}
                       <tr>
+                        <td class="fw-semibold">{{ attachment.get_display_name }}</td>
                         <td>
-                          <a href="{% url 'download_attachment' attachment.pk %}">
-                            {{ attachment.file.name|cut:"uploads/"|default:attachment.file.name }}
+                          <a href="{% url 'download_attachment' attachment.pk %}" target="_blank" rel="noopener">
+                            {{ attachment.filename }}
+                          </a>
+                          <a href="{% url 'download_attachment' attachment.pk %}?download=1" class="ms-2 text-muted" title="Download">
+                            <i class="ri-download-2-line"></i>
                           </a>
                         </td>
                         <td>{{ attachment.uploaded_at }}</td>
@@ -513,7 +555,7 @@
                     {% endfor %}
                   {% else %}
                     <tr>
-                      <td colspan="2" class="text-center">No data available</td>
+                      <td colspan="3" class="text-center">No data available</td>
                     </tr>
                   {% endif %}
                 </tbody>
@@ -530,33 +572,35 @@
           role="tabpanel">
 
           <div class="card mb-0">
-            <h5 class="card-header">Previous Employeement Attachments</h5>
+            <h5 class="card-header">Previous Employment Attachments</h5>
             <div class="card-datatable table-responsive pb-0">
               <table class="table datatable-project table-border-bottom-0">
                 <thead>
                   <tr>
-                    <th>File Name</th>
-                    <th>Document Name</th>
+                    <th>Document</th>
+                    <th>File</th>
+                    <th>Employer</th>
                   </tr>
                 </thead>
                 <tbody>
                   {% if previous_employments_attachment %}
                     {% for attachment in previous_employments_attachment %}
                       <tr>
+                        <td class="fw-semibold">{{ attachment.document_name|default:"Document" }}</td>
                         <td>
-                          <a href="{% url 'download_attachment' attachment.pk %}">
-                            {{ attachment.file.name|cut:"uploads/"|default:attachment.file.name }}
+                          <a href="{% url 'download_previous_attachment' attachment.pk %}" target="_blank" rel="noopener">
+                            {{ attachment.filename }}
+                          </a>
+                          <a href="{% url 'download_previous_attachment' attachment.pk %}?download=1" class="ms-2 text-muted" title="Download">
+                            <i class="ri-download-2-line"></i>
                           </a>
                         </td>
-                        <td>
-                          {{ attachment.document_name }}
-                        </td>
-                        <td>{{ attachment.uploaded_at }}</td>
+                        <td>{{ attachment.previous_employment.employer_name }}</td>
                       </tr>
                     {% endfor %}
                   {% else %}
                     <tr>
-                      <td colspan="2" class="text-center">No data available</td>
+                      <td colspan="3" class="text-center">No data available</td>
                     </tr>
                   {% endif %}
                 </tbody>

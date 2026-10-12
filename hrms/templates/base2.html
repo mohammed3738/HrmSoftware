@@ -331,7 +331,7 @@
                       </a>
                     </li>
                     {% endif %}
-                    {% if not request.user|is_employee_role %}
+                    {% if request.user|has_feature:"company_settings:view" %}
                     <li>
                       <a class="dropdown-item" href="{% url 'company-settings-hub' %}">
                         <i class="ri-settings-4-line ri-22px me-3"></i><span class="align-middle">Settings</span>
@@ -465,6 +465,19 @@
                       </li>
                       {% endif %}
 
+                      {% if request.user|has_feature:"employee_records:view" %}
+                      <li class="menu-item">
+                        <a href="{% url 'employee_list' %}?onboarding=pending" class="menu-link">
+                          <div>Pending Onboarding</div>
+                        </a>
+                      </li>
+                      <li class="menu-item">
+                        <a href="{% url 'employee_change_requests' %}" class="menu-link">
+                          <div>Change Approvals</div>
+                        </a>
+                      </li>
+                      {% endif %}
+
                       {% if request.user|has_feature:"offboarding:view" %}
                       <li class="menu-item">
                         <a href="{% url 'offboarding-list' %}" class="menu-link">
@@ -536,7 +549,7 @@
                         </a>
                       </li>
                       {% endif %}
-                      {% if request.user|has_feature:"attendance_review:view" %}
+                      {% if request.user|has_feature:"attendance_register:view" %}
                       <li class="menu-item">
                         <a href="{% url 'attendance-register' %}" class="menu-link">
                           <div>Attendance Register</div>
@@ -678,11 +691,13 @@
                         </a>
                       </li>
 
+                      {% if request.user|has_feature:"advances:edit" %}
                       <li class="menu-item">
                         <a href="{% url 'create-advance' %}" class="menu-link">
                           <div>Create Advance</div>
                         </a>
                       </li>
+                      {% endif %}
 
                     </ul>
                   </li>
@@ -735,6 +750,7 @@
 
 
                   {% if not request.user|is_employee_role %}
+                  {% if request.user|has_feature:"company_settings:view" %}
                   <!-- Settings Hub -->
                   <li class="menu-item">
                     <a href="{% url 'company-settings-hub' %}" class="menu-link">
@@ -742,14 +758,17 @@
                       <div>Settings Hub</div>
                     </a>
                   </li>
+                  {% endif %}
 
                   <!-- Roles & Permissions -->
+                  {% if request.user|in_group:"Super Admin,Admin" %}
                   <li class="menu-item">
                     <a href="{% url 'roles-permissions-hub' %}" class="menu-link">
                       <i class="menu-icon tf-icons ri-shield-user-line"></i>
                       <div>Roles &amp; Permissions</div>
                     </a>
                   </li>
+                  {% endif %}
                   {% endif %}
 
                   {% if request.user|has_feature:"announcements:edit" %}
@@ -778,6 +797,16 @@
             <!-- / Menu -->
 
             <div id="app-content">
+              {% if messages %}
+              <div class="container-xxl pt-4 site-messages">
+                {% for message in messages %}
+                <div class="alert alert-{% if message.tags == 'error' %}danger{% elif message.tags %}{{ message.tags }}{% else %}info{% endif %} alert-dismissible fade show mb-2" role="alert">
+                  {{ message }}
+                  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endfor %}
+              </div>
+              {% endif %}
               {% block body %}{% endblock %}
             </div>
 

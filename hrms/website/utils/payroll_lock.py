@@ -45,7 +45,8 @@ def get_locking_run_for_period(company, start_date, end_date):
     """
     if not company or not start_date or not end_date:
         return None
-    return (
+    from website.models import _rule_lookup  # cached only inside a bulk run
+    return _rule_lookup(("locking-run", company.pk, start_date, end_date), lambda: (
         PayrollRun.objects
         .filter(
             company=company,
@@ -55,7 +56,7 @@ def get_locking_run_for_period(company, start_date, end_date):
         )
         .order_by("-end_date")
         .first()
-    )
+    ))
 
 
 def is_date_locked(company, check_date):

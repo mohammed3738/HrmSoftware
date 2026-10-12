@@ -111,6 +111,69 @@
     </div>
   </div>
 
+  <!-- ── Pending onboarding ───────────────────────────────────────── -->
+  {% if show_people_panels and pending_onboarding or show_change_approvals and pending_change_requests %}
+  <div class="row g-4 mb-4">
+    {% if show_people_panels and pending_onboarding %}
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center pb-1">
+          <h6 class="mb-0"><i class="ri-user-add-line me-1 text-warning"></i> Pending Onboarding
+            <span class="badge bg-label-warning ms-1">{{ pending_onboarding_total }}</span></h6>
+          <div class="d-flex gap-3 align-items-center">
+            {% if show_change_approvals and pending_change_requests %}
+            <a href="{% url 'employee_change_requests' %}" class="small fw-semibold text-danger">
+              <i class="ri-shield-check-line"></i> {{ pending_change_requests }} change{{ pending_change_requests|pluralize }} awaiting approval
+            </a>
+            {% endif %}
+            <a href="{% url 'employee_list' %}?onboarding=pending" class="small">{% if pending_onboarding_total > pending_onboarding|length %}View all {{ pending_onboarding_total }}{% else %}View all{% endif %}</a>
+          </div>
+        </div>
+        <div class="table-responsive pending-table-scroll">
+          <table class="table table-sm table-hover table-stack mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Employee</th>
+                <th style="min-width:160px">Progress</th>
+                <th>Still missing</th>
+                <th>Started</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for emp in pending_onboarding %}
+              <tr>
+                <td data-label="Employee">
+                  <a href="{% url 'employee_detail' emp.pk %}" class="fw-medium">{{ emp.employee_code }}</a>
+                  {{ emp.first_name }} {{ emp.last_name }}
+                </td>
+                <td data-label="Progress">{% include "employee/_onboarding_bar.html" with progress=emp.onboarding compact=True %}</td>
+                <td data-label="Missing" class="small text-muted text-wrap" style="max-width:320px">
+                  {{ emp.onboarding.missing|slice:":4"|join:", " }}{% if emp.onboarding.missing|length > 4 %} +{{ emp.onboarding.missing|length|add:"-4" }} more{% endif %}
+                </td>
+                <td data-label="Started" class="small text-nowrap">
+                  {% if emp.onboarding_days < 60 %}{{ emp.onboarding_days }} day{{ emp.onboarding_days|pluralize }} ago{% else %}{{ emp.onboarding_started_at|date:"d M Y" }}{% endif %}
+                  {% if emp.onboarding_locked %}<span class="badge bg-label-danger ms-1" title="Past the {{ onboarding_edit_days }}-day window: HR edits need approval">Needs approval</span>{% endif %}
+                </td>
+                <td data-label=""><a href="{% url 'employee_edit' emp.pk %}" class="btn btn-sm btn-outline-primary">Complete</a></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% elif show_change_approvals and pending_change_requests %}
+    <div class="col-12">
+      <div class="alert alert-warning d-flex justify-content-between align-items-center mb-0">
+        <span><i class="ri-shield-check-line me-1"></i> {{ pending_change_requests }} employee change{{ pending_change_requests|pluralize }} awaiting approval</span>
+        <a href="{% url 'employee_change_requests' %}" class="btn btn-sm btn-warning">Review</a>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <!-- ── Payroll ───────────────────────────────────────────────────── -->
   {% if show_payroll_panel %}
   <div class="row g-4 mb-4">
@@ -398,12 +461,12 @@
               <tr>
                 <td><input type="checkbox" class="form-check-input leave-check" value="{{ l.id }}" onchange="updateBulkSelection('leave')"></td>
                 <td class="fw-medium">{{ l.employee.first_name }} {{ l.employee.last_name }}</td>
-                <td><span class="badge bg-label-primary">{{ l.get_leave_type_display }}</span></td>
+                <td>{% if l.leave_type %}<span class="badge bg-label-primary">{{ l.get_leave_type_display }}</span>{% else %}—{% endif %}</td>
                 <td class="text-muted">{{ l.start_date|date:"d M" }} – {{ l.end_date|date:"d M" }}</td>
                 <td>{{ l.total_days }}</td>
                 <td>
                   <button class="btn btn-sm btn-info action-btn"
-                    onclick="openLeaveModal('{{ l.employee.first_name }} {{ l.employee.last_name }}','{{ l.get_leave_type_display }}','{{ l.start_date }}','{{ l.end_date }}','{{ l.total_days }}',`{{ l.reason|escapejs }}`,'{{ l.status }}',{{ l.id }})">
+                    onclick="openLeaveModal('{{ l.employee.first_name }} {{ l.employee.last_name }}','{{ l.get_leave_type_display|default:"—" }}','{{ l.start_date }}','{{ l.end_date }}','{{ l.total_days }}',`{{ l.reason|escapejs }}`,'{{ l.status }}',{{ l.id }})">
                     View
                   </button>
                 </td>
@@ -879,6 +942,7 @@ if (startRecalcBtn) startRecalcBtn.addEventListener("click", function () {
   const dateFrom = document.getElementById("recalcFrom").value;
   const dateTo = document.getElementById("recalcTo").value;
   const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]").value;
+  let lockedNote = "";
 
   btn.disabled = true;
   wrap.style.display = "block";
@@ -915,7 +979,7 @@ if (startRecalcBtn) startRecalcBtn.addEventListener("click", function () {
 
       if (data.processed_in_chunk === 0 || newOffset >= total) {
         bar.style.width = "100%"; bar.innerText = "100%";
-        msg.innerText = `Done! ${Math.min(newOffset, total)} / ${total} records recalculated.`;
+        msg.innerText = `Done! ${Math.min(newOffset, total)} / ${total} records recalculated.` + lockedNote;
         btn.disabled = false;
       } else {
         processFrom(newOffset, total);
@@ -932,9 +996,11 @@ if (startRecalcBtn) startRecalcBtn.addEventListener("click", function () {
   .then(res => res.json())
   .then(data => {
     if (!data.success) { fail(data.error || "Failed to start recalculation."); return; }
+    lockedNote = data.locked
+      ? ` ${data.locked} day(s) inside finalized payroll were left unchanged.` : "";
     if (data.total === 0) {
       bar.style.width = "100%"; bar.innerText = "100%";
-      msg.innerText = "No matching attendance records found.";
+      msg.innerText = "No attendance to recalculate." + lockedNote;
       btn.disabled = false;
       return;
     }

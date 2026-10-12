@@ -101,17 +101,16 @@ class AdminDashboardPanelsTest(TestCase):
         client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
         self.assertNotEqual(client.get(reverse("late_attendance_review")).status_code, 403)
 
-    def test_hr_gets_a_read_only_attendance_register(self):
-        """HR may review the register but not change a recorded day, so the
-        day cells must not be clickable -- they post to an endpoint HR
-        cannot use."""
+    def test_hr_cannot_see_the_attendance_register(self):
+        """The register is hidden from HR: no menu entry, and the page and
+        its export refuse them. HR keeps the Attendance List."""
         client = Client()
         client.force_login(self.hr, backend="django.contrib.auth.backends.ModelBackend")
-        resp = client.get(reverse("attendance-register"))
-        self.assertEqual(resp.status_code, 200)
-        self.assertFalse(resp.context["can_edit_attendance"])
-        self.assertNotContains(resp, "openDayOverride(this)")
-        self.assertContains(resp, "Read-only")
+        self.assertEqual(client.get(reverse("attendance-register")).status_code, 403)
+        self.assertEqual(client.get(reverse("attendance-register-export")).status_code, 403)
+        menu = client.get(reverse("admin-dashboard"))
+        self.assertNotContains(menu, "<div>Attendance Register</div>")
+        self.assertContains(menu, "<div>Attendance List</div>")
 
     def test_hr_keeps_salary_structure_in_the_payroll_menu(self):
         """Gating the whole Payroll menu on payroll:view would take Create

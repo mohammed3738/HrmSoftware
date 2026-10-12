@@ -2,9 +2,10 @@
 What an Employee can see and reach.
 
 Two halves:
-  * the correction-request and comp-off lists scope to the viewer -- staff
-    see the whole company's, an employee sees only the ones they raised, so
-    following your own request needs no company-wide grant;
+  * the correction-request and comp-off lists scope to the viewer -- Admin,
+    Super Admin and Payroll Officer see the whole company's; an employee,
+    and HR, see only their own, so following your own request needs no
+    company-wide grant;
   * the nav offers an employee exactly the pages they can open, and nothing
     that would 403 on click.
 
@@ -127,24 +128,59 @@ class EmployeeSelfServiceTest(TestCase):
         self.assertContains(self.client.get(reverse("comp_off_requests_list")),
                             "My Comp-Off Requests")
 
-    def test_staff_still_see_every_request(self):
-        hr = User.objects.create_user(username="slf_hr", password="pass12345")
-        hr.groups.add(Group.objects.get(name="HR"))
+    def _login(self, username, role, employee_code=None):
+        user = User.objects.create_user(username=username, password="pass12345")
+        user.groups.add(Group.objects.get(name=role))
+        if employee_code:
+            make_employee(self.company, employee_code, user=user, first_name=role)
         client = Client()
-        client.force_login(hr, backend="django.contrib.auth.backends.ModelBackend")
+        client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
+        return client
 
-        resp = client.get(reverse("attendance_correction_requests_list"))
+    def test_hr_sees_only_their_own_requests(self):
+        hr = self._login("slf_hr", "HR", "SLF-HR")
+        hr_emp = Employee.objects.get(employee_code="SLF-HR")
+        CompOffRequest.objects.create(employee=hr_emp, from_date=WORK_DAY, to_date=WORK_DAY, count=1, reason="hr")
+
+        resp = hr.get(reverse("attendance_correction_requests_list"))
+        self.assertFalse(resp.context["can_see_all_requests"])
+        self.assertEqual({row["emp_code"] for row in resp.context["attendance_requests"]}, set())
+
+        resp = hr.get(reverse("comp_off_requests_list"))
+        self.assertFalse(resp.context["can_see_all_requests"])
+        self.assertContains(resp, "SLF-HR")
+        self.assertNotContains(resp, "SLF001")
+        self.assertNotContains(resp, "SLF002")
+
+    def test_hr_cannot_open_someone_elses_request_details(self):
+        hr = self._login("slf_hr2", "HR", "SLF-HR2")
+        self.assertEqual(hr.get(reverse("attendance_correction_detail", args=[self.my_correction.pk])).status_code, 403)
+        self.assertEqual(hr.get(reverse("comp_off_requests", args=[self.employee.pk])).status_code, 403)
+
+    def test_employee_opens_their_own_request_details(self):
+        self.assertEqual(self.client.get(reverse("attendance_correction_detail", args=[self.my_correction.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("attendance_correction_detail", args=[self.colleagues_correction.pk])).status_code, 403)
+        self.assertEqual(self.client.get(reverse("comp_off_requests", args=[self.employee.pk])).status_code, 200)
+        self.assertEqual(self.client.get(reverse("comp_off_requests", args=[self.colleague.pk])).status_code, 403)
+
+    def test_admin_still_sees_every_request(self):
+        admin = self._login("slf_admin", "Admin")
+        resp = admin.get(reverse("attendance_correction_requests_list"))
         self.assertTrue(resp.context["can_see_all_requests"])
         codes = {row["emp_code"] for row in resp.context["attendance_requests"]}
         self.assertEqual(codes, {"SLF001", "SLF002"})
         self.assertContains(resp, "Attendance Correction Requests List")
+        resp = admin.get(reverse("comp_off_requests_list"))
+        self.assertTrue(resp.context["can_see_all_requests"])
 
-    def test_a_login_with_no_employee_record_is_refused(self):
-        bare = User.objects.create_user(username="slf_bare", password="pass12345")
-        bare.groups.add(Group.objects.get(name="Employee"))
-        client = Client()
-        client.force_login(bare, backend="django.contrib.auth.backends.ModelBackend")
-        self.assertEqual(client.get(reverse("comp_off_requests_list")).status_code, 403)
+    def test_a_login_with_no_employee_record_sees_an_empty_list(self):
+        bare = self._login("slf_bare", "Employee")
+        resp = bare.get(reverse("comp_off_requests_list"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, "SLF001")
+        resp = bare.get(reverse("attendance_correction_requests_list"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(list(resp.context["attendance_requests"]), [])
 
     # ── my_attendance shortcut ────────────────────────────────────────
 

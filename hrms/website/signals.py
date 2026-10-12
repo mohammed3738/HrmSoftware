@@ -39,10 +39,15 @@ class suspend_leave_balance_auto_recalc:
     website/views.py (_process_attendance_rows, recalculate_attendance_chunk)."""
 
     def __enter__(self):
+        from website.models import attendance_rule_cache
         _recalc_suspend_state.depth = getattr(_recalc_suspend_state, "depth", 0) + 1
+        # Bulk loops also share the per-company/per-date rule lookups.
+        self._rules = attendance_rule_cache()
+        self._rules.__enter__()
         return self
 
     def __exit__(self, *exc_info):
+        self._rules.__exit__(*exc_info)
         _recalc_suspend_state.depth -= 1
 
 
@@ -177,7 +182,6 @@ def auto_recalc_leave_balance_on_compoff_delete(sender, instance, origin=None, *
 @receiver(post_save, sender=Offboarding)
 def update_status_in_model_a(sender, instance, created, **kwargs):
     if created:  # Only update when a new ModelB instance is created
-        print('working')
         model_a_instance = instance.employee  # Get related ModelA instance
         model_a_instance.status = 'Pending'  # Change status value
         model_a_instance.save()  # Save the ModelA instance with the new status

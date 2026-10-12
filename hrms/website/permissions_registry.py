@@ -32,6 +32,8 @@ FEATURES = [
      "has_view": True, "has_create": True, "has_edit": True, "has_approve": False, "sort_order": 10},
     {"key": "employee_delete", "name": "Delete Employees", "category": "Employee Lifecycle",
      "has_view": False, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 12},
+    {"key": "employee_change_approval", "name": "Approve Employee Changes", "category": "Employee Lifecycle",
+     "has_view": False, "has_create": False, "has_edit": False, "has_approve": True, "sort_order": 13},
     {"key": "department_management", "name": "Departments & Reporting Line", "category": "Employee Lifecycle",
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 15},
     {"key": "offboarding", "name": "Offboarding", "category": "Employee Lifecycle",
@@ -48,6 +50,8 @@ FEATURES = [
      "has_view": False, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 10},
     {"key": "attendance_review", "name": "Attendance Monitoring & Review", "category": "Attendance & Scheduling",
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 20},
+    {"key": "attendance_register", "name": "Attendance Register", "category": "Attendance & Scheduling",
+     "has_view": True, "has_create": False, "has_edit": False, "has_approve": False, "sort_order": 25},
     {"key": "shift_roster", "name": "Shift Roster", "category": "Attendance & Scheduling",
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 30},
     {"key": "attendance_corrections", "name": "Attendance Corrections", "category": "Attendance & Scheduling",
@@ -60,11 +64,15 @@ FEATURES = [
 
     {"key": "salary_structure", "name": "Salary Structure & History", "category": "Compensation",
      "has_view": True, "has_create": True, "has_edit": True, "has_approve": False, "sort_order": 10},
+    {"key": "salary_history", "name": "Salary History (all employees)", "category": "Compensation",
+     "has_view": True, "has_create": False, "has_edit": False, "has_approve": False, "sort_order": 15},
     {"key": "payroll", "name": "Payroll Processing", "category": "Compensation",
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 20},
     {"key": "advances", "name": "Employee Advances", "category": "Compensation",
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 30},
 
+    {"key": "company_settings", "name": "Company Settings", "category": "Administration",
+     "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 5},
     {"key": "company_settings_broadcast", "name": "Company Settings Broadcast", "category": "Administration",
      "has_view": False, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 10},
     {"key": "user_accounts", "name": "User Account Creation", "category": "Administration",
@@ -75,6 +83,8 @@ FEATURES = [
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 40},
     {"key": "audit_log", "name": "Audit Log", "category": "Administration",
      "has_view": True, "has_create": False, "has_edit": False, "has_approve": False, "sort_order": 50},
+    {"key": "archive_records", "name": "Archive & Restore Records", "category": "Administration",
+     "has_view": False, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 60},
 ]
 
 # Roles, most privileged first. "Manager" was renamed to "HOD"; Super Admin
@@ -106,6 +116,10 @@ SEED_GRANTS = {
     ("employee_records", "create"): _ALL_STAFF,
     ("employee_records", "edit"): _ALL_STAFF,
     ("employee_delete", "edit"): _NOT_HR,
+    # Holders approve change requests and edit employees directly at any
+    # stage; everyone else (HR) edits directly only while onboarding is
+    # incomplete and less than 15 days old, and needs approval after that.
+    ("employee_change_approval", "approve"): _NOT_HR,
     ("department_management", "view"): _ALL_STAFF,
     ("department_management", "edit"): _ALL_STAFF,
     ("offboarding", "view"): _ALL_STAFF,
@@ -126,9 +140,14 @@ SEED_GRANTS = {
     ("attendance_data", "edit"): _ALL_STAFF,
     ("attendance_review", "view"): _ALL_STAFF,
     ("attendance_review", "edit"): _NOT_HR,
+    # The month-at-a-glance register is not HR's (day edits on it still
+    # need attendance_review:edit on top).
+    ("attendance_register", "view"): _NOT_HR,
     ("shift_roster", "view"): _ALL_STAFF,
     ("shift_roster", "edit"): _ALL_STAFF,
-    ("attendance_corrections", "view"): _ALL_STAFF,
+    # Everyone sees their own correction / comp-off requests; seeing the
+    # whole company's goes with approving them, so HR sees only its own.
+    ("attendance_corrections", "view"): _NOT_HR,
     ("attendance_corrections", "approve"): _NOT_HR,
 
     # ── Leave & Comp-Off ──────────────────────────────────────────────
@@ -138,7 +157,7 @@ SEED_GRANTS = {
     ("leave_management", "view"): _ALL_STAFF,
     ("leave_management", "edit"): _NOT_HR,
     ("leave_management", "approve"): _NOT_HR,
-    ("comp_off", "view"): _ALL_STAFF,
+    ("comp_off", "view"): _NOT_HR,
     # Bulk-importing comp-off requests from Excel is a drafting action, same
     # as HR drafting a salary structure -- it raises Pending requests that
     # still go through the normal approve/reject flow below.
@@ -150,6 +169,9 @@ SEED_GRANTS = {
     ("salary_structure", "view"): _ALL_STAFF,
     ("salary_structure", "create"): _ALL_STAFF,
     ("salary_structure", "edit"): _NOT_HR,
+    # Everyone who opens Salary History sees their own; seeing everyone's
+    # is not HR's.
+    ("salary_history", "view"): _NOT_HR,
     # Payroll is the Payroll Officer's alone to run. Admin can read a run
     # but not create, edit, recalculate or finalize one; HR has no payroll
     # access at all, not even read.
@@ -162,10 +184,18 @@ SEED_GRANTS = {
     ("advances", "edit"): _NOT_HR,
 
     # ── Administration ────────────────────────────────────────────────
+    # The settings hub (payroll, leave and attendance rules) is not HR's,
+    # not even to read.
+    ("company_settings", "view"): _NOT_HR,
+    ("company_settings", "edit"): _NOT_HR,
     ("company_settings_broadcast", "edit"): _NOT_HR,
     ("user_accounts", "edit"): _NOT_HR,
     ("admin_dashboard", "view"): _ALL_STAFF,
     ("announcements", "view"): _ALL_STAFF,
     ("announcements", "edit"): _ALL_STAFF,
     ("audit_log", "view"): _ALL_STAFF,
+    # Archiving (and restoring) anything -- employees, companies, branches,
+    # departments, holidays, shifts, announcements, ... -- is on top of the
+    # record's own edit permission, and HR doesn't hold it.
+    ("archive_records", "edit"): _NOT_HR,
 }

@@ -311,7 +311,9 @@ Group=multihost
 WorkingDirectory=/home/multihost/hrms_prod/hrms
 ExecStart=/home/multihost/hrms_prod/venv/bin/gunicorn hrms.wsgi:application \
     --bind 127.0.0.1:8025 \
+    --worker-class gthread \
     --workers 3 \
+    --threads 4 \
     --timeout 300 \
     --access-logfile - \
     --error-logfile -
@@ -524,6 +526,22 @@ diff <(grep -oE "^[A-Z_]+" .env.example | sort) <(grep -oE "^[A-Z_]+" .env | sor
 ```
 
 Lines starting with `<` are in the template but missing from `.env`.
+
+### Serving many users at once (one-time change on an existing server)
+
+A server set up from an older copy of this guide runs gunicorn as 3 single-threaded workers. That means at most 3 requests at a time, so one slow report holds up everyone queued behind it. Step 9 now uses 3 workers × 4 threads: up to 12 requests in parallel, for little extra memory. To switch a server that's already installed:
+
+```bash
+sudo sed -i 's|^    --workers 3 \\$|    --worker-class gthread \\\n    --workers 3 \\\n    --threads 4 \\|' /etc/systemd/system/hrms-prod-gunicorn.service
+grep -A8 '^ExecStart' /etc/systemd/system/hrms-prod-gunicorn.service
+sudo systemctl daemon-reload
+sudo systemctl restart hrms-prod-gunicorn
+systemctl is-active hrms-prod-gunicorn
+```
+
+The `grep` output should show `--worker-class gthread`, `--workers 3` and `--threads 4` on separate lines, and the last command should print `active`.
+
+Each thread can hold its own database connection, so the app uses up to about 12 PostgreSQL connections, plus a few for Celery. That is well inside PostgreSQL's default limit of 100, which is shared by every project on this server. If the server has more than 2 CPU cores and memory to spare, raising `--workers` (roughly 2 × cores + 1) helps further.
 
 ---
 

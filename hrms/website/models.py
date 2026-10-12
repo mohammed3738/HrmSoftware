@@ -1,3 +1,4 @@
+import os
 from django.db import models
 from django.utils.timezone import now
 import datetime
@@ -12,9 +13,10 @@ from decimal import Decimal
 from django.contrib.auth.models import User, Group
 
 # Create your models here.
+# Stored value -> label. The rest of the app filters on the lowercase values.
 status = {
-    'Active':'active',
-    'InActive':'inactive',
+    'active': 'Active',
+    'inactive': 'Inactive',
 }
 class Company(models.Model):
     short_name = models.CharField(max_length=10, unique=True, verbose_name="Short Name")  # ZC, UI, etc.
@@ -28,6 +30,7 @@ class Company(models.Model):
     ptrc_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="PTRC Number")  # PTRC
     ptec_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="PTEC Number")  # PTEC
     esic_number = models.CharField(max_length=20, blank=True, null=True, verbose_name="ESIC Number")  # ESIC No
+    logo = models.ImageField(upload_to="company_logos/", blank=True, null=True, verbose_name="Logo")
     status = models.CharField(max_length=50, choices=status, default='active')
     def __str__(self):
         return f"{self.short_name} - {self.name}"
@@ -172,6 +175,12 @@ class Employee(models.Model):
     personal_mobile = models.CharField(max_length=30, null=True, blank=True, verbose_name="Personal Mobile No")
     date_of_marriage = models.DateField(blank=True, null=True, verbose_name="Date of Marriage")
     photo = models.ImageField(upload_to=employee_photo_path, null=True, blank=True, verbose_name="Photo")
+
+    # Onboarding: the day the record was started (HR may edit directly for
+    # ONBOARDING_EDIT_DAYS after it, until onboarding is 100%), and whether
+    # the employee is a fresher (no previous employment to fill in).
+    onboarding_started_at = models.DateField(default=date.today, null=True, blank=True, verbose_name="Onboarding started")
+    is_fresher = models.BooleanField(default=False, verbose_name="Fresher (no previous employment)")
 
     # ZCPL Office Details
     employee_code = models.CharField(max_length=50, unique=True, null=True, blank=True, verbose_name="Employee Code")
@@ -327,6 +336,10 @@ class PreviousEmploymentAttachment(models.Model):
     def __str__(self):
         return f"{self.document_name or 'Document'} - {self.previous_employment.employer_name}"
 
+    @property
+    def filename(self):
+        return os.path.basename(self.file.name) if self.file else ""
+
 
 class EmployeeAttachment(models.Model):
     employee = models.ForeignKey(
@@ -358,12 +371,72 @@ class EmployeeAttachment(models.Model):
             return self.other_file_name
         return dict(self.FILE_NAME_CHOICES).get(self.file_name, "Document")
 
+    @property
+    def filename(self):
+        return os.path.basename(self.file.name) if self.file else ""
+
     def __str__(self):
         return f"{self.get_display_name()} - {self.employee}"
 
  
 #     def __str__(self):
 #         return f"{self.asset_name} ({self.assigned_to})"
+
+
+class EmployeeChangeRequest(models.Model):
+    """Edits to an employee record that need approval before they apply:
+    someone without the employee_change_approval permission (HR) editing
+    an employee whose onboarding is complete, or whose onboarding started
+    more than ONBOARDING_EDIT_DAYS ago. Nothing changes on the employee
+    until an approver approves; see website/services/employee_changes.py."""
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [(STATUS_PENDING, "Pending"), (STATUS_APPROVED, "Approved"), (STATUS_REJECTED, "Rejected")]
+
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="change_requests")
+    requested_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    requested_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+
+    # {field: {"label", "old", "new", "raw"}} -- old/new for display, raw to apply.
+    field_changes = models.JSONField(default=dict, blank=True)
+    photo = models.ImageField(upload_to="employee_change_requests/", null=True, blank=True)
+    clear_photo = models.BooleanField(default=False)
+    # {"create": [{"key", "data", "label"}], "update": [{"id", "data", "old", "label"}], "delete": [{"id", "label"}]}
+    previous_employment = models.JSONField(default=dict, blank=True)
+    # [{"id", "label"}] -- existing KYC documents to remove (new ones are EmployeeChangeRequestFile rows).
+    documents_to_delete = models.JSONField(default=list, blank=True)
+
+    decided_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+    def __str__(self):
+        return f"Change request for {self.employee} ({self.get_status_display()})"
+
+
+class EmployeeChangeRequestFile(models.Model):
+    """A file uploaded as part of a pending EmployeeChangeRequest: a new KYC
+    document, or a document for a previous-employment row."""
+
+    KIND_KYC = "kyc"
+    KIND_PREVIOUS_EMPLOYMENT = "prev_emp"
+
+    request = models.ForeignKey(EmployeeChangeRequest, on_delete=models.CASCADE, related_name="files")
+    kind = models.CharField(max_length=10, choices=[(KIND_KYC, "KYC document"), (KIND_PREVIOUS_EMPLOYMENT, "Previous employment document")])
+    file = models.FileField(upload_to="employee_change_requests/")
+    # KYC: document type, or the EmployeeAttachment it replaces.
+    file_name = models.CharField(max_length=50, blank=True, null=True)
+    other_file_name = models.CharField(max_length=255, blank=True, null=True)
+    replaces_attachment_id = models.PositiveIntegerField(null=True, blank=True)
+    # Previous employment: "id:<pk>" for an existing row, "new:<n>" for one being added.
+    prev_key = models.CharField(max_length=30, blank=True, null=True)
+    document_name = models.CharField(max_length=255, blank=True, null=True)
 
 
 class Offboarding(models.Model):
@@ -480,7 +553,8 @@ class LeaveApplication(models.Model):
     ]
 
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
-    leave_type = models.CharField(max_length=10, choices=LEAVE_TYPES)
+    # No longer asked on the apply form; kept for older applications.
+    leave_type = models.CharField(max_length=10, choices=LEAVE_TYPES, blank=True, default="")
     start_date = models.DateField()
     end_date = models.DateField()
     reason = models.TextField()
@@ -1235,6 +1309,10 @@ class Holiday(models.Model):
     # Applicability (BRANCH-BASED ONLY)
     is_national = models.BooleanField(default=False,
                                      help_text="True = all branches get this")
+    branches = models.ManyToManyField(
+        'Branch', blank=True, related_name='holidays',
+        help_text="Only these branches get the holiday (when it isn't for all branches).",
+    )
 
     # Applicability (EMPLOYEE-BASED) — for religious/optional holidays like
     # Eid or Ganesh Chaturthi that only some employees observe. When False,
@@ -1272,9 +1350,22 @@ class Holiday(models.Model):
         return f"{self.name} - {self.holiday_date}"
     
     def is_applicable_to_branch(self, branch):
-        if self.is_national or self.holiday_calendar is None:
+        """All branches when national; otherwise the selected branches,
+        or -- for older holidays with none selected -- the calendar's
+        branch, and every branch when there's no calendar either."""
+        if self.is_national:
+            return True
+        selected = [b.pk for b in self.branches.all()]  # uses a prefetch when there is one
+        if selected:
+            return branch is not None and branch.pk in selected
+        if self.holiday_calendar is None:
             return True
         return self.holiday_calendar.branch == branch
+
+    def branch_names(self):
+        if self.is_national:
+            return ""
+        return ", ".join(b.branch_name for b in self.branches.all())
 
     def is_applicable_to_employee(self, employee):
         if self.applies_to_all_employees:
@@ -1510,6 +1601,39 @@ class HalfDayScenario(models.Model):
         return f"{branch_name} - {self.scenario_date}: {self.scenario_type}"
 
 
+# ── Lookups shared by every attendance row in a bulk run ────────────────
+# Recalculating a row reads its company's PayrollSettings and that date's
+# holidays and half-days. During an upload or a "Recalculate Attendance"
+# run the same few answers are needed thousands of times, so bulk writers
+# (see website.signals.suspend_leave_balance_auto_recalc) switch this cache
+# on for the duration of their loop. Outside a bulk run nothing is cached.
+import threading as _threading
+
+_attendance_rule_cache = _threading.local()
+
+
+class attendance_rule_cache:
+    def __enter__(self):
+        if getattr(_attendance_rule_cache, "depth", 0) == 0:
+            _attendance_rule_cache.store = {}
+        _attendance_rule_cache.depth = getattr(_attendance_rule_cache, "depth", 0) + 1
+        return self
+
+    def __exit__(self, *exc_info):
+        _attendance_rule_cache.depth -= 1
+        if _attendance_rule_cache.depth == 0:
+            _attendance_rule_cache.store = None
+
+
+def _rule_lookup(key, compute):
+    store = getattr(_attendance_rule_cache, "store", None)
+    if store is None:
+        return compute()
+    if key not in store:
+        store[key] = compute()
+    return store[key]
+
+
 class Attendance(models.Model):
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
     date = models.DateField(default=now)
@@ -1662,7 +1786,11 @@ class Attendance(models.Model):
         except Exception:
             branch_specific = True
 
-        for holiday in Holiday.objects.filter(holiday_date=self.date).select_related('holiday_calendar__branch'):
+        holidays = _rule_lookup(("holidays", self.date), lambda: list(
+            Holiday.objects.filter(holiday_date=self.date, is_active=True)
+            .select_related('holiday_calendar__branch').prefetch_related('branches')
+        ))
+        for holiday in holidays:
             if not branch_specific or holiday.is_applicable_to_branch(branch):
                 if holiday.is_applicable_to_employee(self.employee):
                     return holiday
@@ -1670,11 +1798,11 @@ class Attendance(models.Model):
 
     def get_half_day_scenario(self, branch):
         '''Get half-day scenario for this branch on this date'''
-        scenario = HalfDayScenario.objects.filter(
+        scenario = _rule_lookup(("half-day", branch.pk, self.date), lambda: HalfDayScenario.objects.filter(
             branch=branch,
             scenario_date=self.date,
             is_approved=True
-        ).first()
+        ).first())
         
         return scenario
     
@@ -1692,14 +1820,22 @@ class Attendance(models.Model):
             # night-shift employee whose off day is Saturday instead of the
             # company's usual Sunday), which takes priority.
             try:
-                ps = PayrollSettings.objects.filter(company=self.employee.company).first()
+                ps = _rule_lookup(("settings", self.employee.company_id), lambda: PayrollSettings.objects.filter(
+                    company=self.employee.company).first())
             except Exception:
                 ps = None
 
             if self.employee.week_off_day is not None:
                 is_weekend = (self.date.weekday() == self.employee.week_off_day)
             else:
-                sunday_only = ps is not None and ps.weekend_days == 'sun'
+                if ps is not None:
+                    sunday_only = ps.weekend_days == 'sun'
+                else:
+                    # No company (or no settings for it): follow the
+                    # companies' rule when they all agree on one.
+                    rules = _rule_lookup(("weekend-rules",), lambda: set(
+                        PayrollSettings.objects.values_list('weekend_days', flat=True)))
+                    sunday_only = rules == {'sun'}
                 is_weekend = (self.date.weekday() == 6) if sunday_only else (self.date.weekday() >= 5)
             if is_weekend:
                 self.status = "Weekend"
@@ -2272,6 +2408,9 @@ class AuditLog(models.Model):
         OFFBOARDING_RESTORED = "offboarding_restored", "Offboarding restored"
         ADVANCE_UPDATED = "advance_updated", "Advance updated"
         ADVANCE_DELETED = "advance_deleted", "Advance deleted"
+        EMPLOYEE_CHANGE_REQUESTED = "employee_change_requested", "Employee change requested"
+        EMPLOYEE_CHANGE_APPROVED = "employee_change_approved", "Employee change approved"
+        EMPLOYEE_CHANGE_REJECTED = "employee_change_rejected", "Employee change rejected"
 
     actor = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="audit_logs")
     action = models.CharField(max_length=40, choices=Action.choices, db_index=True)

@@ -53,7 +53,7 @@
                     {% for l in leaves %}
                     <tr>
                         <td class="fw-semibold" data-label="Employee">{{ l.employee.first_name }}</td>
-                        <td data-label="Leave Type">{{ l.get_leave_type_display }}</td>
+                        <td data-label="Leave Type">{{ l.get_leave_type_display|default:"—" }}</td>
                         <td data-label="Start">{{ l.start_date }}</td>
                         <td data-label="End">{{ l.end_date }}</td>
                         <td data-label="Total Days">{{ l.total_days }}</td>
@@ -114,6 +114,10 @@
             <form method="POST">
                 <div class="modal-body">
                     {% csrf_token %}
+                    {% if applying_for_self %}
+                    <p class="mb-3"><span class="text-muted">Applying for:</span>
+                      <b>{% if own_employee %}{{ own_employee.first_name }} {{ own_employee.last_name }} ({{ own_employee.employee_code }}){% else %}— your login has no employee record{% endif %}</b></p>
+                    {% endif %}
                     {{ form.as_p }}
                 </div>
 

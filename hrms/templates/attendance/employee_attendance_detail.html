@@ -188,7 +188,7 @@
                                 <th>Out Time</th>
                                 <th>Working Hours</th>
                                 <th>Status</th>
-                                <th>Raise Approval</th>
+                                <th>Raise Attendance</th>
                                 <th>Raise Comp-Off</th>
                             </tr>
                         </thead>
@@ -218,18 +218,18 @@
                                         <span class="badge bg-secondary">{{ record.status }}</span>
                                     {% endif %}
                                 </td>
-                                 <td><button class="btn btn-warning btn-sm"
+                                 <td>{% if can_raise_correction %}<button class="btn btn-warning btn-sm"
     onclick="openCorrectionModal('{{ record.id }}', '{{ record.in_time }}', '{{ record.out_time }}', '{{ record.date }}')">
-    Raise an Approval
-</button>
+    Raise Attendance
+</button>{% else %}<span class="text-muted">&mdash;</span>{% endif %}
 </td>
 <td>
- <button
+ {% if can_raise_compoff %}<button
                         class="btn btn-info btn-sm"
                         onclick="openCompOffModal('{{ record.employee.id }}', '{{ record.date }}')"
                       >
                         Raise Comp-Off
-                      </button>
+                      </button>{% else %}<span class="text-muted">&mdash;</span>{% endif %}
 </td>
                             </tr>
                             {% empty %}

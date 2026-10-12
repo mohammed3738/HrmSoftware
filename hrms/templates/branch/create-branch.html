@@ -1,4 +1,5 @@
 {% extends 'base2.html' %} {% block body %} {% load static %}
+{% load custom_filters %}
 
 <script>
   function downloadBranches() {
@@ -362,6 +363,7 @@
                       >
                         <i class="ti ti-edit me-2"></i> Edit
                       </a>
+                      {% if request.user|has_feature:"archive_records:edit" %}
                       {% if branch.is_active %}
                       <a
                         class="dropdown-item text-danger"
@@ -378,6 +380,7 @@
                       >
                         <i class="ti ti-rotate me-2"></i> Restore
                       </a>
+                      {% endif %}
                       {% endif %}
                     </div>
                   </div>

@@ -56,6 +56,7 @@ GOLDEN_TABLE = {
     ("employee_records", "create"): STAFF,
     ("employee_records", "edit"): STAFF,
     ("employee_delete", "edit"): NOT_HR,
+    ("employee_change_approval", "approve"): NOT_HR,
     ("department_management", "view"): STAFF,
     ("department_management", "edit"): STAFF,
     ("offboarding", "view"): STAFF,
@@ -73,16 +74,17 @@ GOLDEN_TABLE = {
     ("attendance_data", "edit"): STAFF,
     ("attendance_review", "view"): STAFF,
     ("attendance_review", "edit"): NOT_HR,
+    ("attendance_register", "view"): NOT_HR,
     ("shift_roster", "view"): STAFF,
     ("shift_roster", "edit"): STAFF,
-    ("attendance_corrections", "view"): STAFF,
+    ("attendance_corrections", "view"): NOT_HR,
     ("attendance_corrections", "approve"): NOT_HR,
 
     # Leave & comp-off -- HR reads balances but approves nothing.
     ("leave_management", "view"): STAFF,
     ("leave_management", "edit"): NOT_HR,
     ("leave_management", "approve"): NOT_HR,
-    ("comp_off", "view"): STAFF,
+    ("comp_off", "view"): NOT_HR,
     ("comp_off", "create"): STAFF,
     ("comp_off", "approve"): NOT_HR,
 
@@ -90,6 +92,7 @@ GOLDEN_TABLE = {
     ("salary_structure", "view"): STAFF,
     ("salary_structure", "create"): STAFF,
     ("salary_structure", "edit"): NOT_HR,
+    ("salary_history", "view"): NOT_HR,
     ("payroll", "view"): NOT_HR,
     ("payroll", "edit"): {"Super Admin", "Payroll Officer"},
     # Advances are payroll's, not HR's. HR still reads their OWN advance --
@@ -98,12 +101,16 @@ GOLDEN_TABLE = {
     ("advances", "edit"): NOT_HR,
 
     # Administration
+    ("company_settings", "view"): NOT_HR,
+    ("company_settings", "edit"): NOT_HR,
     ("company_settings_broadcast", "edit"): NOT_HR,
     ("user_accounts", "edit"): NOT_HR,
     ("admin_dashboard", "view"): STAFF,
     ("announcements", "view"): STAFF,
     ("announcements", "edit"): STAFF,
     ("audit_log", "view"): STAFF,
+    # Archiving / restoring anything is never HR's.
+    ("archive_records", "edit"): NOT_HR,
 }
 
 ALL_GROUPS = ("Super Admin", "Admin", "Payroll Officer", "HR", "HOD", "Employee")

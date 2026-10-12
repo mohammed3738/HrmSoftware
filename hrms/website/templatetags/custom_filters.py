@@ -86,6 +86,17 @@ def has_reportees(user):
 
 
 @register.filter
+def in_group(user, names):
+    """{% if request.user|in_group:"Super Admin,Admin" %} -- for the few
+    pages still gated on role names rather than a feature permission."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if user.is_superuser:
+        return True
+    return user.groups.filter(name__in=[n.strip() for n in names.split(",")]).exists()
+
+
+@register.filter
 def has_employee_profile(user):
     """Is this login linked to an employee record? Gates the self-service
     corners of the nav (own advances, own payslips) that don't need a

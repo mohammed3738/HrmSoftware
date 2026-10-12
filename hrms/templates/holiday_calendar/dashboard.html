@@ -875,13 +875,6 @@
     </style>
     <div class="container-xxl flex-grow-1 container-p-y mt-10     ">
         <!-- Messages -->
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert alert-{% if message.tags %}{{ message.tags }}{% else %}success{% endif %}">
-                    ✓ {{ message }}
-                </div>
-            {% endfor %}
-        {% endif %}
 
         <!-- Page Header -->
         <div class="page-header">
@@ -1085,10 +1078,10 @@
                                         </span>
                                     </td>
                                     <td>
-                                        {% if holiday.is_national %}
-                                            🌍 National
+                                        {% if holiday.branch_names %}
+                                            📍 {{ holiday.branch_names }}
                                         {% else %}
-                                            📍 Regional
+                                            🌍 All branches
                                         {% endif %}
                                     </td>
                                     <td>
@@ -1099,8 +1092,8 @@
                                     <td>
                                         {% if holiday.is_active %}
                                         <button class="btn btn-secondary btn-sm" onclick="editHoliday({{ holiday.id }})">Edit</button>
-                                        <button class="btn btn-danger btn-sm" style="margin-left: 0.25rem;" onclick="deleteHoliday({{ holiday.id }})">Archive</button>
-                                        {% else %}
+                                        {% if request.user|has_feature:"archive_records:edit" %}<button class="btn btn-danger btn-sm" style="margin-left: 0.25rem;" onclick="deleteHoliday({{ holiday.id }})">Archive</button>{% endif %}
+                                        {% elif request.user|has_feature:"archive_records:edit" %}
                                         <button class="btn btn-secondary btn-sm" onclick="restoreHoliday({{ holiday.id }})">Restore</button>
                                         {% endif %}
                                     </td>
@@ -1235,12 +1228,14 @@
                             <td>
                                 {% if ht.is_active %}
                                 <button class="btn btn-secondary btn-sm" onclick="editHolidayType({{ ht.id }})">Edit</button>
+                                {% if request.user|has_feature:"archive_records:edit" %}
                                 <form method="POST" action="{% url 'holiday-type-delete' ht.id %}" style="display:inline;"
                                       onsubmit="return confirm('Archive holiday type \'{{ ht.name|escapejs }}\'? It will be hidden from active use but kept for existing holidays that reference it.')">
                                     {% csrf_token %}
                                     <button type="submit" class="btn btn-danger btn-sm" style="margin-left:0.25rem;">Archive</button>
                                 </form>
-                                {% else %}
+                                {% endif %}
+                                {% elif request.user|has_feature:"archive_records:edit" %}
                                 <form method="POST" action="{% url 'restore-record' 'holidaytype' ht.id %}" style="display:inline;">
                                     {% csrf_token %}
                                     <button type="submit" class="btn btn-secondary btn-sm">Restore</button>
@@ -1382,6 +1377,7 @@
                                 <td>
                                     {% if scenario.is_active %}
                                     <button class="btn btn-secondary btn-sm" onclick="editHalfDay({{ scenario.id }})">Edit</button>
+                                    {% if request.user|has_feature:"archive_records:edit" %}
                                     <form method="POST"
                                         action="{% url 'delete-half-day-scenario' scenario.id %}"
                                         style="display:inline;"
@@ -1389,7 +1385,8 @@
                                         {% csrf_token %}
                                         <button type="submit" class="btn btn-danger btn-sm" style="margin-left:0.25rem;">Archive</button>
                                     </form>
-                                    {% else %}
+                                    {% endif %}
+                                    {% elif request.user|has_feature:"archive_records:edit" %}
                                     <form method="POST" action="{% url 'restore-record' 'halfdayscenario' scenario.id %}" style="display:inline;">
                                         {% csrf_token %}
                                         <button type="submit" class="btn btn-secondary btn-sm">Restore</button>
@@ -1658,9 +1655,27 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-                            <input type="checkbox" name="is_national"> Apply to All Branches (National)
-                        </label>
+                        <label>Branches</label>
+                        <div style="display:flex; gap:1.25rem; flex-wrap:wrap;">
+                            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-weight:normal;">
+                                <input type="radio" id="addBranchAll" name="branch_scope" value="all" checked onchange="toggleBranchSelection('add')"> All branches
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-weight:normal;">
+                                <input type="radio" id="addBranchSelected" name="branch_scope" value="selected" onchange="toggleBranchSelection('add')"> Only selected branches
+                            </label>
+                        </div>
+                        <div id="addBranchSelection" style="display:none; margin-top:0.5rem; max-height:160px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:6px; padding:0.5rem 0.75rem;">
+                            {% for b in holiday_branches %}
+                            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-weight:normal; margin:0.15rem 0;">
+                                <input type="checkbox" name="branches" value="{{ b.id }}" class="add-branch-box"> {{ b.branch_name }}{% if not b.is_active %} <small style="color:#9ca3af;">(archived)</small>{% endif %}
+                            </label>
+                            {% empty %}
+                            <small style="color:#6b7280;">No branches set up yet.</small>
+                            {% endfor %}
+                        </div>
+                        <small style="color:#6b7280; display:block; margin-top:0.25rem;">
+                            Pick "Only selected branches" to give the holiday to, say, Mumbai and Bangalore only; other branches work as usual.
+                        </small>
                     </div>
                     <div class="form-group">
                         <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
@@ -1724,6 +1739,29 @@
                             <option value="optional">Optional</option>
                             <option value="emergency">Emergency</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Branches</label>
+                        <div style="display:flex; gap:1.25rem; flex-wrap:wrap;">
+                            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-weight:normal;">
+                                <input type="radio" id="editBranchAll" name="branch_scope" value="all" onchange="toggleBranchSelection('edit')"> All branches
+                            </label>
+                            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-weight:normal;">
+                                <input type="radio" id="editBranchSelected" name="branch_scope" value="selected" onchange="toggleBranchSelection('edit')"> Only selected branches
+                            </label>
+                        </div>
+                        <div id="editBranchSelection" style="display:none; margin-top:0.5rem; max-height:160px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:6px; padding:0.5rem 0.75rem;">
+                            {% for b in holiday_branches %}
+                            <label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-weight:normal; margin:0.15rem 0;">
+                                <input type="checkbox" name="branches" value="{{ b.id }}" class="edit-branch-box"> {{ b.branch_name }}{% if not b.is_active %} <small style="color:#9ca3af;">(archived)</small>{% endif %}
+                            </label>
+                            {% empty %}
+                            <small style="color:#6b7280;">No branches set up yet.</small>
+                            {% endfor %}
+                        </div>
+                        <small style="color:#6b7280; display:block; margin-top:0.25rem;">
+                            Pick "Only selected branches" to give the holiday to, say, Mumbai and Bangalore only; other branches work as usual.
+                        </small>
                     </div>
                     <div class="form-group">
                         <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
@@ -1806,6 +1844,7 @@
 
     <script>
     (function () {
+        const WEEKEND_DAYS = {{ calendar_weekend_days|default:"[0, 6]"|safe }};  // from the Weekend Days setting
         /* ===================================================
            DATA FROM SERVER
         =================================================== */
@@ -1883,7 +1922,7 @@
                 const halfDay  = findHalfDayForDate(yr, mo + 1, day);
                 let   cls      = isToday ? 'today' : (holiday ? 'holiday' : (halfDay ? 'half-day' : ''));
                 const dow = dateObj.getDay();
-                if (!cls && (dow === 0 || dow === 6)) cls = 'weekend';
+                if (!cls && WEEKEND_DAYS.includes(dow)) cls = 'weekend';
                 const dateStr = `${yr}-${String(mo + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
                 grid.appendChild(makeDayCell(day, cls, dateStr, holiday, halfDay));
             }
@@ -1996,6 +2035,11 @@
            ('add' / 'edit') since both modals live on the same page. */
         let selectedEmployees = { add: {}, edit: {} };
 
+        function toggleBranchSelection(prefix) {
+            const selected = document.getElementById(prefix + 'BranchSelected').checked;
+            document.getElementById(prefix + 'BranchSelection').style.display = selected ? 'block' : 'none';
+        }
+
         function toggleEmployeeSelection(prefix) {
             const appliesToAll = document.getElementById(prefix + 'AppliesToAll').checked;
             document.getElementById(prefix + 'EmployeeSelection').style.display = appliesToAll ? 'none' : 'block';
@@ -2088,6 +2132,15 @@
                     document.getElementById('editHolidayStatus').value = data.status;
                     document.getElementById('editHolidayDesc').value   = data.description || '';
                     document.getElementById('editHolidayForm').action  = `/holiday/${id}/edit/`;
+
+                    const branchIds = (data.branch_ids || []).map(String);
+                    const limited = !data.is_national && branchIds.length > 0;
+                    document.getElementById('editBranchAll').checked = !limited;
+                    document.getElementById('editBranchSelected').checked = limited;
+                    document.querySelectorAll('.edit-branch-box').forEach(box => {
+                        box.checked = branchIds.includes(box.value);
+                    });
+                    toggleBranchSelection('edit');
 
                     document.getElementById('editAppliesToAll').checked = data.applies_to_all_employees;
                     selectedEmployees.edit = {};
@@ -2204,7 +2257,7 @@
             editHalfDay,
             editEarnedLeaves,
             resetHolidaySettings,
-            toggleEmployeeSelection, removeSelectedEmployee,
+            toggleEmployeeSelection, removeSelectedEmployee, toggleBranchSelection,
         });
     })();
     </script>

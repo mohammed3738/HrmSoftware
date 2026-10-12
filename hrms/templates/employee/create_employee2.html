@@ -75,6 +75,12 @@
   <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
   <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Archived</a>
   <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+  <span class="vr mx-1"></span>
+  {% if onboarding_filter == 'pending' %}
+  <a href="?show={{ show|default:'active' }}" class="btn btn-sm btn-warning">Pending onboarding <i class="ri-close-line"></i></a>
+  {% else %}
+  <a href="?show={{ show|default:'active' }}&onboarding=pending" class="btn btn-sm btn-outline-warning">Pending onboarding</a>
+  {% endif %}
 </div>
 
 <!-- Table -->
@@ -86,69 +92,18 @@
           <input type="checkbox" id="selectAll" class="form-check-input"
                  onchange="toggleSelectAll(this)">
         </th>
-        <th>Employee Code</th>
+        <th data-priority="1">Employee Code</th>
         <th>Company</th>
         <th>First Name</th>
         <th>Last Name</th>
         <th>Gender</th>
         <th>Status</th>
+        <th data-priority="2">Onboarding</th>
         <th class="sticky-actions">Actions</th>
       </tr>
     </thead>
     <tbody class="table-border-bottom-0">
-      {% for employee in employees %}
-      <tr>
-        <td>
-          <input type="checkbox" class="form-check-input emp-checkbox"
-                 value="{{ employee.id }}" onchange="updateBulkToolbar()">
-        </td>
-        <td><a href="{% url 'employee_detail' employee.pk %}">{{ employee.employee_code }}</a></td>
-        <td><a href="{% url 'create-company' %}">{{ employee.company }}</a></td>
-        <td class="text-nowrap">
-          {% if employee.photo %}
-          <img src="{{ employee.photo.url }}" alt="" class="rounded-circle me-2" style="width:28px;height:28px;object-fit:cover;">
-          {% endif %}{{ employee.first_name }}
-        </td>
-        <td>{{ employee.last_name }}</td>
-        <td>{{ employee.gender }}</td>
-        <td>
-          {% if employee.status == "Active" %}
-          <p class="mt-4" style="color: #4CBB17"><b>{{ employee.status }}</b></p>
-          {% elif employee.status == "Pending" %}
-          <p class="mt-6" style="color: orange"><b>{{ employee.status }}</b></p>
-          {% elif employee.status == "Archived" %}
-          <p class="mt-6" style="color: #6c757d"><b>{{ employee.status }}</b></p>
-          {% else %}
-          <p class="mt-6" style="color: red"><b>{{ employee.status }}</b></p>
-          {% endif %}
-        </td>
-        <td>
-          <div class="dropdown">
-            <button type="button" class="btn p-0 dropdown-toggle hide-arrow" data-bs-toggle="dropdown">
-              <i class="ri-more-2-line"></i>
-            </button>
-            <div class="dropdown-menu">
-              <a href="{% url 'employee_edit' employee.id %}" class="dropdown-item">
-                <i class="ti ti-edit me-2"></i> Edit
-              </a>
-              {% if employee.status != "Archived" %}
-              {% if can_delete_employees %}
-              <a class="dropdown-item text-danger" href="javascript:void(0);"
-                 onclick="confirmEmployeeDelete({{ employee.id }})">
-                <i class="ri-archive-line me-2"></i> Archive
-              </a>
-              {% endif %}
-              {% else %}
-              <a class="dropdown-item text-success" href="javascript:void(0);"
-                 onclick="restoreEmployee({{ employee.id }})">
-                <i class="ri-refresh-line me-2"></i> Restore
-              </a>
-              {% endif %}
-            </div>
-          </div>
-        </td>
-      </tr>
-      {% endfor %}
+      {# Rows are drawn by DataTables from employee-rows-data below, a page at a time. #}
     </tbody>
   </table>
 </div>
@@ -182,6 +137,53 @@
           </div>
 
           <div class="modal-body">
+            {% if form_errors %}
+            <div class="alert alert-danger py-2 mb-3" id="employeeFormErrors">
+              <div class="fw-semibold mb-1"><i class="ri-error-warning-line me-1"></i>The employee was not saved. Please fix:</div>
+              <ul class="mb-0 ps-3 small">
+                {% for e in form_errors %}
+                <li>
+                  <a href="#" class="alert-link fw-normal" data-error-tab="{{ e.tab }}">{{ e.tab_label }}</a>
+                  {% if e.field %}&rsaquo; <b>{{ e.field }}</b>:{% endif %} {{ e.message }}
+                </li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endif %}
+            {% if is_edit %}
+              {% if pending_change %}
+              <div class="alert alert-warning py-2 small mb-3">
+                <i class="ri-time-line me-1"></i>
+                Changes submitted by {{ pending_change.requested_by.get_full_name|default:pending_change.requested_by.username }}
+                on {{ pending_change.requested_at|date:"d M Y" }} are waiting for approval.
+                {% if needs_approval %}You can submit new changes once they've been approved or rejected.{% endif %}
+              </div>
+              {% endif %}
+              {% if needs_approval %}
+              <div class="alert alert-info py-2 small mb-3">
+                <i class="ri-lock-line me-1"></i>
+                {% if employee_onboarding.complete %}
+                  Onboarding is complete, so
+                {% else %}
+                  The {{ onboarding_edit_days }}-day onboarding window ended on {{ edit_deadline|date:"d M Y" }}, so
+                {% endif %}
+                your changes will be sent to Admin for approval before they're applied.
+              </div>
+              {% endif %}
+              {% if employee_onboarding %}
+              <div class="border rounded p-3 mb-3">
+                {% include "employee/_onboarding_bar.html" with progress=employee_onboarding %}
+                {% if not employee_onboarding.complete %}
+                <div class="small text-muted mt-2">
+                  <b>Still missing:</b> {{ employee_onboarding.missing|join:", " }}
+                </div>
+                {% if direct_edit_until %}
+                <div class="small text-muted">Direct edits allowed until {{ direct_edit_until|date:"d M Y" }}; after that, changes need approval.</div>
+                {% endif %}
+                {% endif %}
+              </div>
+              {% endif %}
+            {% endif %}
             <!-- Tabs -->
             <ul class="nav nav-underline mb-3" role="tablist">
               <li class="nav-item">
@@ -191,7 +193,7 @@
                   data-bs-target="#basic-info"
                   type="button"
                 >
-                  Basic Information
+                  Basic Information{% if "basic-info" in error_tabs %} <span class="badge rounded-pill bg-danger ms-1">!</span>{% endif %}
                 </button>
               </li>
               <li class="nav-item">
@@ -201,7 +203,7 @@
                   data-bs-target="#previous-employment"
                   type="button"
                 >
-                  Previous Employment
+                  Previous Employment{% if "previous-employment" in error_tabs %} <span class="badge rounded-pill bg-danger ms-1">!</span>{% endif %}
                 </button>
               </li>
               <li class="nav-item">
@@ -211,7 +213,7 @@
                   data-bs-target="#attachment"
                   type="button"
                 >
-                  KYC
+                  KYC{% if "attachment" in error_tabs %} <span class="badge rounded-pill bg-danger ms-1">!</span>{% endif %}
                 </button>
               </li>
             </ul>
@@ -780,6 +782,12 @@
 
               <!-- ============= PREVIOUS EMPLOYMENT TAB ============= -->
               <div class="tab-pane fade" id="previous-employment">
+                  <div class="form-check mb-3">
+                    {{ form.is_fresher|add_class:"form-check-input" }}
+                    <label class="form-check-label" for="{{ form.is_fresher.id_for_label }}">
+                      Fresher &mdash; no previous employment
+                    </label>
+                  </div>
 
                   {{ formset.management_form }}
 
@@ -865,6 +873,10 @@
               <!-- ============= ATTACHMENT TAB ============= -->
               <div class="tab-pane fade" id="attachment">
                 {{ attachment_formset.management_form }}
+                <div class="alert alert-secondary py-2 small mb-3">
+                  <i class="ri-information-line me-1"></i>
+                  Required for onboarding: <b>Aadhaar card</b> and <b>PAN card</b>. Resume, offer letter and other documents are optional.
+                </div>
 
                 <div class="table-responsive">
                   <table class="table table-bordered" id="attachmentTable">
@@ -927,8 +939,8 @@
                           {% if f.instance.pk and f.instance.file %}
                             <small class="d-block mt-1">
                               Existing:
-                              <a href="{{ f.instance.file.url }}" target="_blank">
-                                {{ f.instance.file.name }}
+                              <a href="{% url 'download_attachment' f.instance.pk %}" target="_blank" rel="noopener">
+                                {{ f.instance.filename }}
                               </a>
                             </small>
                           {% endif %}
@@ -1015,8 +1027,8 @@
         >
           Cancel
         </button>
-<button type="submit" class="btn btn-primary">
-  {% if is_edit %} Update {% else %} Save {% endif %}
+<button type="submit" class="btn btn-primary" {% if needs_approval and pending_change %}disabled{% endif %}>
+  {% if needs_approval %} Submit for approval {% elif is_edit %} Update {% else %} Save {% endif %}
 </button>
           </div>
 
@@ -1037,7 +1049,7 @@
             >
             <small class="text-muted d-block mt-1">
               Existing:
-              <a href="{{ doc.file.url }}" target="_blank">
+              <a href="{% url 'download_previous_attachment' doc.pk %}" target="_blank" rel="noopener">
                 {{ doc.file.name|cut:"previous_employment_docs/" }}
               </a>
             </small>
@@ -1501,6 +1513,17 @@ function toggleOtherField(selectEl) {
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   new bootstrap.Modal(document.getElementById("employeeModal")).show();
+
+  // Errors: open the first tab that has one, and let each listed error
+  // jump to its tab.
+  function showTab(tab) {
+    const btn = document.querySelector('#employeeModal [data-bs-target="#' + tab + '"]');
+    if (btn) bootstrap.Tab.getOrCreateInstance(btn).show();
+  }
+  document.querySelectorAll("#employeeFormErrors [data-error-tab]").forEach(function (link) {
+    link.addEventListener("click", function (e) { e.preventDefault(); showTab(link.dataset.errorTab); });
+  });
+  {% if error_tabs %}showTab("{{ error_tabs|first }}");{% endif %}
 });
 </script>
 {% endif %}
@@ -1525,9 +1548,54 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 
+{{ employees|json_script:"employee-rows-data" }}
 <script>
 document.addEventListener("DOMContentLoaded", function () {
+    const rows = JSON.parse(document.getElementById("employee-rows-data").textContent);
+    const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+    const urlFor = (pattern, id) => pattern.replace("999999999", id);
+    const DETAIL_URL = "{% url 'employee_detail' 999999999 %}";
+    const EDIT_URL = "{% url 'employee_edit' 999999999 %}";
+    const COMPANY_URL = "{% url 'create-company' %}";
+    const STATUS_COLOR = {Active: "#4CBB17", Pending: "orange", Archived: "#6c757d"};
+
+    function actions(r) {
+      let html = `<a href="${urlFor(EDIT_URL, r.id)}" class="dropdown-item"><i class="ti ti-edit me-2"></i> Edit</a>`;
+      {% if can_delete_employees %}
+      if (r.status !== "Archived") {
+        html += `<a class="dropdown-item text-danger" href="javascript:void(0);" onclick="confirmEmployeeDelete(${r.id})"><i class="ri-archive-line me-2"></i> Archive</a>`;
+      } else {
+        html += `<a class="dropdown-item text-success" href="javascript:void(0);" onclick="restoreEmployee(${r.id})"><i class="ri-refresh-line me-2"></i> Restore</a>`;
+      }
+      {% endif %}
+      return `<div class="dropdown"><button type="button" class="btn p-0 dropdown-toggle hide-arrow" data-bs-toggle="dropdown"><i class="ri-more-2-line"></i></button><div class="dropdown-menu">${html}</div></div>`;
+    }
+
+    function onboarding(r) {
+      const bar = r.complete ? "bg-success" : (r.percent >= 60 ? "bg-info" : "bg-warning");
+      const title = r.complete ? "" : ` title="Missing: ${esc(r.missing)}"`;
+      return `<div class="d-flex align-items-center gap-2" style="min-width:120px"${title}>`
+        + `<div class="progress flex-grow-1" style="height:6px"><div class="progress-bar ${bar}" role="progressbar" style="width:${r.percent}%" aria-valuenow="${r.percent}" aria-valuemin="0" aria-valuemax="100"></div></div>`
+        + `<small class="fw-semibold${r.complete ? " text-success" : ""}">${r.percent}%</small></div>`;
+    }
+
     let table = $('.datatable').DataTable({
+        data: rows,
+        deferRender: true,   // only the visible page's rows are built
+        columns: [
+          { data: "id", orderable: false, render: (id) => `<input type="checkbox" class="form-check-input emp-checkbox" value="${id}" onchange="updateBulkToolbar()">` },
+          { data: "code", render: (v, type, r) => type === "display" ? `<a href="${urlFor(DETAIL_URL, r.id)}">${esc(v)}</a>` : v },
+          { data: "company", render: (v, type) => type === "display" ? `<a href="${COMPANY_URL}">${esc(v)}</a>` : v },
+          { data: "first", className: "text-nowrap", render: (v, type, r) => type === "display"
+              ? (r.photo ? `<img src="${esc(r.photo)}" alt="" class="rounded-circle me-2" style="width:28px;height:28px;object-fit:cover;">` : "") + esc(v) : v },
+          { data: "last", render: (v, type) => type === "display" ? esc(v) : v },
+          { data: "gender", render: (v, type) => type === "display" ? esc(v) : v },
+          { data: "status", render: (v, type) => type === "display"
+              ? `<p class="${v === "Active" ? "mt-4" : "mt-6"}" style="color: ${STATUS_COLOR[v] || "red"}"><b>${esc(v)}</b></p>` : v },
+          { data: "percent", render: (v, type, r) => type === "display" ? onboarding(r) : v },
+          { data: null, orderable: false, searchable: false, render: (v, type, r) => type === "display" ? actions(r) : "" },
+        ],
+        order: [],
         pageLength: 10,
         responsive: true,
         language: { emptyTable: "No data available" },
@@ -1780,7 +1848,8 @@ function applyBulkAction() {
   .then(r => r.json())
   .then(data => {
     if (data.success) {
-      alert(`Updated ${data.updated} employee(s) successfully.`);
+      alert(`Updated ${data.updated} employee(s) successfully.` + (data.skipped_locked ? `
+${data.skipped_locked} skipped: their onboarding is locked, so changes need approval (edit them individually).` : ""));
       location.reload();
     } else {
       alert('Error: ' + (data.error || 'Unknown error'));

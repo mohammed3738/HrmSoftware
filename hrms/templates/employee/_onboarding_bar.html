@@ -1,0 +1,23 @@
+{# Onboarding progress bar. Pass progress=<onboarding_progress() dict>; compact=True for table cells. #}
+{% with p=progress.percent %}
+{% if compact %}
+<div class="d-flex align-items-center gap-2" style="min-width:120px" title="{% if progress.complete %}Onboarding complete{% else %}Missing: {{ progress.missing|join:', ' }}{% endif %}">
+  <div class="progress flex-grow-1" style="height:6px">
+    <div class="progress-bar {% if progress.complete %}bg-success{% elif p >= 60 %}bg-info{% else %}bg-warning{% endif %}"
+         role="progressbar" style="width:{{ p }}%" aria-valuenow="{{ p }}" aria-valuemin="0" aria-valuemax="100"></div>
+  </div>
+  <small class="fw-semibold {% if progress.complete %}text-success{% endif %}">{{ p }}%</small>
+</div>
+{% else %}
+<div class="d-flex justify-content-between align-items-center mb-1">
+  <span class="fw-semibold">Onboarding</span>
+  <span class="fw-semibold {% if progress.complete %}text-success{% endif %}">
+    {% if progress.complete %}<i class="ri-checkbox-circle-fill"></i> Complete{% else %}{{ p }}% complete <span class="text-muted fw-normal">&middot; {{ progress.remaining }}% left</span>{% endif %}
+  </span>
+</div>
+<div class="progress" style="height:10px">
+  <div class="progress-bar {% if progress.complete %}bg-success{% elif p >= 60 %}bg-info{% else %}bg-warning{% endif %}"
+       role="progressbar" style="width:{{ p }}%" aria-valuenow="{{ p }}" aria-valuemin="0" aria-valuemax="100"></div>
+</div>
+{% endif %}
+{% endwith %}

@@ -91,7 +91,7 @@
                       data-bs-toggle="modal" data-bs-target="#departmentModal">
                 <i class="ri-edit-line"></i> Edit
               </button>
-              {% if dept.is_active %}
+              {% if dept.is_active and request.user|has_feature:"archive_records:edit" %}
               <form method="post" action="{% url 'department-delete' dept.id %}" class="d-inline"
                     onsubmit="return confirm('Archive this department? Employees keep their current reporting person.');">
                 {% csrf_token %}

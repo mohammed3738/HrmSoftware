@@ -1,0 +1,66 @@
+{% extends 'base2.html' %} {% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+  <div class="card">
+    <div class="card-body">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h5 class="mb-0">Employee Change Approvals</h5>
+        <div class="d-flex gap-2 flex-wrap">
+          {% for value, label in status_choices %}
+          <a href="?status={{ value }}" class="btn btn-sm {% if status == value %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ label }}</a>
+          {% endfor %}
+          <a href="?status=all" class="btn btn-sm {% if status == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+        </div>
+      </div>
+      <p class="text-muted small">
+        Edits to an employee whose onboarding is complete, or whose 15-day onboarding window has passed,
+        are held here until an approver accepts or rejects them.
+      </p>
+
+      <div class="table-responsive">
+        <table class="table table-stack align-middle">
+          <thead>
+            <tr>
+              <th>Employee</th>
+              <th>Changes</th>
+              <th>Requested by</th>
+              <th>Requested</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for cr in change_requests %}
+            <tr>
+              <td data-label="Employee">
+                <a href="{% url 'employee_detail' cr.employee.pk %}">{{ cr.employee.employee_code }}</a>
+                {{ cr.employee.first_name }} {{ cr.employee.last_name }}
+              </td>
+              <td data-label="Changes" class="small">
+                {% if cr.field_changes %}{{ cr.field_changes|length }} field{{ cr.field_changes|length|pluralize }}{% endif %}
+                {% if cr.photo or cr.clear_photo %}{% if cr.field_changes %} &middot; {% endif %}photo{% endif %}
+                {% if cr.previous_employment %} &middot; previous employment{% endif %}
+                {% if cr.files.all or cr.documents_to_delete %} &middot; documents{% endif %}
+              </td>
+              <td data-label="Requested by">{{ cr.requested_by.get_full_name|default:cr.requested_by.username|default:"—" }}</td>
+              <td data-label="Requested">{{ cr.requested_at|date:"d M Y H:i" }}</td>
+              <td data-label="Status">
+                {% if cr.status == "pending" %}<span class="badge bg-label-warning">Pending</span>
+                {% elif cr.status == "approved" %}<span class="badge bg-label-success">Approved</span>
+                {% else %}<span class="badge bg-label-danger">Rejected</span>{% endif %}
+              </td>
+              <td data-label="">
+                <a href="{% url 'employee_change_request_detail' cr.pk %}" class="btn btn-sm {% if cr.status == 'pending' and can_approve_changes %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                  {% if cr.status == "pending" and can_approve_changes %}Review{% else %}View{% endif %}
+                </a>
+              </td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="6" class="text-center text-muted py-4">No change requests here.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

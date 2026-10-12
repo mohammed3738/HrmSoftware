@@ -23,7 +23,7 @@ Expects: leave_requests, compoff_requests, correction_requests.
           {% for l in leave_requests %}
           <tr data-row-id="leave-{{ l.id }}">
             <td class="fw-medium">{{ l.employee.first_name }} {{ l.employee.last_name }}</td>
-            <td><span class="badge bg-label-primary">{{ l.get_leave_type_display }}</span></td>
+            <td>{% if l.leave_type %}<span class="badge bg-label-primary">{{ l.get_leave_type_display }}</span>{% else %}—{% endif %}</td>
             <td class="text-muted">{{ l.start_date|date:"d M" }} – {{ l.end_date|date:"d M Y" }}</td>
             <td>{{ l.total_days }}</td>
             <td class="text-muted small">{{ l.reason|default:"—"|truncatechars:60 }}</td>

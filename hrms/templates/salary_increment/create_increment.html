@@ -1,4 +1,5 @@
 {% extends 'base2.html' %}
+{% load custom_filters %}
 {% block body %}
 
 <script>
@@ -133,6 +134,7 @@
         <i class="ri-edit-line me-2"></i> Edit
       </a>
     </li>
+    {% if request.user|has_feature:"archive_records:edit" %}
     {% if inc.is_active %}
     <li>
       <a class="dropdown-item text-danger" href="javascript:void(0)"
@@ -147,6 +149,7 @@
         <i class="ri-refresh-line me-2"></i> Restore
       </a>
     </li>
+    {% endif %}
     {% endif %}
   </ul>
 </div>

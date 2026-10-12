@@ -35,6 +35,8 @@
 
   .company { font-size: 16pt; font-weight: bold; text-align: center; padding-top: 8px; }
   .address { text-align: center; padding-top: 4px; padding-bottom: 12px; }
+  .logo { text-align: center; padding-top: 10px; }
+  .logo img { height: 55px; width: auto; }
   .title { font-weight: bold; text-align: center; padding: 4px; }
 
   .lbl { font-weight: bold; }
@@ -47,6 +49,7 @@
 
   .net-amount { border-top: 1px solid #000; border-bottom: 1px solid #000; }
   .underline2 { font-size: 1pt; line-height: 1pt; padding: 0 4px 0 0; }
+  .words { padding: 10px 4px 0 4px; text-align: right; }
   .note { text-align: center; padding-top: 30px; padding-bottom: 10px; }
 
   /* On screen the month-by-month table scrolls sideways inside the slip on
@@ -76,7 +79,12 @@
 <div class="slip">
 
 <table>
+  {% if company.logo %}
+  <tr><td class="bl br bt logo"><img src="{{ company.logo.url }}" alt="{{ company.name }}" height="55"></td></tr>
+  <tr><td class="bl br company">{{ company.name }}</td></tr>
+  {% else %}
   <tr><td class="bl br bt company">{{ company.name }}</td></tr>
+  {% endif %}
   <tr><td class="bl br address">{{ company.address|default:"&nbsp;" }}</td></tr>
   <tr><td class="bl br bt bb title">SALARY STATEMENT</td></tr>
 </table>
@@ -163,6 +171,10 @@
     <td class="underline2">&nbsp;</td>
     <td class="br underline2"><div class="bb">&nbsp;</div></td>
   </tr>
+</table>
+
+<table>
+  <tr><td class="bl br words">Amount in words: <b>{{ net_total_words }}</b></td></tr>
 </table>
 
 <table>

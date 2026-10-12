@@ -16,6 +16,7 @@ from datetime import datetime,timedelta,time
 from django.http import JsonResponse, HttpResponseBadRequest
 from django.utils.timezone import now
 import json
+import logging
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth import authenticate, login, logout
 from datetime import date, timedelta
@@ -35,6 +36,14 @@ import openpyxl
 from .services import *  # from previous services.py
 from .services.roles import assign_employee_role
 from .services.audit import log_audit, snapshot, diff
+from .services.onboarding import (
+    bulk_onboarding_progress, onboarding_progress, onboarding_edit_deadline, ONBOARDING_EDIT_DAYS,
+)
+from .services.attendance_rules import exclude_finalized, finalized_q, reapply_weekend_rule
+from .services.employee_changes import (
+    ChangeRequestError, build_change_request, apply_change_request, reject_change_request,
+    can_approve_changes, edit_needs_approval, pending_request_for,
+)
 from .utils.payroll_lock import (
     get_locking_run,
     get_locking_run_for_period,
@@ -96,6 +105,7 @@ def company_details_api(request, pk):
         "ptec_number": company.ptec_number,
         "esic_number": company.esic_number,
         "status": company.status,
+        "logo_url": company.logo.url if company.logo else "",
     }
 
     return JsonResponse(data)
@@ -110,6 +120,7 @@ def _can_assign_roles(user):
 
 @login_required
 @feature_required("employee_delete", action="edit")
+@feature_required("archive_records", action="edit")
 def delete_employee(request, employee_id):
     employee = get_object_or_404(Employee, id=employee_id)
 
@@ -196,7 +207,7 @@ def parse_time(time_value):
     except (ValueError, TypeError):
         pass
     
-    print(f"⚠️ Could not parse time value: {time_value} (type: {type(time_value).__name__})")
+    logging.getLogger(__name__).warning("Could not parse time value %r (%s)", time_value, type(time_value).__name__)
     return None
 
 
@@ -217,8 +228,9 @@ def fill_holiday_attendance_for_month(year, month):
     # Get all holidays in month
     all_holidays = Holiday.objects.filter(
         holiday_date__gte=first_day,
-        holiday_date__lte=last_day
-    ).select_related('holiday_calendar__branch')
+        holiday_date__lte=last_day,
+        is_active=True,
+    ).select_related('holiday_calendar__branch').prefetch_related('branches')
 
     # Get half-day scenarios with branch info
     half_day_scenarios = HalfDayScenario.objects.filter(
@@ -241,18 +253,9 @@ def fill_holiday_attendance_for_month(year, month):
 
         # Determine which holiday dates apply to this employee
         for holiday in all_holidays:
-            if holiday.is_national:
-                # National holidays apply to everyone always
+            # Branch-specific setting OFF: every holiday applies to all.
+            if not branch_specific or holiday.is_applicable_to_branch(employee.branch):
                 dates_to_create.add(holiday.holiday_date)
-            elif not branch_specific:
-                # Branch-specific setting is OFF — all holidays apply to all
-                dates_to_create.add(holiday.holiday_date)
-            else:
-                # Branch-specific ON — only apply if branch matches
-                # holiday_calendar is None means the holiday has no branch restriction
-                cal = holiday.holiday_calendar
-                if cal is None or (employee.branch_id and cal.branch_id == employee.branch_id):
-                    dates_to_create.add(holiday.holiday_date)
         
         # Half-day: None in branch_ids means "all branches" scenario
         for hd_date, branch_ids in half_day_by_date.items():
@@ -393,8 +396,7 @@ def upload_attendance_excel(request):
     try:
         return _do_import_attendance(request)
     except Exception as e:
-        import traceback
-        print(f"[ATTENDANCE IMPORT FATAL]\n{traceback.format_exc()}")
+        logging.getLogger(__name__).exception("Attendance import failed")
         return JsonResponse({"success": False, "error": str(e)})
 
 
@@ -555,8 +557,12 @@ def _process_attendance_rows(df_chunk):
     # date, so the recalc cascades through every date this chunk touched
     # for them), after the loop.
     touched_employees = {}
+    employees_by_code = {}
 
-    with suspend_leave_balance_auto_recalc():
+    # One transaction for the chunk (a commit per row was most of the
+    # upload time), with a savepoint per row so one bad row is still just
+    # skipped and reported, never the whole chunk.
+    with suspend_leave_balance_auto_recalc(), transaction.atomic():
         for row_idx, row in df_chunk.iterrows():
             row_num = row_idx + 2
             try:
@@ -572,7 +578,9 @@ def _process_attendance_rows(df_chunk):
                 if emp_code.endswith(".0"):
                     emp_code = emp_code[:-2]
 
-                employee = Employee.objects.filter(employee_code=emp_code).first()
+                if emp_code not in employees_by_code:
+                    employees_by_code[emp_code] = Employee.objects.filter(employee_code=emp_code).first()
+                employee = employees_by_code[emp_code]
                 if not employee:
                     errors.append(f"Row {row_num}: Employee code '{emp_code}' not found")
                     skipped_count += 1
@@ -619,15 +627,16 @@ def _process_attendance_rows(df_chunk):
                 # status override (status_overridden) is still preserved either
                 # way — calculate_status() skips recomputation for those rows
                 # regardless of what in/out time gets written here.
-                try:
-                    attendance = Attendance.objects.get(employee=employee, date=att_date)
-                    created = False
-                except Attendance.DoesNotExist:
-                    attendance = Attendance(employee=employee, date=att_date)
-                    created = True
-                attendance.in_time = in_time
-                attendance.out_time = out_time
-                attendance.save()
+                with transaction.atomic():  # savepoint: a failing row rolls back alone
+                    try:
+                        attendance = Attendance.objects.get(employee=employee, date=att_date)
+                        created = False
+                    except Attendance.DoesNotExist:
+                        attendance = Attendance(employee=employee, date=att_date)
+                        created = True
+                    attendance.in_time = in_time
+                    attendance.out_time = out_time
+                    attendance.save()
 
                 touched = touched_employees.get(employee.id)
                 if touched is None or att_date < touched[1]:
@@ -639,13 +648,13 @@ def _process_attendance_rows(df_chunk):
                     updated_count += 1
 
             except Exception as e:
-                import traceback
-                print(f"[ATTENDANCE] Row {row_num} error: {traceback.format_exc()}")
+                logging.getLogger(__name__).exception("Attendance upload row %s failed", row_num)
                 errors.append(f"Row {row_num}: {e}")
                 skipped_count += 1
 
-    for employee, min_date in touched_employees.values():
-        recalculate_leave_balance_for_employee(employee, min_date)
+    with transaction.atomic(), attendance_rule_cache():
+        for employee, min_date in touched_employees.values():
+            recalculate_leave_balance_for_employee(employee, min_date)
 
     return created_count, updated_count, skipped_count, errors
 
@@ -790,13 +799,21 @@ def _recalculate_attendance_queryset(request):
     if date_to:
         qs = qs.filter(date__lte=date_to)
 
-    for run in PayrollRun.objects.filter(status=PayrollRun.STATUS_FINALIZED):
-        locked = Q(date__gte=run.start_date, date__lte=run.end_date)
-        if run.company_id:
-            locked &= Q(employee__company_id=run.company_id)
-        qs = qs.exclude(locked)
+    return exclude_finalized(qs).order_by("id")
 
-    return qs.order_by("id")
+
+def _locked_attendance_count(request):
+    """How many days in the requested range sit inside a finalized payroll
+    run and so are left as they are."""
+    qs = Attendance.objects.all()
+    company = get_company_filter(request.user)
+    if company:
+        qs = qs.filter(employee__company=company)
+    if request.POST.get("date_from"):
+        qs = qs.filter(date__gte=request.POST["date_from"])
+    if request.POST.get("date_to"):
+        qs = qs.filter(date__lte=request.POST["date_to"])
+    return qs.filter(finalized_q()).count()
 
 
 @login_required
@@ -809,6 +826,7 @@ def recalculate_attendance_init(request):
     return JsonResponse({
         "success": True,
         "total": total,
+        "locked": _locked_attendance_count(request),
         "chunk_size": ATTENDANCE_RECALC_CHUNK_SIZE,
     })
 
@@ -834,15 +852,16 @@ def recalculate_attendance_chunk(request):
     chunk = list(qs[offset: offset + ATTENDANCE_RECALC_CHUNK_SIZE])
 
     touched_employees = {}
-    with suspend_leave_balance_auto_recalc():
+    with suspend_leave_balance_auto_recalc(), transaction.atomic():
         for attendance in chunk:
             attendance.save()  # triggers calculate_status() via Attendance.save()
             touched = touched_employees.get(attendance.employee_id)
             if touched is None or attendance.date < touched[1]:
                 touched_employees[attendance.employee_id] = (attendance.employee, attendance.date)
 
-    for employee, min_date in touched_employees.values():
-        recalculate_leave_balance_for_employee(employee, min_date)
+    with transaction.atomic(), attendance_rule_cache():
+        for employee, min_date in touched_employees.values():
+            recalculate_leave_balance_for_employee(employee, min_date)
 
     return JsonResponse({"success": True, "processed_in_chunk": len(chunk)})
 
@@ -1085,8 +1104,9 @@ def bulk_override_attendance_status(request):
                 if touched is None or attendance.date < touched[1]:
                     touched_employees[attendance.employee_id] = (attendance.employee, attendance.date)
 
-    for employee, min_date in touched_employees.values():
-        recalculate_leave_balance_for_employee(employee, min_date)
+    with transaction.atomic(), attendance_rule_cache():
+        for employee, min_date in touched_employees.values():
+            recalculate_leave_balance_for_employee(employee, min_date)
 
     return JsonResponse({"success": True, "status": new_status, "updated": updated, "failed": failed})
 
@@ -1298,6 +1318,7 @@ def edit_shift_assignment(request, pk):
 @login_required
 @feature_required("shift_roster", action="edit")
 @require_http_methods(["POST"])
+@feature_required("archive_records", action="edit")
 def delete_shift_assignment(request, pk):
     assignment = get_object_or_404(ShiftAssignment.objects.select_related("employee"), id=pk)
     company_filter = get_company_filter(request.user)
@@ -1341,6 +1362,16 @@ def attendance_upload_progress(request, upload_id):
         return JsonResponse({"progress": 0, "status": "not_found"})
 
     
+def _attendance_years(qs=None):
+    """Years that have attendance, newest first, as date(year, 1, 1) --
+    what `.dates("date", "year")` returned, but from MIN/MAX on the date
+    index instead of a DISTINCT over every attendance row ever recorded."""
+    bounds = (qs if qs is not None else Attendance.objects.all()).aggregate(lo=Min("date"), hi=Max("date"))
+    if not bounds["lo"]:
+        return []
+    return [date(y, 1, 1) for y in range(bounds["hi"].year, bounds["lo"].year - 1, -1)]
+
+
 @login_required
 @feature_required("attendance_review", action="view")
 def attendance_list(request):
@@ -1423,7 +1454,7 @@ def attendance_list(request):
     # Year/month dropdown options, drawn from actual attendance history so
     # the dropdown never offers an empty month (page has no company
     # scoping, so this spans every company same as the records table).
-    years = Attendance.objects.dates('date', 'year', order='DESC')
+    years = _attendance_years()
     months = [{'value': m, 'name': calendar.month_name[m]} for m in range(1, 13)]
 
     context = {
@@ -1438,11 +1469,21 @@ def attendance_list(request):
         "months": months,
         "selected_year": year_str or "",
         "selected_month": month_str or "",
+        # HR and employees raise corrections / comp-offs for themselves only.
+        "raise_correction_for_others": _can_raise_for_others(user, "attendance_corrections"),
+        "raise_compoff_for_others": _can_raise_for_others(user, "comp_off"),
+        "own_employee_id": getattr(getattr(user, "employee_profile", None), "pk", None),
     }
     return render(request, "attendance/today.html", context)
 
 
 def _payroll_settings_with_cycle(company):
+    from website.models import _rule_lookup  # cached only inside a bulk run
+    return _rule_lookup(("settings-with-cycle", company.pk if company else None),
+                        lambda: _find_payroll_settings_with_cycle(company))
+
+
+def _find_payroll_settings_with_cycle(company):
     """The PayrollSettings whose 27th-to-26th style cycle applies to `company`.
     Falls back to the cycle most companies use when the company has none
     configured, or when there is no company at all (an employee not yet
@@ -1606,6 +1647,10 @@ def employee_attendance_detail(request, employee_id):
         "page_size": page_size,
         "page_size_choices": PAGE_SIZE_CHOICES,
     }
+    own = getattr(request.user, "employee_profile", None)
+    is_own = own is not None and own.pk == employee.pk
+    context["can_raise_correction"] = is_own or _can_raise_for_others(request.user, "attendance_corrections")
+    context["can_raise_compoff"] = is_own or _can_raise_for_others(request.user, "comp_off")
     return render(request, "attendance/employee_attendance_detail.html", context)
 
 
@@ -1898,26 +1943,28 @@ def attendance_correction_requests_list(request):
         or has_feature_permission(request.user, "attendance_corrections", "view")
     )
     own_employee = getattr(request.user, "employee_profile", None)
-    if not can_see_all and own_employee is None:
-        raise PermissionDenied
 
     # Base queryset
     base_qs = AttendanceCorrectionRequest.objects.select_related("attendance__employee")
     if not can_see_all:
-        base_qs = base_qs.filter(attendance__employee=own_employee)
+        base_qs = base_qs.filter(attendance__employee=own_employee) if own_employee else base_qs.none()
 
-    # Dropdown values from Attendance table
-    years = Attendance.objects.dates("date", "year", order="DESC")
+    # Dropdown values come from the requests' own dates. (They used to be
+    # read from the whole Attendance table -- a scan of every row ever
+    # recorded on each page load, ~3 s at a year of 1,000 employees.)
+    request_dates = sorted(set(base_qs.values_list("attendance__date", flat=True)) - {None}, reverse=True)
+    years = sorted({date(d.year, 1, 1) for d in request_dates}, reverse=True)
 
-    raw_months_all = Attendance.objects.dates("date", "month", order="DESC")
+    def _months_of(dates_):
+        # One entry per calendar month (Nov-2024 and Nov-2025 appear once).
+        seen, out = set(), []
+        for d in dates_:
+            if d.month not in seen:
+                seen.add(d.month)
+                out.append(date(d.year, d.month, 1))
+        return out
 
-    # --- Deduplicate months (2024-Nov & 2025-Nov appear only once) ---
-    seen_months = set()
-    months_all = []
-    for m in raw_months_all:
-        if m.month not in seen_months:
-            seen_months.add(m.month)
-            months_all.append(m)
+    months_all = _months_of(request_dates)
 
     # Read filters
     selected_year = request.GET.get("year", "").strip()
@@ -1934,17 +1981,8 @@ def attendance_correction_requests_list(request):
             year_int = int(selected_year)
             qs = qs.filter(attendance__date__year=year_int)
 
-            # Build month dropdown only for that year (also deduped)
-            raw_months_year = Attendance.objects.filter(date__year=year_int).dates(
-                "date", "month", order="DESC"
-            )
-
-            seen = set()
-            months_qs = []
-            for m in raw_months_year:
-                if m.month not in seen:
-                    seen.add(m.month)
-                    months_qs.append(m)
+            # Month dropdown only for that year
+            months_qs = _months_of([d for d in request_dates if d.year == year_int])
 
         except ValueError:
             months_qs = months_all
@@ -1998,12 +2036,14 @@ def attendance_correction_requests_list(request):
     })
 
 @login_required
-@feature_required("attendance_corrections", action="view")
 def attendance_correction_detail(request, pk):
     obj = get_object_or_404(AttendanceCorrectionRequest, pk=pk)
 
     att = obj.attendance  # related Attendance object
     employee = att.employee  # related Employee object
+    # Your own request, or anyone's with attendance_corrections:view.
+    if not can_access_employee_record(request.user, employee, "attendance_corrections", "view"):
+        raise PermissionDenied
 
     data = {
         "attendance": {
@@ -2149,8 +2189,6 @@ def comp_off_requests_list(request):
         or has_feature_permission(request.user, "comp_off", "create")
     )
     own_employee = getattr(request.user, "employee_profile", None)
-    if not can_see_all and own_employee is None:
-        raise PermissionDenied
 
     # read optional filters from GET
     selected_year = request.GET.get("year")   # e.g. "2025" or ""
@@ -2159,7 +2197,7 @@ def comp_off_requests_list(request):
     # base queryset: only requests that have from_date (safe)
     qs = CompOffRequest.objects.filter(from_date__isnull=False).select_related("employee")
     if not can_see_all:
-        qs = qs.filter(employee=own_employee)
+        qs = qs.filter(employee=own_employee) if own_employee else qs.none()
 
     # annotate year/month using from_date
     qs = qs.annotate(year=ExtractYear("from_date"), month=ExtractMonth("from_date"))
@@ -2250,7 +2288,6 @@ import datetime as dt
 
 
 @login_required
-@feature_required("comp_off", action="view")
 def comp_off_requests(request, pk):
     """
     Return all comp-off requests for the employee with id=pk for the requested month/year.
@@ -2260,6 +2297,9 @@ def comp_off_requests(request, pk):
     """
     # ensure employee exists (optional, helpful for clearer 404)
     employee = get_object_or_404(Employee, pk=pk)
+    # Your own requests, or anyone's with comp_off:view.
+    if not can_access_employee_record(request.user, employee, "comp_off", "view"):
+        raise PermissionDenied
 
     # read optional filters from GET; fallback to current month/year
     selected_year = request.GET.get("year")
@@ -2388,8 +2428,35 @@ def admin_dashboard(request):
 
     birthdays = _upcoming_birthdays(active_qs, today)
 
+    # Onboarding still short of 100% (Active and Pending staff); each drops
+    # off this list the moment its checklist is complete.
+    # The card shows the most urgent few -- past the window first, then the
+    # least complete -- and links to the full list; rendering (or building
+    # a model object for) every pending employee made the dashboard slow
+    # at a few hundred staff.
+    onboarding_qs = base_qs.filter(status__in=['Active', 'Pending'])
+    progress = {pk: p for pk, p in bulk_onboarding_progress(onboarding_qs).items() if not p['complete']}
+    started = dict(onboarding_qs.filter(pk__in=list(progress)).values_list('pk', 'onboarding_started_at'))
+    def _days(pk):
+        return (today - (started.get(pk) or today)).days
+    urgent = sorted(progress, key=lambda pk: (_days(pk) < ONBOARDING_EDIT_DAYS, progress[pk]['percent']))[:10]
+    pending_onboarding_total = len(progress)
+    pending_onboarding = list(Employee.objects.filter(pk__in=urgent))
+    for emp in pending_onboarding:
+        emp.onboarding = progress[emp.pk]
+        emp.onboarding_days = _days(emp.pk)
+        emp.onboarding_locked = emp.onboarding_days >= ONBOARDING_EDIT_DAYS
+    pending_onboarding.sort(key=lambda e: urgent.index(e.pk))
+    pending_change_requests = EmployeeChangeRequest.objects.filter(
+        status=EmployeeChangeRequest.STATUS_PENDING, employee__in=base_qs,
+    ).count()
+
     return render(request, 'd/f.html', {
         'birthdays': birthdays,
+        'pending_onboarding': pending_onboarding,
+        'pending_onboarding_total': pending_onboarding_total,
+        'pending_change_requests': pending_change_requests,
+        'onboarding_edit_days': ONBOARDING_EDIT_DAYS,
         'user': user,
         'today': today,
         'user_company': user_company,
@@ -2444,6 +2511,7 @@ def _dashboard_panels_for(user, active_qs, company_filter):
         'show_compoff_approvals': allowed("comp_off", "approve"),
         'show_correction_approvals': allowed("attendance_corrections", "approve"),
         'show_offboarding_panel': allowed("offboarding", "view"),
+        'show_change_approvals': allowed("employee_change_approval", "approve"),
         'show_payroll_panel': can_view_payroll,
         'can_run_payroll': allowed("payroll", "edit"),
     }
@@ -2918,6 +2986,157 @@ from django.contrib.auth.models import Group, User
 # typo fix to an address).
 EMPLOYEE_AUDIT_FIELDS = ("designation", "department", "status", "company_id", "branch_id", "date_of_joining")
 
+_EMPLOYEE_FORM_TABS = {
+    "basic-info": "Basic Information",
+    "previous-employment": "Previous Employment",
+    "attachment": "KYC",
+}
+
+
+def _employee_form_errors(form, formset, attachment_formset):
+    """Every error on the employee form, its previous-employment rows and
+    its KYC rows, as [{"tab", "tab_label", "field", "message"}] -- the form
+    reopens on the first tab, so errors in the other two were invisible."""
+    items = []
+
+    def add(tab, field, messages_):
+        for message in messages_:
+            items.append({"tab": tab, "tab_label": _EMPLOYEE_FORM_TABS[tab], "field": field, "message": message})
+
+    for name, errors in form.errors.items():
+        if name == "__all__":
+            add("basic-info", "", errors)
+        else:
+            tab = "previous-employment" if name == "is_fresher" else "basic-info"
+            add(tab, str(form.fields[name].label or name.replace("_", " ").title()), errors)
+
+    for prefix_tab, label, fs in (("previous-employment", "Previous employment", formset),
+                                  ("attachment", "Document", attachment_formset)):
+        add(prefix_tab, label, fs.non_form_errors())
+        for row, f in enumerate(fs.forms, 1):
+            for name, errors in f.errors.items():
+                field = "" if name == "__all__" else str(f.fields[name].label or name) if name in f.fields else name
+                add(prefix_tab, f"{label} row {row}" + (f" – {field}" if field else ""), errors)
+    return items
+
+
+def _employee_list_with_onboarding(request, show):
+    """Rows for the employee list as plain dicts (rendered in the browser
+    by DataTables, a page at a time), each with its onboarding progress;
+    ?onboarding=pending keeps only incomplete onboardings.
+
+    One flat query, no model objects: rendering a <tr> per employee on the
+    server made the page ~2 MB and ~1 s at a thousand employees."""
+    from django.core.files.storage import default_storage
+
+    employees = Employee.objects.all()
+    if show == "active":
+        employees = employees.exclude(status="Archived")
+    elif show == "archived":
+        employees = employees.filter(status="Archived")
+    progress = bulk_onboarding_progress(employees)
+
+    rows = []
+    for e in employees.values("id", "employee_code", "first_name", "last_name", "gender", "status", "photo",
+                              "company__short_name", "company__name"):
+        p = progress[e["id"]]
+        if request.GET.get("onboarding") == "pending" and p["complete"]:
+            continue
+        rows.append({
+            "id": e["id"],
+            "code": e["employee_code"] or "",
+            "company": f'{e["company__short_name"]} - {e["company__name"]}' if e["company__short_name"] else "None",
+            "photo": default_storage.url(e["photo"]) if e["photo"] else "",
+            "first": e["first_name"] or "",
+            "last": e["last_name"] or "",
+            "gender": e["gender"] or "",
+            "status": e["status"] or "",
+            "percent": p["percent"],
+            "complete": p["complete"],
+            "missing": ", ".join(p["missing"]),
+        })
+    return rows
+
+@login_required
+@feature_required("employee_records", action="view")
+def employee_change_requests(request):
+    """Employee edits waiting for (or already given) a decision. Everyone
+    with employee access can follow them; approvers also decide them."""
+    status = request.GET.get("status", EmployeeChangeRequest.STATUS_PENDING)
+    requests_qs = EmployeeChangeRequest.objects.select_related(
+        "employee", "requested_by", "decided_by",
+    ).prefetch_related("files")
+    if status in dict(EmployeeChangeRequest.STATUS_CHOICES):
+        requests_qs = requests_qs.filter(status=status)
+    return render(request, "employee/change_requests.html", {
+        "change_requests": requests_qs[:200],
+        "status": status,
+        "status_choices": EmployeeChangeRequest.STATUS_CHOICES,
+        "can_approve_changes": can_approve_changes(request.user),
+    })
+
+
+@login_required
+@feature_required("employee_records", action="view")
+def employee_change_request_detail(request, pk):
+    cr = get_object_or_404(
+        EmployeeChangeRequest.objects.select_related("employee", "requested_by", "decided_by"), pk=pk,
+    )
+    can_approve = can_approve_changes(request.user)
+
+    if request.method == "POST":
+        if not can_approve:
+            raise PermissionDenied
+        if cr.status != EmployeeChangeRequest.STATUS_PENDING:
+            messages.error(request, "This request has already been decided.")
+            return redirect("employee_change_request_detail", pk=cr.pk)
+        note = request.POST.get("note", "").strip()
+        decision = request.POST.get("decision")
+        if decision == "approve":
+            apply_change_request(cr, request.user, note)
+            messages.success(request, f"Changes to {cr.employee} approved and applied.")
+        elif decision == "reject":
+            reject_change_request(cr, request.user, note)
+            messages.info(request, f"Changes to {cr.employee} rejected.")
+        else:
+            messages.error(request, "Choose approve or reject.")
+            return redirect("employee_change_request_detail", pk=cr.pk)
+        return redirect("employee_change_requests")
+
+    files = list(cr.files.all())
+    prev_labels = {}
+    for row in (cr.previous_employment or {}).get("update", []):
+        prev_labels[f"id:{row['id']}"] = row["label"]
+    for row in (cr.previous_employment or {}).get("create", []):
+        prev_labels[row["key"]] = row["label"]
+    for f in files:
+        f.prev_label = prev_labels.get(f.prev_key) or f.prev_key
+    prev = cr.previous_employment or {}
+    labels = [("employer_name", "Employer"), ("from_date", "From"), ("to_date", "To"), ("last_ctc", "Last CTC")]
+    kyc_labels = dict(EmployeeAttachment.FILE_NAME_CHOICES)
+    for f in files:
+        f.kind_label = f.other_file_name if f.file_name == "other" else kyc_labels.get(f.file_name, f.file_name)
+
+    return render(request, "employee/change_request_detail.html", {
+        "cr": cr,
+        "kyc_files": [f for f in files if f.kind == EmployeeChangeRequestFile.KIND_KYC],
+        "prev_files": [f for f in files if f.kind == EmployeeChangeRequestFile.KIND_PREVIOUS_EMPLOYMENT],
+        "prev_create": [
+            [(label, row["new"].get(key)) for key, label in labels]
+            for row in prev.get("create", [])
+        ],
+        "prev_update": [
+            {"label": row["label"], "changes": [
+                (label, row["old"].get(key), row["new"].get(key))
+                for key, label in labels if row["old"].get(key) != row["new"].get(key)
+            ]}
+            for row in prev.get("update", [])
+        ],
+        "prev_delete": prev.get("delete", []),
+        "can_approve_changes": can_approve,
+    })
+
+
 @login_required
 @create_or_edit_required(
     "employee_records",
@@ -2929,17 +3148,43 @@ def create_or_edit_employee(request, employee_id=None):
     is_edit = False
     employee_before = None
 
+    needs_approval = False
+    pending_change = None
     if employee_id:
         employee = get_object_or_404(Employee, id=employee_id)
         is_edit = True
         employee_before = snapshot(employee, EMPLOYEE_AUDIT_FIELDS)
+        # Decided before the form is bound: binding copies the submitted
+        # values onto `employee`, which would change its onboarding progress.
+        needs_approval = edit_needs_approval(request.user, employee)
+        pending_change = pending_request_for(employee)
 
     if request.method == 'POST':
         form = EmployeeForm(request.POST, request.FILES, instance=employee)
         formset = PreviousEmploymentFormSet(request.POST, instance=employee)
         attachment_formset = AttachmentFormSet(request.POST, request.FILES, instance=employee)
 
-        if form.is_valid() and formset.is_valid() and attachment_formset.is_valid():
+        if needs_approval and pending_change:
+            messages.error(request, f"{employee} already has changes waiting for approval. "
+                                    "They must be approved or rejected before more changes can be submitted.")
+            return redirect("employee_create")
+
+        if needs_approval and form.is_valid() and formset.is_valid() and attachment_formset.is_valid():
+            try:
+                change = build_change_request(
+                    Employee.objects.get(pk=employee.pk), form, formset, attachment_formset, request,
+                )
+            except ChangeRequestError as exc:
+                messages.error(request, str(exc))
+                return redirect("employee_create")
+            if change:
+                messages.success(request, f"Changes to {employee} were sent for approval. "
+                                          "They will apply once an approver accepts them.")
+            else:
+                messages.info(request, "Nothing was changed, so nothing was sent for approval.")
+            return redirect("employee_create")
+
+        if not needs_approval and form.is_valid() and formset.is_valid() and attachment_formset.is_valid():
             with transaction.atomic():
                 emp_obj = form.save(commit=False)
                 emp_obj.save()
@@ -3011,7 +3256,7 @@ def create_or_edit_employee(request, employee_id=None):
                     return redirect("employee_create")
 
         else:
-            messages.error(request, "Please correct the errors below.")
+            messages.error(request, "The employee was not saved. Please fix the problems listed in the form.")
 
     else:
         form = EmployeeForm(instance=employee)
@@ -3024,12 +3269,19 @@ def create_or_edit_employee(request, employee_id=None):
         first_group = employee.user.groups.first()
         current_group_id = first_group.id if first_group else None
 
+    form_errors = (
+        _employee_form_errors(form, formset, attachment_formset) if request.method == "POST" else []
+    )
+
     show = request.GET.get("show", "active")
-    employees_list = Employee.objects.all()
-    if show == "active":
-        employees_list = employees_list.exclude(status="Archived")
-    elif show == "archived":
-        employees_list = employees_list.filter(status="Archived")
+    employees_list = _employee_list_with_onboarding(request, show)
+
+    # Progress for the edited employee comes from the database copy: on an
+    # invalid POST the bound form has already overwritten `employee`.
+    employee_onboarding = None
+    if employee:
+        stored = Employee.objects.prefetch_related("attachments", "previous_employments").get(pk=employee.pk)
+        employee_onboarding = onboarding_progress(stored)
 
     return render(request, "employee/create_employee2.html", {
         "form": form,
@@ -3037,14 +3289,32 @@ def create_or_edit_employee(request, employee_id=None):
         "attachment_formset": attachment_formset,
         "employees": employees_list,
         "show": show,
+        "onboarding_filter": request.GET.get("onboarding", ""),
         "is_edit": is_edit,
         "employee": employee,
+        "employee_onboarding": employee_onboarding,
+        "needs_approval": needs_approval,
+        "onboarding_edit_days": ONBOARDING_EDIT_DAYS,
+        "pending_change": pending_change,
+        "edit_deadline": onboarding_edit_deadline(employee) if employee else None,
+        # Only worth mentioning to someone the lock will catch, while it's still open.
+        "direct_edit_until": (
+            onboarding_edit_deadline(employee)
+            if employee and employee_onboarding and not employee_onboarding["complete"]
+            and not needs_approval and not can_approve_changes(request.user)
+            and not (request.user.is_superuser or request.user.is_staff)
+            else None
+        ),
         "groups": Group.objects.all(),
         "current_group_id": current_group_id,
         "all_groups": Group.objects.all(),
         "can_assign_roles": _can_assign_roles(request.user),
-        "can_delete_employees": request.user.is_superuser or request.user.is_staff or has_feature_permission(request.user, "employee_delete", "edit"),
+        "can_delete_employees": request.user.is_superuser or request.user.is_staff or (
+            has_feature_permission(request.user, "employee_delete", "edit")
+            and has_feature_permission(request.user, "archive_records", "edit")),
         "open_modal": request.method == "POST",
+        "form_errors": form_errors,
+        "error_tabs": [i["tab"] for i in form_errors],
     })
 
 from django.contrib.auth.models import Group
@@ -3056,24 +3326,22 @@ from django.contrib.auth.models import Group
 @feature_required("employee_records", action="view")
 def employee_list(request):
     show = request.GET.get("show", "active")
-    employees = Employee.objects.all()
-    if show == "active":
-        employees = employees.exclude(status="Archived")
-    elif show == "archived":
-        employees = employees.filter(status="Archived")
 
     return render(request, "employee/create_employee2.html", {
         "form": EmployeeForm(),
         "formset": PreviousEmploymentFormSet(),
         "attachment_formset": AttachmentFormSet(),
-        "employees": employees,
+        "employees": _employee_list_with_onboarding(request, show),
         "show": show,
+        "onboarding_filter": request.GET.get("onboarding", ""),
         "is_edit": False,
         "groups": Group.objects.all(),
         "current_group_id": None,
         "all_groups": Group.objects.all(),
         "can_assign_roles": _can_assign_roles(request.user),
-        "can_delete_employees": request.user.is_superuser or request.user.is_staff or has_feature_permission(request.user, "employee_delete", "edit"),
+        "can_delete_employees": request.user.is_superuser or request.user.is_staff or (
+            has_feature_permission(request.user, "employee_delete", "edit")
+            and has_feature_permission(request.user, "archive_records", "edit")),
     })
 
 
@@ -3120,10 +3388,16 @@ def bulk_employee_action(request):
     if new_status and new_status not in valid_statuses:
         return JsonResponse({"success": False, "error": f"Invalid status: {new_status}"}, status=400)
 
-    employees = Employee.objects.filter(id__in=employee_ids)
+    employees = Employee.objects.filter(id__in=employee_ids).prefetch_related("attachments", "previous_employments")
     updated = 0
+    locked = 0
 
     for emp in employees:
+        # A status change is an edit to the employee: someone whose edits go
+        # for approval can't apply it in bulk to a locked record.
+        if new_status and edit_needs_approval(request.user, emp):
+            locked += 1
+            continue
         changed = False
         if new_status:
             emp.status = new_status
@@ -3139,7 +3413,7 @@ def bulk_employee_action(request):
             emp.save(update_fields=["status"] if new_status else [])
             updated += 1
 
-    return JsonResponse({"success": True, "updated": updated})
+    return JsonResponse({"success": True, "updated": updated, "skipped_locked": locked})
 
 from django.shortcuts import get_object_or_404, render
 
@@ -3179,6 +3453,9 @@ def employee_detail(request, pk):
 
     context = {
         'employee': employee,
+        'onboarding': onboarding_progress(employee),
+        'pending_change': pending_request_for(employee),
+        'can_approve_changes': can_approve_changes(request.user),
         'previous_employments': previous_employments,
         'attachments': attachments,
         'previous_employments_attachment': previous_employments_attachment,
@@ -3195,9 +3472,6 @@ def employee_detail(request, pk):
     }
 
     # debug prints (ok to remove later)
-    print('Employee Details:', employee)
-    print('Previous Employment Details:', previous_employments)
-    print('Display dict:', context['display'])
 
     return render(request, 'employee/employee_detail.html', context)
 
@@ -3284,7 +3558,8 @@ def employee_dashboard(request):
     payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
     branch_specific = getattr(payroll_settings, "branch_specific_holidays", True) if payroll_settings else True
     upcoming_holidays = []
-    for holiday in Holiday.objects.filter(holiday_date__gte=today).select_related("holiday_calendar__branch"):
+    for holiday in (Holiday.objects.filter(holiday_date__gte=today, is_active=True)
+                    .select_related("holiday_calendar__branch").prefetch_related("branches")):
         if not branch_specific or holiday.is_applicable_to_branch(employee.branch):
             if holiday.is_applicable_to_employee(employee):
                 upcoming_holidays.append(holiday)
@@ -3380,26 +3655,39 @@ def _team_panel_for(approver, today):
         "correction_requests": pending_corrections,
     }
 
-@login_required
-def download_attachment(request, pk):
-    attachment = get_object_or_404(EmployeeAttachment, pk=pk)
-
-    # OPTIONAL: extra permission checks
-    # if not request.user.has_perm('yourapp.view_attachment') or attachment.owner != request.user:
-    #     raise Http404()
-
-    if not attachment.file:
+def _serve_employee_file(request, field_file, employee):
+    """Stream an employee document to someone allowed to see that
+    employee's record. Opens in the browser; ?download=1 saves it."""
+    if not can_access_employee_record(request.user, employee, "employee_records", "view"):
+        raise PermissionDenied
+    if not field_file:
         raise Http404("File not found")
-
-    # open file for streaming
     try:
-        file_handle = attachment.file.open('rb')
+        file_handle = field_file.open("rb")
     except Exception:
         raise Http404("Unable to open file")
+    return FileResponse(
+        file_handle, as_attachment=bool(request.GET.get("download")),
+        filename=os.path.basename(field_file.name),
+    )
 
-    filename = os.path.basename(attachment.file.name)
-    response = FileResponse(file_handle, as_attachment=True, filename=filename)
-    return response
+
+@login_required
+def download_attachment(request, pk):
+    """A KYC document (EmployeeAttachment)."""
+    attachment = get_object_or_404(EmployeeAttachment.objects.select_related("employee"), pk=pk)
+    return _serve_employee_file(request, attachment.file, attachment.employee)
+
+
+@login_required
+def download_previous_attachment(request, pk):
+    """A previous-employment document. These used to be linked through
+    download_attachment with their own pk, which opened whichever KYC
+    document happened to share that number."""
+    doc = get_object_or_404(
+        PreviousEmploymentAttachment.objects.select_related("previous_employment__employee"), pk=pk,
+    )
+    return _serve_employee_file(request, doc.file, doc.previous_employment.employee)
 
 
 # def employee_edit(request, pk):
@@ -3671,6 +3959,7 @@ def offboarding_edit_data(request, id):
 
 @login_required
 @feature_required("offboarding", action="edit")
+@feature_required("archive_records", action="edit")
 def offboarding_delete(request, pk):
     """Archive offboarding via AJAX (soft delete -- offboarding records are
     part of an employee's exit history and must never be permanently lost)."""
@@ -3877,6 +4166,7 @@ def save_department(request, department_id=None):
 @login_required
 @feature_required("department_management", action="edit")
 @require_http_methods(["POST"])
+@feature_required("archive_records", action="edit")
 def delete_department(request, department_id):
     department = get_object_or_404(Department, id=department_id)
     department.is_active = False
@@ -4004,6 +4294,7 @@ def get_branch(request, branch_id):
 
 @login_required
 @feature_required("branch_management", action="edit")
+@feature_required("archive_records", action="edit")
 def delete_branch(request, branch_id):
     branch = get_object_or_404(Branch, id=branch_id)
 
@@ -4059,6 +4350,14 @@ def create_company(request):
             messages.error(request, "Short Name, Company Name, and Address are required.")
             return redirect("create-company")  # Redirect back if validation fails
 
+        logo = request.FILES.get("logo")
+        if logo:
+            try:
+                validate_company_logo(logo)
+            except ValidationError as exc:
+                messages.error(request, exc.messages[0])
+                return redirect("create-company")
+
         # Save company to database
         company = Company.objects.create(
             short_name=short_name,
@@ -4073,6 +4372,7 @@ def create_company(request):
             ptec_number=ptec_number,
             esic_number=esic_number,
             status=status,
+            logo=logo,
         )
         messages.success(request, "Company added successfully!")
         return redirect("create-company")  # Redirect to company list page
@@ -4216,7 +4516,7 @@ def edit_company(request, company_id):
     company = get_object_or_404(Company, id=company_id)
 
     if request.method == "POST":
-        form = CompanyForm(request.POST, instance=company)   # ← IMPORTANT
+        form = CompanyForm(request.POST, request.FILES, instance=company)   # ← IMPORTANT
         if form.is_valid():
             form.save()
             messages.success(request, "Company updated successfully.")
@@ -4250,6 +4550,7 @@ def get_company(request, company_id):
 
 @login_required
 @feature_required("company_management", action="edit")
+@feature_required("archive_records", action="edit")
 def delete_company(request, company_id):
     company = get_object_or_404(Company, id=company_id)
 
@@ -4551,15 +4852,35 @@ def get_all_payroll_periods_from_attendance(company, payroll_settings):
 
     Steps period-by-period rather than day-by-day, so it is O(months) not O(days).
     """
-    attendance_stats = Attendance.objects.filter(
+    from website.models import _rule_lookup
+    # Same answer for every employee of the company, so a bulk run (upload,
+    # recalculation) asks once instead of once per employee.
+    attendance_stats = _rule_lookup(("attendance-range", company.pk if company else None), lambda: Attendance.objects.filter(
         employee__company=company
-    ).aggregate(min_date=Min('date'), max_date=Max('date'))
+    ).aggregate(min_date=Min('date'), max_date=Max('date')))
 
     min_date = attendance_stats.get('min_date')
     max_date = attendance_stats.get('max_date')
 
     if not min_date or not max_date:
         return []
+
+    # Checking every period for attendance is one query per period (~13 a
+    # year per company, on every report load), so the answer is cached
+    # briefly. The key carries the attendance date range and the payroll
+    # cycle, so a new month or a changed cycle shows up straight away.
+    from django.core.cache import cache
+    from django.db import connection as _conn
+    cache_key = "payroll-periods:%s:%s:%s:%s:%s:%s:%s" % (
+        _conn.settings_dict.get("NAME"), company.pk if company else "none", min_date, max_date,
+        payroll_settings.is_auto, payroll_settings.from_date, payroll_settings.to_date,
+    )
+    try:
+        cached = cache.get(cache_key)
+    except Exception:
+        cached = None
+    if cached is not None:
+        return [dict(p) for p in cached]
 
     periods = []
 
@@ -4586,6 +4907,10 @@ def get_all_payroll_periods_from_attendance(company, payroll_settings):
         from_d, to_d = get_payroll_period_for_date(payroll_settings, to_d + timedelta(days=1))
 
     periods.sort(key=lambda x: x['to_date'], reverse=True)
+    try:
+        cache.set(cache_key, periods, 600)
+    except Exception:
+        pass
     return periods
 
 
@@ -4722,17 +5047,19 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     # date -- matches payroll's pro-rata denominator (see docstring above).
     total_days = (to_date - from_date).days + 1
 
-    # Working days (weekdays, plus any overridden weekend) used for leave
-    # taken calculation.
-    working_days = attendance_records.count()
+    # Working days (weekdays, plus any overridden weekend), paid days and
+    # late marks, in one pass over the period's rows.
+    period_totals = attendance_records.aggregate(
+        working_days=Count("id"),
+        paid=Sum("count"),
+        late=Count("id", filter=Q(status="Late Present")),
+    )
+    working_days = period_totals["working_days"]
 
     # ============================================
     # STEP 3: Paid Days
     # ============================================
-    paid_days_sum = attendance_records.aggregate(
-        total=Sum("count")
-    )["total"]
-    paid_days = paid_days_sum if paid_days_sum else Decimal("0.00")
+    paid_days = period_totals["paid"] if period_totals["paid"] else Decimal("0.00")
 
     # Weekend days that were NOT overridden still get their normal free
     # present-day credit -- this is the only place they're counted at all;
@@ -4770,7 +5097,7 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     # Count "Late Present" records directly rather than summing
     # Attendance.late (minutes short of the flexible 9-hour duty).
     # ============================================
-    late_count = attendance_records.filter(status="Late Present").count()
+    late_count = period_totals["late"]
     if getattr(payroll_settings, 'late_marks_affect_lwp', True):
         # Grace: first 5 late marks are free. Every 3 marks after that = 1 day deducted.
         late_days = Decimal(str((late_count - 5) // 3)) if late_count > 5 else Decimal("0")
@@ -4923,7 +5250,7 @@ def generate_leave_balances_for_all_periods(company, payroll_settings):
                     if result is not None:  # None = not joined yet as of this period
                         total_calculated += 1
             except Exception as e:
-                print(f"Error: {employee.employee_code} {from_date}-{to_date}: {e}")
+                logging.getLogger(__name__).exception("Leave balance failed for %s %s-%s", employee.employee_code, from_date, to_date)
                 continue
 
     return total_calculated
@@ -5529,7 +5856,7 @@ def _compute_attendance_register_totals(employees_list, day_columns, from_date, 
 
 
 @login_required
-@feature_required("attendance_review", action="view")
+@feature_required("attendance_register", action="view")
 def attendance_register_view(request):
     """Day-by-day attendance register (muster roll): one row per employee
     with the same Leave Balance summary columns (Opening/Leave Taken/Late/
@@ -5581,7 +5908,7 @@ def attendance_register_view(request):
 
 
 @login_required
-@feature_required("attendance_review", action="view")
+@feature_required("attendance_register", action="view")
 def attendance_register_export_excel(request):
     """Export the Attendance Register exactly as currently filtered
     (company/all-companies, payroll period, employee search) -- every
@@ -5987,9 +6314,23 @@ def update_leave_credit_policy(request):
 
 
 
+def _can_raise_for_others(user, feature_key):
+    """Raising a leave / comp-off / attendance-correction request on
+    someone else's behalf is for people who manage those requests; everyone
+    else (HR included) raises them only for themselves."""
+    return user.is_superuser or user.is_staff or has_feature_permission(user, feature_key, "edit") \
+        or has_feature_permission(user, feature_key, "approve")
+
+
 @login_required
 def leave_apply_view(request):
+    for_others = _can_raise_for_others(request.user, "leave_management")
+    own_employee = getattr(request.user, "employee_profile", None)
+
     leaves = LeaveApplication.objects.select_related("employee").order_by("-id")
+    if not for_others:
+        # Your own applications only -- this list used to show everyone's.
+        leaves = leaves.filter(employee=own_employee) if own_employee else leaves.none()
 
     # ================== Filters ==================
     status = request.GET.get("status")
@@ -6011,8 +6352,19 @@ def leave_apply_view(request):
     leaves = paginator.get_page(page)
 
     # ================== POST Submit ==================
+    def _leave_form(*args):
+        form = LeaveApplicationForm(*args)
+        if not for_others:
+            # The applicant is always you; a posted employee id is ignored.
+            del form.fields["employee"]
+            form.instance.employee = own_employee
+        return form
+
     if request.method == "POST":
-        form = LeaveApplicationForm(request.POST)
+        if not for_others and own_employee is None:
+            messages.error(request, "Your login isn't linked to an employee record, so you can't apply for leave.")
+            return redirect("leave_apply")
+        form = _leave_form(request.POST)
         if form.is_valid():
             leave_obj = form.save(commit=False)
             # Block applying for leave that overlaps a finalized payroll period
@@ -6032,13 +6384,15 @@ def leave_apply_view(request):
             return redirect("leave_apply")
         messages.error(request,"Please fix the errors.")
     else:
-        form = LeaveApplicationForm()
+        form = _leave_form()
 
     return render(request,"leave_balance/leave_apply.html",{
         "form":form,
         "leaves":leaves,
         "status":status,
         "search":search,
+        "applying_for_self": not for_others,
+        "own_employee": own_employee,
     })
 
 
@@ -6179,6 +6533,8 @@ def employee_compoff_details(request, employee_id):
     """Return comp-off details for a given employee (for modal)."""
     today = date.today()
     employee_obj = get_object_or_404(Employee, pk=employee_id)
+    if not can_access_employee_record(request.user, employee_obj, "leave_management", "view"):
+        raise PermissionDenied
     payroll_settings = PayrollSettings.objects.filter(company=employee_obj.company).first()
     if payroll_settings:
         from_date, to_date = payroll_settings.get_payroll_period()
@@ -6261,6 +6617,9 @@ def submit_comp_off_request(request):
                 return JsonResponse({"message": "Half Day only applies to a single day — From Date and To Date must match."}, status=400)
 
             employee = Employee.objects.get(id=employee_id)
+            own = getattr(request.user, "employee_profile", None)
+            if not _can_raise_for_others(request.user, "comp_off") and (own is None or own.pk != employee.pk):
+                return JsonResponse({"message": "You can only raise a comp-off request for yourself."}, status=403)
 
             # Block raising a comp-off whose date range falls in a finalized payroll period
             locking_run = get_locking_run_for_period(employee.company, from_date_obj, to_date_obj)
@@ -6283,7 +6642,7 @@ def submit_comp_off_request(request):
 
 
 @login_required
-@feature_required("comp_off", action="view")
+@feature_required("comp_off", action="create")
 def download_compoff_import_template(request):
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -7016,7 +7375,7 @@ def create_salary_increment(request):
             return redirect("salary_increment")  # ✅ redirect to list
 
         except Exception as e:
-            print("CREATE ERROR:", e)
+            logging.getLogger(__name__).exception("Create failed")
             messages.error(request, "Failed to create increment.")
 
     show = request.GET.get("show", "active")
@@ -7220,6 +7579,7 @@ def increment_details(request, pk):
 
 @login_required
 @feature_required("salary_structure", action="edit")
+@feature_required("archive_records", action="edit")
 def delete_salary_increment(request, pk):
     """Archive increment"""
     if request.method == "POST":
@@ -7252,6 +7612,9 @@ def employee_salary_ajax(request):
         return JsonResponse({"error": "Employee ID required"}, status=400)
 
     employee = get_object_or_404(Employee, pk=employee_id)
+    # Used by Salary Increment (salary_structure:edit); otherwise only your own.
+    if not can_access_employee_record(request.user, employee, "salary_structure", "edit"):
+        raise PermissionDenied
 
     salary = (
         SalaryMaster.objects
@@ -7295,10 +7658,25 @@ def employee_salary_ajax(request):
 # -------------------------
 # Salary History list view
 # -------------------------
+def _salary_history_scope(request, qs):
+    """Holders of salary_history:view see everyone's history; anyone else
+    who reaches these pages (HR) sees only their own."""
+    user = request.user
+    if user.is_superuser or user.is_staff or has_feature_permission(user, "salary_history", "view"):
+        return qs, True
+    own = getattr(user, "employee_profile", None)
+    return (qs.filter(employee=own) if own else qs.none()), False
+
+
+def _can_see_salary_history_of(user, employee):
+    return can_access_employee_record(user, employee, "salary_history", "view")
+
+
 @login_required
 @feature_required("salary_structure", action="view")
 def salary_history(request):
     qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
+    qs, can_see_all = _salary_history_scope(request, qs)
 
     # filters
     emp = request.GET.get("employee", "")
@@ -7315,11 +7693,15 @@ def salary_history(request):
         qs = qs.filter(end_date__lte=date_to)
 
     employees = Employee.objects.all().order_by("employee_code")
+    if not can_see_all:
+        own = getattr(request.user, "employee_profile", None)
+        employees = employees.filter(pk=own.pk) if own else employees.none()
 
     return render(request, "salary_increment/salary_history_list.html", {
         "history": qs,
         "employees": employees,
         "get": request.GET,
+        "can_see_all_history": can_see_all,
     })
 
 
@@ -7330,6 +7712,8 @@ def salary_history(request):
 @feature_required("salary_structure", action="view")
 def salary_history_detail(request, pk):
     entry = get_object_or_404(SalaryHistory, pk=pk)
+    if not _can_see_salary_history_of(request.user, entry.employee):
+        raise PermissionDenied
     html = render_to_string("partials/salary_history_detail.html", {"entry": entry})
     return JsonResponse({"html": html})
 
@@ -7337,14 +7721,10 @@ def salary_history_detail(request, pk):
 # Export to Excel
 # -------------------------
 @login_required
-# Deliberately left on the legacy group_required decorator rather than
-# migrated to the "salary_structure" feature: this view's access
-# (Admin,HR) doesn't match salary_structure's View action (Admin,HR,Manager)
-# elsewhere in the same feature, so folding it in would silently change
-# access one way or the other. Migrate once someone decides the intended level.
-@group_required("Super Admin", "Admin", "HR")
+@feature_required("salary_structure", action="view")
 def salary_history_export_excel(request):
     qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
+    qs, _ = _salary_history_scope(request, qs)
     # apply same filters as list (to keep export consistent)
     q = request.GET.get("q", "").strip()
     emp_code = request.GET.get("employee_code", "").strip()
@@ -7488,8 +7868,10 @@ def salary_history_export_excel(request):
 @login_required
 @feature_required("salary_structure", action="view")
 def salary_compare(request, history_id, employee_id):
-    history = SalaryHistory.objects.get(id=history_id)
-    employee = Employee.objects.get(id=employee_id)
+    history = get_object_or_404(SalaryHistory, id=history_id)
+    employee = get_object_or_404(Employee, id=employee_id)
+    if history.employee_id != employee.pk or not _can_see_salary_history_of(request.user, employee):
+        raise PermissionDenied
     current = SalaryMaster.objects.filter(employee=employee).first()
 
     # Convert SalaryMaster model → dict like history.data["salary"]
@@ -7538,6 +7920,8 @@ def salary_compare(request, history_id, employee_id):
 # -------------------------
 def salary_timeline_data(request, employee_id):
     # Return JSON data: labels = list of end_date, data = net_salary_pm values
+    if not _can_see_salary_history_of(request.user, get_object_or_404(Employee, pk=employee_id)):
+        raise PermissionDenied
     entries = SalaryHistory.objects.filter(employee_id=employee_id).order_by("end_date")
     labels = [e.end_date.isoformat() if e.end_date else "" for e in entries]
     data_points = [float((e.data or {}).get("salary", {}).get("net_salary_pm") or 0) for e in entries]
@@ -7590,6 +7974,7 @@ def get_payroll_settings(request):
 
 
 @login_required
+@feature_required("company_settings", action="view")
 def settings_page(request):
     return redirect('company-settings-hub')
     company = get_user_company(request.user)
@@ -7615,6 +8000,7 @@ def settings_page(request):
 
 @login_required
 @require_http_methods(["POST"])
+@feature_required("company_settings", action="edit")
 def save_payroll_settings(request):
     company_id_param = request.POST.get('company_id')
     if user_has_global_access(request.user) and company_id_param:
@@ -7705,6 +8091,21 @@ def save_payroll_settings(request):
 
         settings.save()  # the PayrollSettings signal regenerates the monthly earned leaves
 
+        # A new weekend rule applies to every day already recorded, except
+        # days inside a finalized payroll run (those payslips are final).
+        weekend_msg = ''
+        if settings.weekend_days != old_weekend_days:
+            try:
+                result = reapply_weekend_rule(company)
+                weekend_msg = f' Weekend change applied to {result["updated"]} attendance day(s)'
+                if result["runs"]:
+                    weekend_msg += f' and {result["runs"]} draft payroll run(s)'
+                weekend_msg += '.'
+                if result["locked"]:
+                    weekend_msg += (f' {result["locked"]} day(s) in finalized payroll were left unchanged.')
+            except Exception:
+                weekend_msg = ' (Attendance could not be updated for the new weekend — use Recalculate Attendance.)'
+
         # If a leave-affecting setting changed (earned leaves per year caps the
         # monthly credit), auto-recalculate leave balances so the report
         # reflects the new rules immediately without a manual recalculate step.
@@ -7718,7 +8119,7 @@ def save_payroll_settings(request):
             except Exception:
                 recalc_msg = ' (Leave balance recalculation failed — use Recalculate button manually.)'
 
-        return JsonResponse({'success': True, 'message': f'Settings saved successfully!{recalc_msg}'})
+        return JsonResponse({'success': True, 'message': f'Settings saved successfully!{weekend_msg}{recalc_msg}'})
 
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
@@ -7726,6 +8127,7 @@ def save_payroll_settings(request):
         
 @login_required
 @require_http_methods(["POST"])
+@feature_required("company_settings", action="edit")
 def save_leave_settings(request):
     company_id_param = request.POST.get('company_id')
     if user_has_global_access(request.user) and company_id_param:
@@ -7755,6 +8157,7 @@ def save_leave_settings(request):
 
 @login_required
 @require_http_methods(["POST"])
+@feature_required("company_settings", action="edit")
 def save_leave_credit_policy(request):
     company_id_param = request.POST.get('company_id')
     if user_has_global_access(request.user) and company_id_param:
@@ -7781,6 +8184,7 @@ def save_leave_credit_policy(request):
 
 
 @login_required
+@feature_required("company_settings", action="view")
 def company_settings_hub(request):
     if not user_has_global_access(request.user):
         messages.error(request, "You don't have permission to access the company settings hub.")
@@ -8075,6 +8479,7 @@ def save_announcement(request):
 @login_required
 @feature_required("announcements", action="edit")
 @require_http_methods(["POST"])
+@feature_required("archive_records", action="edit")
 def delete_announcement(request, pk):
     announcement = get_object_or_404(Announcement, pk=pk)
     announcement.is_active = False
@@ -8159,7 +8564,8 @@ def restore_record(request, model_type, pk):
     if cfg is None:
         raise Http404
     if not (request.user.is_superuser or request.user.is_staff
-            or has_feature_permission(request.user, *cfg["feature"])):
+            or (has_feature_permission(request.user, *cfg["feature"])
+                and has_feature_permission(request.user, "archive_records", "edit"))):
         raise PermissionDenied
 
     obj = get_object_or_404(cfg["model"], pk=pk)
@@ -9045,6 +9451,44 @@ def _slip_amount(value):
     return sign + s
 
 
+_ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+         "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
+_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+
+
+def _words_below_1000(n):
+    words = []
+    if n >= 100:
+        words += [_ONES[n // 100], "Hundred"]
+        n %= 100
+    if n >= 20:
+        words.append(_TENS[n // 10])
+        n %= 10
+    if n:
+        words.append(_ONES[n])
+    return words
+
+
+def _amount_in_words(value):
+    """Whole rupees in words, Indian style: 1,23,456 -> "Rupees One Lakh
+    Twenty Three Thousand Four Hundred Fifty Six Only"."""
+    n = int(Decimal(value or 0).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if n == 0:
+        return "Rupees Zero Only"
+    sign = "Minus " if n < 0 else ""
+    n = abs(n)
+    words = []
+    for size, name in ((10 ** 7, "Crore"), (10 ** 5, "Lakh"), (10 ** 3, "Thousand")):
+        if n >= size:
+            # Above 99 crore the crore count itself is spelled out the same way.
+            count = n // size
+            words += (_amount_in_words(count)[len("Rupees "):-len(" Only")].split() if count >= 1000
+                      else _words_below_1000(count)) + [name]
+            n %= size
+    words += _words_below_1000(n)
+    return f"Rupees {sign}{' '.join(words)} Only"
+
+
 def _slip_days(value):
     """Day counts without a pointless ".00" (27, not 27.00) but keeping half days (26.5)."""
     d = Decimal(value or 0).normalize()
@@ -9062,10 +9506,20 @@ def _can_view_all_salary_slips(user):
     return user.is_superuser or user.is_staff or has_feature_permission(user, "payroll", "edit")
 
 
+def _pdf_media_path(uri, rel):
+    """xhtml2pdf link_callback: map /media/... URLs (the company logo) to
+    files on disk; leave anything else alone."""
+    if uri.startswith(settings.MEDIA_URL):
+        path = os.path.normpath(os.path.join(settings.MEDIA_ROOT, uri[len(settings.MEDIA_URL):]))
+        if path.startswith(os.path.normpath(settings.MEDIA_ROOT)) and os.path.isfile(path):
+            return path
+    return uri
+
+
 def _pdf_response(template_name, context, filename):
     html = get_template(template_name).render(context)
     buf = BytesIO()
-    if pisa.CreatePDF(html, dest=buf).err:
+    if pisa.CreatePDF(html, dest=buf, link_callback=_pdf_media_path).err:
         return HttpResponse('PDF generation failed', status=500)
     resp = HttpResponse(buf.getvalue(), content_type='application/pdf')
     resp['Content-Disposition'] = f'attachment; filename="{filename}"'
@@ -9087,26 +9541,25 @@ def salary_slip_view(request, record_id):
         raise Http404
     company  = record.payroll.company
 
-    # The standard components always appear (zero shows as "-"); the two
-    # extra allowances / other deductions only when actually used.
+    # Only components with a value appear on the slip.
     earnings = [
-        ("Basic Salary", record.basic_pm, record.basic_processed, True),
-        ("H.R.A", record.hra_pm, record.hra_processed, True),
-        ("Statutory Bonus", record.stat_bonus_pm, record.stat_bonus_processed, True),
-        ("Special Allowance", record.sp_allowance_pm, record.sp_allowance_processed, True),
-        ("Allowance 1", record.allowance1_pm, record.allowance1_processed, False),
-        ("Allowance 2", record.allowance2_pm, record.allowance2_processed, False),
+        ("Basic Salary", record.basic_pm, record.basic_processed),
+        ("H.R.A", record.hra_pm, record.hra_processed),
+        ("Statutory Bonus", record.stat_bonus_pm, record.stat_bonus_processed),
+        ("Special Allowance", record.sp_allowance_pm, record.sp_allowance_processed),
+        ("Allowance 1", record.allowance1_pm, record.allowance1_processed),
+        ("Allowance 2", record.allowance2_pm, record.allowance2_processed),
     ]
-    earnings = [e for e in earnings if e[3] or e[1] or e[2]]
+    earnings = [e for e in earnings if _slip_amount(e[1]) != "-" or _slip_amount(e[2]) != "-"]
     deductions = [
-        ("Employee Provident Fund", record.pf_employee, True),
-        ("ESIC", record.esic_employee, True),
-        ("Professional Tax", record.professional_tax, True),
-        ("T D S", record.tds, True),
-        ("Staff Advance", record.advance, True),
-        ("Other Deductions", record.other_deductions, False),
+        ("Employee Provident Fund", record.pf_employee),
+        ("ESIC", record.esic_employee),
+        ("Professional Tax", record.professional_tax),
+        ("T D S", record.tds),
+        ("Staff Advance", record.advance),
+        ("Other Deductions", record.other_deductions),
     ]
-    deductions = [d for d in deductions if d[2] or d[1]]
+    deductions = [d for d in deductions if _slip_amount(d[1]) != "-"]
 
     # Pad to a fixed body height so the slip keeps the same shape whatever
     # the employee's component mix.
@@ -9135,6 +9588,7 @@ def salary_slip_view(request, record_id):
         'total_payable': _slip_amount(sum(Decimal(e[2] or 0) for e in earnings)),
         'total_deductions': _slip_amount(record.total_deductions),
         'net_pay':      _slip_amount(record.net_salary),
+        'net_pay_words': _amount_in_words(record.net_salary),
         'is_pdf':       request.GET.get('format') == 'pdf',
     }
 
@@ -9227,33 +9681,35 @@ def salary_slip_statement(request):
     ):
         raise Http404
 
-    # Columns: optional components appear only if some selected month uses them.
+    # A column appears only if some selected month has a value in it; Net
+    # Pay always does.
     amount_cols = [
-        ("Basic", "basic_processed", True),
-        ("H.R.A", "hra_processed", True),
-        ("Stat. Bonus", "stat_bonus_processed", True),
-        ("Spl. Allow.", "sp_allowance_processed", True),
+        ("Basic", "basic_processed", False),
+        ("H.R.A", "hra_processed", False),
+        ("Stat. Bonus", "stat_bonus_processed", False),
+        ("Spl. Allow.", "sp_allowance_processed", False),
         ("Allow. 1", "allowance1_processed", False),
         ("Allow. 2", "allowance2_processed", False),
-        ("Gross Payable", "gross_processed", True),
-        ("EPF", "pf_employee", True),
-        ("ESIC", "esic_employee", True),
-        ("Prof. Tax", "professional_tax", True),
-        ("TDS", "tds", True),
-        ("Staff Adv.", "advance", True),
+        ("Gross Payable", "gross_processed", False),
+        ("EPF", "pf_employee", False),
+        ("ESIC", "esic_employee", False),
+        ("Prof. Tax", "professional_tax", False),
+        ("TDS", "tds", False),
+        ("Staff Adv.", "advance", False),
         ("Other Ded.", "other_deductions", False),
-        ("Total Ded.", "total_deductions", True),
+        ("Total Ded.", "total_deductions", False),
         ("Net Pay", "net_salary", True),
     ]
     amount_cols = [
         (label, field) for label, field, always in amount_cols
-        if always or any(getattr(r, field) for r in records)
+        if always or any(_slip_amount(getattr(r, field)) != "-" for r in records)
     ]
     bold_fields = {"gross_processed", "total_deductions", "net_salary"}
+    show_lwp = any(Decimal(r.leave_without_pay or 0) for r in records)
 
     # Month/Days/LWP take a fixed share; amounts split the rest evenly.
     # Whole-number widths only -- xhtml2pdf ignores fractional percentages.
-    fixed = [("Month", 9), ("Days Paid", 6), ("LWP", 5)]
+    fixed = [("Month", 9), ("Days Paid", 6)] + ([("LWP", 5)] if show_lwp else [])
     remaining = 100 - sum(w for _, w in fixed)
     each, extra = divmod(remaining, len(amount_cols))
     widths = [each + (1 if i >= len(amount_cols) - extra else 0) for i in range(len(amount_cols))]
@@ -9271,8 +9727,9 @@ def salary_slip_statement(request):
             {"value": r.payroll.month.strftime("%b-%y")
                       + ("" if r.payroll.status == PayrollRun.STATUS_FINALIZED else " (Draft)")},
             {"value": _slip_days(days_paid), "num": True},
-            {"value": _slip_days(r.leave_without_pay), "num": True},
         ]
+        if show_lwp:
+            cells.append({"value": _slip_days(r.leave_without_pay), "num": True})
         for _, field in amount_cols:
             value = Decimal(getattr(r, field) or 0)
             totals[field] += value
@@ -9282,8 +9739,9 @@ def salary_slip_statement(request):
     total_cells = [
         {"value": "Total", "bold": True},
         {"value": _slip_days(total_days_paid), "num": True, "bold": True},
-        {"value": _slip_days(total_lwp), "num": True, "bold": True},
-    ] + [{"value": _slip_amount(totals[field]), "num": True, "bold": True} for _, field in amount_cols]
+    ] + ([{"value": _slip_days(total_lwp), "num": True, "bold": True}] if show_lwp else []) + [
+        {"value": _slip_amount(totals[field]), "num": True, "bold": True} for _, field in amount_cols
+    ]
 
     first, last = records[0].payroll, records[-1].payroll
     context = {
@@ -9294,6 +9752,7 @@ def salary_slip_statement(request):
         "rows": rows,
         "total_cells": total_cells,
         "net_total": _slip_amount(totals["net_salary"]),
+        "net_total_words": _amount_in_words(totals["net_salary"]),
         "month_count": len(records),
         "period_label": first.month.strftime("%b-%y") if first.month == last.month
                         else f"{first.month:%b-%y} to {last.month:%b-%y}",
@@ -9641,7 +10100,7 @@ def holiday_calendar_dashboard(request):
     # ----------------------------------------------------
     # 9️⃣ FINAL CONTEXT (⚠️ NOTHING REMOVED)
     # ----------------------------------------------------
-    all_holidays = Holiday.objects.all().order_by('holiday_date')
+    all_holidays = Holiday.objects.prefetch_related('branches').order_by('holiday_date')
     if show == 'active':
         all_holidays = all_holidays.filter(is_active=True)
     elif show == 'archived':
@@ -9674,6 +10133,15 @@ def holiday_calendar_dashboard(request):
         'holiday_types': holiday_types,
 
         'branches': branches,
+        'holiday_branches': Branch.objects.order_by('-is_active', 'branch_name'),
+        # Calendar weekend shading follows the company's Weekend Days setting
+        # (JS getDay(): 0 = Sunday, 6 = Saturday) -- it used to always shade
+        # Saturday too.
+        'calendar_weekend_days': (
+            [0] if (payroll_settings.weekend_days == 'sun' if payroll_settings
+                    else set(PayrollSettings.objects.values_list('weekend_days', flat=True)) == {'sun'})
+            else [0, 6]
+        ),
         'all_half_day_scenarios': all_half_day_scenarios,
         'half_day_json': half_day_json,
         'total_half_days': active_half_day_scenarios.filter(
@@ -9743,7 +10211,46 @@ def save_holiday_settings(request):
 # ADD HOLIDAY VIEW
 # ============================================================================
 
+def _holiday_branch_choice(request):
+    """("all", []) or ("selected", [branch ids]) from the holiday form.
+    Raises ValueError when "selected" comes with no branch ticked."""
+    if request.POST.get("branch_scope") == "selected":
+        ids = [int(i) for i in request.POST.getlist("branches") if i.isdigit()]
+        if not ids:
+            raise ValueError("Select at least one branch, or choose All branches.")
+        return "selected", ids
+    return "all", []
+
+
+def _apply_holiday_branches(holiday, scope, branch_ids):
+    if scope == "selected" and not (holiday.holiday_type and holiday.holiday_type.type_category == "national"):
+        holiday.is_national = False
+        holiday.save(update_fields=["is_national"])
+        holiday.branches.set(Branch.objects.filter(pk__in=branch_ids))
+    else:
+        holiday.is_national = True
+        holiday.save(update_fields=["is_national"])
+        holiday.branches.clear()
+
+
+def _recalculate_attendance_on(day):
+    """Re-apply the attendance rules to everyone's record on `day` (so a
+    holiday added, moved or limited to some branches shows straight away),
+    except days inside finalized payroll."""
+    from .services.attendance_rules import exclude_finalized
+    from .signals import suspend_leave_balance_auto_recalc, recalculate_leave_balance_for_employee
+    rows = list(exclude_finalized(
+        Attendance.objects.filter(date=day).select_related("employee", "employee__company", "employee__branch")
+    ))
+    with suspend_leave_balance_auto_recalc(), transaction.atomic():
+        for attendance in rows:
+            attendance.save()
+    for attendance in rows:
+        recalculate_leave_balance_for_employee(attendance.employee, day)
+
+
 @login_required
+@feature_required("holiday_calendar", action="edit")
 @require_http_methods(["GET", "POST"])
 def add_holiday(request):
     """
@@ -9766,7 +10273,12 @@ def add_holiday(request):
     if request.method == 'POST':
         # Instantiate form with POST data
         form = HolidayForm(request.POST)
-        
+        try:
+            scope, branch_ids = _holiday_branch_choice(request)
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return redirect('holiday-calendar')
+
         if form.is_valid():
             holiday = form.save(commit=False)
             holiday.created_by = request.user
@@ -9774,6 +10286,7 @@ def add_holiday(request):
             if holiday.holiday_type and holiday.holiday_type.type_category == "national":
                 holiday.is_national = True
             holiday.save()
+            _apply_holiday_branches(holiday, scope, branch_ids)
 
             # Religious/optional holidays scoped to specific employees only
             # (e.g. Eid for Muslim employees) — not part of the ModelForm
@@ -9788,6 +10301,7 @@ def add_holiday(request):
             # already have a record on this date — covers the case where
             # nobody uploads attendance for a day everyone knows is a holiday.
             backfilled = holiday.backfill_attendance()
+            _recalculate_attendance_on(holiday.holiday_date)
 
             # Show success message
             success_msg = (
@@ -9815,6 +10329,7 @@ def add_holiday(request):
 # ============================================================================
 
 @login_required
+@feature_required("holiday_calendar", action="edit")
 @require_http_methods(["GET", "POST"])
 def edit_holiday(request, holiday_id):
     """
@@ -9834,11 +10349,18 @@ def edit_holiday(request, holiday_id):
     
     if request.method == 'POST':
         # Instantiate form with existing instance
+        old_date = holiday.holiday_date
         form = HolidayForm(request.POST, instance=holiday)
-        
+        try:
+            scope, branch_ids = _holiday_branch_choice(request)
+        except ValueError as exc:
+            messages.error(request, str(exc))
+            return redirect('holiday-calendar')
+
         if form.is_valid():
             # Save updates
             holiday = form.save()
+            _apply_holiday_branches(holiday, scope, branch_ids)
 
             if not holiday.applies_to_all_employees:
                 employee_ids = request.POST.getlist('specific_employees')
@@ -9847,6 +10369,11 @@ def edit_holiday(request, holiday_id):
                 holiday.specific_employees.clear()
 
             backfilled = holiday.backfill_attendance()
+            # Branches that lost the holiday (or a moved date) go back to
+            # their normal attendance status.
+            _recalculate_attendance_on(holiday.holiday_date)
+            if old_date != holiday.holiday_date:
+                _recalculate_attendance_on(old_date)
 
             # Show success message
             success_msg = f'✓ Holiday "{holiday.name}" updated successfully!'
@@ -9871,6 +10398,7 @@ def edit_holiday(request, holiday_id):
 @login_required
 @feature_required("holiday_calendar", action="edit")
 @require_http_methods(["POST"])
+@feature_required("archive_records", action="edit")
 def delete_holiday(request, holiday_id):
     """
     Archive Holiday View
@@ -10228,6 +10756,7 @@ def edit_half_day_scenario(request, scenario_id):
 @login_required
 @feature_required("holiday_calendar", action="edit")
 @require_http_methods(["POST"])
+@feature_required("archive_records", action="edit")
 def delete_half_day_scenario(request, scenario_id):
     scenario = get_object_or_404(HalfDayScenario, id=scenario_id)
     branch_name = scenario.branch.branch_name if scenario.branch else 'All Branches'
@@ -10295,6 +10824,7 @@ def api_get_holiday(request, holiday_id):
             'status': holiday.status,
             'description': holiday.description or '',
             'is_national': holiday.is_national,
+            'branch_ids': [b.pk for b in holiday.branches.all()],
             'applies_to_all_employees': holiday.applies_to_all_employees,
             'specific_employees': [
                 {
@@ -10482,6 +11012,7 @@ def edit_holiday_type(request, type_id):
 @login_required
 @feature_required("holiday_calendar", action="edit")
 @require_POST
+@feature_required("archive_records", action="edit")
 def delete_holiday_type(request, type_id):
     ht = get_object_or_404(HolidayType, id=type_id)
     if Holiday.objects.filter(holiday_type=ht).exists():

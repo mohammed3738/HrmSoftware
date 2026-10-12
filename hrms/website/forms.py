@@ -45,6 +45,29 @@ from django.db.models import Q
 #     can_delete=True  # Allow deleting previous entries
 # )
 
+class FastSelect(forms.Select):
+    """A <select> rendered straight to HTML. Django's Select renders every
+    <option> through a template, which for the 1,000-employee Reporting
+    Person / Manager dropdowns took ~0.3 s on every employee-list load."""
+
+    def render(self, name, value, attrs=None, renderer=None):
+        from django.forms.utils import flatatt
+        from django.utils.html import escape
+        from django.utils.safestring import mark_safe
+
+        final_attrs = self.build_attrs(self.attrs, attrs)
+        final_attrs["name"] = name
+        values = value if isinstance(value, (list, tuple)) else [value]
+        selected = {str(v) for v in values if v not in (None, "")}
+        parts = [f"<select{flatatt(final_attrs)}>"]
+        for option_value, label in self.choices:
+            v = "" if option_value is None else str(option_value)
+            parts.append('<option value="%s"%s>%s</option>' % (
+                escape(v), " selected" if v in selected else "", escape(str(label))))
+        parts.append("</select>")
+        return mark_safe("".join(parts))
+
+
 class EmployeeForm(forms.ModelForm):
     class Meta:
         model = Employee
@@ -60,7 +83,7 @@ class EmployeeForm(forms.ModelForm):
             'name_as_per_bank', 'salary_account_number', 'ifsc_code',
             'emergency_contact_name1', 'emergency_contact_relation1', 'emergency_contact_mobile1',
             'emergency_contact_name2', 'emergency_contact_relation2', 'emergency_contact_mobile2',
-            'status', 'photo',
+            'status', 'photo', 'is_fresher',
         ]
 
 
@@ -127,9 +150,11 @@ class EmployeeForm(forms.ModelForm):
         if self.instance.pk:
             approver_qs = approver_qs.exclude(pk=self.instance.pk)
         for field_name in ('reporting_person', 'manager'):
-            self.fields[field_name].queryset = approver_qs
-            self.fields[field_name].required = False
-            self.fields[field_name].widget.attrs['class'] = 'form-control'
+            field = self.fields[field_name]
+            field.queryset = approver_qs.only('id', 'first_name', 'last_name')
+            field.required = False
+            field.widget = FastSelect(attrs={'class': 'form-control'})
+            field.widget.choices = field.choices
 
         # Rendered as a real checkbox, not a text input.
         self.fields['use_department_defaults'].widget = forms.CheckboxInput(
@@ -309,7 +334,33 @@ AssetHandoverFormSet = inlineformset_factory(
 )
 
 
+LOGO_MAX_BYTES = 2 * 1024 * 1024
+LOGO_FORMATS = {"JPEG", "PNG"}  # what the PDF salary slip can draw
+
+
+def validate_company_logo(upload):
+    """Reject anything that isn't a PNG/JPG image of 2 MB or less."""
+    from PIL import Image
+    if upload.size > LOGO_MAX_BYTES:
+        raise forms.ValidationError("Logo must be 2 MB or smaller.")
+    try:
+        upload.seek(0)
+        fmt = (Image.open(upload).format or "").upper()
+    except Exception:
+        raise forms.ValidationError("Logo must be a JPG or PNG image.")
+    finally:
+        upload.seek(0)
+    if fmt not in LOGO_FORMATS:
+        raise forms.ValidationError("Logo must be a JPG or PNG image.")
+
+
 class CompanyForm(forms.ModelForm):
+    def clean_logo(self):
+        logo = self.cleaned_data.get("logo")
+        if logo and hasattr(logo, "content_type"):  # a newly uploaded file
+            validate_company_logo(logo)
+        return logo
+
     class Meta:
         model = Company
         fields = "__all__"
@@ -457,10 +508,9 @@ class LeaveCreditPolicyForm(forms.ModelForm):
 class LeaveApplicationForm(forms.ModelForm):
     class Meta:
         model = LeaveApplication
-        fields = ['employee', 'leave_type', 'start_date', 'end_date', 'reason']
+        fields = ['employee', 'start_date', 'end_date', 'reason']
         widgets = {
             'employee': forms.Select(attrs={'class':'form-control'}),
-            'leave_type': forms.Select(attrs={'class':'form-control'}),
             'start_date': forms.DateInput(attrs={'type':'date','class':'form-control'}),
             'end_date': forms.DateInput(attrs={'type':'date','class':'form-control'}),
             'reason': forms.Textarea(attrs={'class':'form-control','rows':3}),

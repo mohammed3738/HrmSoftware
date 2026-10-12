@@ -173,9 +173,11 @@
             <td colspan="9" class="text-center py-5">
               <i class="ti ti-inbox" style="font-size:2.5rem;color:#adb5bd;display:block;margin-bottom:.5rem;"></i>
               <div class="text-muted">No advances found.</div>
+              {% if can_manage_advances %}
               <a href="{% url 'create-advance' %}" class="btn btn-sm btn-primary mt-2">
                 <i class="ti ti-plus me-1"></i> Create First Advance
               </a>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}

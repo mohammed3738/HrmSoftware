@@ -1,4 +1,5 @@
-{% extends 'base2.html' %} {% block body %} {% load static %}
+{% extends 'base2.html' %} {% block body %} {% load static custom_filters %}
+{% with can_edit_companies=request.user|has_feature:"company_management:edit" %}
 
 <script>
   function downloadCompanies() {
@@ -56,6 +57,7 @@
             </ul>
           </div>
         </div>
+        {% if can_edit_companies %}
         <div class="me-2 mb-2">
           <a
             href="#"
@@ -74,6 +76,7 @@
             ><i class="ti ti-circle-plus me-2"></i>Add Company</a
           >
         </div>
+        {% endif %}
         <div class="ms-2 head-icons">
           <a
             href="javascript:void(0);"
@@ -232,6 +235,7 @@
 										</td> -->
                 <td>  
                     <div class="d-flex align-items-center fw-bold text-primary">                   
+                        {% if company.logo %}<img src="{{ company.logo.url }}" alt="" class="me-2 rounded border" style="width:32px;height:32px;object-fit:contain;background:#fff;">{% endif %}
                         {{company.short_name}}
                     </div>
                 </td>
@@ -265,7 +269,7 @@
 
                 <td>
                   <span class="badge 
-                    {% if company.status == 'active' or company.status == 'Active' %} bg-success 
+                    {% if company.status == 'active' %} bg-success 
                     {% else %} bg-danger {% endif %}">
                     {{ company.status|title }}
                   </span>
@@ -293,6 +297,7 @@
                         <i class="ti ti-eye me-2"></i> View
                       </a>
 
+                      {% if can_edit_companies %}
                       <a
                         class="dropdown-item edit-company-btn"
                         href="#"
@@ -316,6 +321,7 @@
                       >
                         <i class="ti ti-rotate me-2"></i> Restore
                       </a>
+                      {% endif %}
                       {% endif %}
                     </div>
                   </div>
@@ -397,7 +403,7 @@
           <i class="ti ti-x"></i>
         </button>
       </div>
-      <form method="post">
+      <form method="post" enctype="multipart/form-data">
         {% csrf_token %}
         <div class="modal-body pb-0">
           <div class="row">
@@ -485,6 +491,13 @@
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label class="form-label">Logo</label>
+                <input type="file" class="form-control" name="logo" accept="image/png,image/jpeg" />
+                <small class="text-muted">JPG or PNG, up to 2 MB. Shown on salary slips.</small>
               </div>
             </div>
 
@@ -897,6 +910,7 @@
 
 
     <div class="card-body row g-3  py-3 ">
+      ${data.logo_url ? `<div class="col-12"><img src="${data.logo_url}" alt="Logo" style="max-height:70px;max-width:220px;object-fit:contain;"></div>` : ""}
 
       <div class="col-md-6">
         <div class="text-muted small fw-semibold text-uppercase">Short Name</div>
@@ -1111,4 +1125,5 @@ document.addEventListener("DOMContentLoaded", function () {
     $('.dataTables_length select').addClass('form-select');
 });
 </script> {% endcomment %}
+{% endwith %}
 {% endblock %}

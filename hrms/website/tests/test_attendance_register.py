@@ -225,7 +225,7 @@ class AttendanceRegisterTest(TestCase):
         from website.models import Feature, RoleFeaturePermission
 
         viewer_role = Group.objects.create(name="Register Viewer")
-        for key, action in (("attendance_review", "view"),):
+        for key, action in (("attendance_review", "view"), ("attendance_register", "view")):
             feature = Feature.objects.get(key=key)
             rfp, _ = RoleFeaturePermission.objects.get_or_create(role=viewer_role, feature=feature)
             setattr(rfp, f"can_{action}", True)

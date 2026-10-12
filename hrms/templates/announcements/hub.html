@@ -1,4 +1,5 @@
 {% extends "base2.html" %}
+{% load custom_filters %}
 {% load static %}
 
 {% block body %}
@@ -150,6 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const form = document.getElementById('announcementForm');
   const formHeading = document.getElementById('formHeading');
   const deleteBtn = document.getElementById('deleteAnnouncementBtn');
+  const canArchive = {% if request.user|has_feature:"archive_records:edit" %}true{% else %}false{% endif %};
 
   function resetForm() {
     form.reset();
@@ -177,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('isActive').checked = row.dataset.isActive === '1';
       document.getElementById('expiresAt').value = row.dataset.expiresAt || '';
       formHeading.textContent = 'Edit Announcement';
-      deleteBtn.classList.remove('d-none');
+      if (canArchive) deleteBtn.classList.remove('d-none');
     });
   });
 

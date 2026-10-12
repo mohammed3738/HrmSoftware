@@ -124,3 +124,30 @@ class SalarySlipsTest(TestCase):
     def test_requires_at_least_one_month(self):
         resp = self._client(self.self_user).get(reverse("salary-slip-statement"))
         self.assertEqual(resp.status_code, 400)
+
+    # ── only components with a value ───────────────────────────────────
+    def test_slip_shows_only_components_with_a_value(self):
+        resp = self._client(self.self_user).get(reverse("salary-slip", args=[self.jan.id]))
+        self.assertEqual(resp.status_code, 200)
+        earnings = [r["earning"] for r in resp.context["rows"] if r["earning"]]
+        deductions = [r["deduction"] for r in resp.context["rows"] if r["deduction"]]
+        self.assertEqual(earnings, ["Basic Salary"])
+        self.assertEqual(deductions, ["Professional Tax"])
+        for absent in ("H.R.A", "Statutory Bonus", "Employee Provident Fund", "ESIC", "T D S", "Staff Advance"):
+            self.assertNotContains(resp, absent)
+
+    def test_statement_drops_columns_empty_in_every_month(self):
+        resp = self._statement(self.self_user, [self.jan, self.feb])
+        labels = [c["label"] for c in resp.context["columns"]]
+        self.assertEqual(labels, ["Month", "Days Paid", "LWP", "Basic", "Gross Payable", "Prof. Tax",
+                                  "Total Ded.", "Net Pay"])
+        self.assertTrue(all(len(cells) == len(labels) for cells in resp.context["rows"]))
+        self.assertEqual(len(resp.context["total_cells"]), len(labels))
+
+    def test_statement_keeps_a_column_used_in_any_month(self):
+        PayrollRecord.objects.filter(pk=self.feb.pk).update(hra_processed=Decimal(5000))
+        PayrollRecord.objects.filter(pk__in=[self.jan.pk, self.feb.pk]).update(leave_without_pay=0)
+        resp = self._statement(self.self_user, [self.jan, self.feb])
+        labels = [c["label"] for c in resp.context["columns"]]
+        self.assertIn("H.R.A", labels)
+        self.assertNotIn("LWP", labels)

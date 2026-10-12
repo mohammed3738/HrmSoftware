@@ -111,7 +111,7 @@ class OnboardingProgressTest(OnboardingTestBase):
         self.assertEqual(progress["remaining"], 30)
         self.assertFalse(progress["complete"])
         self.assertIn("Previous employment (or tick Fresher)", progress["missing"])
-        self.assertIn("Aadhaar card", progress["missing"])
+        self.assertIn("KYC documents (2 more of any 2)", progress["missing"])
         self.assertNotIn("Resume", progress["missing"])
         self.assertNotIn("Photo", progress["missing"])
 
@@ -145,6 +145,15 @@ class OnboardingProgressTest(OnboardingTestBase):
         progress = onboarding_progress(emp)
         self.assertEqual(progress["percent"], 100)
         self.assertTrue(progress["complete"])
+
+    def test_any_two_documents_complete_the_section(self):
+        emp = self._employee(code="ONB-2DOC", is_fresher=True)
+        EmployeeAttachment.objects.create(employee=emp, file_name="resume", file=a_file())
+        progress = onboarding_progress(emp)
+        self.assertEqual(progress["percent"], 90)
+        self.assertIn("KYC documents (1 more of any 2)", progress["missing"])
+        EmployeeAttachment.objects.create(employee=emp, file_name="other", other_file_name="Cheque", file=a_file())
+        self.assertTrue(onboarding_progress(emp)["complete"])
 
     def test_existing_staff_start_from_date_of_joining(self):
         # Migration 0042 back-fills onboarding_started_at from date_of_joining;
@@ -343,7 +352,7 @@ class OnboardingListsTest(OnboardingTestBase):
         emp = self._employee(code="ONB-DET")
         resp = self.hr.client.get(reverse("employee_detail", args=[emp.pk]))
         self.assertContains(resp, "70% complete")
-        self.assertContains(resp, "Missing: Aadhaar card, PAN card")
+        self.assertContains(resp, "Missing: KYC documents (2 more of any 2)")
 
 
 class ApprovalEdgeCasesTest(OnboardingTestBase):

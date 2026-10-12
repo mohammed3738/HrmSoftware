@@ -5,7 +5,7 @@ profile, dashboard) and the edit lock, so they always agree:
 
     Personal details     25%   Office details        15%
     Bank & IDs           20%   Emergency contact     10%
-    Previous employment  10%   Documents (Aadhaar, PAN) 20%
+    Previous employment  10%   Documents (any 2)     20%
 
 Within a section the weight is split evenly across its items, so a half-
 filled section contributes half its weight.
@@ -16,12 +16,10 @@ from datetime import date, timedelta
 # started; after that (or once it's 100%) HR's edits go for approval.
 ONBOARDING_EDIT_DAYS = 15
 
-# Only these KYC documents are required; resume, offer letter, photo and
-# any other upload are optional and don't affect the percentage.
-REQUIRED_DOCUMENTS = [
-    ("aadhaar", "Aadhaar card"),
-    ("pan", "PAN card"),
-]
+# No particular KYC document is required: any two attached documents
+# (Aadhaar, PAN, resume, offer letter or "other") complete the section.
+# The photo doesn't count towards it.
+REQUIRED_DOCUMENT_COUNT = 2
 
 SECTIONS = [
     ("personal", "Personal details", 25, [
@@ -56,8 +54,8 @@ def onboarding_progress(employee):
     For many employees at once use bulk_onboarding_progress(), which
     doesn't build a model object per employee."""
     has_previous = bool(employee.pk and list(employee.previous_employments.all()))
-    uploaded = {a.file_name for a in employee.attachments.all()} if employee.pk else set()
-    return _progress(lambda field: getattr(employee, field, None), has_previous, uploaded)
+    documents = sum(1 for a in employee.attachments.all() if a.file) if employee.pk else 0
+    return _progress(lambda field: getattr(employee, field, None), has_previous, documents)
 
 
 def bulk_onboarding_progress(qs):
@@ -71,16 +69,16 @@ def bulk_onboarding_progress(qs):
     rows = list(qs.values(*fields))
     ids = [r["id"] for r in rows]
     with_previous = set(PreviousEmployment.objects.filter(employee_id__in=ids).values_list("employee_id", flat=True))
-    uploaded = {}
-    for emp_id, file_name in EmployeeAttachment.objects.filter(employee_id__in=ids).values_list("employee_id", "file_name"):
-        uploaded.setdefault(emp_id, set()).add(file_name)
+    documents = {}
+    for emp_id in EmployeeAttachment.objects.filter(employee_id__in=ids).exclude(file="").values_list("employee_id", flat=True):
+        documents[emp_id] = documents.get(emp_id, 0) + 1
     return {
-        r["id"]: _progress(r.get, r["id"] in with_previous, uploaded.get(r["id"], set()))
+        r["id"]: _progress(r.get, r["id"] in with_previous, documents.get(r["id"], 0))
         for r in rows
     }
 
 
-def _progress(get, has_previous_employment, uploaded):
+def _progress(get, has_previous_employment, document_count):
     sections, total, missing = [], 0.0, []
 
     for key, title, weight, fields in SECTIONS:
@@ -96,11 +94,11 @@ def _progress(get, has_previous_employment, uploaded):
     total += 10 * int(has_previous)
     missing += todo
 
-    docs = [(code, label, code in uploaded) for code, label in REQUIRED_DOCUMENTS]
-    todo = [label for _, label, ok in docs if not ok]
-    done = len(docs) - len(todo)
-    _add(sections, "documents", "Documents", 20, done, len(docs), todo)
-    total += 20 * done / len(docs)
+    done = min(document_count, REQUIRED_DOCUMENT_COUNT)
+    still_needed = REQUIRED_DOCUMENT_COUNT - done
+    todo = ([f"KYC documents ({still_needed} more of any {REQUIRED_DOCUMENT_COUNT})"] if still_needed else [])
+    _add(sections, "documents", "Documents", 20, done, REQUIRED_DOCUMENT_COUNT, todo)
+    total += 20 * done / REQUIRED_DOCUMENT_COUNT
     missing += todo
 
     percent = 100 if not missing else min(99, int(total))

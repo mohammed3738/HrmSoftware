@@ -40,6 +40,7 @@ from .services.onboarding import (
     bulk_onboarding_progress, onboarding_progress, onboarding_edit_deadline, ONBOARDING_EDIT_DAYS,
 )
 from .services.attendance_rules import exclude_finalized, finalized_q, reapply_weekend_rule
+from .services.pending_approvals import pending_approvals_for_payroll, pending_approvals_message
 from .services.employee_changes import (
     ChangeRequestError, build_change_request, apply_change_request, reject_change_request,
     can_approve_changes, edit_needs_approval, pending_request_for,
@@ -9194,15 +9195,21 @@ def payroll_run_create(request):
             return render(request, "payroll/run_create.html", {"companies": companies})
 
         if company_id == "all":
-            created, skipped = [], []
+            created, skipped, blocked = [], [], []
             for company in companies:
                 ps = PayrollSettings.objects.filter(company=company).first()
                 month_start, month_end = _compute_payroll_dates(ps, year, m)
                 if PayrollRun.objects.filter(company=company, start_date=month_start, end_date=month_end).exists():
                     skipped.append(company.name)
                     continue
+                pending = pending_approvals_for_payroll(company, month_start, month_end)
+                if pending:
+                    blocked.append(pending_approvals_message(company, month_start, month_end, pending))
+                    continue
                 create_payroll_run(company, month_start, month_end)
                 created.append(company.name)
+            for message in blocked:
+                messages.error(request, message)
 
             if created:
                 messages.success(
@@ -9216,7 +9223,7 @@ def payroll_run_create(request):
                     f"Skipped {len(skipped)} compan{'y' if len(skipped) == 1 else 'ies'} that already had a run "
                     f"for this period: {', '.join(skipped)}."
                 )
-            if not created and not skipped:
+            if not created and not skipped and not blocked:
                 messages.error(request, "No active companies found.")
             return redirect("payroll-run-list")
 
@@ -9230,6 +9237,11 @@ def payroll_run_create(request):
                 f"A payroll run already exists for {month_start:%d %b %Y} – {month_end:%d %b %Y}."
             )
             return render(request, "payroll/run_create.html", {"companies": companies})
+
+        pending = pending_approvals_for_payroll(company, month_start, month_end)
+        if pending:
+            messages.error(request, pending_approvals_message(company, month_start, month_end, pending))
+            return render(request, "payroll/run_create.html", {"companies": companies, "pending_approvals": pending})
 
         run = create_payroll_run(company, month_start, month_end)
         messages.success(request, f"Payroll run created: {month_start:%d %b %Y} – {month_end:%d %b %Y}")
@@ -9269,8 +9281,11 @@ def payroll_run_detail(request, run_id):
     run = get_object_or_404(PayrollRun, id=run_id)
     records = run.records.select_related("employee").all()
     settings = PayrollSettings.objects.filter(company=run.company).first()
+    pending = (pending_approvals_for_payroll(run.company, run.start_date, run.end_date)
+               if run.status != PayrollRun.STATUS_FINALIZED and run.company else [])
     return render(request, "payroll/run_detail.html", {
         "run": run, "records": records, "settings": settings,
+        "pending_approvals": pending,
         # Admin can read a payroll run but not create, recalculate or
         # finalize one, so the pages have to render read-only rather than
         # offering controls that 403.
@@ -9382,6 +9397,11 @@ def payroll_run_finalize(request, run_id):
     run = get_object_or_404(PayrollRun, id=run_id)
     if run.status == PayrollRun.STATUS_FINALIZED:
         return JsonResponse({"success": False, "error": "This payroll run is already finalized."}, status=400)
+    pending = pending_approvals_for_payroll(run.company, run.start_date, run.end_date) if run.company else []
+    if pending:
+        return JsonResponse({"success": False,
+                             "error": pending_approvals_message(run.company, run.start_date, run.end_date, pending)},
+                            status=400)
     record_count = run.records.count()
     for rec in run.records.all():
         recalc_and_save_record(rec, manual_overrides=rec.manual_override or {})

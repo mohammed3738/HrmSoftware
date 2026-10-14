@@ -3039,7 +3039,7 @@ def _employee_list_with_onboarding(request, show):
 
     rows = []
     for e in employees.values("id", "employee_code", "first_name", "last_name", "gender", "status", "photo",
-                              "company__short_name", "company__name"):
+                              "company__short_name", "company__name", "branch_id", "branch__branch_name"):
         p = progress[e["id"]]
         if request.GET.get("onboarding") == "pending" and p["complete"]:
             continue
@@ -3051,6 +3051,8 @@ def _employee_list_with_onboarding(request, show):
             "first": e["first_name"] or "",
             "last": e["last_name"] or "",
             "gender": e["gender"] or "",
+            "branch_id": e["branch_id"],
+            "branch": e["branch__branch_name"] or "",
             "status": e["status"] or "",
             "percent": p["percent"],
             "complete": p["complete"],
@@ -3333,6 +3335,7 @@ def create_or_edit_employee(request, employee_id=None):
         "formset": formset,
         "attachment_formset": attachment_formset,
         "employees": employees_list,
+        "list_branches": Branch.objects.order_by("-is_active", "branch_name"),
         "show": show,
         "onboarding_filter": request.GET.get("onboarding", ""),
         "is_edit": is_edit,
@@ -3377,6 +3380,7 @@ def employee_list(request):
         "formset": PreviousEmploymentFormSet(),
         "attachment_formset": AttachmentFormSet(),
         "employees": _employee_list_with_onboarding(request, show),
+        "list_branches": Branch.objects.order_by("-is_active", "branch_name"),
         "show": show,
         "onboarding_filter": request.GET.get("onboarding", ""),
         "is_edit": False,

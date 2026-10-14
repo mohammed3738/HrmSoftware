@@ -81,6 +81,14 @@
   {% else %}
   <a href="?show={{ show|default:'active' }}&onboarding=pending" class="btn btn-sm btn-outline-warning">Pending onboarding</a>
   {% endif %}
+  <span class="vr mx-1"></span>
+  <select id="branchFilter" class="form-select form-select-sm" style="width:auto;min-width:170px" aria-label="Filter by branch">
+    <option value="">All branches</option>
+    {% for b in list_branches %}
+    <option value="{{ b.id }}">{{ b.branch_name }}{% if not b.is_active %} (archived){% endif %}</option>
+    {% endfor %}
+    <option value="none">No branch</option>
+  </select>
 </div>
 
 <!-- Table -->
@@ -1579,6 +1587,19 @@ document.addEventListener("DOMContentLoaded", function () {
         + `<small class="fw-semibold${r.complete ? " text-success" : ""}">${r.percent}%</small></div>`;
     }
 
+    // Branch filter: applied in the browser (the rows are already here),
+    // and kept in the address bar so a filtered list can be bookmarked.
+    const branchSelect = document.getElementById("branchFilter");
+    const params = new URLSearchParams(window.location.search);
+    if (branchSelect && params.get("branch")) branchSelect.value = params.get("branch");
+    $.fn.dataTable.ext.search.push(function (settings, data, index, row) {
+      if (settings.nTable !== document.querySelector(".datatable") || !branchSelect) return true;
+      const wanted = branchSelect.value;
+      if (!wanted) return true;
+      if (wanted === "none") return !row.branch_id;
+      return String(row.branch_id) === wanted;
+    });
+
     let table = $('.datatable').DataTable({
         data: rows,
         deferRender: true,   // only the visible page's rows are built
@@ -1605,6 +1626,22 @@ document.addEventListener("DOMContentLoaded", function () {
     // Convert DataTables elements into Bootstrap style
     $('.dataTables_filter input').addClass('form-control');
     $('.dataTables_length select').addClass('form-select');
+
+    if (branchSelect) {
+      branchSelect.addEventListener("change", function () {
+        const p = new URLSearchParams(window.location.search);
+        if (branchSelect.value) p.set("branch", branchSelect.value); else p.delete("branch");
+        history.replaceState(null, "", window.location.pathname + (p.toString() ? "?" + p : ""));
+        // keep the branch when switching Active / Archived / Pending onboarding
+        document.querySelectorAll('a[href^="?show="]').forEach(function (a) {
+          const q = new URLSearchParams(a.getAttribute("href").slice(1));
+          if (branchSelect.value) q.set("branch", branchSelect.value); else q.delete("branch");
+          a.setAttribute("href", "?" + q);
+        });
+        table.draw();
+      });
+      if (branchSelect.value) branchSelect.dispatchEvent(new Event("change"));
+    }
 });
 </script>
 

@@ -105,3 +105,14 @@ class ScalingTest(TestCase):
             _process_attendance_rows(df)
         settings_reads = [q for q in ctx.captured_queries if 'FROM "website_payrollsettings"' in q["sql"]]
         self.assertLessEqual(len(settings_reads), 3, len(settings_reads))
+
+    def test_employee_list_offers_a_branch_filter(self):
+        from website.models import Branch
+        mumbai = Branch.objects.create(branch_name="Mumbai")
+        Employee.objects.filter(employee_code="SC000").update(branch=mumbai)
+        resp = self.client.get(reverse("employee_list"))
+        self.assertContains(resp, 'id="branchFilter"')
+        self.assertContains(resp, f'<option value="{mumbai.pk}">Mumbai</option>', html=False)
+        rows = {r["code"]: r for r in resp.context["employees"]}
+        self.assertEqual((rows["SC000"]["branch_id"], rows["SC000"]["branch"]), (mumbai.pk, "Mumbai"))
+        self.assertIsNone(rows["SC001"]["branch_id"])

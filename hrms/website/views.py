@@ -1013,8 +1013,26 @@ def _override_attendance_status_item(attendance, new_status, company_filter=None
     return None
 
 
+def _can_edit_attendance_days(user):
+    """Changing a recorded day's status: Attendance Monitoring & Review ->
+    Edit (Late Attendance Review) or Attendance Register -> Edit."""
+    return (user.is_superuser or user.is_staff or has_feature_permission(user, "attendance_review", "edit")
+            or has_feature_permission(user, "attendance_register", "edit"))
+
+
+def _attendance_day_editors_only(view):
+    from functools import wraps
+
+    @wraps(view)
+    def wrapped(request, *args, **kwargs):
+        if not _can_edit_attendance_days(request.user):
+            raise PermissionDenied
+        return view(request, *args, **kwargs)
+    return wrapped
+
+
 @login_required
-@feature_required("attendance_review", action="edit")
+@_attendance_day_editors_only
 @require_http_methods(["POST"])
 def override_attendance_status(request):
     """Manually convert a single Attendance record's status — used on the
@@ -1064,7 +1082,7 @@ def override_attendance_status(request):
 
 
 @login_required
-@feature_required("attendance_review", action="edit")
+@_attendance_day_editors_only
 @require_http_methods(["POST"])
 def bulk_override_attendance_status(request):
     """Convert a batch of Attendance records to the same status in one
@@ -1693,7 +1711,8 @@ def submit_correction_request(request):
         # Raise requests for your own attendance only -- this used to accept
         # any attendance_id from any logged-in user. HR/Admin keep the
         # ability to raise on someone's behalf via the feature permission.
-        if not can_access_employee_record(request.user, attendance.employee, "attendance_corrections", "view"):
+        own = getattr(request.user, "employee_profile", None)
+        if not (own and own.pk == attendance.employee_id) and not _can_raise_for_others(request.user, "attendance_corrections"):
             return JsonResponse({"error": "You can only raise a request for your own attendance."}, status=403)
 
         # Block raising a correction request for a finalized payroll period
@@ -5634,7 +5653,7 @@ def _resolve_attendance_register_scope(request):
         # attendance_review:edit. Without it the register is a read-only
         # report rather than a page of cells that 403 when clicked.
         'can_edit_attendance': (
-            user.is_superuser or user.is_staff or has_feature_permission(user, "attendance_review", "edit")
+            _can_edit_attendance_days(user)
         ),
     }
 
@@ -6363,12 +6382,27 @@ def update_leave_credit_policy(request):
 
 
 
+# Which permission lets someone raise a request on another employee's
+# behalf. Raising one for yourself needs no grant at all.
+_RAISE_FOR_OTHERS = {
+    "leave_management": "create",
+    "attendance_corrections": "create",
+    "comp_off": "edit",          # comp_off:create is the Excel import
+}
+
+
 def _can_raise_for_others(user, feature_key):
-    """Raising a leave / comp-off / attendance-correction request on
-    someone else's behalf is for people who manage those requests; everyone
-    else (HR included) raises them only for themselves."""
-    return user.is_superuser or user.is_staff or has_feature_permission(user, feature_key, "edit") \
-        or has_feature_permission(user, feature_key, "approve")
+    """May `user` raise a leave / comp-off / attendance-correction request
+    for someone other than themselves? A separate, tickable right on Roles
+    & Permissions (HR doesn't have it unless an admin ticks it)."""
+    return user.is_superuser or user.is_staff or has_feature_permission(user, feature_key, _RAISE_FOR_OTHERS[feature_key])
+
+
+def _can_see_all_leave_applications(user):
+    """The Leave Apply list shows everyone's applications to people who
+    manage leave, and only your own otherwise."""
+    return (user.is_superuser or user.is_staff or has_feature_permission(user, "leave_management", "edit")
+            or has_feature_permission(user, "leave_management", "approve"))
 
 
 @login_required
@@ -6377,7 +6411,7 @@ def leave_apply_view(request):
     own_employee = getattr(request.user, "employee_profile", None)
 
     leaves = LeaveApplication.objects.select_related("employee").order_by("-id")
-    if not for_others:
+    if not (for_others or _can_see_all_leave_applications(request.user)):
         # Your own applications only -- this list used to show everyone's.
         leaves = leaves.filter(employee=own_employee) if own_employee else leaves.none()
 

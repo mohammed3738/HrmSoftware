@@ -75,18 +75,22 @@ GOLDEN_TABLE = {
     ("attendance_review", "view"): STAFF,
     ("attendance_review", "edit"): NOT_HR,
     ("attendance_register", "view"): NOT_HR,
+    ("attendance_register", "edit"): NOT_HR,
     ("shift_roster", "view"): STAFF,
     ("shift_roster", "edit"): STAFF,
     ("attendance_corrections", "view"): NOT_HR,
     ("attendance_corrections", "approve"): NOT_HR,
+    ("attendance_corrections", "create"): NOT_HR,
 
     # Leave & comp-off -- HR reads balances but approves nothing.
     ("leave_management", "view"): STAFF,
     ("leave_management", "edit"): NOT_HR,
     ("leave_management", "approve"): NOT_HR,
+    ("leave_management", "create"): NOT_HR,
     ("comp_off", "view"): NOT_HR,
     ("comp_off", "create"): STAFF,
     ("comp_off", "approve"): NOT_HR,
+    ("comp_off", "edit"): NOT_HR,
 
     # Compensation -- HR drafts a structure; Admin cannot run payroll.
     ("salary_structure", "view"): STAFF,

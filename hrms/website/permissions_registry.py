@@ -51,16 +51,16 @@ FEATURES = [
     {"key": "attendance_review", "name": "Attendance Monitoring & Review", "category": "Attendance & Scheduling",
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 20},
     {"key": "attendance_register", "name": "Attendance Register", "category": "Attendance & Scheduling",
-     "has_view": True, "has_create": False, "has_edit": False, "has_approve": False, "sort_order": 25},
+     "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 25},
     {"key": "shift_roster", "name": "Shift Roster", "category": "Attendance & Scheduling",
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 30},
     {"key": "attendance_corrections", "name": "Attendance Corrections", "category": "Attendance & Scheduling",
-     "has_view": True, "has_create": False, "has_edit": False, "has_approve": True, "sort_order": 40},
+     "has_view": True, "has_create": True, "has_edit": False, "has_approve": True, "sort_order": 40},
 
     {"key": "leave_management", "name": "Leave Management", "category": "Leave & Comp-Off",
-     "has_view": True, "has_create": False, "has_edit": True, "has_approve": True, "sort_order": 10},
+     "has_view": True, "has_create": True, "has_edit": True, "has_approve": True, "sort_order": 10},
     {"key": "comp_off", "name": "Comp-Off", "category": "Leave & Comp-Off",
-     "has_view": True, "has_create": True, "has_edit": False, "has_approve": True, "sort_order": 20},
+     "has_view": True, "has_create": True, "has_edit": True, "has_approve": True, "sort_order": 20},
 
     {"key": "salary_structure", "name": "Salary Structure & History", "category": "Compensation",
      "has_view": True, "has_create": True, "has_edit": True, "has_approve": False, "sort_order": 10},
@@ -143,12 +143,17 @@ SEED_GRANTS = {
     # The month-at-a-glance register is not HR's (day edits on it still
     # need attendance_review:edit on top).
     ("attendance_register", "view"): _NOT_HR,
+    # Changing a day's status from the register (also allowed by
+    # attendance_review:edit, which the Late Attendance Review page uses).
+    ("attendance_register", "edit"): _NOT_HR,
     ("shift_roster", "view"): _ALL_STAFF,
     ("shift_roster", "edit"): _ALL_STAFF,
     # Everyone sees their own correction / comp-off requests; seeing the
     # whole company's goes with approving them, so HR sees only its own.
     ("attendance_corrections", "view"): _NOT_HR,
     ("attendance_corrections", "approve"): _NOT_HR,
+    # Raising a correction for someone else's attendance (your own needs no grant).
+    ("attendance_corrections", "create"): _NOT_HR,
 
     # ── Leave & Comp-Off ──────────────────────────────────────────────
     # HR reads leave balances -- their own and everyone's -- but neither
@@ -157,12 +162,16 @@ SEED_GRANTS = {
     ("leave_management", "view"): _ALL_STAFF,
     ("leave_management", "edit"): _NOT_HR,
     ("leave_management", "approve"): _NOT_HR,
+    # Applying leave on someone else's behalf (your own needs no grant).
+    ("leave_management", "create"): _NOT_HR,
     ("comp_off", "view"): _NOT_HR,
     # Bulk-importing comp-off requests from Excel is a drafting action, same
     # as HR drafting a salary structure -- it raises Pending requests that
     # still go through the normal approve/reject flow below.
     ("comp_off", "create"): _ALL_STAFF,
     ("comp_off", "approve"): _NOT_HR,
+    # Raising a comp-off for someone else ("create" is the Excel import).
+    ("comp_off", "edit"): _NOT_HR,
 
     # ── Compensation ──────────────────────────────────────────────────
     # HR drafts a structure; changing an existing one stays with Admin.

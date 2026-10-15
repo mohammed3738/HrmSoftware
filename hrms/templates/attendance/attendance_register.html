@@ -48,12 +48,13 @@
       </div>
 
       {% if page_size %}<input type="hidden" name="per_page" value="{{ page_size }}">{% endif %}
+      {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
 
       <div class="col-md-3">
         <button type="submit" class="btn btn-sm btn-primary"><i class="ri-filter-2-line me-1"></i>Filter</button>
         <a href="{% url 'attendance-register' %}{% if selected_company_id %}?company_id={{ selected_company_id }}{% endif %}" class="btn btn-sm btn-outline-secondary">Reset</a>
         {% if day_columns %}
-        <a href="{% url 'attendance-register-export' %}?{% if selected_company_id %}company_id={{ selected_company_id }}&{% endif %}{% if selected_period %}period={{ selected_period }}&{% endif %}{% if search_query %}q={{ search_query }}{% endif %}"
+        <a href="{% url 'attendance-register-export' %}?{% if selected_company_id %}company_id={{ selected_company_id }}&{% endif %}{% if selected_period %}period={{ selected_period }}&{% endif %}{% if search_query %}q={{ search_query|urlencode }}&{% endif %}{% if sort %}sort={{ sort }}{% endif %}"
            class="btn btn-sm btn-outline-success" title="Export the current view to Excel">
           <i class="ri-file-excel-2-line me-1"></i>Export
         </a>
@@ -72,6 +73,7 @@
         {% if selected_company_id %}<input type="hidden" name="company_id" value="{{ selected_company_id }}">{% endif %}
         {% if selected_period %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
         {% if search_query %}<input type="hidden" name="q" value="{{ search_query }}">{% endif %}
+        {% if sort %}<input type="hidden" name="sort" value="{{ sort }}">{% endif %}
         <label class="text-muted small mb-0">Show</label>
         <select name="per_page" class="form-select form-select-sm" style="width:auto;" onchange="document.getElementById('pageSizeForm').submit()">
           {% for size in page_size_choices %}
@@ -86,7 +88,13 @@
       <table class="table table-sm table-bordered align-middle mb-0 reg-table" style="font-size:0.78rem;">
         <thead class="table-light" style="position:sticky; top:0; z-index:2;">
           <tr>
-            <th rowspan="2" class="reg-pin-code">Emp Code</th>
+            <th rowspan="2" class="reg-pin-code">
+              <a href="?{% if selected_company_id %}company_id={{ selected_company_id }}&{% endif %}{% if selected_period %}period={{ selected_period }}&{% endif %}{% if search_query %}q={{ search_query|urlencode }}&{% endif %}per_page={{ page_size }}&sort={% if sort == 'code_asc' %}code_desc{% else %}code_asc{% endif %}"
+                 class="text-reset text-decoration-none" title="Sort by employee code">
+                Emp Code
+                {% if sort == 'code_asc' %}<i class="ri-arrow-up-line"></i>{% elif sort == 'code_desc' %}<i class="ri-arrow-down-line"></i>{% else %}<i class="ri-arrow-up-down-line text-muted"></i>{% endif %}
+              </a>
+            </th>
             <th rowspan="2" class="reg-pin-name">Name</th>
             <th rowspan="2" class="text-end">Opening</th>
             <th rowspan="2" class="text-end">Leave<br>Taken</th>
@@ -192,10 +200,10 @@
       <span class="text-muted small">Page {{ page_obj.number }} of {{ paginator.num_pages }} ({{ total_employees }} employees)</span>
       <div>
         {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+        <a href="?page={{ page_obj.previous_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}&per_page={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
         {% endif %}
         {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary">Next</a>
+        <a href="?page={{ page_obj.next_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if search_query %}&q={{ search_query|urlencode }}{% endif %}&per_page={{ page_size }}{% if sort %}&sort={{ sort }}{% endif %}" class="btn btn-sm btn-outline-primary">Next</a>
         {% endif %}
       </div>
     </div>

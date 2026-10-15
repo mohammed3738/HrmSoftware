@@ -5726,6 +5726,8 @@ def _resolve_attendance_register_scope(request):
             .order_by('first_name', 'last_name')
         )
 
+    # Names match partially; an employee code must match exactly, so
+    # searching "2" finds employee 2, not 2, 20, 222, 245...
     search_query = request.GET.get('q', '').strip()
     if search_query:
         sq = search_query.lower()
@@ -5733,10 +5735,20 @@ def _resolve_attendance_register_scope(request):
             emp for emp in employees_qs
             if sq in (emp.first_name or '').lower()
             or sq in (emp.last_name or '').lower()
-            or sq in (emp.employee_code or '').lower()
+            or sq == (emp.employee_code or '').strip().lower()
         ]
     else:
         employees_list = list(employees_qs)
+
+    # Optional Emp Code sort (numeric codes in number order, so 9 < 10).
+    sort = request.GET.get('sort', '')
+    if sort in ('code_asc', 'code_desc'):
+        def _code_key(emp):
+            code = (emp.employee_code or '').strip()
+            return (0, int(code), '') if code.isdigit() else (1, 0, code.lower())
+        employees_list.sort(key=_code_key, reverse=(sort == 'code_desc'))
+    else:
+        sort = ''
 
     # Same simplification as the weekend rule above: use each company's own
     # setting in single-company mode, and the ordinary default when
@@ -5755,6 +5767,7 @@ def _resolve_attendance_register_scope(request):
         'selected_period': selected_period,
         'employees_list': employees_list,
         'search_query': search_query,
+        'sort': sort,
         'late_marks_affect_lwp': late_marks_affect_lwp,
     }
 
@@ -5964,6 +5977,7 @@ def attendance_register_view(request):
         'selected_period': str(scope['selected_period']['to_date']),
         'display_period': scope['selected_period']['label'],
         'search_query': scope['search_query'],
+        'sort': scope['sort'],
         'page_obj': page_obj,
         'paginator': paginator,
         'user_company_id': scope['company'].id if scope['company'] else None,

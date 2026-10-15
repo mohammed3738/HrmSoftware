@@ -287,3 +287,26 @@ class AttendanceRegisterTest(TestCase):
 
         absent_att.refresh_from_db()
         self.assertTrue(absent_att.status_overridden)
+
+
+class AttendanceRegisterSearchSortTest(TestCase):
+    """Searching a code matches that code exactly; Emp Code sorts both ways."""
+
+    def setUp(self):
+        AttendanceRegisterTest.setUp(self)
+        for code, first in (("2", "Two"), ("20", "Twenty"), ("222", "Many"), ("9", "Nine")):
+            Employee.objects.create(company=self.company, branch=self.branch, first_name=first, last_name="X",
+                                    employee_code=code, date_of_joining=date(2020, 1, 1), status="Active")
+
+    def _codes(self, **params):
+        resp = self.client.get(reverse("attendance-register"),
+                               {"period": "2026-03-31", "company_id": self.company.id, **params})
+        return [row["employee"].employee_code for row in resp.context["rows"]]
+
+    def test_code_search_is_exact(self):
+        self.assertEqual(self._codes(q="2"), ["2"])
+        self.assertEqual(self._codes(q="Twen"), ["20"])  # names still match partially
+
+    def test_sort_by_code(self):
+        self.assertEqual(self._codes(sort="code_asc"), ["2", "9", "20", "222", "AREG1"])
+        self.assertEqual(self._codes(sort="code_desc"), ["AREG1", "222", "20", "9", "2"])

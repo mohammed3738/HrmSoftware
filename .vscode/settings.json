@@ -1,0 +1,60 @@
+{
+  // The interpreter is the project venv. Create it once (PowerShell, from the
+  // repository root):
+  //     py -m venv .venv
+  //     .\.venv\Scripts\Activate.ps1
+  //     py -m pip install -r hrms\requirements-dev-windows.txt
+  // VS Code then picks it up automatically and the Testing panel works.
+  "python.defaultInterpreterPath": "${workspaceFolder}\.venv\Scripts\python.exe",
+
+  // Tests. django_find_project needs manage.py's folder, which is hrms/, not
+  // the repository root.
+  "python.testing.cwd": "${workspaceFolder}/hrms",
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["website/tests"],
+
+  // Django templates are HTML as far as the editor is concerned, but the
+  // {% %} tags need the Django syntax to stop the HTML formatter mangling
+  // them. Requires the "Django" extension (see extensions.json).
+  "files.associations": {
+    "**/templates/**/*.html": "django-html",
+    "**/.env.example": "properties",
+    "**/*.ini.example": "ini"
+  },
+  "emmet.includeLanguages": { "django-html": "html" },
+  "[django-html]": {
+    "editor.defaultFormatter": null,
+    "editor.formatOnSave": false
+  },
+
+  // Keep the file tree and search usable in a project this size: views.py
+  // alone is half a megabyte, and the Python extension chokes on staticfiles.
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/.pytest_cache": true
+  },
+  "search.exclude": {
+    "**/.venv": true,
+    "**/staticfiles": true,
+    "**/static/assets/vendor": true,
+    "**/media": true,
+    "**/__pycache__": true,
+    "**/*.sqlite3": true
+  },
+  "python.analysis.exclude": [
+    "**/staticfiles/**",
+    "**/static/assets/vendor/**",
+    "**/media/**",
+    "**/.venv/**"
+  ],
+
+  // The repository holds .env.example, never a real .env -- that one is
+  // git-ignored and local. Same for the agent's filled-in ini.
+  "files.watcherExclude": {
+    "**/.venv/**": true,
+    "**/staticfiles/**": true,
+    "**/media/**": true
+  }
+}

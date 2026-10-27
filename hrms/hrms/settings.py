@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 from pathlib import Path
 import os
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -124,34 +125,183 @@ WSGI_APPLICATION = 'hrms.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
-if os.environ.get('DB_ENGINE', 'sqlite').lower() == 'postgres':
-    DATABASES = {
-        'default': {
+# DB_ENGINE picks the backend: "postgres" on a server, "sqlite" (or unset)
+# for local development. Everything else about the choice is worked out here
+# rather than left to Django, because the stock failures are opaque at
+# exactly the moment somebody is setting a new machine up for the first
+# time: a missing driver reports "Error loading psycopg2 or psycopg module"
+# without saying what to install, and a missing variable reports
+# KeyError: 'DB_NAME' without saying which file it should be in.
+
+DB_ENGINE_ALIASES = {
+    'postgres': 'postgres', 'postgresql': 'postgres', 'psql': 'postgres', 'pg': 'postgres',
+    'sqlite': 'sqlite', 'sqlite3': 'sqlite', '': 'sqlite',
+}
+
+# Values .env.example ships with. Reaching the database layer still holding
+# one of these means the file was copied but not filled in -- worth naming,
+# because the resulting authentication failure points at PostgreSQL rather
+# than at the line that is actually wrong.
+_DB_PLACEHOLDERS = {'change-me', 'changeme', 'change_me'}
+
+
+def _env_required(name, engine_label):
+    """An .env value that has to be there, with an error that names the file
+    and the variable. Present-but-empty is allowed: PostgreSQL peer and
+    trust authentication legitimately use an empty password."""
+    if name not in os.environ:
+        raise ImproperlyConfigured(
+            f"DB_ENGINE={engine_label} needs {name}, which is not set in hrms/.env.\n"
+            f"Add a line like  {name}=...  (see hrms/.env.example), or switch to "
+            f"DB_ENGINE=sqlite for local development."
+        )
+    value = os.environ[name].strip()
+    if value.lower() in _DB_PLACEHOLDERS:
+        raise ImproperlyConfigured(
+            f"{name} in hrms/.env is still the placeholder {value!r} from "
+            f".env.example. Put the real value in, or switch to DB_ENGINE=sqlite "
+            f"for local development."
+        )
+    return value
+
+
+def _postgres_driver_or_explain():
+    """Import whichever psycopg Django would use, and if neither is there,
+    say what to do about it instead of letting Django report the module name
+    and nothing else."""
+    try:
+        import psycopg  # noqa: F401  (psycopg 3 -- what requirements.txt pins)
+        return
+    except ImportError:
+        pass
+    try:
+        import psycopg2  # noqa: F401  (still accepted by Django)
+        return
+    except ImportError:
+        pass
+    raise ImproperlyConfigured(
+        "DB_ENGINE=postgres, but no PostgreSQL driver is installed in this "
+        "environment, so Django cannot talk to the database.\n"
+        "\n"
+        "Pick whichever you actually want:\n"
+        "\n"
+        "  * Use SQLite locally (nothing to install) -- in hrms/.env set:\n"
+        "        DB_ENGINE=sqlite\n"
+        "\n"
+        "  * Use PostgreSQL -- install the driver:\n"
+        "        pip install \"psycopg[binary]\"\n"
+        "\n"
+        "    On a server, pip install -r hrms/requirements.txt already includes\n"
+        "    it. Hitting this is usually a development machine, installed from\n"
+        "    requirements-dev-windows.txt."
+    )
+
+
+def _database_config():
+    requested = os.environ.get('DB_ENGINE', 'sqlite').strip().lower()
+    engine = DB_ENGINE_ALIASES.get(requested)
+    if engine is None:
+        raise ImproperlyConfigured(
+            f"DB_ENGINE={os.environ.get('DB_ENGINE')!r} in hrms/.env is not a value this "
+            f"project understands. Use one of: "
+            f"{', '.join(sorted(set(DB_ENGINE_ALIASES.values())))}."
+        )
+
+    if engine == 'postgres':
+        _postgres_driver_or_explain()
+        return {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ['DB_NAME'],
-            'USER': os.environ['DB_USER'],
-            'PASSWORD': os.environ['DB_PASSWORD'],
+            'NAME': _env_required('DB_NAME', requested),
+            'USER': _env_required('DB_USER', requested),
+            'PASSWORD': _env_required('DB_PASSWORD', requested),
             'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
             'PORT': os.environ.get('DB_PORT', '5432'),
             'CONN_MAX_AGE': 60,
             'CONN_HEALTH_CHECKS': True,
         }
+
+    # SQLite. Relative SQLITE_PATH values resolve against the Django project
+    # folder, so the database does not move depending on where manage.py was
+    # run from.
+    sqlite_path = os.environ.get('SQLITE_PATH', '').strip()
+    name = Path(sqlite_path) if sqlite_path else BASE_DIR / 'db.sqlite3'
+    if not name.is_absolute():
+        name = BASE_DIR / name
+    return {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': name,
+        'OPTIONS': {
+            'timeout': 30,  # wait up to 30s for write lock instead of failing immediately
+        },
     }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': os.environ.get('SQLITE_PATH', BASE_DIR / 'db.sqlite3'),
-            'OPTIONS': {
-                'timeout': 30,  # wait up to 30s for write lock instead of failing immediately
-            },
-        }
-    }
+
+
+DATABASES = {'default': _database_config()}
 
 
 
 # Grace period in minutes for late coming
 GRACE_PERIOD_MINUTES = 15
+
+
+# ─── Biometric (eSSL / eTimeTrackLite) attendance sync ──────────────────────
+# The punch machine's SQL Server sits on another network with no route to
+# this server, so the traffic goes the other way: a small agent on the
+# Windows box reads dbo.DeviceLogs and POSTs the punches to
+# /api/biometric/punches/. See ESSL_INTEGRATION_GUIDE.txt in the repository
+# root for the agent, the firewall rules and the scheduled task.
+
+# Shared secret the agent sends in the X-HRMS-Sync-Token header. Empty
+# disables the endpoint outright -- an unauthenticated punch feed would let
+# anyone write attendance.
+BIOMETRIC_SYNC_TOKEN = os.environ.get('BIOMETRIC_SYNC_TOKEN', '')
+
+# How far back each run re-reads and rebuilds. Has to be at least 2 so a
+# night shift's second half (the next day's first punch) is always in the
+# window, and a few days of slack lets a device that was offline catch up.
+BIOMETRIC_SYNC_LOOKBACK_DAYS = int(os.environ.get('BIOMETRIC_SYNC_LOOKBACK_DAYS', '3'))
+
+# Hours (local time) the scheduled sync runs at, as used by celery beat.
+BIOMETRIC_SYNC_HOURS = os.environ.get('BIOMETRIC_SYNC_HOURS', '10,12,14,16,18,20,22,0')
+
+# A shift longer than this is not a shift, it's a missed out-punch: the
+# out-time is left blank rather than crediting an absurd day.
+BIOMETRIC_MAX_SHIFT_HOURS = float(os.environ.get('BIOMETRIC_MAX_SHIFT_HOURS', '16'))
+
+# Night-shift guard rails (local time, HH:MM). A night employee's in-punch
+# is the last punch of the day, but only if it falls at or after
+# BIOMETRIC_NIGHT_IN_FROM -- an employee who only punched at 06:00 was
+# punching OUT of the previous night, not in. Likewise the next day's first
+# punch only counts as their out-punch when it lands before
+# BIOMETRIC_NIGHT_OUT_UNTIL.
+BIOMETRIC_NIGHT_IN_FROM = os.environ.get('BIOMETRIC_NIGHT_IN_FROM', '12:00')
+BIOMETRIC_NIGHT_OUT_UNTIL = os.environ.get('BIOMETRIC_NIGHT_OUT_UNTIL', '12:00')
+
+# Optional direct-pull mode, for a machine that can actually reach the SQL
+# Server (the development PC on the same LAN). Needs pyodbc plus an ODBC
+# driver; left unset the app only ever accepts pushes from the agent.
+BIOMETRIC_MSSQL_HOST = os.environ.get('BIOMETRIC_MSSQL_HOST', '')
+BIOMETRIC_MSSQL_DATABASE = os.environ.get('BIOMETRIC_MSSQL_DATABASE', 'etimetracklite1')
+BIOMETRIC_MSSQL_USER = os.environ.get('BIOMETRIC_MSSQL_USER', '')
+BIOMETRIC_MSSQL_PASSWORD = os.environ.get('BIOMETRIC_MSSQL_PASSWORD', '')
+BIOMETRIC_MSSQL_DRIVER = os.environ.get('BIOMETRIC_MSSQL_DRIVER', 'ODBC Driver 17 for SQL Server')
+BIOMETRIC_MSSQL_TRUSTED_CONNECTION = env_bool('BIOMETRIC_MSSQL_TRUSTED_CONNECTION', False)
+
+# Punches live in eTimeTrackLite's monthly DeviceLogs_<month>_<year> tables;
+# dbo.DeviceLogs is only a staging buffer it empties as it archives, and on a
+# tidy installation it is always empty. Turn this on for an installation that
+# leaves punches sitting in that buffer -- the pull warns in the log if it
+# ever finds any while this is off.
+BIOMETRIC_MSSQL_READ_BUFFER = env_bool('BIOMETRIC_MSSQL_READ_BUFFER', False)
+
+# A punch dated in the future is a reader with a wrong clock, not attendance.
+# One such punch (dated 31 Dec) was found in this installation's history. Left
+# unchecked it becomes an attendance row on a date nobody has worked yet, which
+# is then awkward to spot and awkward to remove. A day of tolerance covers
+# clock skew and a device an hour or two ahead; anything beyond is rejected and
+# reported on the Biometric Sync page.
+BIOMETRIC_FUTURE_PUNCH_TOLERANCE_DAYS = int(
+    os.environ.get('BIOMETRIC_FUTURE_PUNCH_TOLERANCE_DAYS', '1'))
 
 
 # Password validation

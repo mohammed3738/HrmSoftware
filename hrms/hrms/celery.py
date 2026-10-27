@@ -2,6 +2,7 @@ from __future__ import absolute_import, unicode_literals
 import os
 from celery import Celery
 from celery.schedules import crontab
+from django.conf import settings
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'hrms.settings')
 
@@ -10,6 +11,19 @@ app.conf.enable_utc = False
 app.conf.update(timezone='Asia/Kolkata')
 
 app.config_from_object('django.conf:settings', namespace='CELERY')
+
+
+def _biometric_sync_hours():
+    """Hours the biometric sync runs at, from BIOMETRIC_SYNC_HOURS (see
+    hrms/settings.py). Crontab wants a string like '10,12,14'; an unreadable
+    setting falls back to the default rather than taking beat down."""
+    raw = getattr(settings, 'BIOMETRIC_SYNC_HOURS', '') or ''
+    hours = []
+    for part in raw.split(','):
+        part = part.strip()
+        if part.isdigit() and 0 <= int(part) <= 23:
+            hours.append(str(int(part)))
+    return ','.join(dict.fromkeys(hours)) or '10,12,14,16,18,20,22,0'
 
 # 🟢 Correct combined schedule
 app.conf.beat_schedule = {
@@ -35,6 +49,16 @@ app.conf.beat_schedule = {
     'backfill-holiday-attendance-daily': {
         'task': 'website.tasks.backfill_holiday_attendance_task',
         'schedule': crontab(hour=1, minute=0),
+    },
+
+    # Biometric (eSSL) punches -> attendance in/out times. Every second hour
+    # from 10:00, which BIOMETRIC_SYNC_HOURS in .env can change without
+    # touching this file. Midnight is in the default list on purpose: a night
+    # shift's out-punch lands after it, and that run is what closes the
+    # previous day.
+    'sync-biometric-attendance': {
+        'task': 'website.tasks.sync_biometric_attendance_task',
+        'schedule': crontab(minute=0, hour=_biometric_sync_hours()),
     },
 
 }

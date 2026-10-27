@@ -2,6 +2,7 @@
 from django.urls import path
 
 from website import views
+from website import views_biometric
 
 urlpatterns = [    
     # path('',views.test,name="test"),
@@ -261,5 +262,13 @@ urlpatterns = [
     path('api/holiday-type/<int:type_id>/', views.api_get_holiday_type, name='api-holiday-type'),
     path('api/holidays/', views.api_holidays_json, name='api-holidays'),
     path('api/earned-leaves/', views.api_earned_leaves_json, name='api-earned-leaves'),
+
+    # Biometric (eSSL) attendance sync. The two /api/biometric/ endpoints are
+    # machine-to-machine: no session, no CSRF, authenticated on the
+    # X-HRMS-Sync-Token header (see website/views_biometric.py).
+    path('api/biometric/punches/', views_biometric.biometric_punches_api, name='biometric-punches-api'),
+    path('api/biometric/status/', views_biometric.biometric_status_api, name='biometric-status-api'),
+    path('attendance/biometric-sync/', views_biometric.biometric_sync_dashboard, name='biometric-sync'),
+    path('attendance/biometric-sync/rebuild/', views_biometric.biometric_resync, name='biometric-sync-rebuild'),
 
 ]

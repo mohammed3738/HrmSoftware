@@ -515,6 +515,14 @@
                       </li>
                       {% endif %}
 
+                      {% if request.user|has_feature:"attendance_data:edit" %}
+                      <li class="menu-item">
+                        <a href="{% url 'biometric-sync' %}" class="menu-link">
+                          <div>Biometric Sync</div>
+                        </a>
+                      </li>
+                      {% endif %}
+
                       {% if request.user|has_feature:"attendance_review:view" %}
                       <li class="menu-item">
                         <a href="{% url 'attendance' %}" class="menu-link">

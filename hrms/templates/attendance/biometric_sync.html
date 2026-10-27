@@ -1,0 +1,263 @@
+{% extends 'base2.html' %} {% block body %}
+<div class="container-xxl flex-grow-1 container-p-y">
+
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h4 class="mb-1"><i class="ri-fingerprint-line me-2"></i>Biometric Sync</h4>
+      <p class="text-muted mb-0">
+        Punches from the eSSL machine, and the in/out times built from them.
+      </p>
+    </div>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if not token_configured %}
+    <div class="alert alert-danger">
+      <strong>The punch feed is switched off.</strong>
+      <code>BIOMETRIC_SYNC_TOKEN</code> is not set in <code>hrms/.env</code>, so the
+      agent on the Windows server is being refused. See
+      <code>ESSL_INTEGRATION_GUIDE.txt</code> in the repository root.
+    </div>
+  {% endif %}
+
+  <!-- ── How it is set up ──────────────────────────────────────────── -->
+  <div class="row g-4 mb-4">
+    <div class="col-md-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <div class="text-muted small text-uppercase">Punches held</div>
+          <h3 class="mb-0">{{ total_punches }}</h3>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <div class="text-muted small text-uppercase">Matching no employee</div>
+          <h3 class="mb-0 {% if unmatched_total %}text-warning{% endif %}">{{ unmatched_total }}</h3>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <div class="text-muted small text-uppercase">Runs at (hours)</div>
+          <h5 class="mb-0">{{ sync_hours }}</h5>
+          <div class="form-text">Re-reads the last {{ lookback_days }} day(s) each time.</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card h-100">
+        <div class="card-body">
+          <div class="text-muted small text-uppercase">Night shift staff</div>
+          <h3 class="mb-0">{{ night_shift_employees|length }}</h3>
+          <div class="form-text">In-time from {{ night_in_from|time:"H:i" }} onwards.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+    <!-- ── Rebuild by hand ────────────────────────────────────────── -->
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">Rebuild from stored punches</h5>
+        </div>
+        <div class="card-body">
+          <p class="text-muted small">
+            Re-applies the in/out time rules to a date range using punches already
+            held here. It fetches nothing from the punch machine — the agent on the
+            Windows server does that — so it is safe to run at any time. Days whose
+            times were set by hand, days inside a finalized payroll run and days
+            before an employee joined are left alone.
+          </p>
+          <form method="post" action="{% url 'biometric-sync-rebuild' %}">
+            {% csrf_token %}
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label">From</label>
+                <input type="date" name="from_date" class="form-control" value="{{ default_from }}" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label">To</label>
+                <input type="date" name="to_date" class="form-control" value="{{ default_to }}" required>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary mt-3">
+              <i class="ri-refresh-line me-1"></i> Rebuild
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-header">
+          <h5 class="mb-0">The rules in force</h5>
+        </div>
+        <div class="card-body small">
+          <p class="mb-2"><strong>Day shift</strong></p>
+          <ul class="mb-3">
+            <li>In-time: the day's first punch, set once and then left alone.</li>
+            <li>Out-time: the day's last punch, refreshed whenever a later one appears.</li>
+          </ul>
+          <p class="mb-2"><strong>Night shift</strong></p>
+          <ul class="mb-3">
+            <li>In-time: that day's <strong>last</strong> punch (from {{ night_in_from|time:"H:i" }} onwards).</li>
+            <li>Out-time: the <strong>next</strong> day's first punch (before {{ night_out_until|time:"H:i" }}).</li>
+          </ul>
+          <p class="mb-0 text-muted">
+            A span longer than {{ max_shift_hours }} hours is treated as a missed
+            out-punch and the out-time is left blank rather than crediting the day.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Recent runs ───────────────────────────────────────────── -->
+    <div class="col-lg-7">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="mb-0">Recent sync runs</h5>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th class="text-end">Punches</th>
+                <th class="text-end">New</th>
+                <th class="text-end">Created</th>
+                <th class="text-end">Updated</th>
+                <th class="text-end">Left alone</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for run in runs %}
+                <tr>
+                  <td class="text-nowrap">{{ run.started_at|date:"d M, H:i" }}
+                    {% if run.duration_display %}<span class="text-muted small">({{ run.duration_display }})</span>{% endif %}
+                  </td>
+                  <td>{{ run.get_source_display }}</td>
+                  <td>
+                    {% if run.status == 'success' %}<span class="badge bg-label-success">Success</span>
+                    {% elif run.status == 'failed' %}<span class="badge bg-label-danger">Failed</span>
+                    {% else %}<span class="badge bg-label-secondary">Running</span>{% endif %}
+                  </td>
+                  <td class="text-end">{{ run.punches_received }}</td>
+                  <td class="text-end">{{ run.punches_stored }}</td>
+                  <td class="text-end">{{ run.attendance_created }}</td>
+                  <td class="text-end">{{ run.attendance_updated }}</td>
+                  <td class="text-end">{{ run.attendance_skipped }}</td>
+                </tr>
+                {% if run.message %}
+                  <tr><td colspan="8" class="text-muted small pt-0"><pre class="mb-0 small">{{ run.message }}</pre></td></tr>
+                {% endif %}
+              {% empty %}
+                <tr><td colspan="8" class="text-center text-muted py-4">
+                  Nothing yet. Once the Windows agent starts pushing, its runs appear here.
+                </td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mt-4">
+        <div class="card-header">
+          <h5 class="mb-0">Punches received, by day</h5>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Date</th><th class="text-end">Punches</th></tr></thead>
+            <tbody>
+              {% for row in daily_counts %}
+                <tr>
+                  <td>{{ row.punch_date|date:"D, d M Y" }}</td>
+                  <td class="text-end">{{ row.punches }}</td>
+                </tr>
+              {% empty %}
+                <tr><td colspan="2" class="text-center text-muted py-4">No punches in the last two weeks.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Unmatched punches ──────────────────────────────────────── -->
+  {% if unmatched %}
+  <div class="card mt-4 border-warning">
+    <div class="card-header">
+      <h5 class="mb-0 text-warning"><i class="ri-error-warning-line me-1"></i>Punches matching no employee</h5>
+    </div>
+    <div class="card-body">
+      <p class="text-muted small">
+        These punches arrived but no active employee has that code. Nothing is lost —
+        set the employee's <strong>Employee Code</strong> to the code below, or fill in
+        their <strong>Biometric Device User ID</strong>, and the next run attaches every
+        punch already held and rebuilds those days.
+      </p>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr><th>Device user ID</th><th>eSSL employee code</th><th>Name on the device</th><th class="text-end">Punches</th></tr>
+          </thead>
+          <tbody>
+            {% for row in unmatched %}
+              <tr>
+                <td><code>{{ row.device_user_id }}</code></td>
+                <td>{% if row.employee_code %}<code>{{ row.employee_code }}</code>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+                <td>{{ row.employee_name|default:"—" }}</td>
+                <td class="text-end">{{ row.punches }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── Night shift roster ─────────────────────────────────────── -->
+  <div class="card mt-4">
+    <div class="card-header">
+      <h5 class="mb-0">Employees marked night shift</h5>
+    </div>
+    <div class="card-body">
+      {% if night_shift_employees %}
+        <div class="d-flex flex-wrap gap-2">
+          {% for employee in night_shift_employees %}
+            <span class="badge bg-label-primary">
+              {{ employee.employee_code }} — {{ employee.first_name }} {{ employee.last_name }}
+            </span>
+          {% endfor %}
+        </div>
+        <p class="form-text mt-3 mb-0">
+          Change this on the employee's own form (Night Shift). A Shift Roster entry
+          whose timings cross midnight overrides it for those dates.
+        </p>
+      {% else %}
+        <p class="text-muted mb-0">
+          Nobody is marked as night shift yet. Tick <strong>Night Shift</strong> on an
+          employee's form for duty that runs across midnight, so their in-time is taken
+          from that day's last punch instead of its first.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

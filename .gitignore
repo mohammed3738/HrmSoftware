@@ -283,3 +283,13 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/python,django,visualstudiocode
+# eSSL punch agent: holds the shared secret, plus its local state and log.
+hrms/scripts/essl_agent/essl_agent.ini
+hrms/scripts/essl_agent/essl_agent_state.json
+hrms/scripts/essl_agent/essl_agent.log*
+
+# eSSL web application files, copied in only as reference for building the
+# biometric integration (see ESSL_INTEGRATION_GUIDE.txt section 2). Vendor
+# code and a 45 MB archive -- not ours to commit, and safe to delete.
+/eTimeTrackLiteWeb/
+/eTimeTrackLiteWeb.rar

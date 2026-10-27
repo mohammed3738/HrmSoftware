@@ -1,0 +1,139 @@
+{
+  // Run / debug configurations for this project. Pick one from the Run and
+  // Debug panel (Ctrl+Shift+D) and press F5.
+  //
+  // All of them expect the venv at .venv\ and hrms\.env to exist -- see
+  // .vscode/settings.json and ESSL_INTEGRATION_GUIDE.txt section 12.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // The app. Breakpoints work anywhere, including inside
+      // services/biometric_sync.py while a punch is being ingested.
+      // --noreload is required: the autoreloader forks, and the debugger
+      // then loses the process that actually serves the request.
+      "name": "Django: runserver",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}\\hrms\\manage.py",
+      "args": ["runserver", "127.0.0.1:8000", "--noreload"],
+      "cwd": "${workspaceFolder}\\hrms",
+      "django": true,
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    },
+    {
+      // What the rules WOULD do to a date range, writing nothing. The safest
+      // way to check a night-shift employee's days against real punches.
+      "name": "Biometric sync: dry run (last 7 days)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}\\hrms\\manage.py",
+      "args": ["sync_biometric_attendance", "--days", "7", "--dry-run"],
+      "cwd": "${workspaceFolder}\\hrms",
+      "django": true,
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    },
+    {
+      // Rebuild attendance from punches already stored. Prompts for the
+      // dates, so one config covers every range.
+      "name": "Biometric sync: rebuild a date range",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}\\hrms\\manage.py",
+      "args": [
+        "sync_biometric_attendance",
+        "--from", "${input:fromDate}",
+        "--to", "${input:toDate}"
+      ],
+      "cwd": "${workspaceFolder}\\hrms",
+      "django": true,
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    },
+    {
+      // Read punches straight from the eSSL SQL Server. Only works from a
+      // machine on the same LAN as the Windows server, with pyodbc installed
+      // and BIOMETRIC_MSSQL_* set in hrms/.env -- guide section 12.
+      "name": "Biometric sync: pull from eSSL SQL Server",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}\\hrms\\manage.py",
+      "args": ["sync_biometric_attendance", "--pull", "--days", "3"],
+      "cwd": "${workspaceFolder}\\hrms",
+      "django": true,
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    },
+    {
+      // The punch agent, run from here against a local runserver. Needs
+      // hrms/scripts/essl_agent/essl_agent.ini (copy the .example).
+      "name": "eSSL agent: self-test",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}\\hrms\\scripts\\essl_agent\\essl_punch_agent.py",
+      "args": ["--test"],
+      "cwd": "${workspaceFolder}\\hrms\\scripts\\essl_agent",
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "eSSL agent: dry run (last 1 day)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}\\hrms\\scripts\\essl_agent\\essl_punch_agent.py",
+      "args": ["--days", "1", "--dry-run", "--verbose"],
+      "cwd": "${workspaceFolder}\\hrms\\scripts\\essl_agent",
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Tests: biometric sync only",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}\\hrms\\manage.py",
+      "args": ["test", "website.tests.test_biometric_sync", "-v", "2"],
+      "cwd": "${workspaceFolder}\\hrms",
+      "django": true,
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Celery: worker",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "args": ["-A", "hrms", "worker", "--loglevel=info", "--pool=solo"],
+      "cwd": "${workspaceFolder}\\hrms",
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    },
+    {
+      // The scheduler. Needs Redis reachable at CELERY_BROKER_URL; without
+      // it, use the "rebuild a date range" config instead -- it does the
+      // same work without a broker.
+      "name": "Celery: beat (scheduler)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "celery",
+      "args": ["-A", "hrms", "beat", "--loglevel=info"],
+      "cwd": "${workspaceFolder}\\hrms",
+      "justMyCode": false,
+      "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "fromDate",
+      "type": "promptString",
+      "description": "Rebuild from date (YYYY-MM-DD)",
+      "default": "2026-10-01"
+    },
+    {
+      "id": "toDate",
+      "type": "promptString",
+      "description": "Rebuild to date (YYYY-MM-DD)",
+      "default": "2026-10-31"
+    }
+  ]
+}

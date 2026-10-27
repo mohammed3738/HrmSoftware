@@ -386,3 +386,35 @@ def backfill_holiday_attendance_task():
             print(f"[backfill_holiday_attendance_task] Holiday {holiday.id} failed: {e}")
 
     return total_created
+
+@shared_task(bind=True, max_retries=2, default_retry_delay=300)
+def sync_biometric_attendance_task(self):
+    """Scheduled rebuild of in/out times from biometric punches.
+
+    The Windows agent next to the punch machine pushes punches in on its own
+    (more frequent) timetable, because this server has no route to that
+    network. This task is the other half: it turns whatever has arrived into
+    Attendance in/out times, re-reading the last few days so a punch written
+    late to the device database still lands, and so a night shift's second
+    half (the next morning's punch) is always inside the window.
+
+    It is also the safety net for a push that arrived while the attendance
+    rebuild was failing: nothing is lost, because the punches are stored
+    first and rebuilt from here.
+
+    Schedule: see hrms/celery.py (BIOMETRIC_SYNC_HOURS).
+    """
+    from .services import biometric_sync
+
+    try:
+        run = biometric_sync.resync_window(source=BiometricSyncRun.SOURCE_SCHEDULED)
+    except Exception as exc:
+        raise self.retry(exc=exc)
+
+    return {
+        "run_id": run.id,
+        "punches": run.punches_received,
+        "created": run.attendance_created,
+        "updated": run.attendance_updated,
+        "skipped": run.attendance_skipped,
+    }

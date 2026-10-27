@@ -601,6 +601,23 @@
                       <div class="form-text">Leave as default to use the company's usual weekly off (e.g. Sunday). Set this only to override it — for example Saturday for a night-shift employee.</div>
                     </div>
                   </div>
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label class="form-label">Night Shift</label>
+                      <div class="form-check mt-2">
+                        {{ form.is_night_shift|add_class:"form-check-input" }}
+                        <label class="form-check-label" for="{{ form.is_night_shift.id_for_label }}">Duty runs across midnight</label>
+                      </div>
+                      <div class="form-text">The day's in-time becomes that day's <strong>last</strong> punch and its out-time the <strong>next</strong> day's first punch. A Shift Roster entry crossing midnight overrides this for those dates.</div>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="mb-3">
+                      <label class="form-label">Biometric Device User ID</label>
+                      {{ form.biometric_device_user_id|add_class:"form-control" }}
+                      <div class="form-text">Only needed when the punch machine's user ID differs from the employee code. Leave blank to match on employee code.</div>
+                    </div>
+                  </div>
                   <!-- SECTION: Statutory Details -->
                   <div class="col-12 mt-2 mb-1">
                     <h6 class="text-muted fw-semibold small text-uppercase border-bottom pb-1">

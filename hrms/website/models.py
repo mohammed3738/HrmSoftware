@@ -231,6 +231,25 @@ class Employee(models.Model):
                    "use the company default.",
     )
 
+    # ── Biometric (eSSL / eTimeTrackLite) attendance sync ─────────────
+    # The punch device identifies people by its own user id, which is only
+    # sometimes the same string as employee_code. The sync matches on the
+    # eSSL employee code first and falls back to this, so it only needs
+    # filling in for the employees whose two codes differ.
+    is_night_shift = models.BooleanField(
+        default=False,
+        verbose_name="Night shift employee",
+        help_text="Duty runs across midnight, so a day's in-time is that day's LAST "
+                   "punch and its out-time the NEXT day's first punch. A Shift Roster "
+                   "entry whose timings cross midnight overrides this for those dates.",
+    )
+    biometric_device_user_id = models.CharField(
+        max_length=50, null=True, blank=True,
+        verbose_name="Biometric device user ID",
+        help_text="Only needed when the punch machine's user ID differs from the "
+                   "employee code. Leave blank to match on employee code.",
+    )
+
     # Statutory Details
     pan_no = models.CharField(max_length=30, null=True, blank=True, verbose_name="PAN No")
     aadhar_no = models.CharField(max_length=30, null=True, blank=True, verbose_name="Aadhar No")
@@ -1669,6 +1688,19 @@ class Attendance(models.Model):
                    "and calculate_status() will preserve it instead of recomputing from in/out time.",
     )
 
+    # Set by every path that writes punch times by hand -- an approved
+    # correction request or an Excel upload. The biometric sync skips these
+    # rows so an automated pull can never undo a decision somebody made
+    # deliberately (it can still be forced, see
+    # services/biometric_sync.py and the --force flag on
+    # `manage.py sync_biometric_attendance`).
+    times_locked = models.BooleanField(
+        default=False,
+        verbose_name="Punch times set manually",
+        help_text="In/out time came from an Excel upload or an approved correction, "
+                   "not from the punch machine. The biometric sync leaves these alone.",
+    )
+
     class Meta:
         unique_together = [('employee', 'date')]
         indexes = [
@@ -2239,6 +2271,115 @@ class AttendanceCorrectionRequest(models.Model):
 
     def __str__(self):
         return f"Correction Request {self.id} - {self.status}"
+
+
+# ============================================
+# Biometric (eSSL / eTimeTrackLite) attendance sync
+# ============================================
+
+class BiometricPunch(models.Model):
+    """One raw punch read off the eSSL eTimeTrackLite database (its
+    dbo.DeviceLogs table, one row per finger/card read).
+
+    Kept as the device recorded it -- a local wall-clock date and time, not
+    an aware datetime -- because that is exactly what Attendance.in_time and
+    Attendance.out_time are, so the sync never has to convert between zones
+    and can never shift a 23:50 punch onto the wrong day.
+
+    Punches are stored even when no employee matches the device's user ID
+    (`employee` stays NULL): the punch is real, only the code mapping is
+    missing, and the Biometric Sync page lists those so HR can fill in the
+    employee's code and have the next run pick them up.
+    """
+    device_user_id = models.CharField(max_length=50, help_text="DeviceLogs.UserId on the eSSL side")
+    employee_code = models.CharField(max_length=50, blank=True, help_text="eSSL Employees.EmployeeCode, when the agent could resolve it")
+    employee_name = models.CharField(max_length=255, blank=True)
+    employee = models.ForeignKey(
+        "Employee", null=True, blank=True, on_delete=models.SET_NULL, related_name="biometric_punches",
+    )
+    punch_date = models.DateField()
+    punch_time = models.TimeField()
+    device_id = models.IntegerField(null=True, blank=True)
+    direction = models.CharField(max_length=32, blank=True, help_text="DeviceLogs.Direction / AttDirection, when the device reports one")
+    source_log_id = models.BigIntegerField(null=True, blank=True, help_text="DeviceLogs.DeviceLogId, for tracing a punch back to eSSL")
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # The device's own identity for a punch: who, on what day, at what
+        # second. Re-sending an overlapping window (which every run does,
+        # deliberately) therefore stores nothing twice.
+        unique_together = [("device_user_id", "punch_date", "punch_time")]
+        indexes = [
+            models.Index(fields=["employee", "punch_date"]),
+            models.Index(fields=["punch_date"]),
+            models.Index(fields=["device_user_id", "punch_date"]),
+        ]
+        ordering = ["punch_date", "punch_time"]
+
+    def __str__(self):
+        who = self.employee_code or self.device_user_id
+        return f"{who} @ {self.punch_date} {self.punch_time}"
+
+
+class BiometricSyncRun(models.Model):
+    """One attempt at pulling punches in and rebuilding attendance from
+    them -- whether it came from the Windows agent, the scheduled Celery
+    task, the management command or the Biometric Sync page's button.
+    Keeps the Biometric Sync page honest about whether the automation is
+    actually running, which a silent cron job otherwise can't show."""
+
+    SOURCE_AGENT = "agent"
+    SOURCE_SCHEDULED = "scheduled"
+    SOURCE_MANUAL = "manual"
+    SOURCE_COMMAND = "command"
+    SOURCE_CHOICES = [
+        (SOURCE_AGENT, "Windows agent push"),
+        (SOURCE_SCHEDULED, "Scheduled task"),
+        (SOURCE_MANUAL, "Manual (Biometric Sync page)"),
+        (SOURCE_COMMAND, "Management command"),
+    ]
+
+    STATUS_RUNNING = "running"
+    STATUS_SUCCESS = "success"
+    STATUS_FAILED = "failed"
+    STATUS_CHOICES = [
+        (STATUS_RUNNING, "Running"),
+        (STATUS_SUCCESS, "Success"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default=SOURCE_AGENT)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_RUNNING)
+    from_date = models.DateField(null=True, blank=True)
+    to_date = models.DateField(null=True, blank=True)
+
+    punches_received = models.IntegerField(default=0)
+    punches_stored = models.IntegerField(default=0, help_text="New punches; the rest were already held from an earlier overlapping run.")
+    punches_unmatched = models.IntegerField(default=0, help_text="Punches whose device user ID matched no employee.")
+    attendance_created = models.IntegerField(default=0)
+    attendance_updated = models.IntegerField(default=0)
+    attendance_skipped = models.IntegerField(default=0, help_text="Days left alone: manual times, finalized payroll, or before joining.")
+
+    message = models.TextField(blank=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+        indexes = [models.Index(fields=["-started_at"])]
+
+    def __str__(self):
+        return f"{self.get_source_display()} {self.started_at:%d %b %Y %H:%M} - {self.status}"
+
+    @property
+    def duration_display(self):
+        if not self.finished_at:
+            return ""
+        seconds = int((self.finished_at - self.started_at).total_seconds())
+        if seconds < 60:
+            return f"{seconds}s"
+        minutes, seconds = divmod(seconds, 60)
+        return f"{minutes}m {seconds}s"
 
 
 # ============================================

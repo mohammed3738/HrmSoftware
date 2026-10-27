@@ -1,0 +1,160 @@
+; eSSL punch agent configuration -- lives on the WINDOWS server next to
+; eTimeTrackLite. Keep this file private: it holds the HRMS tokens.
+;
+; NOTHING NEEDS CREATING for this to work: no new database, no new SQL login,
+; no change to eTimeTrackLite. The agent only runs SELECTs, and by default it
+; connects with Windows Authentication, which stores no password at all.
+;
+; Check what it worked out before you schedule anything:
+;     py essl_punch_agent.py --show-config
+;     py essl_punch_agent.py --test
+
+[agent]
+
+; ── Where eTimeTrackLite keeps its own database settings ─────────────────
+;
+; Point this at eTimeTrackLite's Settings.txt and the agent reads the server
+; name, the database name, the authentication mode and the login out of it,
+; so you do not have to retype the things that are easy to get wrong. Leave
+; it blank and the agent checks the usual locations by itself --
+; --show-config says which file it found, if any.
+;
+; The password in that file is scrambled and cannot be read back, so only
+; the other values come from it.
+essl_settings_file = C:\eTimeTrackLiteWeb\eTimeTrackLiteWeb\iclock\Settings.txt
+
+; ── SQL Server ───────────────────────────────────────────────────────────
+;
+; THE EASIEST THING TO DO HERE IS NOTHING. Left blank, both values come from
+; eTimeTrackLite's own Settings.txt, which is always right because it is what
+; eTimeTrackLite itself connects with. Fill one in only to override it.
+; Check the result with:  py essl_punch_agent.py --show-config
+
+; WHICH MACHINE AND INSTANCE. Examples:
+;     sql_server = .\SQLEXPRESS
+;     sql_server = localhost\SQLEXPRESS
+;     sql_server = WIN-5E3312PVO5J\SQLEXPRESS
+sql_server = WIN-5E3312PVO5J\SQLEXPRESS
+
+; WHICH DATABASE INSIDE IT. This is a database name, NOT a server name --
+; putting a server or instance name here makes SQL Server answer with
+; "Cannot open database ... The login failed", which reads like a password
+; problem and is not. Example:
+;     sql_database = eTimetracklite1
+sql_database = eTimetracklite1
+
+; Installed with "Microsoft ODBC Driver for SQL Server". 17 and 18 both
+; work. See exactly what is installed, and use that exact string:
+;     py -c "import pyodbc; print(pyodbc.drivers())"
+sql_driver = ODBC Driver 18 for SQL Server
+
+; WHICH TABLES THE PUNCHES ARE READ FROM.
+;
+; eTimeTrackLite keeps punches in one table per month -- DeviceLogs_10_2026,
+; DeviceLogs_9_2026 and so on. dbo.DeviceLogs is only a staging buffer for
+; punches just downloaded from the devices, which it empties as it archives
+; them into the monthly table, so on this installation it is always empty.
+;
+;   no    read the monthly tables only (the default, and what you want)
+;   yes   also read dbo.DeviceLogs, for an installation that leaves punches
+;         sitting in the buffer for a while
+;
+; Leaving this at "no" cannot lose a punch silently: every run counts the
+; buffer anyway and logs a warning if it finds anything there, so if your
+; installation ever starts behaving differently you will see it in
+; essl_agent.log rather than wondering where a day went.
+read_devicelogs_buffer = no
+
+; HOW THE AGENT LOGS IN TO SQL SERVER -- pick one.
+;
+;   windows   Windows Authentication. SQL Server trusts whichever Windows
+;             account the Scheduled Task runs as, and NO PASSWORD IS STORED
+;             ANYWHERE. Prefer this. It is why the `sa` password is not
+;             needed, and why nothing has to be created.
+;
+;   sql       Reuse the SQL login eTimeTrackLite itself already uses. On
+;             this installation Settings.txt says that is `essl`. This
+;             creates no new user either -- it is an existing login. You do
+;             need its password: run eTimeTrackDatabaseSettings.exe
+;             (shipped beside eTimeTrackLite) to see or re-set it.
+;
+; Left blank, the agent follows whatever Settings.txt reported.
+sql_auth = windows
+
+; Only read when sql_auth = sql. Left blank, sql_user comes from
+; Settings.txt.
+sql_user =
+
+; THE PASSWORD IS NOT IN Settings.txt IN ANY USABLE FORM. The sixth line of
+; that file looks like a password (something like "rKWYgQrTCGc=") but it is
+; encrypted with a key inside eTimeTrackLiteLibrary.dll -- pasting it here
+; just produces "Login failed", and the agent will stop and tell you so.
+; To get the real one, run eTimeTrackDatabaseSettings.exe, which ships
+; beside eTimeTrackLite. Or avoid the question entirely with
+; sql_auth = windows, above.
+sql_password =
+
+; ── Timing ───────────────────────────────────────────────────────────────
+
+; How far back each run re-reads, beyond where it left off. eTimeTrackLite
+; sometimes writes a punch to the database a while after it happened, and
+; re-sending costs nothing because the HRMS ignores punches it already
+; holds. 180 = three hours.
+overlap_minutes = 180
+
+; Punches per HTTP request. The HRMS accepts up to 20000.
+batch_size = 2000
+
+; How much history to read on a target's very first run, if that HRMS holds
+; nothing either. For a full backfill use the flag instead:
+;     py essl_punch_agent.py --since 2025-01-01
+first_run_days = 30
+
+; Seconds to wait for an HRMS. A first backfill batch can take a while.
+timeout_seconds = 120
+
+; Name shown in each HRMS's sync log, so a second punch machine added later
+; is tellable apart.
+agent_name = essl-windows-agent
+
+
+; ════════════════════════════════════════════════════════════════════════
+;  WHERE TO PUSH
+;
+;  One [hrms:<name>] section per HRMS. Each keeps its own token and its own
+;  resume point, so you can roll out in stages: test against a PC first,
+;  add the Ubuntu staging site, add production last, and switch the earlier
+;  ones off as you go. A target that is unreachable is skipped and retried
+;  next run -- it never holds up the others and never loses punches.
+;
+;  Each token is that server's BIOMETRIC_SYNC_TOKEN, from its own
+;  hrms/.env. They are different servers, so they are different tokens.
+; ════════════════════════════════════════════════════════════════════════
+
+; 1. The development PC, on this same network. Use its LAN address, not
+;    localhost -- localhost here would mean this Windows server. Django must
+;    be started as `runserver 0.0.0.0:8000` to accept it.
+[hrms:dev-pc]
+url = http://192.168.1.86:8000
+token = zGX5yzYa61V2_H7e-r8W8dtXkUokR8jtEgI6isEpsyOujxYYkK5y5zFb51gQj55U
+enabled = yes
+; Plain HTTP on the LAN: there is no certificate to verify.
+verify_tls = no
+
+; 2. The Ubuntu staging copy. Turn this on once the PC test looks right.
+[hrms:ubuntu-staging]
+url = https://staging.zacoinfotech.com
+token = CHANGE-ME
+enabled = no
+verify_tls = yes
+
+; 3. The live HRMS. Turn this on last.
+[hrms:production]
+url = https://hrms.zacoinfotech.com
+token = CHANGE-ME
+enabled = no
+; Leave verify_tls = yes whenever the url is a real HTTPS hostname. Setting
+; it to no turns off the check that you are talking to the right server, so
+; the token could be read by anyone in between. Only do that for plain
+; http:// on a trusted LAN, as with the dev PC above.
+verify_tls = yes

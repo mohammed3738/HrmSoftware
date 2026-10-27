@@ -1,0 +1,126 @@
+{
+  // Ctrl+Shift+P -> "Tasks: Run Task". The common commands, so nobody has to
+  // remember the venv path or that manage.py lives in hrms/.
+  "version": "2.0.0",
+  "options": {
+    "cwd": "${workspaceFolder}/hrms"
+  },
+  "presentation": {
+    "panel": "dedicated",
+    "clear": true
+  },
+  "tasks": [
+    {
+      "label": "Setup: create venv and install dev packages",
+      "type": "shell",
+      "command": "py -m venv ../.venv; ../.venv/Scripts/python.exe -m pip install --upgrade pip; ../.venv/Scripts/python.exe -m pip install -r requirements-dev-windows.txt",
+      "options": { "cwd": "${workspaceFolder}/hrms" },
+      "problemMatcher": []
+    },
+    {
+      "label": "Django: migrate",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["manage.py", "migrate"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Django: check",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["manage.py", "check"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Django: makemigrations --check (is anything unmigrated?)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["manage.py", "makemigrations", "--check", "--dry-run"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Django: runserver",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["manage.py", "runserver", "127.0.0.1:8000"],
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Django: createsuperuser",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["manage.py", "createsuperuser"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Django: seed roles and permissions",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["manage.py", "seed_roles_permissions"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Tests: biometric sync",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["manage.py", "test", "website.tests.test_biometric_sync", "-v", "2"],
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Tests: whole suite",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["manage.py", "test", "website.tests"],
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Biometric: dry run (last 7 days)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["manage.py", "sync_biometric_attendance", "--days", "7", "--dry-run"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Biometric: rebuild a date range",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": [
+        "manage.py", "sync_biometric_attendance",
+        "--from", "${input:fromDate}", "--to", "${input:toDate}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Biometric: pull from eSSL SQL Server (same LAN only)",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["manage.py", "sync_biometric_attendance", "--pull", "--days", "3"],
+      "problemMatcher": []
+    },
+    {
+      "label": "eSSL agent: self-test",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/Scripts/python.exe",
+      "args": ["essl_punch_agent.py", "--test"],
+      "options": { "cwd": "${workspaceFolder}/hrms/scripts/essl_agent" },
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {
+      "id": "fromDate",
+      "type": "promptString",
+      "description": "Rebuild from date (YYYY-MM-DD)",
+      "default": "2026-10-01"
+    },
+    {
+      "id": "toDate",
+      "type": "promptString",
+      "description": "Rebuild to date (YYYY-MM-DD)",
+      "default": "2026-10-31"
+    }
+  ]
+}

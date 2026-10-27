@@ -1,0 +1,75 @@
+# Local development on Windows -- NOT for the server.
+#
+# The server installs requirements.txt, which pins every version and includes
+# the PDF stack (weasyprint, pycairo, pyHanko, reportlab, svglib). Those need
+# system C libraries (cairo, pango) that are not packaged for Windows, so
+# `pip install -r requirements.txt` fails here, usually while building
+# pycairo, and it is not worth fighting.
+#
+# This file is the subset that does install on Windows and is enough to run
+# the app, the test suite, the attendance/payroll pages and the whole
+# biometric sync. It is deliberately looser than requirements.txt: on a
+# recent Python (3.13/3.14) several of the pinned versions have no wheels
+# yet, and a local environment does not need to match the server exactly.
+#
+#     py -m venv .venv
+#     .\.venv\Scripts\Activate.ps1
+#     py -m pip install -r hrms\requirements-dev-windows.txt
+#
+# WHAT WILL NOT WORK LOCALLY WITH ONLY THIS INSTALLED
+#   * Salary slip / report PDF generation (weasyprint, reportlab, pyHanko).
+#     Everything else is fine, and these are lazily imported -- the app
+#     starts and every other page works. If you need them, install the
+#     Windows GTK runtime first and then add weasyprint, or test PDFs on the
+#     server.
+#   * Celery worker/beat without Redis running. Use the
+#     sync_biometric_attendance management command instead; it does the same
+#     work with no broker.
+
+# --- core, pinned to match the server -------------------------------------
+Django==5.2.8
+python-dotenv
+
+# --- database drivers -----------------------------------------------------
+# SQLite needs nothing (it is in the standard library), and DB_ENGINE=sqlite
+# is the sensible local default. psycopg is here anyway so that
+# DB_ENGINE=postgres also works on a development machine -- pointing it at a
+# local PostgreSQL, or mirroring the server's settings. Without it, Django
+# fails at start-up with "Error loading psycopg2 or psycopg module".
+# The [binary] extra ships prebuilt wheels, so there is nothing to compile.
+psycopg[binary]
+
+# --- Celery stack (importable even without Redis; needed by settings) -----
+celery
+django_celery_results
+django-celery-beat
+django-redis
+redis
+
+# --- used at import time by website/views.py ------------------------------
+pandas
+openpyxl
+xlsxwriter
+python-dateutil
+humanize
+xhtml2pdf
+
+# --- templates ------------------------------------------------------------
+django-widget-tweaks
+
+# --- tests ----------------------------------------------------------------
+pytest
+pytest-django
+
+# --- biometric sync -------------------------------------------------------
+# requests: used by the eSSL punch agent (hrms/scripts/essl_agent/).
+requests
+
+# pyodbc: ONLY needed for the optional direct-pull mode
+#     python manage.py sync_biometric_attendance --pull
+# which reads the eSSL SQL Server straight from this machine. It also needs
+# the "ODBC Driver 17 for SQL Server" MSI from Microsoft and a read-only SQL
+# login -- see ESSL_INTEGRATION_GUIDE.txt sections 11 and 12. Uncomment if
+# you want it; the server never does, because it has no route to that
+# SQL Server.
+# pyodbc

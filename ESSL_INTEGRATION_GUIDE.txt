@@ -1,0 +1,3338 @@
+================================================================================
+================================================================================
+
+        AUTOMATIC IN-TIME / OUT-TIME FROM THE eSSL PUNCH MACHINE
+
+        Complete setup guide, start to finish
+        Development PC  ->  Ubuntu staging  ->  Live HRMS
+
+================================================================================
+================================================================================
+
+  This document is self-contained. Every file you have to create is printed
+  here in full, so you never need to open another file to follow it. The one
+  thing it does not reproduce is the agent's Python source, which you copy as
+  a file rather than retype -- part 5.2 says where it is and how to confirm
+  you got it intact.
+
+  Companion documents, for context only:
+      DEPLOYMENT.md      how this HRMS is deployed on the Ubuntu server
+      hrms/.env.example  the same settings as part 14.2, with comments
+
+
+================================================================================
+  CONTENTS
+================================================================================
+
+  PART 0 -- READ THIS FIRST
+    0.1   What this gives you
+    0.2   Your systems, with the real values
+    0.3   The whole journey as a checklist
+    0.4   Nothing needs creating
+    0.5   What you type, and what you copy
+    0.6   If something goes wrong
+
+  PART 1 -- HOW IT WORKS
+    1.1   Why the traffic flows outward
+    1.2   The shape of it
+    1.3   Punches and attendance are kept apart
+    1.4   One agent, several HRMS servers
+
+  PART 2 -- THE RULES THAT DECIDE IN-TIME AND OUT-TIME
+    2.1   Day shift
+    2.2   Night shift
+    2.3   Guard rails
+    2.4   Who counts as night shift
+    2.5   Days the sync never touches
+    2.6   When the HRMS runs the rules
+
+  PART 3 -- HOW eSSL STORES PUNCHES
+    3.1   dbo.DeviceLogs is the live table
+    3.2   UserId is not the employee code
+    3.3   eSSL deletes duplicate punches
+    3.4   Why not dbo.AttendanceLogs
+    3.5   Things deliberately not used
+
+  PART 4 -- CREDENTIALS: WHY NOTHING HAS TO BE CREATED
+    4.1   What eTimeTrackLite itself uses
+    4.2   The two ways to connect
+    4.3   What about a dedicated read-only login
+    4.4   On the HRMS side
+
+  PART 5 -- THE PUNCH AGENT ON THE WINDOWS SERVER
+    5.1   Prerequisites
+    5.2   Copy the agent across
+    5.3   Create the configuration
+    5.4   Check what it worked out
+    5.5   Self-test
+    5.6   Schedule it
+    5.7   Firewall
+    5.8   On encryption
+
+  PART 6 -- STAGE 1: TEST ON THE DEVELOPMENT PC
+    6.1   Get the HRMS running on the PC
+    6.2   Let the Windows server reach your PC
+    6.3   Note the token
+    6.4   Point the agent at the PC
+    6.5   Watch the first punches arrive
+    6.6   Alternative: pull directly, no agent
+    6.7   Stage 1 is done when
+
+  PART 7 -- STAGE 2: UBUNTU, AS A SEPARATE PROJECT
+    7.1   What "separate" has to mean
+    7.2   Create the database and the code
+    7.3   The staging .env
+    7.4   Migrate and seed
+    7.5   systemd services
+    7.6   nginx and HTTPS
+    7.7   Point the agent at staging
+    7.8   Compare staging against the PC
+    7.9   Stage 2 is done when
+
+  PART 8 -- STAGE 3: THE LIVE HRMS
+    8.1   Before you start
+    8.2   Deploy
+    8.3   Add the settings
+    8.4   Migrate and restart
+    8.5   Confirm the endpoint before touching the agent
+    8.6   Switch the agent over
+    8.7   Retire the earlier targets
+    8.8   The first week
+
+  PART 9 -- MARK THE NIGHT-SHIFT EMPLOYEES
+    9.1   Check the employee codes line up
+    9.2   Tick the night-shift employees
+    9.3   Re-run the days you fixed
+
+  PART 10 -- BACKFILL THE HISTORY
+    10.1  Push the punches
+    10.2  Re-apply the rules
+    10.3  What a backfill will not do
+
+  PART 11 -- DAY TO DAY
+    11.1  The Biometric Sync page
+    11.2  What to check, and when
+    11.3  When to stop uploading the Excel
+
+  PART 12 -- TROUBLESHOOTING
+
+  PART 13 -- REFERENCE
+    13.1  Files added and changed
+    13.2  Database objects
+    13.3  Endpoints
+    13.4  Settings
+    13.5  Commands
+
+  PART 14 -- APPENDICES (complete files)
+    14.1  essl_agent.ini, complete
+    14.2  The hrms/.env block, complete
+    14.3  Staging systemd units, complete
+    14.4  Staging nginx site, complete
+    14.5  The SQL that runs against eTimeTrackLite
+    14.6  Removing it all again
+
+  PART 15 -- WORKING ON THIS IN VS CODE
+
+
+================================================================================
+================================================================================
+  PART 0 -- READ THIS FIRST
+================================================================================
+================================================================================
+
+--------------------------------------------------------------------------------
+  0.1  WHAT THIS GIVES YOU
+--------------------------------------------------------------------------------
+
+Today attendance reaches the HRMS as an Excel file somebody uploads. After
+this, the punches come straight from the eSSL biometric machine and the HRMS
+fills in each employee's in-time and out-time by itself, every two hours,
+including for night-shift staff whose duty crosses midnight.
+
+Nothing about the Attendance List, Attendance Register, payroll or leave
+balance changes. They read the same Attendance rows they always did; only
+the way those rows get their in/out times is new.
+
+The Excel upload keeps working. During changeover you can run both: a day
+whose times came from an upload is marked as manual, and the sync leaves it
+alone, so the two cannot fight over the same day.
+
+
+--------------------------------------------------------------------------------
+  0.2  YOUR SYSTEMS, WITH THE REAL VALUES
+--------------------------------------------------------------------------------
+
+  THE LIVE HRMS  (called "production" throughout)
+
+    Server            Ubuntu 24.04, network A, 103.195.81.148
+    Login             user `multihost`, home /home/multihost
+    Domain            https://hrms.zacoinfotech.com
+    Project folder    /home/multihost/hrms_prod
+    Django project    /home/multihost/hrms_prod/hrms
+    Virtualenv        /home/multihost/hrms_prod/venv
+    Settings file     /home/multihost/hrms_prod/hrms/.env   (mode 600)
+    Database          PostgreSQL  hrms_prod_db, role hrms_prod_user
+    Services          hrms-prod-gunicorn   (127.0.0.1:8025)
+                      hrms-prod-celery     (worker)
+                      hrms-prod-celerybeat (scheduler)
+    Redis             database 10 (Celery queue), 11 (cache)
+    nginx site        /etc/nginx/sites-available/hrms_prod
+
+    (All of the above is from DEPLOYMENT.md. If your server differs, that
+    document is the authority, not this one.)
+
+  THE eSSL SERVER
+
+    Server            Windows, network B
+    Private address   192.168.1.135
+    SQL Server        WIN-5E3312PVO5J\SQLEXPRESS
+    Database          eTimetracklite1
+    Web UI            that machine's own IIS, port 83, reachable only from
+                      network B -- it is NOT published to the internet
+
+    114.143.252.212:83 is the RDP port forwarded to this machine. It is a
+    remote-desktop port, not a web port, and nothing in this integration
+    uses it.
+
+  THE DEVELOPMENT PC
+
+    On network B, the same network as the eSSL server. This is what makes
+    stage 1 possible.
+    Repository        D:\Project\HRMS\HrmSoftware
+
+  THE UBUNTU STAGING PROJECT  (you will create this in part 7)
+
+    Project folder    /home/multihost/hrms_staging
+    Virtualenv        /home/multihost/hrms_staging/venv
+    Database          hrms_staging_db, role hrms_staging_user
+    Services          hrms-staging-gunicorn   (127.0.0.1:8026)
+                      hrms-staging-celery
+                      hrms-staging-celerybeat
+    Redis             database 12 (Celery queue), 13 (cache)
+
+    Every one of those names and numbers is different from production on
+    purpose. Part 7.1 explains what goes wrong if they are not.
+
+
+--------------------------------------------------------------------------------
+  0.3  THE WHOLE JOURNEY AS A CHECKLIST
+--------------------------------------------------------------------------------
+
+Work down this list. Each line names the part that covers it.
+
+  UNDERSTAND IT (reading only, nothing to do)
+    [ ] How the data flows and why                              part 1
+    [ ] The in-time / out-time rules                            part 2
+    [ ] How eSSL stores punches                                 part 3
+    [ ] Which credentials get used                               part 4
+
+  SET UP THE AGENT ON THE WINDOWS SERVER  (once, serves all three stages)
+    [ ] Install Python, the ODBC driver, pyodbc and requests     5.1
+    [ ] Copy essl_punch_agent.py to C:\HRMS-Agent\               5.2
+    [ ] Create C:\HRMS-Agent\essl_agent.ini                      5.3 / 14.1
+    [ ] py essl_punch_agent.py --show-config                     5.4
+    [ ] Decide Windows auth or the existing `essl` login         4.2
+
+  STAGE 1 -- THE DEVELOPMENT PC
+    [ ] venv, migrate, superuser on the PC                       6.1
+    [ ] runserver 0.0.0.0:8000, ALLOWED_HOSTS, firewall rule     6.2
+    [ ] Enable the [hrms:dev-pc] target, run --test              6.3 / 6.4
+    [ ] First push: py essl_punch_agent.py --days 1              6.5
+    [ ] Fix employee codes, tick night-shift staff               part 9
+    [ ] Check a night-shift employee's two days read correctly   6.7
+
+  STAGE 2 -- UBUNTU, SEPARATE PROJECT
+    [ ] Database, role, clone, venv                              7.2
+    [ ] Staging .env with its OWN token and Redis numbers        7.3 / 14.2
+    [ ] migrate, seed_roles_permissions, createsuperuser         7.4
+    [ ] Three systemd units                                      7.5 / 14.3
+    [ ] nginx site and certificate                               7.6 / 14.4
+    [ ] Enable [hrms:ubuntu-staging], push 7 days                7.7
+    [ ] Compare staging against the PC for the same dates        7.8
+    [ ] Confirm the two-hourly job runs by itself                7.9
+
+  STAGE 3 -- THE LIVE HRMS
+    [ ] Verify last night's backup actually arrived              8.1
+    [ ] git pull, add the .env block, migrate, restart           8.2-8.4
+    [ ] curl the status endpoint -- expect 401, not 404          8.5
+    [ ] Enable [hrms:production], push one day                   8.6
+    [ ] Disable the dev-pc and staging targets                    8.7
+    [ ] Remove the PC's firewall rule                             8.7
+    [ ] Watch it for a week before trusting it for payroll       8.8
+    [ ] Stop uploading the attendance Excel                      11.3
+
+  LATER, OPTIONALLY
+    [ ] Backfill history                                        part 10
+    [ ] Remove the staging project                               14.6
+
+
+--------------------------------------------------------------------------------
+  0.4  NOTHING NEEDS CREATING
+--------------------------------------------------------------------------------
+
+On the eSSL side: no new database, no new SQL login, no change to
+eTimeTrackLite or its schema, no change to the biometric devices. The
+integration's only statement against that database is the SELECT in part
+14.5. It logs in either with Windows Authentication, which stores no
+password anywhere, or with the SQL login eTimeTrackLite already uses. Part 4
+covers both, and neither needs the `sa` password.
+
+On the HRMS side: migration 0052 adds two tables and three columns to the
+PostgreSQL database that is already there, as the role that is already
+there. Part 7 does create a staging project, but that is a deliberate test
+environment you can delete afterwards (14.6), not a requirement of the
+integration.
+
+
+--------------------------------------------------------------------------------
+  0.5  WHAT YOU TYPE, AND WHAT YOU COPY
+--------------------------------------------------------------------------------
+
+  YOU TYPE (or paste) these, and they are printed in full in part 14:
+
+    C:\HRMS-Agent\essl_agent.ini             14.1
+    the BIOMETRIC_* block in each hrms/.env  14.2
+    the three staging systemd unit files     14.3
+    the staging nginx site                   14.4
+
+  YOU COPY these as files -- do not retype them:
+
+    essl_punch_agent.py        from the repository to the Windows server
+    everything else in the HRMS, which arrives by `git pull`
+
+The agent is about 650 lines of Python. Retyping it would introduce a typo
+you would then have to find at two in the morning, so it is a file copy and
+part 5.2 gives you a way to confirm it arrived intact.
+
+
+--------------------------------------------------------------------------------
+  0.6  IF SOMETHING GOES WRONG
+--------------------------------------------------------------------------------
+
+Three properties of the design mean nothing is ever stuck:
+
+  Punches are never rewritten. They are stored exactly as the device
+  recorded them, separately from the attendance. The rules can be
+  re-applied over any date range at any time, with nothing fetched again --
+  that is the "Rebuild from stored punches" button.
+
+  A failed push loses nothing. The agent only moves a target's resume point
+  after that target has accepted the punches, so the next run re-sends
+  whatever did not land, however long the gap.
+
+  Manual decisions win. An approved correction or an Excel upload marks the
+  day, and the sync skips it.
+
+Part 12 lists every failure we know of, with what each one actually means.
+Part 14.6 removes the whole thing again if you decide against it.
+
+
+================================================================================
+================================================================================
+  PART 1 -- HOW IT WORKS
+================================================================================
+================================================================================
+
+--------------------------------------------------------------------------------
+  1.1  WHY THE TRAFFIC FLOWS OUTWARD
+--------------------------------------------------------------------------------
+
+The obvious design would be for the HRMS to connect to SQL Server and read
+dbo.DeviceLogs itself. From the Ubuntu server that cannot work:
+
+  * No route. The Ubuntu server is on network A. 192.168.1.135 is private to
+    network B. Only RDP (port 83) is published from network B, and that is a
+    remote-desktop port, not a database one.
+
+  * Exposing SQL Server to the internet to get around that would be the
+    wrong trade. Port 1433 open to the world, on a SQL Express instance that
+    is probably not patched monthly, next to every employee's biometric
+    data.
+
+So the traffic runs the other way. A small Python script -- the agent --
+runs ON the Windows server, where SQL Server is local and the
+authentication problem disappears. It reads the punches and POSTs them to
+the HRMS over ordinary outbound HTTPS, which needs no inbound firewall rule
+on network B at all.
+
+
+--------------------------------------------------------------------------------
+  1.2  THE SHAPE OF IT
+--------------------------------------------------------------------------------
+
+      Windows server (network B)                 HRMS (network A)
+      --------------------------                 ----------------
+      eSSL devices
+           |
+           | punches
+           v
+      eTimeTrackLite  --->  SQL Server           Django + Celery
+                            eTimetracklite1           |
+                                 ^                    |
+                                 | local SELECT       | POST
+                                 | (part 4)           |  /api/biometric/punches/
+                                 |                    |  X-HRMS-Sync-Token
+                                 |                    |
+                            essl_punch_agent.py ------+  outbound HTTPS 443
+                            Scheduled Task,              (nothing inbound
+                            every 30 minutes              on network B)
+
+      Then, on the HRMS, every two hours:
+          stored punches  --(the rules, part 2)-->  Attendance in/out times
+
+
+--------------------------------------------------------------------------------
+  1.3  PUNCHES AND ATTENDANCE ARE KEPT APART
+--------------------------------------------------------------------------------
+
+Two things happen on the HRMS, and the split matters:
+
+  1. The punches are stored exactly as the device recorded them, in a new
+     table (website_biometricpunch). This is the audit trail. It is never
+     rewritten.
+
+  2. In-time and out-time are derived from those punches by the rules in
+     part 2, and written to the existing Attendance table -- the same rows
+     everything else already reads.
+
+Because the raw punches are kept, the rules can be re-applied at any time
+without going back to the punch machine. That is what makes a mistake --
+a wrong night-shift tick, an employee code that did not match -- a
+five-second fix rather than a data recovery exercise.
+
+
+--------------------------------------------------------------------------------
+  1.4  ONE AGENT, SEVERAL HRMS SERVERS
+--------------------------------------------------------------------------------
+
+The agent's configuration has one [hrms:<name>] section per destination,
+each with its own token and its own resume point. That is exactly what the
+three stages need: point it at the development PC first, add the Ubuntu
+staging copy next, add the live HRMS last, and turn the earlier ones off as
+you move on. During a changeover it can feed two at once, which is how you
+compare them.
+
+A destination that is down, or whose token is wrong, is skipped and retried
+on the next run. It never holds up the others, and it never loses punches:
+a destination's resume point only moves forward after it has accepted them.
+
+
+================================================================================
+================================================================================
+  PART 2 -- THE RULES THAT DECIDE IN-TIME AND OUT-TIME
+================================================================================
+================================================================================
+
+These are pinned by 37 tests in hrms/website/tests/test_biometric_sync.py.
+Run that file after any edit to the rules.
+
+--------------------------------------------------------------------------------
+  2.1  DAY SHIFT  (the default for everybody)
+--------------------------------------------------------------------------------
+
+  For a date D:
+
+    in-time  = the FIRST punch of D -- but only while D has no in-time yet.
+               Once set, it is never moved.
+
+    out-time = the LAST punch of D, refreshed on every run. Somebody who
+               punched out at 18:02 and again at 19:40 gets 19:40 as soon as
+               the next run sees it.
+
+  Example -- punches at 09:58, 13:30 and 19:02 on one day:
+
+    the 10:00 run sees 09:58 and 13:30   ->  in 09:58, out 13:30
+    the 20:00 run also sees 19:02        ->  in 09:58, out 19:02
+    the 22:00 run sees nothing newer     ->  unchanged
+
+  A punch that arrives late and is EARLIER than the stored out-time does not
+  move it. Only a later punch does.
+
+--------------------------------------------------------------------------------
+  2.2  NIGHT SHIFT  (employees ticked "Night Shift")
+--------------------------------------------------------------------------------
+
+  For a date D, duty starts on D and ends on D+1:
+
+    in-time  = the LAST punch of D
+    out-time = the FIRST punch of D+1
+
+  Worked example:
+
+    23 Oct: punch 21:50                  ->  23 Oct in 21:50
+    24 Oct: punches 06:05, 21:45
+              23 Oct out = 06:05  (24 Oct's first punch)
+              24 Oct in  = 21:45  (24 Oct's last punch)
+    25 Oct: punch 06:10
+              24 Oct out = 06:10
+
+  So 23 Oct reads 21:50 -> 06:05 and 24 Oct reads 21:45 -> 06:10. Attendance
+  already treats an out-time earlier than the in-time as an overnight shift,
+  so the hours and the status come out right with no further change.
+
+--------------------------------------------------------------------------------
+  2.3  GUARD RAILS  (all configurable in hrms/.env)
+--------------------------------------------------------------------------------
+
+  BIOMETRIC_NIGHT_IN_FROM     default 12:00
+      A night employee's in-time is the day's last punch only if it falls at
+      or after this. Somebody who punched once, at 06:00, was punching OUT
+      of the previous night -- that day gets no in-time rather than a
+      nonsense one.
+
+  BIOMETRIC_NIGHT_OUT_UNTIL   default 12:00
+      The next day's first punch counts as the out-punch only before this.
+
+  BIOMETRIC_MAX_SHIFT_HOURS   default 16
+      A span longer than this is a missed out-punch, not a shift: the
+      out-time is left blank, so the day shows as needing a correction
+      instead of crediting 23 hours.
+
+  An out-time already recorded is never blanked just because a later run
+  could not derive one. That would turn a complete day back into a missing
+  punch.
+
+  BIOMETRIC_FUTURE_PUNCH_TOLERANCE_DAYS   default 1
+      A punch dated further ahead than today plus this many days is
+      rejected outright rather than stored. A punch in the future means a
+      reader's clock is wrong, not that somebody worked -- this
+      installation's history contains one dated 31 December. Storing it
+      would build an attendance row on a day nobody has worked yet, which
+      is easy to miss and awkward to unpick afterwards. Rejections are
+      counted in the run's message on the Biometric Sync page.
+
+--------------------------------------------------------------------------------
+  2.4  WHO COUNTS AS NIGHT SHIFT
+--------------------------------------------------------------------------------
+
+  Checked in this order:
+
+  1. The Shift Roster, for the dates it covers -- that is the point of
+     rostering a rotating employee. An entry whose timings cross midnight
+     (22:00-07:00), or whose name contains "night", means nights; an entry
+     with ordinary daytime timings means days, and overrides the tick.
+
+  2. Otherwise the "Night Shift" tick on the employee's own form.
+
+  3. Otherwise, an employee whose Shift Start Time is after their Shift End
+     Time is treated as nights.
+
+--------------------------------------------------------------------------------
+  2.5  DAYS THE SYNC NEVER TOUCHES
+--------------------------------------------------------------------------------
+
+  * Days whose times were set by hand. Both paths that do this -- an
+    approved Attendance Correction and an Excel upload -- mark the day, and
+    the sync skips it. A human decision outranks the machine.
+  * Days inside a FINALIZED payroll run. Payslips have gone out.
+  * Days before the employee's date of joining.
+  * Employees whose status is Left or Archived.
+
+  Each is counted as "left alone" on the Biometric Sync page, so a day that
+  did not move always has a stated reason.
+
+  To override the manual-times rule deliberately, part 12.10 has --force.
+  Nothing overrides a finalized payroll period, including --force.
+
+--------------------------------------------------------------------------------
+  2.6  WHEN THE HRMS RUNS THE RULES
+--------------------------------------------------------------------------------
+
+  BIOMETRIC_SYNC_HOURS, default: 10,12,14,16,18,20,22,0
+
+  Every second hour from 10:00 through midnight. Each run re-reads the last
+  BIOMETRIC_SYNC_LOOKBACK_DAYS days (default 3), so a punch written late to
+  the device database still lands, and a night shift's second half is always
+  inside the window. Two is the floor for that setting, because rebuilding
+  23 Oct for a night employee needs 24 Oct's punches as well.
+
+  NOTE ON THE REQUESTED SCHEDULE. "From 10:00 am till 12:00 with 2 hrs
+  interval" read literally -- 10:00 to 12:00 noon -- is two runs a day, and
+  would leave every evening punch unseen until the next morning. It is set
+  up as 10:00 through 00:00 (midnight) at two-hour intervals instead, which
+  is what a working day and a night shift need. Midnight is in the list on
+  purpose: that run is what closes the previous night shift. If two runs a
+  day really is what you want, set
+
+      BIOMETRIC_SYNC_HOURS=10,12
+
+  and restart celery-beat. Nothing else changes.
+
+  The agent on the Windows server runs more often than this (every 30
+  minutes) because pushing punches is cheap. The two-hourly job on the HRMS
+  is what turns them into attendance.
+
+
+================================================================================
+================================================================================
+  PART 3 -- HOW eSSL STORES PUNCHES
+================================================================================
+================================================================================
+
+Taken from the eTimeTrackLite web application itself, so the integration is
+built on what eSSL actually does rather than on a guess.
+
+--------------------------------------------------------------------------------
+  3.1  PUNCHES LIVE IN TWO PLACES, AND BOTH HAVE TO BE READ
+--------------------------------------------------------------------------------
+
+  A punch is one row per finger or card read:
+
+      UserId                     the device's own identifier for the person
+      LogDate                    datetime of the punch, to the second, local
+      DeviceId                   which reader
+      Direction / AttDirection   in/out, when the device reports one
+      DeviceLogId                identity column
+
+  It can be in either of two tables:
+
+      dbo.DeviceLogs
+          A buffer for punches just downloaded from the devices.
+          eTimeTrackLite empties it as they are archived, so ON A TIDY
+          INSTALLATION IT IS OFTEN COMPLETELY EMPTY. Its primary key is
+          (DeviceLogId, UserId, LogDate).
+
+      dbo.DeviceLogs_<month>_<year>
+          One table per month -- DeviceLogs_10_2026, DeviceLogs_9_2026 and
+          so on, around a hundred of them on this installation, going back
+          to 2018. This is where the punches actually live. Their primary
+          key is (UserId, LogDate) -- the punch identity itself -- which is
+          what marks them as the real store rather than a loose copy.
+
+  ONLY THE MONTHLY TABLES ARE READ. That is the default, and it is right for
+  this installation: the punches are there, and the buffer is always empty.
+  A month with no table yet is simply skipped, which is not an error -- it
+  means that month has no punches.
+
+  The buffer is not read, but it IS counted on every run. If it ever holds
+  anything, the agent logs:
+
+      WARNING: dbo.DeviceLogs holds 42 punch(es) that have not been archived
+               yet, and read_devicelogs_buffer = no, so they are being
+               skipped.
+
+  Those punches are not lost -- they arrive as soon as eTimeTrackLite
+  archives them, because the agent re-reads a window rather than only new
+  rows. But if the warning keeps appearing, the buffer is not being emptied
+  promptly and you should read it too:
+
+      read_devicelogs_buffer = yes          in essl_agent.ini
+      BIOMETRIC_MSSQL_READ_BUFFER=true      in hrms/.env, for --pull
+
+  With that on, a punch found in both places is sent twice and
+  de-duplicated by the HRMS, which keys on (UserId, LogDate) exactly as
+  these tables do -- so the overlap costs nothing.
+
+  The monthly tables are not byte-identical to dbo.DeviceLogs: they carry an
+  UpdateFlag it lacks, and Direction is a different width. That is why the
+  query names its columns instead of using SELECT *.
+
+    A CORRECTION. Earlier versions of this guide said dbo.DeviceLogs was the
+    only table to read, and that the monthly ones were touched only for
+    maintenance. That was inferred from eTimeTrackLite's own code, which
+    enumerates them with TABLE_NAME LIKE '%DeviceLogs_%', and it was wrong.
+    A live installation showed dbo.DeviceLogs holding 0 punches while 220
+    employees and a decade of history sat in the monthly tables. If you are
+    on a version of the agent that reads only dbo.DeviceLogs, --test reports
+    a healthy connection and 0 punches, and nothing ever syncs.
+
+--------------------------------------------------------------------------------
+  3.2  UserId IS NOT THE EMPLOYEE CODE
+--------------------------------------------------------------------------------
+
+  DeviceLogs.UserId matches Employees.EmployeeCodeInDevice, and
+  Employees.EmployeeCode is the code HR uses. eTimeTrackLite's own
+  vw_DeviceLogList view joins them exactly that way, and so does the agent
+  -- so each punch arrives at the HRMS carrying the employee code a human
+  recognises, not just a device number.
+
+--------------------------------------------------------------------------------
+  3.3  eSSL DELETES DUPLICATE PUNCHES
+--------------------------------------------------------------------------------
+
+  eTimeTrackLite has a routine that removes duplicates:
+
+      delete FROM DeviceLogs WHERE DeviceLogId in (
+          SELECT Min(b.DeviceLogId) FROM ... GROUP BY UserId, LogDate ...)
+
+  Two things follow, and both shaped the design:
+
+  1. DeviceLogId is NOT stable. A punch's id can disappear. So the HRMS
+     never keys on it -- it is stored only so a punch can be traced back to
+     eSSL for support.
+
+  2. eSSL itself treats (UserId, LogDate) as the identity of a punch. The
+     HRMS uses exactly the same identity for its unique constraint,
+     (device_user_id, punch_date, punch_time). That is what makes re-sending
+     an overlapping window free, which every run does on purpose.
+
+--------------------------------------------------------------------------------
+  3.4  WHY NOT dbo.AttendanceLogs
+--------------------------------------------------------------------------------
+
+  eTimeTrackLite keeps its own computed daily summary there (InTime,
+  OutTime, Status, LateBy, PunchRecords...). It is tempting, but it applies
+  eSSL's shift definitions, grace periods and half-day rules -- all
+  configured separately from the HRMS, all free to drift from it, and none
+  of them matching part 2. Reading the raw punches means the HRMS owns the
+  policy and eSSL is only the sensor.
+
+--------------------------------------------------------------------------------
+  3.5  THINGS DELIBERATELY NOT USED
+--------------------------------------------------------------------------------
+
+  ParallelDatabaseDetails / eTimetrackParallelDBSync.exe is eSSL's built-in
+  export to a second database. It cannot help here: it would need the Ubuntu
+  PostgreSQL reachable from network B, which is the problem being avoided.
+
+  The iclock/*.aspx endpoints (cdata, getrequest, devicecmd) are the ADMS
+  push protocol the biometric devices use to talk to eTimeTrackLite.
+  Pointing devices at anything else risks the attendance eSSL itself
+  records, so the integration stays out of that path entirely.
+
+
+================================================================================
+================================================================================
+  PART 4 -- CREDENTIALS: WHY NOTHING HAS TO BE CREATED
+================================================================================
+================================================================================
+
+--------------------------------------------------------------------------------
+  4.1  WHAT eTimeTrackLite ITSELF USES
+--------------------------------------------------------------------------------
+
+eTimeTrackLite stores its own database settings in a plain text file called
+Settings.txt, in the same folder as the web application
+(.../iclock/Settings.txt). It is six bare lines with no keys. On this
+installation it reads:
+
+    MS SQL Server                 database type
+    WIN-5E3312PVO5J\SQLEXPRESS    server / instance
+    eTimetracklite1               database
+    Sql Server Authentication     authentication mode
+    essl                          login name
+    rKWYgQrTCGc=                  password, scrambled by eTimeTrackLite
+
+Worth noting, because it contradicts a reasonable assumption: SSMS may well
+connect with Windows Authentication, but eTimeTrackLite does not. It uses
+SQL Server Authentication as the login `essl`. That login already exists and
+already has access to this database.
+
+The agent reads the first five lines of that file automatically, so you do
+not have to retype the instance name or the database's exact spelling -- the
+two things most often got wrong. Part 5.4 shows you what it found.
+
+The password cannot be read back out of that file: it is scrambled with a
+key held inside eTimeTrackLiteLibrary.dll. Run
+eTimeTrackDatabaseSettings.exe, which ships beside eTimeTrackLite, to see or
+re-set it.
+
+--------------------------------------------------------------------------------
+  4.2  THE TWO WAYS TO CONNECT -- BOTH CREATE NOTHING
+--------------------------------------------------------------------------------
+
+  OPTION A -- WINDOWS AUTHENTICATION            sql_auth = windows
+  ----------------------------------------------------------------
+  SQL Server trusts whichever Windows account the Scheduled Task runs as. No
+  password is stored anywhere on disk, which is why this is the one to
+  prefer. It works because the agent runs ON the Windows server; the account
+  only has to be one SQL Server already accepts -- in practice, the account
+  you already log in and use SSMS with.
+
+  If SQL Server refuses that account, do not create a login for it. Either
+  run the task as the account that does work, or use option B.
+
+  OPTION B -- REUSE eTimeTrackLite's OWN LOGIN  sql_auth = sql
+  ----------------------------------------------------------------
+  Use the `essl` login from Settings.txt. This is an existing login, so
+  nothing is created here either. You do need its password (4.1), and it
+  then sits in essl_agent.ini -- which is why option A is better where it
+  works.
+
+  Leave sql_auth blank and the agent follows whatever Settings.txt reported,
+  which on this installation means option B.
+
+--------------------------------------------------------------------------------
+  4.3  WHAT ABOUT A DEDICATED READ-ONLY LOGIN
+--------------------------------------------------------------------------------
+
+An earlier draft of this guide suggested adding one. That has been dropped:
+it creates a user you did not ask for, and it buys little, because the
+agent's only statement is the SELECT in part 14.5. If you later decide you
+want the extra containment, a db_datareader login is the way to do it -- but
+it is optional, and no longer part of this setup.
+
+--------------------------------------------------------------------------------
+  4.4  ON THE HRMS SIDE
+--------------------------------------------------------------------------------
+
+Nothing to create. Migration 0052 adds two tables and three columns to the
+PostgreSQL database the HRMS already uses, as the role it already connects
+as. The only new secret is BIOMETRIC_SYNC_TOKEN in hrms/.env, and each
+environment gets its own.
+
+
+================================================================================
+================================================================================
+  PART 5 -- THE PUNCH AGENT ON THE WINDOWS SERVER
+================================================================================
+================================================================================
+
+The same agent serves all three stages. Only the [hrms:*] sections change as
+you move from one to the next. Set it up once, here, then come back to it in
+6.4, 7.7 and 8.6.
+
+--------------------------------------------------------------------------------
+  5.1  PREREQUISITES  (once)
+--------------------------------------------------------------------------------
+
+Open PowerShell as Administrator on the Windows server.
+
+  (a) Python 3.9 or newer. Check first -- it may already be there:
+
+          py --version
+          py --list
+
+      If not, install from https://www.python.org/downloads/windows/ and
+      TICK "Add python.exe to PATH" in the installer.
+
+      IF py --list SHOWS MORE THAN ONE PYTHON, decide now which one this
+      agent will use, and use that same one for every step below. On this
+      installation the packages went into 3.10, so the agent has to be run
+      as py -3.10, and the Scheduled Task has to name that interpreter by
+      full path -- 5.6(b). Installing the packages into one Python and
+      scheduling another is the single most common way this setup fails,
+      and it fails silently every 30 minutes.
+
+  (b) Microsoft ODBC Driver for SQL Server. Download "ODBC Driver 17 for
+      SQL Server" (18 also works) from Microsoft:
+      https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server
+
+      It is a plain MSI. It does not touch SQL Server, eTimeTrackLite or the
+      devices.
+
+  (c) Two Python packages, installed into the Python you chose in (a).
+      Name the version explicitly if there is more than one:
+
+          py -3.10 -m pip install pyodbc requests
+
+      (plain "py -m pip install ..." is fine when there is only one Python)
+
+  Then confirm the exact driver name, because you need it in the config --
+  and run it through the SAME Python, so you are testing the one that will
+  do the work:
+
+      py -3.10 -c "import pyodbc; print(pyodbc.drivers())"
+
+  You are looking for 'ODBC Driver 17 for SQL Server' in that list.
+
+  OPTIONAL, BUT USEFUL FIRST: confirm the database is where we think it is.
+  In SQL Server Management Studio, connected to WIN-5E3312PVO5J\SQLEXPRESS:
+
+      USE eTimetracklite1;
+      SELECT COUNT(*) AS punches, MIN(LogDate) AS oldest, MAX(LogDate) AS newest
+        FROM dbo.DeviceLogs;
+      SELECT TOP 5 EmployeeCode, EmployeeCodeInDevice, EmployeeName
+        FROM dbo.Employees WHERE RecordStatus = 1;
+
+  Note a couple of real EmployeeCode values from that last query -- part 9.1
+  needs them to check the HRMS codes line up.
+
+--------------------------------------------------------------------------------
+  5.2  COPY THE AGENT ACROSS
+--------------------------------------------------------------------------------
+
+Create the folder:
+
+    C:\HRMS-Agent\
+
+and copy one file into it, from the repository:
+
+    hrms\scripts\essl_agent\essl_punch_agent.py
+
+The development PC is on the same network as the Windows server, so a shared
+folder or a USB stick both work. Nothing else from the HRMS is needed here --
+no Python project, no git, no virtualenv.
+
+Confirm it arrived intact:
+
+    cd C:\HRMS-Agent
+    py essl_punch_agent.py --help
+
+If that prints the usage block, the file is complete and syntactically
+valid. A truncated copy fails here rather than at two in the morning.
+
+You do NOT need to copy essl_agent.ini.example: part 14.1 below is the whole
+file, ready to paste.
+
+--------------------------------------------------------------------------------
+  5.3  CREATE THE CONFIGURATION
+--------------------------------------------------------------------------------
+
+    cd C:\HRMS-Agent
+    notepad essl_agent.ini
+
+Paste the complete file from part 14.1, then change:
+
+    *  the SQL login section, per your choice in 4.2
+    *  the [hrms:*] section for the stage you are on -- for stage 1 that is
+       [hrms:dev-pc], with your PC's LAN address and the token from 6.3
+
+Save it as plain text. Notepad may add a byte-order mark; the agent handles
+that, so it is not a problem.
+
+  sql_server AND sql_database. Part 14.1 ships them pre-filled with this
+  installation's values, which are known to work:
+
+      sql_server   = WIN-5E3312PVO5J\SQLEXPRESS
+      sql_database = eTimetracklite1
+
+  Blanking either one is equally valid and arguably better: blank means the
+  agent reads it from eTimeTrackLite's own Settings.txt, which is right by
+  definition because it is what eTimeTrackLite itself connects with, and it
+  keeps working if the instance is ever renamed. Either way, check the
+  result with --show-config (5.4) before going on.
+
+  Two mistakes are worth naming in advance, because SQL Server reports BOTH
+  of them as "Login failed" and so sends you off checking accounts and
+  passwords instead of looking at one wrong line:
+
+    * a server or instance name typed into sql_database, which SQL Server
+      answers with "Cannot open database ... The login failed" (12.3a)
+    * the sixth line of Settings.txt pasted into sql_password -- it is
+      encrypted and is not the password (12.3b)
+
+  The agent refuses to start on either and says which it is, so you will not
+  reach the confusing version. Edit essl_agent.ini, not
+  essl_agent.ini.example: the example is the template and the agent never
+  reads it.
+
+  KEEP THIS FILE PRIVATE. It holds the HRMS tokens, and with option B the
+  SQL password as well. It is git-ignored in the repository, and it should
+  not be emailed or put in a shared folder.
+
+--------------------------------------------------------------------------------
+  5.4  CHECK WHAT IT WORKED OUT
+--------------------------------------------------------------------------------
+
+    py essl_punch_agent.py --show-config
+
+This reads the config and eTimeTrackLite's Settings.txt, prints what it
+resolved, and stops. It connects to nothing. Expected on this installation:
+
+    Config file        : C:\HRMS-Agent\essl_agent.ini
+    eSSL Settings.txt  : C:\...\iclock\Settings.txt
+      discovered       : server='WIN-5E3312PVO5J\SQLEXPRESS'
+                         database='eTimetracklite1'
+                         auth='Sql Server Authentication' user='essl'
+    SQL Server         : WIN-5E3312PVO5J\SQLEXPRESS
+    Database           : eTimetracklite1
+    ODBC driver        : ODBC Driver 17 for SQL Server
+    Authentication     : SQL login 'essl'  [NO PASSWORD SET]
+    Overlap            : 180 minutes
+    Targets            :
+      [on ] dev-pc             http://192.168.1.50:8000   (TLS verification OFF)
+      [off] ubuntu-staging     https://staging.zacoinfotech.com
+      [off] production         https://hrms.zacoinfotech.com
+
+If the "eSSL Settings.txt" line says it found nothing, see 12.1 -- it is not
+fatal, you just fill in sql_server and sql_database by hand.
+
+--------------------------------------------------------------------------------
+  5.5  SELF-TEST -- DO NOT SKIP THIS
+--------------------------------------------------------------------------------
+
+    py essl_punch_agent.py --test
+
+This checks both ends. It reads a little, writes nothing, and sends nothing.
+Expected:
+
+    [ ok ] pyodbc importable
+    [ ok ] ODBC driver 'ODBC Driver 18 for SQL Server' present
+    [ ok ] requests importable
+    [ ok ] Connected as 'WIN-5E3312PVO5J\Administrator' to 'etimetracklite1'
+           220 active employee(s) in eTimeTrackLite
+           100 monthly table(s) exist; reading the monthly tables only
+           148302 punch(es) in the last 12 months, newest 2026-10-26 09:14:02
+             DeviceLogs_11_2025          11840  2025-11-01 .. 2025-11-30
+             ...
+             DeviceLogs_10_2026          14201  2026-10-01 .. 2026-10-26
+    [ ok ] dev-pc (http://192.168.1.86:8000)
+           token accepted; server date 2026-10-26, newest punch held None
+    [skip] ubuntu-staging -- enabled = no
+    [skip] production -- enabled = no
+
+    All good -- safe to schedule.
+
+Every line must say ok or skip. Part 12 covers each failure, keyed by the
+message you get.
+
+  AFTER THE TABLE LIST, --test PRINTS EVERY PUNCH RECORDED TODAY, grouped by
+  employee, with a per-device tally:
+
+      ----------------------------------------------------------------------
+      TODAY'S PUNCHES  (2026-10-26)
+      ----------------------------------------------------------------------
+      158 punch(es) from 75 employee(s), newest 14:05:40
+
+        9        Sunil More                1  10:14
+        14       Sanjay Pragji Parmar      2  11:57, 11:58
+        165      Abhiraj Das               2  09:15, 17:00
+        ...
+
+        per device:  device 1: 64   device 2: 93   device 21: 1
+        A device missing from that list recorded nothing today.
+
+  The row counts above it prove the tables hold history. This proves the
+  devices are working NOW, which is the question you actually have standing
+  at the server. Three things to read from it:
+
+    * "NO PUNCHES AT ALL TODAY" before office hours is normal; during them it
+      means the devices are not reaching eTimeTrackLite. That is a question
+      for eTimeTrackLite, not for the agent -- the connection has already
+      passed by this point.
+    * A device missing from the per-device tally recorded nothing today,
+      which is how a dead reader shows up.
+    * A code shown as ?999 is a punch whose device user ID matches no
+      employee in eTimeTrackLite. Rare, and worth chasing there.
+
+    dbo.DeviceLogs IS NOT IN THAT LIST, and that is deliberate. It is a
+  staging buffer eTimeTrackLite empties as it archives (3.1), so punches
+  are read from the monthly tables only. What matters is the current
+  month's table: it should have punches, with a date from today. If every
+  table reads 0, see 12.3c; if the newest punch is days old, 12.3d.
+
+  If the buffer is not empty you get an extra warning naming the count --
+  harmless in itself, and 3.1 says when to act on it.
+
+--------------------------------------------------------------------------------
+  5.6  SCHEDULE IT -- EVERY 30 MINUTES
+--------------------------------------------------------------------------------
+
+Do this once --test passes and a manual push has worked (5.5, 6.5), not
+before -- there is no point scheduling something you have not seen succeed
+by hand.
+
+Two values in the command below are specific to this machine, and getting
+either wrong is the usual reason a task that works by hand fails on a
+schedule. Find them first.
+
+  (a) THE ACCOUNT -- the -User value
+  ------------------------------------------------------------------
+  It must be an account SQL Server already accepts, which means the one you
+  ran --test successfully as. Ask Windows what that is:
+
+      whoami
+
+  On this installation that prints:
+
+      win-5e3312pvo5j\administrator
+      
+
+  so the value to use is:
+
+      -User "WIN-5E3312PVO5J\Administrator"
+
+  That is COMPUTERNAME\username. Get the computer name on its own with:
+
+      $env:COMPUTERNAME
+
+  Do not invent a service account for this. The whole reason Windows
+  Authentication works here (part 4.2) is that SQL Server already trusts
+  this account; a new one would be refused until somebody granted it
+  access, which is exactly the work this design avoids.
+
+  With sql_auth = sql the Windows account does not matter to SQL Server,
+  but it still has to be able to read C:\HRMS-Agent, so the same answer
+  holds.
+
+  (b) THE PYTHON -- the -Execute value
+  ------------------------------------------------------------------
+  THIS MACHINE HAS MORE THAN ONE PYTHON, AND ONLY ONE OF THEM HAS pyodbc.
+  Running the agent as plain `py` gives:
+
+      [FAIL] pyodbc is not installed.
+             py -m pip install pyodbc
+
+  while `py -3.10 essl_punch_agent.py --test` works. So py.exe on its own is
+  the wrong thing to schedule: it would pick the default Python rather than
+  the one the packages are in, and the task would fail every 30 minutes with
+  that same line in the log.
+
+  Ask the working Python where it lives:
+
+      py -3.10 -c "import sys; print(sys.executable)"
+
+  which prints something like:
+
+      C:\Users\Administrator\AppData\Local\Programs\Python\Python310\python.exe
+
+  Use that full path as -Execute. A full path also removes any dependence on
+  PATH being set up for the task's account, which is a separate way this
+  goes wrong.
+
+  Confirm that interpreter really is the one with the packages:
+
+      & "C:\Users\Administrator\AppData\Local\Programs\Python\Python310\python.exe" -c "import pyodbc, requests; print('both present')"
+
+  Alternatively, install the packages into whichever Python `py` resolves to
+  -- py -m pip install pyodbc requests -- and then py.exe is safe to
+  schedule. One Python holding the packages is easier to keep straight than
+  two.
+
+  (c) CREATE THE TASK
+  ------------------------------------------------------------------
+  THE WORKING DIRECTORY DOES NOT MATTER. The agent finds essl_agent.ini, its
+  state file and its log beside its own .py file, not in the current
+  directory, so passing the script's full path is enough and -WorkingDirectory
+  can be left out entirely. (An earlier version of this guide said the
+  opposite. It was wrong.)
+
+  There are three ways to tell the task who to run as. TRY THEM IN THIS
+  ORDER -- the first needs no password at all, which is one less thing to
+  break when somebody changes it later.
+
+  ---- OPTION 1: run as SYSTEM (no password) -- TRY THIS FIRST ----------
+
+  PowerShell as Administrator:
+
+      $python = "C:\Users\Administrator\AppData\Local\Programs\Python\Python310\python.exe"
+      $script = "C:\HRMS-Agent\essl_punch_agent.py"
+
+      $action  = New-ScheduledTaskAction -Execute $python -Argument "`"$script`""
+
+      $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date `
+                   -RepetitionInterval (New-TimeSpan -Minutes 60) `
+                   -RepetitionDuration ([TimeSpan]::MaxValue)
+
+      $settings = New-ScheduledTaskSettingsSet `
+                   -StartWhenAvailable `
+                   -DontStopIfGoingOnBatteries `
+                   -MultipleInstances IgnoreNew `
+                   -ExecutionTimeLimit (New-TimeSpan -Hours 1)
+
+      Register-ScheduledTask -TaskName "HRMS eSSL Punch Agent" `
+        -Action $action -Trigger $trigger -Settings $settings `
+        -User "SYSTEM" `
+        -RunLevel Highest `
+        -Description "Reads eSSL punches and pushes them to the HRMS."
+
+  No -Password and no prompt: SYSTEM is a built-in account with no password
+  to give. Nothing is stored, and a later password change cannot break the
+  task.
+
+  SQL Server then sees the login NT AUTHORITY\SYSTEM instead of your own
+  account. A default SQL Express install grants SYSTEM access, so this
+  usually just works -- but DO NOT ASSUME IT. Prove it with (d) below: the
+  agent's own log says which login it connected as. If the log instead says
+
+      Login failed for user 'NT AUTHORITY\SYSTEM'
+
+  then SYSTEM is not accepted on this instance, and you want option 2 or 3,
+  or sql_auth = sql (part 4.2) which makes the Windows account irrelevant to
+  the database.
+
+  ---- OPTION 2: your own account, still no password stored -------------
+
+  S4U lets the task run as a named user without Windows holding their
+  password. Same $action / $trigger / $settings as above, then:
+
+      $principal = New-ScheduledTaskPrincipal `
+                     -UserId "WIN-5E3312PVO5J\Administrator" `
+                     -LogonType S4U -RunLevel Limited
+
+      Register-ScheduledTask -TaskName "HRMS eSSL Punch Agent" `
+        -Action $action -Trigger $trigger -Settings $settings `
+        -Principal $principal `
+        -Description "Reads eSSL punches and pushes them to the HRMS."
+
+  SQL Server sees your own account, so whatever worked for --test still
+  works. S4U needs the account to hold the "Log on as a batch job" right,
+  which local administrators normally do.
+
+  ---- OPTION 3: your own account with its password --------------------
+
+  Only if the first two are refused. Same as option 2 but with
+  -User / -Password:
+
+      Register-ScheduledTask -TaskName "HRMS eSSL Punch Agent" `
+        -Action $action -Trigger $trigger -Settings $settings `
+        -User "WIN-5E3312PVO5J\Administrator" `
+        -RunLevel Limited `
+        -Description "Reads eSSL punches and pushes them to the HRMS." `
+        -Password (Read-Host "Windows password for the task account" -AsSecureString)
+
+  "The user name or password is incorrect" (0x8007052E) here is exactly what
+  it says and has nothing to do with the rest of the command -- 12.13b.
+
+  ---- WHY -RepetitionDuration IS NOT OPTIONAL -------------------------
+
+  Without it some Windows versions refuse with:
+
+      The RepetitionInterval and RepetitionDuration ... must be specified
+      together.
+
+  $trigger is then empty, and Register-ScheduledTask fails straight after
+  with "Cannot validate argument on parameter 'Trigger'".
+  [TimeSpan]::MaxValue means "repeat forever", which is what the agent
+  wants.
+
+  Each setting earns its place:
+
+      -StartWhenAvailable           runs a missed cycle after a reboot
+      -MultipleInstances IgnoreNew  a slow run never overlaps the next
+      -ExecutionTimeLimit           a hung run is killed rather than wedging
+                                    the task forever; the next one re-reads
+                                    the same window, so nothing is lost
+
+  IF THE POWERSHELL BLOCK STILL WILL NOT WORK, use schtasks.exe instead. It
+  is present on every Windows, has no interval/duration pairing rule, and
+  "/SC MINUTE /MO 30" means every 30 minutes indefinitely. /RU SYSTEM needs
+  no password:
+
+      schtasks /Create /TN "HRMS eSSL Punch Agent" /SC MINUTE /MO 30 /F /RL HIGHEST ^
+        /TR "\"C:\Users\Administrator\AppData\Local\Programs\Python\Python310\python.exe\" \"C:\HRMS-Agent\essl_punch_agent.py\"" ^
+        /RU SYSTEM
+
+  (Those are cmd.exe continuations. In PowerShell put it on one line, or use
+  a backtick instead of ^.) The inner quotes are escaped because both paths
+  contain spaces. To use your own account instead, replace /RU SYSTEM with
+  /RU "WIN-5E3312PVO5J\Administrator" /RP * -- the * makes it prompt rather
+  than taking the password on the command line, where it would land in your
+  shell history.
+
+  Check what it created:
+
+      schtasks /Query /TN "HRMS eSSL Punch Agent" /V /FO LIST
+
+  PREFER THE GUI? Task Scheduler -> Create Task:
+
+      General   name it; "Run whether user is logged on or not".
+                "Change User or Group" -> type SYSTEM to avoid the password
+                prompt entirely. "Run with highest privileges" is NOT needed
+                for your own account.
+      Triggers  New -> Daily, 12:00 AM; tick "Repeat task every" and type
+                30 minutes; set "for a duration of" to Indefinitely
+      Actions   Start a program
+                  Program/script : the full python.exe path from (b)
+                  Add arguments  : "C:\HRMS-Agent\essl_punch_agent.py"
+                                   (with the quotes)
+                  Start in       : leave EMPTY -- not needed
+      Settings  tick "Run task as soon as possible after a scheduled start
+                is missed"; "If the task is already running: Do not start a
+                new instance"
+
+  (d) PROVE THE SCHEDULER CAN RUN IT, NOT JUST YOU
+  ------------------------------------------------------------------
+      Start-ScheduledTask -TaskName "HRMS eSSL Punch Agent"
+      Start-Sleep -Seconds 30
+      Get-ScheduledTaskInfo -TaskName "HRMS eSSL Punch Agent" |
+          Select-Object LastRunTime, LastTaskResult, NextRunTime
+      Get-Content C:\HRMS-Agent\essl_agent.log -Tail 20
+
+  LastTaskResult 0 is success. READ THE LOG, not just the exit code: running
+  it by hand and having the scheduler run it are different things, and this
+  is the step that proves the account, the interpreter and the working
+  directory are all right. The log should end with something like:
+
+      Target dev-pc: done -- 143 new punch(es), 71 day(s) created, 0 updated, 0 left alone.
+      All targets up to date.
+
+  If the log says "pyodbc is not installed", -Execute is pointing at the
+  wrong Python -- go back to (b). If the log is empty, python.exe never
+  started at all: the path or the working directory is wrong for that
+  account (12.13).
+
+--------------------------------------------------------------------------------
+  5.7  FIREWALL
+--------------------------------------------------------------------------------
+
+  MUST BE OPEN
+      Outbound TCP 443 from the Windows server to the HRMS (or 8000 to the
+      PC in stage 1). Outbound HTTPS is nearly always already allowed, so in
+      practice there is usually nothing to configure.
+
+  MUST NOT BE OPENED
+      SQL Server port 1433 to the internet or to network A. Nothing here
+      needs it. (Stage 1's optional pull mode, 6.6, needs 1433 open to the
+      LAN only -- close it again afterwards.)
+
+      Any inbound port on the Windows server. The agent only makes outbound
+      calls.
+
+      Port 83 stays exactly as it is.
+
+  IF OUTBOUND IS LOCKED DOWN, allow just the one destination:
+
+      New-NetFirewallRule -DisplayName "HRMS punch push (outbound 443)" `
+        -Direction Outbound -Action Allow -Protocol TCP `
+        -RemoteAddress 103.195.81.148 -RemotePort 443 `
+        -Program "C:\path\to\python.exe"
+
+  ONE nginx NOTE FOR LARGE BACKFILLS. The HRMS nginx site already allows
+  50 MB bodies (client_max_body_size 50M, see DEPLOYMENT.md step 11), and
+  20000 punches is about 3 MB of JSON, so there is nothing to change. If you
+  ever see HTTP 413, that is the setting to look at.
+
+--------------------------------------------------------------------------------
+  5.8  ON ENCRYPTION
+--------------------------------------------------------------------------------
+
+The token is a bearer secret: anyone holding it can write attendance. Over
+HTTPS it is safe in transit. Over plain HTTP between two networks it is not
+-- which is why verify_tls = no belongs only to stage 1, on a LAN, with a
+throwaway token.
+
+
+================================================================================
+================================================================================
+  PART 6 -- STAGE 1: TEST ON THE DEVELOPMENT PC
+================================================================================
+================================================================================
+
+Goal: real punches from the real machine, flowing into a copy of the HRMS on
+your PC, so you can see what the rules produced before anything touches a
+server. The PC and the eSSL server are on the same network, which is what
+makes this possible.
+
+--------------------------------------------------------------------------------
+  6.1  GET THE HRMS RUNNING ON THE PC
+--------------------------------------------------------------------------------
+
+In VS Code, open D:\Project\HRMS\HrmSoftware -- the repository root, not
+hrms\ -- then Ctrl+Shift+P -> Tasks: Run Task -> "Setup: create venv and
+install dev packages", then the same for "Django: migrate".
+
+By hand, in PowerShell from the repository root:
+
+    py -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    py -m pip install -r hrms\requirements-dev-windows.txt
+    cd hrms
+    py manage.py migrate
+    py manage.py seed_roles_permissions
+    py manage.py createsuperuser
+
+Why requirements-dev-windows.txt and not requirements.txt: the server list
+includes the PDF stack (weasyprint, pycairo), which needs C libraries that
+are not packaged for Windows and fails to build, and several of its pins
+have no wheels for recent Python. The dev list is the subset that installs;
+it runs the app, the whole test suite and all of the biometric sync. Salary
+slip PDF generation is what you give up locally -- those imports are lazy,
+so everything else works.
+
+hrms\.env is created for you on first setup, pointing at a local SQLite file
+with a throwaway biometric token. It is git-ignored. Never copy it to a
+server; each server has its own.
+
+  KEEP DB_ENGINE=sqlite IN THE PC's .env. Copying the Database section out
+  of .env.example sets DB_ENGINE=postgres and points the PC at a database
+  called hrms_prod_db with the password still "change-me". Start-up now
+  stops with a message saying exactly that rather than something cryptic
+  (12.18), but the fix is to leave the PC on sqlite. If you genuinely want
+  PostgreSQL locally, requirements-dev-windows.txt already installs the
+  driver, so you only need a local PostgreSQL and real credentials.
+
+Part 15 has the rest of the VS Code detail.
+
+--------------------------------------------------------------------------------
+  6.2  LET THE WINDOWS SERVER REACH YOUR PC
+--------------------------------------------------------------------------------
+
+Find the PC's address on the network:
+
+    ipconfig | findstr /i "IPv4"
+
+Say it is 192.168.1.50. Three things have to be true, and missing any one of
+them produces a different confusing error.
+
+  (a) Django must listen on the network, not just on itself:
+
+          py manage.py runserver 0.0.0.0:8000
+
+      Plain `runserver` binds 127.0.0.1 only, and the Windows server would
+      not be able to connect at all.
+
+  (b) Django must accept that hostname. In hrms\.env:
+
+          DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,192.168.1.50
+
+      Miss this and the push fails with "Invalid HTTP_HOST header", which
+      looks like a networking problem and is not. Restart runserver after
+      editing .env.
+
+  (c) Windows Firewall on the PC must allow inbound 8000 from the LAN.
+      PowerShell as Administrator:
+
+          New-NetFirewallRule -DisplayName "HRMS dev server (LAN)" `
+            -Direction Inbound -Action Allow -Protocol TCP `
+            -LocalPort 8000 -RemoteAddress LocalSubnet
+
+      -RemoteAddress LocalSubnet keeps it to your own network rather than
+      opening the port generally. Remove it when stage 1 is finished:
+
+          Remove-NetFirewallRule -DisplayName "HRMS dev server (LAN)"
+
+  Check from the Windows server before going further:
+
+      try { Invoke-WebRequest http://192.168.1.86:8000/api/biometric/status/ }
+      catch { $_.Exception.Response.StatusCode.value__ }
+
+  (curl.exe only ships with Windows 10 1803 / Server 2019 and later, so on
+  an older Windows Server it is simply not there -- use the PowerShell form
+  above rather than installing anything.)
+
+  A 401 is the right answer -- the endpoint is there and refusing you
+  because you sent no token. Anything else, fix it here before touching the
+  agent config.
+
+--------------------------------------------------------------------------------
+  6.3  NOTE THE TOKEN
+--------------------------------------------------------------------------------
+
+    findstr BIOMETRIC_SYNC_TOKEN hrms\.env
+
+That is the value the agent needs for this target. It was generated when
+hrms\.env was created; there is no need to change it.
+
+--------------------------------------------------------------------------------
+  6.4  POINT THE AGENT AT THE PC
+--------------------------------------------------------------------------------
+
+On the Windows server, in C:\HRMS-Agent\essl_agent.ini, this is the only
+enabled target:
+
+    [hrms:dev-pc]
+    url = http://192.168.1.50:8000
+    token = <the token from 6.3>
+    enabled = yes
+    verify_tls = no
+
+Use the PC's LAN address, never localhost -- localhost on the Windows server
+means the Windows server.
+
+verify_tls = no is correct here: plain HTTP on a LAN has no certificate to
+check. Do not carry that setting over to stages 2 and 3.
+
+Then:
+
+    py essl_punch_agent.py --show-config
+    py essl_punch_agent.py --test
+
+--------------------------------------------------------------------------------
+  6.5  WATCH THE FIRST PUNCHES ARRIVE
+--------------------------------------------------------------------------------
+
+Start small -- one day:
+
+    py essl_punch_agent.py --days 1
+
+On the PC, open:
+
+    http://127.0.0.1:8000/attendance/biometric-sync/
+
+You should see a run listed with a punch count, and "Punches received by
+day" should show today.
+
+If "Punches matching no employee" is full, stop and do part 9.1 before
+anything else -- the punches are safe, but nothing useful will happen until
+the codes match.
+
+Then do part 9 in full (codes and night-shift ticks), press "Rebuild from
+stored punches" for the dates concerned, and compare a few employees --
+especially a night-shift one -- against what eTimeTrackLite shows.
+
+--------------------------------------------------------------------------------
+  6.6  ALTERNATIVE: PULL DIRECTLY, NO AGENT
+--------------------------------------------------------------------------------
+
+The PC can reach the SQL Server itself, so the HRMS can read it without
+involving the agent at all. This is quicker to try, but it is NOT how
+production works, so treat it as a way to look at the data rather than as a
+rehearsal. If you only do one thing, do 6.4 instead.
+
+It needs:
+
+  * the `essl` login's password (4.1)
+  * TCP/IP enabled on the SQL Express instance: SQL Server Configuration
+    Manager -> SQL Server Network Configuration -> Protocols for SQLEXPRESS
+    -> TCP/IP -> Enabled, then restart the SQL Server service
+  * port 1433 open on the Windows server's firewall to the LAN only
+
+Uncomment pyodbc in hrms\requirements-dev-windows.txt and install it, then
+add to hrms\.env on the PC:
+
+    BIOMETRIC_MSSQL_HOST=192.168.1.135\SQLEXPRESS
+    BIOMETRIC_MSSQL_DATABASE=eTimetracklite1
+    BIOMETRIC_MSSQL_DRIVER=ODBC Driver 17 for SQL Server
+    BIOMETRIC_MSSQL_TRUSTED_CONNECTION=false
+    BIOMETRIC_MSSQL_USER=essl
+    BIOMETRIC_MSSQL_PASSWORD=<that login's password>
+
+Then:
+
+    py manage.py sync_biometric_attendance --test-connection
+    py manage.py sync_biometric_attendance --pull --days 3
+
+--test-connection reports who it connected as, how many punches the database
+holds and over what dates, and writes nothing.
+
+  DO NOT put BIOMETRIC_MSSQL_* on either Ubuntu server. They have no route
+  to that SQL Server, and leaving the settings there only produces
+  confusing failures. Close the 1433 firewall rule when you are done.
+
+--------------------------------------------------------------------------------
+  6.7  STAGE 1 IS DONE WHEN
+--------------------------------------------------------------------------------
+
+  [ ] a night-shift employee's two consecutive days read correctly -- that
+      day's last punch as in-time, the next morning's first punch as
+      out-time
+  [ ] "Punches matching no employee" is empty
+  [ ] the punch counts per day match what eTimeTrackLite reports
+  [ ] you have pressed "Rebuild from stored punches" at least once and seen
+      it do the right thing
+
+Then stop runserver, and move to part 7.
+
+
+================================================================================
+================================================================================
+  PART 7 -- STAGE 2: UBUNTU, AS A SEPARATE PROJECT
+================================================================================
+================================================================================
+
+Goal: prove it on Ubuntu, with its own database and its own Celery, without
+going anywhere near the live HRMS.
+
+Every command here is run over SSH as `multihost`. Run them in order and
+read each block's output before moving on.
+
+--------------------------------------------------------------------------------
+  7.1  WHAT "SEPARATE" HAS TO MEAN
+--------------------------------------------------------------------------------
+
+Five things must not be shared with the live project:
+
+    its own folder             /home/multihost/hrms_staging
+    its own PostgreSQL db      hrms_staging_db, role hrms_staging_user
+    its own Redis databases    12 and 13   (production uses 10 and 11)
+    its own systemd units      hrms-staging-gunicorn / -celery / -celerybeat
+    its own gunicorn port      8026        (production uses 8025)
+
+REDIS IS THE ONE THAT CATCHES PEOPLE OUT. If staging and production share a
+Redis database number, one project's Celery workers pick up the other's
+tasks, and a staging worker will happily rewrite production attendance. The
+numbers at the end of the URL are what keep them apart.
+
+Check nothing is in the way first -- this changes nothing:
+
+    echo "=== staging must not exist yet (should print nothing) ==="
+    ls -d /home/multihost/hrms_staging 2>/dev/null
+    ls /etc/systemd/system/hrms-staging-*.service 2>/dev/null
+    sudo -u postgres psql -tAc "SELECT datname FROM pg_database WHERE datname='hrms_staging_db'"
+    echo "=== production, for comparison (should all print) ==="
+    systemctl is-active hrms-prod-gunicorn hrms-prod-celery hrms-prod-celerybeat
+    grep -h "REDIS\|BROKER" /home/multihost/hrms_prod/hrms/.env
+
+--------------------------------------------------------------------------------
+  7.2  CREATE THE DATABASE AND THE CODE
+--------------------------------------------------------------------------------
+
+    # Database and role
+    sudo -u postgres createuser hrms_staging_user --pwprompt
+    sudo -u postgres createdb hrms_staging_db -O hrms_staging_user
+    sudo -u postgres psql -c "ALTER DATABASE hrms_staging_db OWNER TO hrms_staging_user;"
+
+    # Code
+    cd /home/multihost
+    git clonehttps://github.com/mohammed3738/HrmSoftware.git hrms_staging
+    cd hrms_staging
+    python3 -m venv venv
+    venv/bin/pip install --upgrade pip
+    venv/bin/pip install -r hrms/requirements.txt
+
+The system packages (libcairo2-dev, pkg-config and the rest) are already
+installed from the production deploy, so requirements.txt builds here.
+
+--------------------------------------------------------------------------------
+  7.3  THE STAGING .env
+--------------------------------------------------------------------------------
+
+Generate a token first, and keep it to hand:
+
+    python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+
+A different token per environment is the point: if staging's leaks,
+production is unaffected, and you retire staging by deleting its token.
+
+    cp /home/multihost/hrms_staging/hrms/.env.example \
+       /home/multihost/hrms_staging/hrms/.env
+    chmod 600 /home/multihost/hrms_staging/hrms/.env
+    nano /home/multihost/hrms_staging/hrms/.env
+
+Set these -- the full BIOMETRIC_* block is in part 14.2:
+
+    DJANGO_SECRET_KEY=<generate another one, not production's>
+    DJANGO_DEBUG=false
+    DJANGO_ALLOWED_HOSTS=staging.zacoinfotech.com,127.0.0.1
+    DJANGO_CSRF_TRUSTED_ORIGINS=https://staging.zacoinfotech.com
+    DJANGO_SECURE_COOKIES=true
+
+    DB_ENGINE=postgres
+    DB_NAME=hrms_staging_db
+    DB_USER=hrms_staging_user
+    DB_PASSWORD=<what you typed at the --pwprompt>
+    DB_HOST=127.0.0.1
+    DB_PORT=5432
+
+    CELERY_BROKER_URL=redis://127.0.0.1:6379/12
+    REDIS_CACHE_URL=redis://127.0.0.1:6379/13
+
+    BIOMETRIC_SYNC_TOKEN=<the token you just generated>
+    BIOMETRIC_SYNC_LOOKBACK_DAYS=3
+    BIOMETRIC_SYNC_HOURS=10,12,14,16,18,20,22,0
+    BIOMETRIC_MAX_SHIFT_HOURS=16
+    BIOMETRIC_NIGHT_IN_FROM=12:00
+    BIOMETRIC_NIGHT_OUT_UNTIL=12:00
+
+Leave the backup-email settings blank or pointed somewhere harmless --
+staging should not be emailing backups.
+
+Double-check the two Redis numbers really differ from production:
+
+    grep -h CELERY_BROKER_URL /home/multihost/hrms_staging/hrms/.env \
+                              /home/multihost/hrms_prod/hrms/.env
+
+--------------------------------------------------------------------------------
+  7.4  MIGRATE AND SEED
+--------------------------------------------------------------------------------
+
+    cd /home/multihost/hrms_staging
+    source venv/bin/activate
+    cd hrms
+    python manage.py migrate --noinput
+    python manage.py seed_roles_permissions
+    python manage.py collectstatic --noinput
+    python manage.py createsuperuser
+
+Staging starts empty. That is fine for testing the sync -- you only need a
+handful of employees whose codes match real device users. Create them by
+hand, or copy production's data if you want a realistic test (DEPLOYMENT.md
+"Option B" describes the copy; point it at the staging database).
+
+Confirm the migration landed and nothing is missing:
+
+    python manage.py check
+    python manage.py makemigrations website --check --dry-run
+    # must print: No changes detected in app 'website'
+
+--------------------------------------------------------------------------------
+  7.5  systemd SERVICES
+--------------------------------------------------------------------------------
+
+The three unit files are printed in full in part 14.3. Paste that block,
+then:
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now hrms-staging-gunicorn \
+                                hrms-staging-celery \
+                                hrms-staging-celerybeat
+    sleep 5
+    systemctl is-active hrms-staging-gunicorn hrms-staging-celery hrms-staging-celerybeat
+    curl -s -o /dev/null -w "Staging answered with HTTP %{http_code}\n" \
+         -H "Host: staging.zacoinfotech.com" http://127.0.0.1:8026/
+
+You want `active` three times, then HTTP 302 (a redirect to the login page).
+
+Then confirm beat picked up the biometric schedule:
+
+    sudo journalctl -u hrms-staging-celerybeat -n 40 --no-pager | grep -i biometric
+
+You should see sync-biometric-attendance in the schedule it loaded. Because
+this project uses django_celery_beat's DatabaseScheduler, the entry also
+appears in Django admin under Periodic Tasks after beat's first start.
+
+--------------------------------------------------------------------------------
+  7.6  nginx AND HTTPS
+--------------------------------------------------------------------------------
+
+The server block is printed in full in part 14.4. Paste it, then:
+
+    sudo ln -sf /etc/nginx/sites-available/hrms_staging \
+                /etc/nginx/sites-enabled/hrms_staging
+    sudo nginx -t && sudo systemctl reload nginx
+    sudo certbot --nginx -d staging.zacoinfotech.com --redirect
+    sudo nginx -t && sudo systemctl reload nginx
+    curl -s -o /dev/null -w "HTTPS answered with HTTP %{http_code}\n" \
+         https://staging.zacoinfotech.com/
+
+ONLY reload if `nginx -t` says "syntax is ok" and "test is successful". If it
+fails, the running config keeps serving every site, production included; fix
+the error and run the last line again.
+
+The subdomain has to resolve to 103.195.81.148 before certbot will issue a
+certificate. Add the DNS A record first and give it a few minutes.
+
+  NO SPARE SUBDOMAIN? Skip nginx and certbot, leave staging on
+  127.0.0.1:8026, and reach it through an SSH tunnel from your PC:
+
+      ssh -L 8026:127.0.0.1:8026 multihost@103.195.81.148
+
+  then browse http://127.0.0.1:8026/. The agent cannot reach a tunnel,
+  though, so to feed staging you would have to publish the port -- at which
+  point a subdomain with a certificate is the better answer.
+
+--------------------------------------------------------------------------------
+  7.7  POINT THE AGENT AT STAGING
+--------------------------------------------------------------------------------
+
+On the Windows server, in C:\HRMS-Agent\essl_agent.ini:
+
+    [hrms:ubuntu-staging]
+    url = https://staging.zacoinfotech.com
+    token = <staging's token from 7.3>
+    enabled = yes
+    verify_tls = yes
+
+Leave [hrms:dev-pc] enabled as well if you want both fed during the
+comparison -- that is what the multi-target design is for. Then:
+
+    py essl_punch_agent.py --test
+    py essl_punch_agent.py --target ubuntu-staging --days 7
+
+Naming the target explicitly keeps a seven-day push from also going to the
+PC.
+
+Then do part 9 again on staging: employee codes and night-shift ticks are
+per-database, so staging needs its own.
+
+--------------------------------------------------------------------------------
+  7.8  COMPARE STAGING AGAINST THE PC
+--------------------------------------------------------------------------------
+
+Open the Biometric Sync page on both, for the same dates. The in/out times
+should be identical: same rules, same punches. Where they differ, something
+environmental differs, not the code -- in order of likelihood:
+
+    the BIOMETRIC_NIGHT_* or MAX_SHIFT settings in one of the two .env files
+    the employee records (night-shift tick, date of joining, status)
+    a Shift Roster entry present in one database and not the other
+    a finalized payroll run in one and not the other
+
+--------------------------------------------------------------------------------
+  7.9  STAGE 2 IS DONE WHEN
+--------------------------------------------------------------------------------
+
+  [ ] staging's Biometric Sync page shows scheduled runs happening on their
+      own, without you starting them -- wait for the next even hour
+  [ ] attendance appears for the current day within two hours
+  [ ] `makemigrations --check` says "No changes detected"
+  [ ] staging's numbers match the PC's for the same dates
+  [ ] production is demonstrably untouched: its Biometric Sync page does not
+      exist yet, and `systemctl is-active hrms-prod-*` is unchanged
+
+
+================================================================================
+================================================================================
+  PART 8 -- STAGE 3: THE LIVE HRMS
+================================================================================
+================================================================================
+
+Everything here is already proven twice. Keep the change small and
+reversible.
+
+--------------------------------------------------------------------------------
+  8.1  BEFORE YOU START
+--------------------------------------------------------------------------------
+
+  [ ] Last night's backup actually arrived. The project emails them nightly
+      (hrms/scripts/email_backup.py, DEPLOYMENT.md "Backups"). Do not
+      assume -- look in the inbox and check the file size is plausible.
+  [ ] A quiet time. Migration 0052 only adds tables and columns, so it is
+      quick, but it is still a schema change.
+  [ ] No payroll run mid-finalisation.
+  [ ] You know how to roll back: part 14.6.
+
+--------------------------------------------------------------------------------
+  8.2  DEPLOY
+--------------------------------------------------------------------------------
+
+This is the project's ordinary update routine, from DEPLOYMENT.md:
+
+    cd /home/multihost/hrms_prod
+    git pull --ff-only origin main
+    source venv/bin/activate
+    pip install -r hrms/requirements.txt
+
+No new third-party packages are needed for the sync, so pip should have
+nothing to do. pyodbc is deliberately NOT in requirements.txt -- the Ubuntu
+server has no route to that SQL Server and never pulls directly.
+
+--------------------------------------------------------------------------------
+  8.3  ADD THE SETTINGS
+--------------------------------------------------------------------------------
+
+Generate production's own token:
+
+    python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+
+Then:
+
+    nano /home/multihost/hrms_prod/hrms/.env
+
+Append the block from part 14.2, with that token. Do not reuse staging's.
+
+Then check you have not missed a setting the release added:
+
+    cd /home/multihost/hrms_prod/hrms
+    diff <(grep -oE "^[A-Z_]+" .env.example | sort) <(grep -oE "^[A-Z_]+" .env | sort)
+
+Lines starting with `<` are in the template but missing from your .env.
+BIOMETRIC_MSSQL_* lines are commented out in the template and are not
+wanted here, so ignore those.
+
+--------------------------------------------------------------------------------
+  8.4  MIGRATE AND RESTART
+--------------------------------------------------------------------------------
+
+    cd /home/multihost/hrms_prod/hrms
+    python manage.py migrate --noinput
+    python manage.py collectstatic --noinput
+    python manage.py check --deploy --fail-level ERROR
+    sudo systemctl restart hrms-prod-gunicorn hrms-prod-celery hrms-prod-celerybeat
+    systemctl is-active hrms-prod-gunicorn hrms-prod-celery hrms-prod-celerybeat
+
+Every new field defaults to the status quo -- nobody is night shift, no day
+is locked -- so applying the migration changes no existing attendance.
+
+hrms-prod-celerybeat MUST be restarted, not just the worker: the schedule is
+read at start-up, so without it the two-hourly job never appears.
+
+Confirm beat has it:
+
+    sudo journalctl -u hrms-prod-celerybeat -n 40 --no-pager | grep -i biometric
+
+--------------------------------------------------------------------------------
+  8.5  CONFIRM THE ENDPOINT BEFORE TOUCHING THE AGENT
+--------------------------------------------------------------------------------
+
+    curl -s -o /dev/null -w "%{http_code}\n" \
+         https://hrms.zacoinfotech.com/api/biometric/status/
+    # 401 expected -- no token sent. 401 means the endpoint is live.
+
+    curl -H "X-HRMS-Sync-Token: <production's token>" \
+         https://hrms.zacoinfotech.com/api/biometric/status/
+    # {"ok": true, "server_date": "...", "latest_punch_date": null, ...}
+
+A 404 on the first one means the deploy did not take effect -- gunicorn was
+not restarted, or you are in the wrong directory. Fix that before going on;
+the agent would only report the same 404 less clearly.
+
+--------------------------------------------------------------------------------
+  8.6  SWITCH THE AGENT OVER
+--------------------------------------------------------------------------------
+
+On the Windows server, in C:\HRMS-Agent\essl_agent.ini:
+
+    [hrms:production]
+    url = https://hrms.zacoinfotech.com
+    token = <production's token>
+    enabled = yes
+    verify_tls = yes
+
+Start with a single day, so the first thing production sees is small:
+
+    py essl_punch_agent.py --test
+    py essl_punch_agent.py --target production --days 1
+
+Then check, in this order:
+
+  1. Attendance -> Biometric Sync on the live site: one run, Success, with a
+     punch count and a created/updated count.
+  2. "Punches matching no employee" -- do part 9.1 now if it is not empty.
+  3. Attendance -> Attendance List for today: a handful of employees,
+     including a night-shift one.
+
+--------------------------------------------------------------------------------
+  8.7  RETIRE THE EARLIER TARGETS
+--------------------------------------------------------------------------------
+
+Once production looks right:
+
+    [hrms:dev-pc]          enabled = no
+    [hrms:ubuntu-staging]  enabled = no
+
+Leave the sections in place. They are a record of what was tested, and
+re-enabling one is how you reproduce a problem later.
+
+Also now:
+
+  [ ] remove the PC's inbound firewall rule from 6.2(c)
+  [ ] if you used 6.6, close the 1433 rule on the Windows server
+  [ ] decide whether to keep staging (14.6 removes it)
+
+--------------------------------------------------------------------------------
+  8.8  THE FIRST WEEK
+--------------------------------------------------------------------------------
+
+  Day 1   The newest run says Success. Today has punches. Spot-check a
+          night-shift employee.
+  Day 2   Yesterday's out-times are all filled in. A pattern of blanks means
+          BIOMETRIC_MAX_SHIFT_HOURS or a night-shift tick is wrong, not the
+          sync -- 12.12.
+  Day 3   The scheduled runs are happening on their own at the even hours.
+  Day 7   "Punches matching no employee" is still zero. Compare one full
+          week against eTimeTrackLite, employee by employee, before trusting
+          it for payroll.
+
+Only then move to 11.3 and stop uploading the Excel.
+
+
+================================================================================
+================================================================================
+  PART 9 -- MARK THE NIGHT-SHIFT EMPLOYEES
+================================================================================
+================================================================================
+
+Do this on whichever environment you are testing, and again on production.
+Employee records are per-database, so the work does not carry across.
+
+--------------------------------------------------------------------------------
+  9.1  CHECK THE EMPLOYEE CODES LINE UP
+--------------------------------------------------------------------------------
+
+The HRMS matches a punch to a person in this order:
+
+  1. the eSSL EmployeeCode against Employee.employee_code
+  2. the device's UserId against Employee.biometric_device_user_id
+  3. the device's UserId against Employee.employee_code
+  4. any of the above ignoring case and leading zeros, so the device's
+     "0014" finds employee code "14"
+
+After the first push, open Attendance -> Biometric Sync. If "Punches
+matching no employee" is empty, the codes line up and there is nothing to
+do.
+
+If it lists people, fix each one in whichever way is actually true:
+
+  * the HRMS employee code is simply wrong
+        -> correct it on the employee's form
+  * the two codes are genuinely different, and both are right
+        -> put the device's user ID in "Biometric Device User ID" on the
+           employee's form
+
+Nothing is lost while you work through the list. The punches are already
+stored; the next run attaches every one of them and rebuilds those days.
+
+--------------------------------------------------------------------------------
+  9.2  TICK THE NIGHT-SHIFT EMPLOYEES
+--------------------------------------------------------------------------------
+
+Employees -> (employee) -> Edit -> Office Details -> Night Shift
+
+Tick it for anyone whose duty crosses midnight. Their in-time then comes
+from the day's last punch and their out-time from the next day's first
+punch (2.2).
+
+While you are on that screen: Weekly Off Day is often Saturday rather than
+Sunday for night staff, and that is a separate setting next to it.
+
+For someone who ROTATES between days and nights, do not tick it. Use
+Attendance -> Shift Roster and give them an entry with timings that cross
+midnight (22:00 to 07:00) for the dates concerned. The roster wins over the
+tick for the dates it covers, and a daytime roster entry forces day-shift
+rules.
+
+The Biometric Sync page lists everybody currently ticked, so the list can be
+eyeballed in one go.
+
+--------------------------------------------------------------------------------
+  9.3  RE-RUN THE DAYS YOU FIXED
+--------------------------------------------------------------------------------
+
+Attendance -> Biometric Sync -> "Rebuild from stored punches", with the
+dates. It fetches nothing from the punch machine; it only re-applies the
+rules to punches already held, so it is safe to press at any time.
+
+Up to three months at a time from the page. For more, use the command in
+10.2.
+
+
+================================================================================
+================================================================================
+  PART 10 -- BACKFILL THE HISTORY
+================================================================================
+================================================================================
+
+eTimeTrackLite holds years of punches. Pull in as much as you want.
+
+--------------------------------------------------------------------------------
+  10.1  PUSH THE PUNCHES
+--------------------------------------------------------------------------------
+
+On the Windows server:
+
+    cd C:\HRMS-Agent
+    py essl_punch_agent.py --target ubuntu-staging --since 2026-04-01
+
+Run it in a window you can watch; months of punches take a few minutes and
+progress is logged batch by batch. Start with one month to see the shape of
+the result before committing to a year.
+
+Naming the target explicitly matters for a backfill: you rarely want to push
+a year of history at every environment at once.
+
+--------------------------------------------------------------------------------
+  10.2  RE-APPLY THE RULES
+--------------------------------------------------------------------------------
+
+The push already builds attendance for the days it touches. Do this when you
+want to re-apply the rules deliberately -- after fixing employee codes, or
+after ticking night-shift staff:
+
+    cd /home/multihost/hrms_prod/hrms        # or hrms_staging
+    source ../venv/bin/activate
+
+    # What the rules WOULD do, writing nothing:
+    python manage.py sync_biometric_attendance \
+        --from 2026-04-01 --to 2026-04-30 --dry-run
+
+    # Then for real:
+    python manage.py sync_biometric_attendance \
+        --from 2026-04-01 --to 2026-04-30
+
+--dry-run prints a line per employee-day: the punches, the times now, and
+the times the rules would give, with "[manual, would be skipped]" where it
+would leave the day alone. Read a few night-shift rows before running it for
+real.
+
+A month at a time keeps the output readable.
+
+--------------------------------------------------------------------------------
+  10.3  WHAT A BACKFILL WILL NOT DO
+--------------------------------------------------------------------------------
+
+Days inside a FINALIZED payroll run are left alone, deliberately -- payslips
+went out against those numbers. They appear in the "left alone" count, and
+--force does not override it either. If a finalized period genuinely needs
+rebuilding, that is a payroll decision, not a sync one.
+
+
+================================================================================
+================================================================================
+  PART 11 -- DAY TO DAY
+================================================================================
+================================================================================
+
+--------------------------------------------------------------------------------
+  11.1  THE BIOMETRIC SYNC PAGE
+--------------------------------------------------------------------------------
+
+  Attendance -> Biometric Sync
+  Visible to any role with Attendance Data Management -> Edit. Admin and HR
+  have it already; no permission change was needed.
+
+  Punches held / matching no employee
+      Is the feed alive, and is anyone falling through the code mapping.
+
+  Recent sync runs
+      Every run, where it came from (agent push, scheduled, manual,
+      command), what it changed, and how many days it left alone. This is
+      how you know the automation is actually running rather than silently
+      dead.
+
+  Punches received by day
+      The fastest way to spot a device that stopped reporting: the count for
+      a working day drops to zero.
+
+  Rebuild from stored punches
+      Re-apply the rules to a date range, fetching nothing.
+
+  The rules in force
+      The thresholds actually configured on this server, so you are not
+      guessing what .env says.
+
+  Employees marked night shift
+      So the list can be eyeballed.
+
+--------------------------------------------------------------------------------
+  11.2  WHAT TO CHECK, AND WHEN
+--------------------------------------------------------------------------------
+
+  Daily, ten seconds   The newest run is Success and today has punches.
+  Weekly               "Matching no employee" is still zero.
+  After onboarding     The new employee appears, with punches, within a day.
+                       If not, their code does not match -- 9.1.
+  After a device       Punch counts per day are back to normal.
+  is replaced          A new device means new UserIds; check 9.1 again.
+
+--------------------------------------------------------------------------------
+  11.3  WHEN TO STOP UPLOADING THE EXCEL
+--------------------------------------------------------------------------------
+
+Not before you have compared a full week, employee by employee (8.8).
+
+Until then, running both is safe: an Excel upload marks the days it touches
+as manual, so the sync leaves them alone and the two cannot fight over the
+same day. The cost is that those days will not follow the punch machine
+afterwards either -- use --force (12.10) if you later want them rebuilt.
+
+Once you do stop, nothing needs switching off. The upload page stays where
+it is, for corrections and for any site the punch machine does not cover.
+
+
+================================================================================
+================================================================================
+  PART 12 -- TROUBLESHOOTING
+================================================================================
+================================================================================
+
+  12.1  --show-config did not find Settings.txt
+  ---------------------------------------------
+  Set essl_settings_file to its full path in essl_agent.ini. To find it:
+
+      Get-ChildItem C:\ -Recurse -Filter Settings.txt -ErrorAction SilentlyContinue |
+          Where-Object FullName -like "*iclock*" | Select-Object FullName
+
+  Not fatal: fill in sql_server and sql_database by hand instead. Discovery
+  only saves typing.
+
+  12.2  ODBC driver 'ODBC Driver 17 for SQL Server' not installed
+  ---------------------------------------------------------------
+      py -c "import pyodbc; print(pyodbc.drivers())"
+
+  Put the exact string it prints into sql_driver. If the list is empty, the
+  MSI from 5.1(b) is not installed. With driver 18, note it encrypts by
+  default -- the agent already allows for that with
+  TrustServerCertificate=yes.
+
+  12.3  Cannot read dbo.DeviceLogs: Login failed for user
+  -------------------------------------------------------
+  READ 12.3a FIRST. A wrong database name reports itself as a login
+  failure, so this message is as often about sql_database as about the
+  account.
+
+  Once 12.3a is ruled out:
+
+  With sql_auth = windows: SQL Server does not accept the Windows account
+  you are running as. Check which that is:
+
+      whoami
+
+  Do not create a login for it. Either run as the account that does work
+  (the one you use with SSMS), or switch to sql_auth = sql and reuse
+  eTimeTrackLite's own `essl` login -- part 4.2.
+
+  With sql_auth = sql: the password is wrong. Note that the sixth line of
+  Settings.txt is NOT the password -- see 12.3b. Run
+  eTimeTrackDatabaseSettings.exe to see what eTimeTrackLite is using.
+
+  12.3a  "Cannot open database ... requested by the login. The login
+         failed. (4060)"  -- almost always sql_database
+  ----------------------------------------------------------------------
+  Look at the name in the quotes. If it is a SERVER or INSTANCE name --
+  something like WIN-5E3312PVO5J\SQLEXPRESS -- then sql_database has a
+  server name in it, and the "Login failed (18456)" printed alongside is a
+  CONSEQUENCE of that, not a separate problem. The account is probably
+  fine.
+
+  sql_database is the name of a database INSIDE SQL Server. Here:
+
+      sql_database = eTimetracklite1
+
+  or leave it blank and let the agent read it from eTimeTrackLite's own
+  Settings.txt, which is always right:
+
+      sql_database =
+
+  Then:
+
+      py essl_punch_agent.py --show-config
+
+  The agent now refuses to start on this rather than letting SQL Server
+  answer confusingly, so a current version tells you directly. The ini
+  shipped with older versions of this guide listed two `sql_server`
+  examples just above the blank sql_server and sql_database lines, which
+  invited exactly this; part 14.1 no longer does.
+
+  12.3b  Pasting the sixth line of Settings.txt as sql_password
+  -------------------------------------------------------------
+  The sixth line looks like a password (something like "rKWYgQrTCGc=") but
+  it is encrypted with a key inside eTimeTrackLiteLibrary.dll. Using it
+  produces a plain "Login failed", which looks like the account is wrong.
+
+  Either get the real password from eTimeTrackDatabaseSettings.exe, which
+  ships beside eTimeTrackLite, or avoid the question entirely:
+
+      sql_auth = windows
+      sql_password =
+
+  The agent recognises that specific value and stops with this explanation.
+
+  12.3c  --test connects fine but reports 0 punches
+  -------------------------------------------------
+  If it also says "No punches anywhere in the last 12 months", the
+  connection and the credentials are right and this is eTimeTrackLite's
+  data, not the agent.
+
+  First rule out the version problem: a current agent lists the tables it
+  read, like
+
+         DeviceLogs                      0
+         DeviceLogs_10_2026          14201  2026-10-01 .. 2026-10-26
+
+  An agent that reads only dbo.DeviceLogs reports a healthy connection and
+  0 punches on this installation, because that table is a buffer and is
+  normally empty (3.1). If --test shows no per-table breakdown, the agent
+  on the Windows server is an older copy -- re-copy essl_punch_agent.py
+  from the repository (5.2).
+
+  With a current agent still showing nothing, check in eTimeTrackLite
+  itself that the devices are downloading. To see where the punches are, in
+  SSMS:
+
+      SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = 'dbo'
+        AND (TABLE_NAME = 'DeviceLogs' OR TABLE_NAME LIKE 'DeviceLogs[_]%')
+      ORDER BY TABLE_NAME;
+
+      SELECT COUNT(*) AS punches, MIN(LogDate), MAX(LogDate)
+      FROM dbo.DeviceLogs_10_2026;        -- this month's table
+
+  A row count of 0 in every table means eTimeTrackLite has not collected
+  anything, which is a question for eTimeTrackLite, not for this
+  integration.
+
+  12.3d  "The newest punch is N days old"
+  ---------------------------------------
+  The agent found punches but nothing recent. It will still send what is
+  there. This usually means eTimeTrackLite has stopped collecting from the
+  devices -- a device offline, or its scheduled download not running. Check
+  that in eTimeTrackLite; the agent only reads what eSSL has already
+  gathered.
+
+  12.4  Cannot read dbo.DeviceLogs: server was not found
+  ------------------------------------------------------
+  The instance name is wrong, or SQL Browser is not running. Let
+  --show-config tell you what Settings.txt says, then try in sql_server, in
+  this order:
+
+      .\SQLEXPRESS
+      localhost\SQLEXPRESS
+      WIN-5E3312PVO5J\SQLEXPRESS
+
+  Confirm the service is up:
+
+      Get-Service | Where-Object Name -like "MSSQL*"
+
+  12.5  A target says HTTP 401
+  ----------------------------
+  That server's token does not match. It must be byte-for-byte identical in
+  essl_agent.ini (token) and that server's hrms/.env
+  (BIOMETRIC_SYNC_TOKEN). Usual causes: a trailing space; quotes added
+  around the value in .env (do not quote it); the service not restarted
+  after editing .env.
+
+  Each environment has its own token. A 401 right after a stage change
+  usually means the previous stage's token is still in the ini.
+
+      # on the HRMS
+      grep BIOMETRIC_SYNC_TOKEN hrms/.env
+      sudo systemctl restart hrms-prod-gunicorn
+
+  12.6  A target says HTTP 404
+  ----------------------------
+  The HRMS at that URL does not have the endpoint -- the code is not
+  deployed there, or gunicorn was not restarted. Check from that server:
+
+      curl -s -o /dev/null -w "%{http_code}\n" \
+           https://.../api/biometric/status/      # want 401, not 404
+
+  12.7  A target says HTTP 400, or "Invalid HTTP_HOST header"
+  -----------------------------------------------------------
+  The agent sees this as:
+
+      400 Client Error: Bad Request for url: http://192.168.1.86:8000/...
+
+  which is NOT a token problem, however much it looks like one next to the
+  401 case. Django rejected the request before any view ran, because the
+  host in the agent's url is not in that server's DJANGO_ALLOWED_HOSTS.
+
+  Stage 1, almost always. In the PC's hrms\.env:
+
+      DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost,192.168.1.86
+
+  using the PC's own LAN address (ipconfig | findstr /i "IPv4"), then
+  restart runserver -- .env is read at start-up.
+
+  Two more things have to be true in stage 1, and each fails differently:
+  Django must be started as `runserver 0.0.0.0:8000` (plain runserver binds
+  127.0.0.1 only, and the agent cannot connect at all), and the PC's
+  firewall must allow inbound 8000 from the LAN. All three are in 6.2.
+
+  On a server it is the same cause -- the hostname in the agent's url is not
+  in that server's DJANGO_ALLOWED_HOSTS. Restart gunicorn after editing.
+
+  A current agent prints this explanation itself, in --test and in the
+  scheduled run's log.
+
+  12.8  A target times out or cannot resolve
+  ------------------------------------------
+  Network, not HRMS. From the Windows server:
+
+      Test-NetConnection -ComputerName hrms.zacoinfotech.com -Port 443
+      try { Invoke-WebRequest https://hrms.zacoinfotech.com/api/biometric/status/ }
+      catch { $_.Exception.Response.StatusCode.value__ }
+
+  A certificate error ("CERTIFICATE_VERIFY_FAILED") means the HTTPS
+  certificate is self-signed or the hostname does not match. Fix the
+  certificate; verify_tls = no is a stopgap, not a fix.
+
+  12.9  One target fails and the others are fine
+  ----------------------------------------------
+  That is the intended behaviour -- nothing to fix beyond that one target.
+  It is skipped, retried next run, and its resume point has not moved, so
+  the punches it missed are sent again. The agent exits 1 so the Scheduled
+  Task shows the failure, while the healthy targets stayed up to date.
+
+  12.10  Punches arrive but attendance does not change
+  ----------------------------------------------------
+  Look at the "left alone" column on the Biometric Sync page, then at the
+  day itself. One of these will be true:
+
+    * The day has manual times -- an Excel upload or an approved
+      correction. That is the design (2.5). To let the machine win anyway:
+
+          python manage.py sync_biometric_attendance \
+              --from 2026-10-01 --to 2026-10-31 --force
+
+      --force rebuilds those days from the punches alone, ignoring the times
+      already there, and still refuses to touch finalized payroll periods.
+
+    * The day is inside a finalized payroll run -- 10.3.
+    * The day is before the employee's date of joining.
+    * The employee's status is Left or Archived.
+
+  12.11  A night-shift employee's day looks wrong
+  -----------------------------------------------
+  In this order:
+
+    1. Is "Night Shift" ticked? The Biometric Sync page lists who is.
+    2. Is there a Shift Roster entry covering that date? It overrides the
+       tick, and a daytime entry forces day-shift rules.
+    3. Did they actually punch? Dry-run that one person:
+
+          python manage.py sync_biometric_attendance \
+              --from 2026-10-23 --to 2026-10-24 \
+              --employee ZCPL001 --dry-run
+
+       It prints the punches, how the day is classified (day/night) and what
+       the rules give.
+    4. A lone morning punch gives no in-time, on purpose: that punch is the
+       previous night's out-punch (BIOMETRIC_NIGHT_IN_FROM, 2.3).
+
+  12.12  The out-time is blank although they punched out
+  ------------------------------------------------------
+  The span exceeded BIOMETRIC_MAX_SHIFT_HOURS (16), so it was treated as a
+  missed out-punch rather than credited. Usually that is true: somebody
+  forgot to punch out and the next morning's punch got picked up. If your
+  shifts are genuinely longer, raise the setting and restart.
+
+  12.13  Reading LastTaskResult
+  -----------------------------
+  Not every non-zero value is a failure:
+
+      0        success
+      267009   0x00041301 -- THE TASK IS STILL RUNNING. Not an error. A
+               first run reads up to first_run_days of history and pushes it
+               in batches, so 30 seconds is often not long enough. Wait and
+               query again.
+      267011   0x00041303 -- the task has never run
+      1        0x1 -- the script ran and reported failure; read on
+
+  When it really is 0x1, the log says why:
+  The script ran and reported failure. The log says why:
+
+      Get-Content C:\HRMS-Agent\essl_agent.log -Tail 40
+
+  Two causes account for nearly all of these:
+
+    * The log ends with "pyodbc is not installed". -Execute is pointing at a
+      Python that does not have the packages. This machine has more than one
+      Python and only one has pyodbc, so py.exe on its own is not safe to
+      schedule -- 5.6(b) finds the right full path.
+
+    * The log is EMPTY. python.exe never started at all, so -Execute or the
+      script path is wrong for that account -- both come from 5.6. Note the
+      working directory is NOT the problem: the agent finds its ini, state
+      file and log beside its own .py file, so only the script path has to
+      be right.
+
+  To see exactly what the scheduler is running:
+
+      (Get-ScheduledTask -TaskName "HRMS eSSL Punch Agent").Actions |
+          Select-Object Execute, Arguments, WorkingDirectory
+
+  12.13a  "The RepetitionInterval and RepetitionDuration ... must be
+          specified together", then "Cannot validate argument on
+          parameter 'Trigger'"
+  ----------------------------------------------------------------------
+  Two errors, one cause. The first means the trigger was never built, so
+  $trigger is empty; the second is Register-ScheduledTask refusing that
+  empty variable a moment later. Fixing the first fixes both.
+
+  Add -RepetitionDuration, as 5.6(c) now does:
+
+      $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date `
+                   -RepetitionInterval (New-TimeSpan -Minutes 30) `
+                   -RepetitionDuration ([TimeSpan]::MaxValue)
+
+  Some Windows versions accept -RepetitionInterval on its own and some
+  insist on the pair, which is why an earlier version of this guide worked
+  on one machine and not another.
+
+  IF THE ERROR DETAIL MENTIONS New-JobTrigger OR
+  Microsoft.PowerShell.ScheduledJob.NewJobTriggerCommand, something else is
+  going on: the name resolved to New-JobTrigger from the PSScheduledJob
+  module, which is a different cmdlet for a different feature and builds an
+  object Register-ScheduledTask cannot use. Force the right module:
+
+      $trigger = ScheduledTasks\New-ScheduledTaskTrigger -Once `
+                   -At (Get-Date).Date `
+                   -RepetitionInterval (New-TimeSpan -Minutes 30) `
+                   -RepetitionDuration ([TimeSpan]::MaxValue)
+
+  Check which one you are actually getting with:
+
+      Get-Command New-ScheduledTaskTrigger | Select-Object Source, CommandType
+
+  It should say ScheduledTasks. If it does not, or if any of this keeps
+  fighting you, skip the cmdlets entirely and use the schtasks.exe form in
+  5.6(c) -- it has none of these quirks.
+
+  12.13b  "The user name or password is incorrect" (0x8007052E) when
+          registering the task
+  ----------------------------------------------------------------------
+  The task definition is fine -- this is Windows refusing the account and
+  password pair, and nothing else in the command is at fault. The quickest
+  answer is usually to stop supplying a password at all: use option 1
+  (SYSTEM) or option 2 (S4U) in 5.6(c).
+
+  If you want option 3 to work, the causes in order of likelihood:
+
+    * THE PASSWORD IS WRONG. It is typed blind. Check it without changing
+      anything:
+
+          Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+          $ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
+                     'Machine', $env:COMPUTERNAME)
+          $sec = Read-Host "password" -AsSecureString
+          $ctx.ValidateCredentials('Administrator',
+              [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                  [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)))
+
+      True means the password is right and the problem is elsewhere. False
+      means it is simply wrong.
+
+    * THE ACCOUNT HAS A BLANK PASSWORD. Task Scheduler cannot store one for
+      a task that runs when nobody is logged in, and the local policy
+      "Accounts: Limit local account use of blank passwords to console logon
+      only" blocks it outright. Either give the account a password or use
+      SYSTEM.
+
+    * THE USER NAME IS NOT WHAT YOU THINK. Confirm both halves rather than
+      typing them from memory:
+
+          whoami
+          $env:COMPUTERNAME
+          Get-LocalUser | Select-Object Name, Enabled
+
+      It must be COMPUTERNAME\username for a local account. A domain account
+      is DOMAIN\username, and the domain controller has to be reachable at
+      registration time.
+
+    * THE ACCOUNT IS A MICROSOFT ACCOUNT. Those cannot be used this way.
+      Use SYSTEM or a local account.
+
+  Note the task is NOT created when this fails, so there is nothing to clean
+  up before trying again:
+
+      Get-ScheduledTask -TaskName "HRMS eSSL Punch Agent" -ErrorAction SilentlyContinue
+
+  12.14  Nothing has synced for days and nobody noticed
+  -----------------------------------------------------
+  Both halves report, so check both:
+
+      HRMS     Attendance -> Biometric Sync -> Recent sync runs
+               sudo journalctl -u hrms-prod-celery -n 100 --no-pager | grep -i biometric
+               systemctl is-active hrms-prod-celery hrms-prod-celerybeat
+
+      Windows  Get-Content C:\HRMS-Agent\essl_agent.log -Tail 40
+               Get-ScheduledTaskInfo -TaskName "HRMS eSSL Punch Agent"
+
+  A long gap costs nothing permanent: the agent resumes from where it left
+  off, however long ago, and the stored punches rebuild the attendance.
+
+  12.15  Staging seems to be changing production data
+  ---------------------------------------------------
+  Stop staging's Celery immediately:
+
+      sudo systemctl stop hrms-staging-celery hrms-staging-celerybeat
+
+  Then check 7.1: almost certainly the two share a Redis database number, so
+  one project's workers are picking up the other's tasks.
+
+      grep -h CELERY_BROKER_URL /home/multihost/hrms_staging/hrms/.env \
+                                /home/multihost/hrms_prod/hrms/.env
+
+  The numbers at the end must differ. Fix staging's .env, then start its
+  services again.
+
+  12.16  Attendance appeared for a date before someone joined
+  -----------------------------------------------------------
+  It should not -- that day is skipped. If you see it, the employee's Date
+  of Joining is blank or wrong on that record. Fix it, then rebuild those
+  dates (9.3).
+
+  12.17  The scheduled HRMS job never runs
+  ----------------------------------------
+      systemctl is-active hrms-prod-celerybeat hrms-prod-celery
+
+  Both must be active. Beat reads the schedule at start-up, so if you
+  changed BIOMETRIC_SYNC_HOURS without restarting beat, the old schedule is
+  still in force. Also confirm CELERY_BROKER_URL uses a Redis database no
+  other project uses.
+
+  12.18  "Error loading psycopg2 or psycopg module"
+  -------------------------------------------------
+  DB_ENGINE=postgres, but no PostgreSQL driver is installed in that
+  environment. Almost always a development PC whose .env had the Database
+  section pasted in from .env.example.
+
+  The project now answers this itself -- start-up stops with the two ways
+  out rather than just the module name -- but for reference:
+
+      On a PC, you want SQLite. In hrms\.env:
+          DB_ENGINE=sqlite
+
+      If you really do want PostgreSQL locally:
+          pip install "psycopg[binary]"
+      requirements-dev-windows.txt already includes it, so a PC set up from
+      that file will not hit this at all.
+
+      On a server this should be impossible, because
+      pip install -r hrms/requirements.txt includes psycopg. Seeing it there
+      means the venv is not the one systemd is using, or pip install was
+      skipped during the deploy.
+
+  Related messages from the same checks, all of which name the exact
+  variable rather than failing later with a KeyError or an authentication
+  error:
+
+      "DB_ENGINE=postgres needs DB_NAME, which is not set in hrms/.env"
+      "DB_PASSWORD in hrms/.env is still the placeholder 'change-me'"
+      "DB_ENGINE='mysql' ... is not a value this project understands"
+
+
+================================================================================
+================================================================================
+  PART 13 -- REFERENCE
+================================================================================
+================================================================================
+
+--------------------------------------------------------------------------------
+  13.1  FILES ADDED AND CHANGED
+--------------------------------------------------------------------------------
+
+  ADDED
+
+    hrms/website/services/biometric_sync.py
+        The rules. Punch storage, employee matching, night-shift resolution,
+        deriving in/out times, rebuilding attendance, and the optional
+        direct pull. Everything else calls into this, so the rules exist in
+        exactly one place.
+
+    hrms/website/views_biometric.py
+        The two API endpoints and the Biometric Sync page.
+
+    hrms/website/management/commands/sync_biometric_attendance.py
+        Command-line rebuild, backfill, dry-run, connection test, direct
+        pull.
+
+    hrms/website/tests/test_biometric_sync.py
+        37 tests pinning every rule, including the "leave this day alone"
+        cases and the API's token handling.
+
+    hrms/templates/attendance/biometric_sync.html
+    hrms/website/migrations/0052_biometric_attendance_sync.py
+
+    hrms/scripts/essl_agent/essl_punch_agent.py
+    hrms/scripts/essl_agent/essl_agent.ini.example
+        The Windows agent. Nothing on Ubuntu runs these.
+
+    hrms/requirements-dev-windows.txt
+        The package subset that installs on Windows, for the development PC.
+
+    .vscode/
+        Run/debug configurations and tasks (part 15).
+
+  CHANGED
+
+    hrms/website/models.py        Employee.is_night_shift,
+                                  Employee.biometric_device_user_id,
+                                  Attendance.times_locked,
+                                  BiometricPunch, BiometricSyncRun
+    hrms/website/views.py         Excel upload and correction approval now
+                                  mark a day's times as manual
+    hrms/website/forms.py         the two new employee fields
+    hrms/website/urls.py          the new routes
+    hrms/website/tasks.py         sync_biometric_attendance_task
+    hrms/hrms/celery.py           the two-hourly schedule
+    hrms/hrms/settings.py         the BIOMETRIC_* settings
+    hrms/.env.example             documents them
+    hrms/templates/base2.html     the sidebar entry
+    hrms/templates/employee/create_employee2.html
+    hrms/templates/employee/employee_detail.html
+
+--------------------------------------------------------------------------------
+  13.2  DATABASE OBJECTS
+--------------------------------------------------------------------------------
+
+  On the HRMS. Nothing is created on the eSSL side.
+
+    website_biometricpunch
+        One row per punch, as the device recorded it. Unique on
+        (device_user_id, punch_date, punch_time) -- the same identity eSSL
+        itself uses (3.3) -- which is what makes re-sending free. Never
+        rewritten.
+
+    website_biometricsyncrun
+        One row per sync attempt, with its counters, so the page can show
+        whether the automation is running.
+
+    website_employee.is_night_shift              bool, default false
+    website_employee.biometric_device_user_id    nullable
+    website_attendance.times_locked              bool, default false
+
+  Punch times are stored as a local date plus a local time, exactly as the
+  device recorded them -- not as an aware datetime. That is deliberate: it
+  is what Attendance.in_time and out_time already are, so no timezone
+  conversion exists anywhere, and a 23:50 punch can never drift onto the
+  wrong day.
+
+--------------------------------------------------------------------------------
+  13.3  ENDPOINTS
+--------------------------------------------------------------------------------
+
+  POST /api/biometric/punches/        header X-HRMS-Sync-Token
+
+      {"device": "<agent name>", "punches": [ {...}, ... ]}
+
+      punch fields: device_user_id, employee_code, employee_name,
+                    punch_date ("YYYY-MM-DD"), punch_time ("HH:MM:SS"),
+                    device_id, direction, source_log_id
+
+      Only device_user_id, punch_date and punch_time are required; the rest
+      make the audit trail readable.
+
+      -> {"ok": true, "run_id": n, "received": n, "stored": n,
+          "unmatched": n, "attendance_created": n, "attendance_updated": n,
+          "attendance_skipped": n, "message": "..."}
+
+      At most 20000 punches per request. Punches already held are ignored,
+      so re-sending an overlapping window is free.
+
+  GET  /api/biometric/status/         header X-HRMS-Sync-Token
+
+      -> {"ok": true, "server_date": "...", "latest_punch_date": "...",
+          "lookback_days": n, "last_run": {...}}
+
+      This is how the agent works out where to resume when it has lost its
+      own state file.
+
+  Both answer 401 for a missing, wrong, or unconfigured token, and say
+  nothing about which. They carry no session and no CSRF token by design --
+  the caller is a scheduled script on another network, not a browser.
+
+  GET  /attendance/biometric-sync/          the page (login + permission)
+  POST /attendance/biometric-sync/rebuild/  the Rebuild button
+
+--------------------------------------------------------------------------------
+  13.4  SETTINGS
+--------------------------------------------------------------------------------
+
+  In each environment's own hrms/.env. Complete block in part 14.2.
+
+    BIOMETRIC_SYNC_TOKEN           required; empty switches the feed off
+    BIOMETRIC_SYNC_LOOKBACK_DAYS   3      days each run re-reads (min 2)
+    BIOMETRIC_SYNC_HOURS           10,12,14,16,18,20,22,0
+    BIOMETRIC_MAX_SHIFT_HOURS      16
+    BIOMETRIC_NIGHT_IN_FROM        12:00
+    BIOMETRIC_NIGHT_OUT_UNTIL      12:00
+    BIOMETRIC_FUTURE_PUNCH_TOLERANCE_DAYS
+                                   1      reject punches dated beyond
+                                          today + this many days
+
+    BIOMETRIC_MSSQL_HOST                  direct pull only -- the
+    BIOMETRIC_MSSQL_DATABASE              development PC, never either
+    BIOMETRIC_MSSQL_DRIVER                Ubuntu server
+    BIOMETRIC_MSSQL_TRUSTED_CONNECTION
+    BIOMETRIC_MSSQL_USER
+    BIOMETRIC_MSSQL_PASSWORD
+    BIOMETRIC_MSSQL_READ_BUFFER    false  also read dbo.DeviceLogs on a
+                                          --pull, as well as the monthly
+                                          tables; see 3.1
+
+  Changing any of them needs gunicorn restarted. Changing
+  BIOMETRIC_SYNC_HOURS needs celery-beat restarted too.
+
+--------------------------------------------------------------------------------
+  13.5  COMMANDS
+--------------------------------------------------------------------------------
+
+  ON THE HRMS  (from the hrms/ folder, with the venv active)
+
+    python manage.py sync_biometric_attendance
+        Rebuild the default window from stored punches.
+
+    ... --from 2026-10-01 --to 2026-10-31
+        A specific range.
+
+    ... --days 7
+        The last 7 days ending today. --days 1 is today alone. Cannot be
+        combined with --from.
+
+    ... --employee ZCPL001 --employee ZCPL002
+        Only these employees. Repeatable.
+
+    ... --dry-run
+        Print what the rules would do, write nothing.
+
+    ... --force
+        Also overwrite days whose times were set by hand, rebuilding them
+        from the punches alone. Never touches finalized payroll.
+
+    ... --test-connection
+        Check the eSSL SQL Server connection and stop. Reads nothing,
+        writes nothing. Development PC only.
+
+    ... --pull
+        Read punches from the eSSL SQL Server first. Needs pyodbc and a
+        route to it. Development PC only.
+
+  ON THE WINDOWS SERVER  (from C:\HRMS-Agent)
+
+    py essl_punch_agent.py
+        Resume and push to every enabled target. This is what the Scheduled
+        Task runs.
+
+    py essl_punch_agent.py --show-config
+        Print the resolved configuration, including what it read from
+        eTimeTrackLite's Settings.txt, then stop. Connects to nothing.
+
+    py essl_punch_agent.py --test
+        Check SQL Server and every enabled target. Sends nothing.
+
+    py essl_punch_agent.py --days 7
+        Re-read the last 7 days instead of resuming.
+
+    py essl_punch_agent.py --since 2026-01-01
+        Backfill from a date. Cannot be combined with --days.
+
+    py essl_punch_agent.py --target NAME
+        Only this target, even if it is disabled. Repeatable.
+
+    py essl_punch_agent.py --dry-run
+        Read and report what each target would receive, POST nothing.
+
+
+  AGENT INI KEYS WORTH KNOWING  (part 14.1 has them all, with comments)
+
+    read_devicelogs_buffer   no    read the monthly tables only; see 3.1
+    overlap_minutes          180   how far back of its own resume point each
+                                   run re-reads
+    batch_size               2000  punches per HTTP request
+    first_run_days           30    history on a target's very first run
+
+  LOGS
+
+    Windows   C:\HRMS-Agent\essl_agent.log          rotated at 2 MB, 1 kept
+              C:\HRMS-Agent\essl_agent_state.json   per-target resume points
+
+    HRMS      sudo journalctl -u hrms-prod-celery -f
+              sudo journalctl -u hrms-prod-gunicorn -n 100 --no-pager
+              Attendance -> Biometric Sync          every run, with counters
+
+
+================================================================================
+================================================================================
+  PART 14 -- APPENDICES (COMPLETE FILES)
+================================================================================
+================================================================================
+
+--------------------------------------------------------------------------------
+  14.1  essl_agent.ini -- COMPLETE
+--------------------------------------------------------------------------------
+
+Save as C:\HRMS-Agent\essl_agent.ini. Everything below the line is the file.
+Change only the lines marked CHANGE ME, plus the SQL login section per your
+choice in 4.2.
+
+- - - - - - - - - - - - - - - - - 8< - - - - - - - - - - - - - - - - - - - -
+; eSSL punch agent configuration -- lives on the WINDOWS server next to
+; eTimeTrackLite. Keep this file private: it holds the HRMS tokens.
+;
+; NOTHING NEEDS CREATING for this to work: no new database, no new SQL login,
+; no change to eTimeTrackLite. The agent only runs SELECTs, and by default it
+; connects with Windows Authentication, which stores no password at all.
+;
+; Check what it worked out before you schedule anything:
+;     py essl_punch_agent.py --show-config
+;     py essl_punch_agent.py --test
+
+[agent]
+
+; ── Where eTimeTrackLite keeps its own database settings ─────────────────
+;
+; Point this at eTimeTrackLite's Settings.txt and the agent reads the server
+; name, the database name, the authentication mode and the login out of it,
+; so you do not have to retype the things that are easy to get wrong. Leave
+; it blank and the agent checks the usual locations by itself --
+; --show-config says which file it found, if any.
+;
+; The password in that file is scrambled and cannot be read back, so only
+; the other values come from it.
+essl_settings_file = C:\eTimeTrackLiteWeb\eTimeTrackLiteWeb\iclock\Settings.txt
+
+; ── SQL Server ───────────────────────────────────────────────────────────
+;
+; THE EASIEST THING TO DO HERE IS NOTHING. Left blank, both values come from
+; eTimeTrackLite's own Settings.txt, which is always right because it is what
+; eTimeTrackLite itself connects with. Fill one in only to override it.
+; Check the result with:  py essl_punch_agent.py --show-config
+
+; WHICH MACHINE AND INSTANCE. Examples:
+;     sql_server = .\SQLEXPRESS
+;     sql_server = localhost\SQLEXPRESS
+;     sql_server = WIN-5E3312PVO5J\SQLEXPRESS
+sql_server = WIN-5E3312PVO5J\SQLEXPRESS
+
+; WHICH DATABASE INSIDE IT. This is a database name, NOT a server name --
+; putting a server or instance name here makes SQL Server answer with
+; "Cannot open database ... The login failed", which reads like a password
+; problem and is not. Example:
+;     sql_database = eTimetracklite1
+sql_database = eTimetracklite1
+
+; Installed with "Microsoft ODBC Driver for SQL Server". 17 and 18 both
+; work. See exactly what is installed, and use that exact string:
+;     py -c "import pyodbc; print(pyodbc.drivers())"
+sql_driver = ODBC Driver 18 for SQL Server
+
+; WHICH TABLES THE PUNCHES ARE READ FROM.
+;
+; eTimeTrackLite keeps punches in one table per month -- DeviceLogs_10_2026,
+; DeviceLogs_9_2026 and so on. dbo.DeviceLogs is only a staging buffer for
+; punches just downloaded from the devices, which it empties as it archives
+; them into the monthly table, so on this installation it is always empty.
+;
+;   no    read the monthly tables only (the default, and what you want)
+;   yes   also read dbo.DeviceLogs, for an installation that leaves punches
+;         sitting in the buffer for a while
+;
+; Leaving this at "no" cannot lose a punch silently: every run counts the
+; buffer anyway and logs a warning if it finds anything there, so if your
+; installation ever starts behaving differently you will see it in
+; essl_agent.log rather than wondering where a day went.
+read_devicelogs_buffer = no
+
+; HOW THE AGENT LOGS IN TO SQL SERVER -- pick one.
+;
+;   windows   Windows Authentication. SQL Server trusts whichever Windows
+;             account the Scheduled Task runs as, and NO PASSWORD IS STORED
+;             ANYWHERE. Prefer this. It is why the `sa` password is not
+;             needed, and why nothing has to be created.
+;
+;   sql       Reuse the SQL login eTimeTrackLite itself already uses. On
+;             this installation Settings.txt says that is `essl`. This
+;             creates no new user either -- it is an existing login. You do
+;             need its password: run eTimeTrackDatabaseSettings.exe
+;             (shipped beside eTimeTrackLite) to see or re-set it.
+;
+; Left blank, the agent follows whatever Settings.txt reported.
+sql_auth = windows
+
+; Only read when sql_auth = sql. Left blank, sql_user comes from
+; Settings.txt.
+sql_user =
+
+; THE PASSWORD IS NOT IN Settings.txt IN ANY USABLE FORM. The sixth line of
+; that file looks like a password (something like "rKWYgQrTCGc=") but it is
+; encrypted with a key inside eTimeTrackLiteLibrary.dll -- pasting it here
+; just produces "Login failed", and the agent will stop and tell you so.
+; To get the real one, run eTimeTrackDatabaseSettings.exe, which ships
+; beside eTimeTrackLite. Or avoid the question entirely with
+; sql_auth = windows, above.
+sql_password =
+
+; ── Timing ───────────────────────────────────────────────────────────────
+
+; How far back each run re-reads, beyond where it left off. eTimeTrackLite
+; sometimes writes a punch to the database a while after it happened, and
+; re-sending costs nothing because the HRMS ignores punches it already
+; holds. 180 = three hours.
+overlap_minutes = 180
+
+; Punches per HTTP request. The HRMS accepts up to 20000.
+batch_size = 2000
+
+; How much history to read on a target's very first run, if that HRMS holds
+; nothing either. For a full backfill use the flag instead:
+;     py essl_punch_agent.py --since 2025-01-01
+first_run_days = 30
+
+; Seconds to wait for an HRMS. A first backfill batch can take a while.
+timeout_seconds = 120
+
+; Name shown in each HRMS's sync log, so a second punch machine added later
+; is tellable apart.
+agent_name = essl-windows-agent
+
+
+; ════════════════════════════════════════════════════════════════════════
+;  WHERE TO PUSH
+;
+;  One [hrms:<name>] section per HRMS. Each keeps its own token and its own
+;  resume point, so you can roll out in stages: test against a PC first,
+;  add the Ubuntu staging site, add production last, and switch the earlier
+;  ones off as you go. A target that is unreachable is skipped and retried
+;  next run -- it never holds up the others and never loses punches.
+;
+;  Each token is that server's BIOMETRIC_SYNC_TOKEN, from its own
+;  hrms/.env. They are different servers, so they are different tokens.
+; ════════════════════════════════════════════════════════════════════════
+
+; 1. The development PC, on this same network. Use its LAN address, not
+;    localhost -- localhost here would mean this Windows server. Django must
+;    be started as `runserver 0.0.0.0:8000` to accept it.
+[hrms:dev-pc]
+url = http://192.168.1.86:8000
+token = zGX5yzYa61V2_H7e-r8W8dtXkUokR8jtEgI6isEpsyOujxYYkK5y5zFb51gQj55U
+enabled = yes
+; Plain HTTP on the LAN: there is no certificate to verify.
+verify_tls = no
+
+; 2. The Ubuntu staging copy. Turn this on once the PC test looks right.
+[hrms:ubuntu-staging]
+url = https://staging.zacoinfotech.com
+token = CHANGE-ME
+enabled = no
+verify_tls = yes
+
+; 3. The live HRMS. Turn this on last.
+[hrms:production]
+url = https://hrms.zacoinfotech.com
+token = CHANGE-ME
+enabled = no
+; Leave verify_tls = yes whenever the url is a real HTTPS hostname. Setting
+; it to no turns off the check that you are talking to the right server, so
+; the token could be read by anyone in between. Only do that for plain
+; http:// on a trusted LAN, as with the dev PC above.
+verify_tls = yes
+- - - - - - - - - - - - - - - - - >8 - - - - - - - - - - - - - - - - - - - -
+
+--------------------------------------------------------------------------------
+  14.2  THE hrms/.env BLOCK -- COMPLETE
+--------------------------------------------------------------------------------
+
+Append this to each environment's hrms/.env. The token differs per
+environment; everything else can be identical.
+
+- - - - - - - - - - - - - - - - - 8< - - - - - - - - - - - - - - - - - - - -
+# --- Biometric (eSSL / eTimeTrackLite) attendance sync -----------------------
+# The punch machine's SQL Server is on another network with no route to this
+# server, so an agent on that Windows box pushes punches to
+# /api/biometric/punches/ instead. Full walkthrough:
+# ESSL_INTEGRATION_GUIDE.txt in the repository root.
+
+# Shared secret the agent sends in the X-HRMS-Sync-Token header. The same
+# string goes in essl_agent.ini on the Windows server. Generate one with:
+#   python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+# Leaving it empty switches the punch endpoint off entirely.
+# Each environment gets its OWN token -- never reuse one across servers.
+BIOMETRIC_SYNC_TOKEN=change-me
+
+# How far back each run re-reads and rebuilds. Must be at least 2 so a night
+# shift's second half (the next day's first punch) is always in the window.
+BIOMETRIC_SYNC_LOOKBACK_DAYS=3
+
+# Hours (local time, 24h) the scheduled sync runs at. The default is every
+# second hour from 10:00 through midnight -- midnight included on purpose,
+# because that run is what closes the previous night shift.
+BIOMETRIC_SYNC_HOURS=10,12,14,16,18,20,22,0
+
+# A span longer than this is a missed out-punch, not a shift: the out-time is
+# left blank rather than crediting an absurd day.
+BIOMETRIC_MAX_SHIFT_HOURS=16
+
+# Night-shift guard rails. A night employee's in-time is the day's LAST punch,
+# but only from BIOMETRIC_NIGHT_IN_FROM onwards -- somebody who only punched
+# at 06:00 was punching OUT of the previous night. Likewise the next day's
+# first punch counts as their out-punch only before BIOMETRIC_NIGHT_OUT_UNTIL.
+BIOMETRIC_NIGHT_IN_FROM=12:00
+BIOMETRIC_NIGHT_OUT_UNTIL=12:00
+
+# Optional direct-pull mode, for a machine that can actually reach the eSSL
+# SQL Server (the development PC on the same LAN). Needs pyodbc plus an ODBC
+# driver. LEAVE THESE COMMENTED OUT ON BOTH UBUNTU SERVERS -- they have no
+# route to that SQL Server, and setting them only produces confusing errors.
+# BIOMETRIC_MSSQL_HOST=192.168.1.135\SQLEXPRESS
+# BIOMETRIC_MSSQL_DATABASE=eTimetracklite1
+# BIOMETRIC_MSSQL_USER=essl
+# BIOMETRIC_MSSQL_PASSWORD=change-me
+# BIOMETRIC_MSSQL_DRIVER=ODBC Driver 17 for SQL Server
+# BIOMETRIC_MSSQL_TRUSTED_CONNECTION=false
+- - - - - - - - - - - - - - - - - >8 - - - - - - - - - - - - - - - - - - - -
+
+--------------------------------------------------------------------------------
+  14.3  STAGING systemd UNITS -- COMPLETE
+--------------------------------------------------------------------------------
+
+Paste the whole block as `multihost`. It mirrors production's units from
+DEPLOYMENT.md step 9, with the staging folder, port 8026 and a distinct
+Celery hostname.
+
+- - - - - - - - - - - - - - - - - 8< - - - - - - - - - - - - - - - - - - - -
+sudo tee /etc/systemd/system/hrms-staging-gunicorn.service > /dev/null <<'EOF'
+[Unit]
+Description=hrms_staging Django app (gunicorn)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+User=multihost
+Group=multihost
+WorkingDirectory=/home/multihost/hrms_staging/hrms
+ExecStart=/home/multihost/hrms_staging/venv/bin/gunicorn hrms.wsgi:application \
+    --bind 127.0.0.1:8026 \
+    --worker-class gthread \
+    --workers 2 \
+    --threads 4 \
+    --timeout 300 \
+    --access-logfile - \
+    --error-logfile -
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee /etc/systemd/system/hrms-staging-celery.service > /dev/null <<'EOF'
+[Unit]
+Description=hrms_staging Celery worker
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+User=multihost
+Group=multihost
+WorkingDirectory=/home/multihost/hrms_staging/hrms
+ExecStart=/home/multihost/hrms_staging/venv/bin/celery -A hrms worker \
+    --loglevel=INFO --concurrency=1 --hostname=hrms_staging@%%h
+Restart=always
+RestartSec=5
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee /etc/systemd/system/hrms-staging-celerybeat.service > /dev/null <<'EOF'
+[Unit]
+Description=hrms_staging Celery beat (scheduled jobs)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+User=multihost
+Group=multihost
+WorkingDirectory=/home/multihost/hrms_staging/hrms
+ExecStart=/home/multihost/hrms_staging/venv/bin/celery -A hrms beat \
+    --loglevel=INFO --pidfile=
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now hrms-staging-gunicorn hrms-staging-celery hrms-staging-celerybeat
+sleep 5
+systemctl is-active hrms-staging-gunicorn hrms-staging-celery hrms-staging-celerybeat
+- - - - - - - - - - - - - - - - - >8 - - - - - - - - - - - - - - - - - - - -
+
+  --hostname=hrms_staging@... keeps this worker distinct from production's
+  in the Celery control plane. The Redis database numbers in .env are what
+  actually keep the task queues apart.
+
+  --pidfile= (empty) stops beat writing a pid lock file; a crashed beat
+  could otherwise leave a stale lock that blocks the next start.
+
+--------------------------------------------------------------------------------
+  14.4  STAGING nginx SITE -- COMPLETE
+--------------------------------------------------------------------------------
+
+- - - - - - - - - - - - - - - - - 8< - - - - - - - - - - - - - - - - - - - -
+sudo tee /etc/nginx/sites-available/hrms_staging > /dev/null <<'EOF'
+server {
+    listen 80;
+    listen [::]:80;
+    server_name staging.zacoinfotech.com;
+
+    client_max_body_size 50M;     # Excel / document uploads, punch batches
+
+    location /static/ {
+        alias /home/multihost/hrms_staging/hrms/staticfiles/;
+        expires 7d;
+        access_log off;
+    }
+
+    location /media/ {
+        alias /home/multihost/hrms_staging/hrms/media/;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8026;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+}
+EOF
+- - - - - - - - - - - - - - - - - >8 - - - - - - - - - - - - - - - - - - - -
+
+Then the enable / test / reload / certbot sequence in 7.6.
+
+If staging shows no styling, nginx cannot read its static files. Production
+needed the same fix (DEPLOYMENT.md step 8) -- re-run those setfacl lines with
+the staging paths.
+
+--------------------------------------------------------------------------------
+  14.5  THE SQL THAT RUNS AGAINST eTimeTrackLite
+--------------------------------------------------------------------------------
+
+Only SELECTs. Nothing in eTimeTrackLite is written to or changed.
+
+First the agent asks which punch tables exist, because the monthly ones come
+and go (3.1):
+
+    SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES
+    WHERE TABLE_SCHEMA = 'dbo' AND TABLE_TYPE = 'BASE TABLE'
+      AND (TABLE_NAME = 'DeviceLogs' OR TABLE_NAME LIKE 'DeviceLogs[_]%');
+
+It keeps the DeviceLogs_<month>_<year> tables covering the window, discards
+anything else the server reported, and reads them as one result. For a
+window inside October 2026 that is:
+
+    SELECT  p.UserId,
+            e.EmployeeCode,
+            e.EmployeeName,
+            p.LogDate,
+            p.DeviceId,
+            p.PunchDirection,
+            p.DeviceLogId
+    FROM    (
+        SELECT  l.UserId, l.LogDate, l.DeviceId,
+                COALESCE(l.Direction, l.AttDirection) AS PunchDirection,
+                l.DeviceLogId
+        FROM    dbo.[DeviceLogs_10_2026] AS l
+        WHERE   l.LogDate >= @since AND l.LogDate < @until
+    ) AS p
+    LEFT JOIN dbo.Employees AS e ON e.EmployeeCodeInDevice = p.UserId
+    ORDER BY p.LogDate, p.UserId;
+
+A longer window simply adds a UNION ALL branch per month: October to
+December 2026 gives three. Table names are never built from anything but
+what INFORMATION_SCHEMA returned, re-checked against the pattern DeviceLogs
+or DeviceLogs_<digits>_<digits>, and bracket-quoted.
+
+With read_devicelogs_buffer = yes, a dbo.[DeviceLogs] branch is added ahead
+of the monthly ones. Either way one more statement runs each time, purely to
+notice a buffer that is not being emptied (3.1):
+
+    SELECT COUNT(*) FROM dbo.DeviceLogs;
+
+--test additionally runs these three, purely to report:
+
+    SELECT COUNT(*), MAX(LogDate), MIN(LogDate) FROM dbo.DeviceLogs;
+    SELECT COUNT(*) FROM dbo.Employees WHERE RecordStatus = 1;
+    SELECT SUSER_NAME(), DB_NAME();
+
+Part 3 explains why dbo.DeviceLogs and not dbo.AttendanceLogs, why the join
+is a LEFT join, and why the archive tables are not read.
+
+--------------------------------------------------------------------------------
+  14.6  REMOVING IT ALL AGAIN
+--------------------------------------------------------------------------------
+
+  STOP THE FEED, KEEP EVERYTHING  (the gentlest step, and reversible)
+
+      On the Windows server:
+          Disable-ScheduledTask -TaskName "HRMS eSSL Punch Agent"
+
+      Punches stop arriving. Attendance already written stays. Re-enable
+      with Enable-ScheduledTask and the agent resumes from where it stopped.
+
+  STOP THE HRMS SIDE ONLY
+
+      In hrms/.env set BIOMETRIC_SYNC_TOKEN= (empty), then restart gunicorn.
+      The endpoint refuses everything and the agent's pushes 401. The
+      two-hourly job still runs but has nothing new to work with.
+
+  REMOVE THE STAGING PROJECT
+
+      sudo systemctl disable --now hrms-staging-gunicorn \
+                                   hrms-staging-celery \
+                                   hrms-staging-celerybeat
+      sudo rm /etc/systemd/system/hrms-staging-*.service
+      sudo systemctl daemon-reload
+      sudo rm -f /etc/nginx/sites-enabled/hrms_staging
+      sudo rm -f /etc/nginx/sites-available/hrms_staging
+      sudo nginx -t && sudo systemctl reload nginx
+      sudo -u postgres dropdb hrms_staging_db
+      sudo -u postgres dropuser hrms_staging_user
+      rm -rf /home/multihost/hrms_staging
+
+      Also delete the DNS record and, if you created one, revoke the
+      staging certificate:
+          sudo certbot delete --cert-name staging.zacoinfotech.com
+
+      Then set [hrms:ubuntu-staging] enabled = no in essl_agent.ini.
+
+  REMOVE THE AGENT FROM THE WINDOWS SERVER
+
+      Unregister-ScheduledTask -TaskName "HRMS eSSL Punch Agent" -Confirm:$false
+      Remove-Item -Recurse C:\HRMS-Agent
+
+      Nothing in eTimeTrackLite or SQL Server was ever changed, so there is
+      nothing to undo there.
+
+  REVERSE THE DATABASE CHANGE  (last resort -- this deletes the punches)
+
+      python manage.py migrate website 0051
+
+      This drops website_biometricpunch and website_biometricsyncrun and
+      removes the three columns. Attendance in/out times already written
+      STAY -- they are ordinary Attendance rows now. What you lose is the
+      punch history, so the rules could not be re-applied afterwards.
+
+      Take a backup first. Prefer the "stop the feed" options above unless
+      you are certain.
+
+
+================================================================================
+================================================================================
+  PART 15 -- WORKING ON THIS IN VS CODE
+================================================================================
+================================================================================
+
+The repository ships a .vscode folder, so most of this is done already.
+
+--------------------------------------------------------------------------------
+  15.1  ONE-TIME SETUP
+--------------------------------------------------------------------------------
+
+Open D:\Project\HRMS\HrmSoftware as the folder in VS Code -- the repository
+root, not hrms\, because that is where .vscode lives.
+
+    Ctrl+Shift+P -> Tasks: Run Task
+      -> "Setup: create venv and install dev packages"
+      -> then "Django: migrate"
+
+By hand, from the repository root:
+
+    py -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    py -m pip install -r hrms\requirements-dev-windows.txt
+
+See 6.1 for why it is requirements-dev-windows.txt and what you give up.
+
+hrms\.env is created on first setup, pointing at a local SQLite file with a
+throwaway biometric token. It is git-ignored. Never copy it to a server.
+
+If VS Code does not pick the interpreter up: Ctrl+Shift+P -> "Python: Select
+Interpreter" -> .venv\Scripts\python.exe.
+
+--------------------------------------------------------------------------------
+  15.2  RUNNING IT
+--------------------------------------------------------------------------------
+
+Run and Debug (Ctrl+Shift+D), pick one, F5:
+
+    Django: runserver                      the app, with breakpoints
+    Biometric sync: dry run (last 7 days)  what the rules would do
+    Biometric sync: rebuild a date range   prompts for the dates
+    Biometric sync: pull from eSSL ...     reads the real SQL Server (6.6)
+    eSSL agent: self-test                  checks both ends
+    eSSL agent: dry run (last 1 day)       reads punches, sends nothing
+    Tests: biometric sync only
+    Celery: worker / beat                  needs Redis running
+
+runserver is configured with --noreload on purpose: the autoreloader forks
+and the debugger loses the process that serves the request, so breakpoints
+would never hit. For stage 1 you need it on the network instead --
+`py manage.py runserver 0.0.0.0:8000` from a terminal, not from F5.
+
+The same things are in Tasks: Run Task, for output without the debugger
+attached.
+
+--------------------------------------------------------------------------------
+  15.3  THE TESTS
+--------------------------------------------------------------------------------
+
+The Testing panel (the flask icon) lists the whole suite. The biometric
+rules are website/tests/test_biometric_sync.py -- 37 tests, about a minute,
+against a throwaway database that never touches hrms\db.sqlite3. Run that
+file while changing the rules.
+
+If the Testing panel finds nothing it is almost always the working
+directory: pytest must run from hrms\, which .vscode/settings.json already
+sets.
+
+--------------------------------------------------------------------------------
+  15.4  READING THE CODE
+--------------------------------------------------------------------------------
+
+Four files, in the order they make sense:
+
+    hrms/website/services/biometric_sync.py       the rules
+    hrms/website/views_biometric.py               the endpoint and the page
+    hrms/website/tests/test_biometric_sync.py     the rules, as tests
+    hrms/scripts/essl_agent/essl_punch_agent.py   the Windows side
+
+Put a breakpoint on derive_day_times() in biometric_sync.py and run the
+dry-run configuration: it is called once per employee-day and is where every
+in/out time decision is actually made.
+
+--------------------------------------------------------------------------------
+  15.5  BEFORE YOU PUSH
+--------------------------------------------------------------------------------
+
+Ctrl+Shift+P -> Tasks: Run Task ->
+
+    "Django: makemigrations --check (is anything unmigrated?)"
+        Must say "No changes detected". A model change without a migration
+        breaks a server's deploy, not your PC.
+
+    "Tests: whole suite"
+
+
+================================================================================
+  End of guide.
+================================================================================

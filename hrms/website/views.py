@@ -637,6 +637,10 @@ def _process_attendance_rows(df_chunk):
                         created = True
                     attendance.in_time = in_time
                     attendance.out_time = out_time
+                    # Times that came from a file somebody prepared are a
+                    # human decision: the biometric sync must not quietly
+                    # replace them with what the punch machine thinks.
+                    attendance.times_locked = True
                     attendance.save()
 
                 touched = touched_employees.get(employee.id)
@@ -1807,6 +1811,10 @@ def _approve_correction_item(correction_request, actor=None, status_decision=Non
 
     attendance.in_time = correction_request.new_in_time
     attendance.out_time = correction_request.new_out_time
+    # An approved correction outranks the punch machine -- the next
+    # biometric sync leaves this day alone (see
+    # services/biometric_sync.py).
+    attendance.times_locked = True
 
     if status_decision:
         # An explicit grant is a manual override, so it has to survive

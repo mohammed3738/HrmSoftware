@@ -18,12 +18,14 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
 
-    <title>ZAC Information Technology — HRMS</title>
+    <title>Zaco Information Technology — HRMS</title>
 
     <meta name="description" content="" />
 
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" href="{% static 'assets/img/branding/favicon.png' %}" />
+    <!-- Favicon. The SVG mark is the one that shows; the PNG stays for
+         browsers that ignore an SVG icon. -->
+    <link rel="icon" type="image/svg+xml" href="{% static 'assets/img/branding/hrms-icon.svg' %}" />
+    <link rel="alternate icon" type="image/png" href="{% static 'assets/img/branding/favicon.png' %}" />
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -100,6 +102,22 @@
       }
       #layout-navbar .app-brand-link { align-items: center; }
       .app-brand-logo img { display: block; }
+
+      /* The lockup is 100px tall and the theme pins the navbar to a fixed
+         64px, so without this the logo hangs out of the bar -- above the
+         top of the window and down across the menu row. Only from 1200px
+         up: below that the brand is d-none and the bar can stay compact.
+         The content offset under the fixed header is measured at runtime
+         (see the script at the end of <body>), so it follows this. */
+      @media (min-width: 1200px) {
+        #layout-navbar { height: auto; }
+        /* The horizontal menu row is fixed at top:64px -- the navbar's old
+           hardcoded height -- so a taller navbar would swallow it. The
+           navbar's real height is published as --app-navbar-height by the
+           script at the end of <body>; 64px is the theme's own value, used
+           until that first measurement lands. */
+        #layout-menu { top: var(--app-navbar-height, 64px); }
+      }
     </style>
     <link rel="stylesheet" href="{% static 'assets/css/mobile.css' %}" />
   </head>
@@ -116,20 +134,22 @@
               <a href="index.html" class="app-brand-link gap-2">
                 <span class="app-brand-logo demo">
                   {% comment %}
-                    final.png is the full lockup (wordmark + globe) in navy;
-                    final-w.png is the white version for a dark shell. Both
-                    ship, one shows -- the hiding rules use !important
-                    because the theme's own `.app-brand-logo img` rule
-                    otherwise wins and both render stacked.
+                    hrms-logo.svg is the full lockup (HRMS wordmark + mark)
+                    in brand navy and blue; hrms-logo-white.svg is the
+                    all-white version, because the navy half of the lockup
+                    disappears on a dark shell. Both ship, one shows -- the
+                    hiding rules use !important because the theme's own
+                    `.app-brand-logo img` rule otherwise wins and both
+                    render stacked.
                   {% endcomment %}
-                  <img src="{% static 'assets/img/branding/final.png' %}"
-                       alt="ZAC Information Technology"
+                  <img src="{% static 'assets/img/branding/hrms-logo.svg' %}"
+                       alt="HRMS — a product of Zaco Information Technology"
                        class="app-logo app-logo-colour"
-                       style="height:40px; width:auto;">
-                  <img src="{% static 'assets/img/branding/final-w.png' %}"
-                       alt="ZAC Information Technology"
+                       style="height:100px; width:auto;">
+                  <img src="{% static 'assets/img/branding/hrms-logo-white.svg' %}"
+                       alt="HRMS — a product of Zaco Information Technology"
                        class="app-logo app-logo-white"
-                       style="height:40px; width:auto;">
+                       style="height:100px; width:auto;">
                 </span>
               </a>
 
@@ -821,19 +841,31 @@
             <!-- Footer -->
             <footer class="content-footer footer bg-footer-theme">
               <div class="container-xxl">
-                <div class="footer-container d-flex align-items-center justify-content-between py-4 flex-md-row flex-column">
-                  <div class="text-body mb-2 mb-md-0">
-                    ©
-                    <script>document.write(new Date().getFullYear());</script>,
-                    made with <span class="text-danger"><i class="tf-icons ri-heart-fill"></i></span> by
-                    <a href="https://pixinvent.com" target="_blank" class="footer-link">Pixinvent</a>
+                {% comment %}
+                  This used to carry the admin template's own links --
+                  Pixinvent, a ThemeForest licence, "More Themes",
+                  documentation and support -- which pointed nowhere anyone
+                  using this HRMS would want to go. It now says the two
+                  things that are actually true: whose product this is and
+                  who built it.
+                {% endcomment %}
+                <div class="footer-container d-flex align-items-center justify-content-between py-4 gap-3 flex-md-row flex-column">
+                  <div class="d-flex align-items-center gap-2 text-body text-center text-md-start">
+                    <img src="{% static 'assets/img/branding/hrms-icon.svg' %}"
+                         alt="" aria-hidden="true"
+                         class="app-logo app-logo-colour" style="height:22px; width:auto;">
+                    <img src="{% static 'assets/img/branding/hrms-icon-white.svg' %}"
+                         alt="" aria-hidden="true"
+                         class="app-logo app-logo-white" style="height:22px; width:auto;">
+                    <span>
+                      © {% now "Y" %} <strong>Zaco Information Technology</strong>.
+                      All rights reserved.
+                    </span>
                   </div>
-                  <div class="d-none d-lg-inline-block">
-                    <a href="https://themeforest.net/licenses/standard" class="footer-link me-4" target="_blank">License</a>
-                    <a href="https://1.envato.market/pixinvent_portfolio" target="_blank" class="footer-link me-4">More Themes</a>
-                    <a href="https://demos.pixinvent.com/materialize-html-admin-template/documentation/"
-                      target="_blank" class="footer-link me-4">Documentation</a>
-                    <a href="https://pixinvent.ticksy.com/" target="_blank" class="footer-link d-none d-sm-inline-block">Support</a>
+                  <div class="text-body text-center text-md-end">
+                    Powered by
+                    <a href="https://zacoinfotech.com" target="_blank" rel="noopener"
+                       class="footer-link fw-medium">zacoinfotech.com</a>
                   </div>
                 </div>
               </div>
@@ -1009,6 +1041,17 @@
         function syncHeaderOffset() {
           var content = document.getElementById('app-content');
           if (!content) return;
+
+          // Publish the navbar's real height first: the menu row below it
+          // is positioned from this, and its own bottom edge feeds the
+          // offset measured just below.
+          var navbar = document.getElementById('layout-navbar');
+          if (navbar) {
+            document.documentElement.style.setProperty(
+              '--app-navbar-height',
+              Math.round(navbar.getBoundingClientRect().height) + 'px');
+          }
+
           var headerBottom = 0;
           ['layout-navbar', 'layout-menu'].forEach(function (id) {
             var el = document.getElementById(id);

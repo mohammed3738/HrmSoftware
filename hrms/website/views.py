@@ -1597,15 +1597,29 @@ def employee_attendance_detail(request, employee_id):
     late_remarks_count = attendance_records.filter(status="Late Present").count()
     half_days_count = attendance_records.filter(status__in=["Half Day", "Present (Half-Day)"]).count()
 
-    leaves_qs = LeaveApplication.objects.filter(employee=employee, status="Approved")
-    if range_start and range_end:
-        leaves_qs = leaves_qs.filter(start_date__lte=range_end, end_date__gte=range_start)
-        leaves_taken = sum(
-            (min(leave.end_date, range_end) - max(leave.start_date, range_start)).days + 1
-            for leave in leaves_qs
-        )
-    else:
-        leaves_taken = sum(leave.total_days() for leave in leaves_qs)
+    # Leaves Taken used to count only approved LeaveApplications, and count
+    # them as whole calendar days. That is wrong twice over: most leave here
+    # is recorded by marking the day Absent in the attendance upload and no
+    # application is ever raised, so the card sat at 0 for employees with
+    # plenty of leave; and a leave spanning a weekend or a holiday was
+    # charged for days nobody works anyway. It now uses the same rule as the
+    # attendance register and the leave balance report.
+    leave_from, leave_to = range_start, range_end
+    if not (leave_from and leave_to):
+        # "All time": everything the employee has either attendance or
+        # approved leave for.
+        bounds = Attendance.objects.filter(employee=employee).aggregate(
+            first=Min("date"), last=Max("date"))
+        leave_bounds = LeaveApplication.objects.filter(
+            employee=employee, status="Approved").aggregate(
+            first=Min("start_date"), last=Max("end_date"))
+        firsts = [d for d in (bounds["first"], leave_bounds["first"]) if d]
+        lasts = [d for d in (bounds["last"], leave_bounds["last"]) if d]
+        leave_from = min(firsts) if firsts else None
+        leave_to = max(lasts) if lasts else None
+
+    leaves_taken = count_leave_days_in_range(
+        employee, leave_from, leave_to, payroll_settings)
 
     attendance_records = attendance_records.only(
         "date", "in_time", "out_time", "status"
@@ -5071,6 +5085,120 @@ def get_monthly_earned_leaves(payroll_settings, month, year):
     except MonthlyEarnedLeaves.DoesNotExist:
         return (Decimal(str(payroll_settings.earned_leaves_per_year)) / Decimal('12')).quantize(Decimal('0.01'))
 
+def unrecorded_approved_leave_days(employee, from_date, to_date, sunday_only,
+                                   recorded_dates):
+    """Approved-leave dates in the window that nothing else has counted.
+
+    Approving a LeaveApplication does not create an Attendance row (see
+    _approve_leave_item), so leave granted before the day arrived leaves no
+    trace in the attendance pool. These are those days.
+
+    Two things this must not do:
+
+      Count a day twice. A leave day that DOES have an attendance row is
+      skipped -- whatever that row failed to pay is already counted by the
+      caller, and adding it again would double it. `recorded_dates` is that
+      set of already-counted dates.
+
+      Spend a day that was free anyway. A leave running Friday to Monday
+      does not consume the weekend, and nor does one over a holiday;
+      neither is a working day to be absent from.
+    """
+    leave_dates = set()
+    for leave in LeaveApplication.objects.filter(
+        employee=employee, status="Approved",
+        start_date__lte=to_date, end_date__gte=from_date,
+    ).only("start_date", "end_date"):
+        day = max(leave.start_date, from_date)
+        last = min(leave.end_date, to_date)
+        while day <= last:
+            leave_dates.add(day)
+            day += timedelta(days=1)
+
+    if not leave_dates:
+        return []
+
+    holiday_dates = set()
+    for holiday in Holiday.objects.filter(
+        holiday_date__in=leave_dates, is_active=True,
+    ).select_related("holiday_calendar__branch").prefetch_related("branches"):
+        if (holiday.is_applicable_to_branch(employee.branch)
+                and holiday.is_applicable_to_employee(employee)):
+            holiday_dates.add(holiday.holiday_date)
+
+    # Python's weekday(): Monday 0 ... Saturday 5, Sunday 6 -- the same days
+    # weekend_exclude names in Django's 1=Sunday..7=Saturday terms.
+    weekend_weekdays = {6} if sunday_only else {5, 6}
+    if employee.week_off_day is not None:
+        weekend_weekdays = {employee.week_off_day}
+
+    return [
+        day for day in sorted(leave_dates)
+        if day not in recorded_dates
+        and day not in holiday_dates
+        and day.weekday() not in weekend_weekdays
+    ]
+
+
+def count_leave_days_in_range(employee, from_date, to_date, payroll_settings=None):
+    """Leave days taken between two dates, weekends and holidays excluded.
+
+    Leave reaches the system two ways, and counting only one of them is why
+    this used to read 0:
+
+      A day the employee was not paid for -- an Absent row, or the unpaid
+      half of a Half Day. In practice this is how most leave is recorded:
+      the attendance upload marks the day and no application is ever
+      raised.
+
+      An approved LeaveApplication covering a day with no attendance row,
+      which is the opposite case -- the leave was granted before the day
+      came round, so nothing marked it.
+
+    A day that is both is counted once. This is the same rule
+    calculate_leave_balance_for_period applies, so the figure here agrees
+    with the attendance register and the leave balance report.
+    """
+    if not from_date or not to_date or from_date > to_date:
+        return Decimal("0.00")
+
+    if employee.date_of_joining and employee.date_of_joining > to_date:
+        return Decimal("0.00")
+    if employee.date_of_joining and employee.date_of_joining > from_date:
+        from_date = employee.date_of_joining
+
+    # Which days are weekends is the employee's own company's rule. The
+    # settings handed in come from _payroll_settings_with_cycle, which falls
+    # back to whichever company has a cycle configured when this one has
+    # none -- fine for picking period boundaries, wrong for deciding whether
+    # Saturday is a working day here.
+    own_settings = (
+        PayrollSettings.objects.filter(company=employee.company).first()
+        if employee.company_id else None
+    )
+    settings_for_weekends = own_settings or payroll_settings
+    sunday_only = getattr(settings_for_weekends, "weekend_days", "sat_sun") == "sun"
+    weekend_exclude = [1] if sunday_only else [1, 7]
+
+    # The same pool calculate_leave_balance_for_period works from: holidays
+    # out, weekends out unless this specific date was deliberately
+    # overridden in the register.
+    pool = Attendance.objects.filter(
+        employee=employee, date__gte=from_date, date__lte=to_date, is_holiday=False,
+    ).filter(Q(status_overridden=True) | ~Q(date__week_day__in=weekend_exclude))
+
+    totals = pool.aggregate(days=Count("id"), paid=Sum("count"))
+    leave = (Decimal(str(totals["days"] or 0))
+             - (totals["paid"] or Decimal("0.00")))
+
+    leave += Decimal(len(unrecorded_approved_leave_days(
+        employee, from_date, to_date, sunday_only,
+        set(pool.values_list("date", flat=True)),
+    )))
+
+    return leave if leave > 0 else Decimal("0.00")
+
+
 def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to_date):
     """
     ✅ UPDATED: Calculate leave balance for a specific payroll period
@@ -5215,57 +5343,14 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     # ============================================
     leave_taken = Decimal(str(working_days)) - paid_days + Decimal(pre_joining_gap_days)
 
-    # ── Approved leave the employee actually applied for ──────────────────
-    # Everything above infers leave purely from attendance rows. Approving a
-    # LeaveApplication does not create one (see _approve_leave_item), so an
-    # approved leave day was invisible here and Leave Taken sat at 0 however
-    # much leave had been granted. Those days are added on.
-    #
-    # Two things this must not do:
-    #
-    #   Count a day twice. A leave day that DOES have an attendance row is
-    #   skipped -- whatever that row failed to pay is already inside
-    #   working_days - paid_days, so adding it again would double it.
-    #
-    #   Spend a day that was free anyway. A leave running Friday to Monday
-    #   does not consume the weekend, and nor does one over a holiday;
-    #   neither is a working day to be absent from, which is exactly why the
-    #   attendance pool above excludes them too.
-    leave_dates = set()
-    for leave in LeaveApplication.objects.filter(
-        employee=employee, status="Approved",
-        start_date__lte=to_date, end_date__gte=effective_from_date,
-    ).only("start_date", "end_date"):
-        day = max(leave.start_date, effective_from_date)
-        last = min(leave.end_date, to_date)
-        while day <= last:
-            leave_dates.add(day)
-            day += timedelta(days=1)
-
-    if leave_dates:
-        already_counted = set(attendance_records.values_list("date", flat=True))
-
-        holiday_dates = set()
-        for holiday in Holiday.objects.filter(
-            holiday_date__in=leave_dates, is_active=True,
-        ).select_related("holiday_calendar__branch").prefetch_related("branches"):
-            if (holiday.is_applicable_to_branch(employee.branch)
-                    and holiday.is_applicable_to_employee(employee)):
-                holiday_dates.add(holiday.holiday_date)
-
-        # Python's weekday(): Monday 0 ... Saturday 5, Sunday 6 -- the same
-        # days weekend_exclude names in Django's 1=Sunday..7=Saturday terms.
-        weekend_weekdays = {6} if sunday_only else {5, 6}
-        if employee.week_off_day is not None:
-            weekend_weekdays = {employee.week_off_day}
-
-        unrecorded_leave_days = [
-            day for day in leave_dates
-            if day not in already_counted
-            and day not in holiday_dates
-            and day.weekday() not in weekend_weekdays
-        ]
-        leave_taken += Decimal(len(unrecorded_leave_days))
+    # Everything above infers leave purely from attendance rows. Leave that
+    # was approved before the day came round leaves no row at all, so those
+    # days are added on -- see unrecorded_approved_leave_days for why a day
+    # with a row, a weekend or a holiday is not among them.
+    leave_taken += Decimal(len(unrecorded_approved_leave_days(
+        employee, effective_from_date, to_date, sunday_only,
+        set(attendance_records.values_list("date", flat=True)),
+    )))
 
     if leave_taken < 0:
         leave_taken = Decimal("0.00")

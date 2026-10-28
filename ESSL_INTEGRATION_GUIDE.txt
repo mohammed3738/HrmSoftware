@@ -103,6 +103,7 @@
     9.1   Check the employee codes line up
     9.2   Tick the night-shift employees
     9.3   Re-run the days you fixed
+    9.4   Finished rotations leave the roster by themselves
 
   PART 10 -- BACKFILL THE HISTORY
     10.1  Push the punches
@@ -505,17 +506,55 @@ Run that file after any edit to the rules.
   2.4  WHO COUNTS AS NIGHT SHIFT
 --------------------------------------------------------------------------------
 
-  Checked in this order:
+  THE SHIFT ROSTER DECIDES, wherever it covers the date. That is the whole
+  point of rostering: night duty rotates, so who is on nights changes week to
+  week, and a standing tick on the employee cannot express that. The tick on
+  the employee form is only the fallback, for staff who are permanently on
+  nights and never appear in the roster.
 
-  1. The Shift Roster, for the dates it covers -- that is the point of
-     rostering a rotating employee. An entry whose timings cross midnight
-     (22:00-07:00), or whose name contains "night", means nights; an entry
-     with ordinary daytime timings means days, and overrides the tick.
+  Within a roster entry, the checks run most-definite first:
 
-  2. Otherwise the "Night Shift" tick on the employee's own form.
+  1. ITS OWN "NIGHT SHIFT" TICK. Attendance -> Shift Roster, on the entry
+     itself. HR has said so outright, and nothing else is consulted. This is
+     the one to use.
 
-  3. Otherwise, an employee whose Shift Start Time is after their Shift End
-     Time is treated as nights.
+  2. TIMINGS THAT CROSS MIDNIGHT, e.g. 22:00 to 07:00. The entry says it
+     itself, so no tick is needed.
+
+  3. A NAME CONTAINING night / overnight / graveyard / nite. Best effort, for
+     entries made before the tick existed. Do not rely on it: "B Shift" and
+     "Shift 3" say nothing either way.
+
+  4. ORDINARY DAYTIME TIMINGS, e.g. 09:00 to 18:00. A positive "not nights",
+     and it overrides the employee's standing tick for those dates.
+
+  An entry matching none of the four is no answer at all -- no tick, no
+  timings, a neutral name. The next entry is tried, and then the employee's
+  own setting. It is deliberately NOT read as a day shift: doing that would
+  hand a permanently-night employee a nonsense in-time on the strength of a
+  roster entry that never said anything.
+
+  ARCHIVED ROSTER ENTRIES: it depends which kind.
+
+    * ARCHIVED AUTOMATICALLY because the dates went by (part 9.4) -- STILL
+      HONOURED for those dates. The entry is the true record of what the
+      roster said, so recalculating an old night shift reaches the same
+      answer it did at the time.
+
+    * ARCHIVED BY HAND -- ignored entirely. That is this app's soft delete,
+      and it means somebody judged the entry wrong, so it must not keep
+      steering attendance.
+
+  Then, only if the roster says nothing for that date:
+
+  5. The "Night Shift" tick on the employee's own form.
+
+  6. An employee whose Shift Start Time is after their Shift End Time.
+
+    IF A ROSTERED NIGHT SHIFT IS COMING OUT WRONG, the usual cause is an
+    entry that falls into the "no answer" case above -- a rotation named
+    something neutral with the timings left blank. Open it in the Shift
+    Roster and tick Night Shift. 12.19 has the check for it.
 
 --------------------------------------------------------------------------------
   2.5  DAYS THE SYNC NEVER TOUCHES
@@ -1573,7 +1612,7 @@ production is unaffected, and you retire staging by deleting its token.
 
 Set these -- the full BIOMETRIC_* block is in part 14.2:
 
-    DJANGO_SECRET_KEY=<generate another one, not production's>
+    DJANGO_SECRET_KEY=5eOWbhrELxPpoPBgQnVssjjIJWG4xb4MDbMK-uA1YNchP_rQVYP6IdVvDRMM7wbQ
     DJANGO_DEBUG=false
     DJANGO_ALLOWED_HOSTS=staging.zacoinfotech.com,127.0.0.1
     DJANGO_CSRF_TRUSTED_ORIGINS=https://staging.zacoinfotech.com
@@ -1589,7 +1628,7 @@ Set these -- the full BIOMETRIC_* block is in part 14.2:
     CELERY_BROKER_URL=redis://127.0.0.1:6379/12
     REDIS_CACHE_URL=redis://127.0.0.1:6379/13
 
-    BIOMETRIC_SYNC_TOKEN=<the token you just generated>
+    BIOMETRIC_SYNC_TOKEN=G35MmtU2pQzhZ3y3JXHf57Kg6VsNEAvs1GLy6Fqm2gEE_jxpFlTTJgA3gyhn241v
     BIOMETRIC_SYNC_LOOKBACK_DAYS=3
     BIOMETRIC_SYNC_HOURS=10,12,14,16,18,20,22,0
     BIOMETRIC_MAX_SHIFT_HOURS=16
@@ -1938,14 +1977,30 @@ punch (2.2).
 While you are on that screen: Weekly Off Day is often Saturday rather than
 Sunday for night staff, and that is a separate setting next to it.
 
-For someone who ROTATES between days and nights, do not tick it. Use
-Attendance -> Shift Roster and give them an entry with timings that cross
-midnight (22:00 to 07:00) for the dates concerned. The roster wins over the
-tick for the dates it covers, and a daytime roster entry forces day-shift
-rules.
+For someone who ROTATES between days and nights, do not tick it on the
+employee. Use Attendance -> Shift Roster, where each entry carries its own
+"Night shift" box. That is unambiguous whatever the shift is called and
+whether or not its timings are filled in.
 
-The Biometric Sync page lists everybody currently ticked, so the list can be
-eyeballed in one go.
+THE ADD FORM STARTS WITH THAT BOX TICKED, because the roster here is mainly
+the night roster and ticking it every time is wasted work. THE OTHER SIDE OF
+THAT: if you ever roster a DAY rotation, you must untick it. Left ticked, the
+sync reads that rotation's in-time off the day's LAST punch instead of its
+first, which looks like a sync fault and is not. Editing an existing entry
+always shows what was saved, so nothing already in the roster changes.
+
+The roster wins over the employee tick for every date it covers, and a roster
+entry with ordinary daytime timings forces day-shift rules. Full precedence
+in 2.4.
+
+On this installation 16 employees show an overnight punch pattern, and it
+clearly rotates -- Pavan Satrange on 117 nights, Vaibhav Jaiswal 64, Piyush
+Aranjo 54, Zahid Ali 51, Sagar Belose 45, Samir Khan 44, Nirmal 33, Ramzan
+Shaikh 23 and others. Those want roster entries, not employee ticks.
+
+The Biometric Sync page lists everybody with the standing employee tick, so
+that list can be eyeballed in one go. It does NOT list rostered nights,
+which change week to week -- use the Shift Roster page for those.
 
 --------------------------------------------------------------------------------
   9.3  RE-RUN THE DAYS YOU FIXED
@@ -1957,6 +2012,50 @@ rules to punches already held, so it is safe to press at any time.
 
 Up to three months at a time from the page. For more, use the command in
 10.2.
+
+
+--------------------------------------------------------------------------------
+  9.4  FINISHED ROTATIONS LEAVE THE ROSTER BY THEMSELVES
+--------------------------------------------------------------------------------
+
+Night duty rotates, so the Shift Roster fills up with entries whose dates
+have gone by. A nightly job moves those out of the active list at 01:30, so
+"who is on nights this week" stays readable. They appear under the roster's
+Archived filter, and nothing is deleted.
+
+  IT CHANGES NO ATTENDANCE. This is the part worth understanding, because
+  the obvious implementation would get it wrong. An entry archived this way
+  is flagged auto_archived, and the biometric sync keeps honouring
+  auto-archived entries for the dates they covered. So when the two-hourly
+  job re-reads the last few days -- or you press "Rebuild from stored
+  punches" on something older -- an archived night rotation is still read as
+  a night rotation.
+
+  Without that distinction, tidying the roster would silently recompute old
+  night shifts as day shifts: in-time taken from the morning punch instead
+  of the evening one. The flag is separate from is_active precisely so that
+  "its dates have passed" and "somebody decided it was wrong" stay different
+  statements.
+
+  THE GRACE PERIOD is 7 days by default, so a rotation that only just
+  finished stays in the active list while the sync is still re-reading those
+  dates. Change it in hrms/.env:
+
+      SHIFT_ROSTER_ARCHIVE_AFTER_DAYS=7
+
+  Keep it comfortably above BIOMETRIC_SYNC_LOOKBACK_DAYS (3).
+
+  BY HAND, if you do not want to wait for 01:30:
+
+      python manage.py archive_past_shift_assignments --dry-run
+      python manage.py archive_past_shift_assignments
+      python manage.py archive_past_shift_assignments --grace-days 30
+
+  --dry-run lists what it would archive -- employee code, name, shift, dates
+  and whether it was a night rotation -- and changes nothing.
+
+  TO BRING ONE BACK, use the roster's Archived filter and restore it, the
+  same as any other archived record.
 
 
 ================================================================================
@@ -2535,6 +2634,78 @@ it is, for corrections and for any site the punch machine does not cover.
       "DB_ENGINE='mysql' ... is not a value this project understands"
 
 
+  12.19  A rostered night shift is being treated as a day shift
+  --------------------------------------------------------------
+  The symptom: an employee you rostered onto nights gets an in-time from the
+  MORNING punch instead of the evening one, and often no out-time at all.
+
+  SINCE THE ADD FORM NOW STARTS TICKED (9.2), the commoner complaint is the
+  opposite one -- see 12.19a. Check that first if the employee is on days.
+
+  Almost always the roster entry says nothing the sync can act on -- no
+  "Night shift" tick, no timings, and a name like "B Shift" or "Shift 3"
+  that carries no hint either way (2.4). Open the entry in Attendance ->
+  Shift Roster and tick Night shift.
+
+  To see which entries are in that state, on the HRMS:
+
+      python manage.py shell -c "
+      from website.models import ShiftAssignment
+      for a in ShiftAssignment.objects.filter(is_active=True).select_related('employee'):
+          if a.is_night_shift: continue
+          if a.shift_start_time and a.shift_end_time: continue
+          if any(h in (a.shift_name or '').lower()
+                 for h in ('night','overnight','graveyard','nite')): continue
+          print(a.employee.employee_code, a.employee, a.shift_name,
+                a.start_date, a.end_date)
+      "
+
+  Anything printed is an entry the sync cannot classify, so those dates fall
+  back to the employee's own Night Shift tick. That is correct for somebody
+  permanently on nights and wrong for a rotation -- tick the entry.
+
+  Then rebuild those dates: Attendance -> Biometric Sync -> "Rebuild from
+  stored punches". Nothing is re-fetched; the rules are simply re-applied to
+  punches already held.
+
+  Two other causes worth ruling out:
+
+    * THE ENTRY IS ARCHIVED. Archived entries (is_active off) are ignored
+      completely, so the employee falls back to their own setting.
+
+    * THE DATES DO NOT COVER THE DAY. A night shift that starts on 23 Oct
+      needs 23 Oct inside start_date..end_date. The out-time comes from
+      24 Oct's punches, but it is the START date that has to be rostered.
+
+
+  12.19a  A DAY rotation is being treated as a night shift
+  --------------------------------------------------------
+  The symptom: a day-shift employee's in-time is their LAST punch of the day
+  rather than their first, and the out-time comes from the following
+  morning. Hours and status then look nonsensical.
+
+  Cause: the Shift Roster's add form starts with "Night shift" ticked (9.2,
+  and it is deliberate -- the roster here is mainly the night roster), and
+  the entry for a day rotation was saved without unticking it.
+
+  Open the entry in Attendance -> Shift Roster and untick it. To find every
+  entry it applies to:
+
+      python manage.py shell -c "
+      from website.models import ShiftAssignment
+      for a in ShiftAssignment.objects.filter(is_active=True, is_night_shift=True
+                                              ).select_related('employee'):
+          print(a.employee.employee_code, a.employee, '|', a.shift_name, '|',
+                a.start_date, a.end_date, '|',
+                a.shift_start_time, a.shift_end_time)
+      "
+
+  Read that list against who actually works nights. An entry ticked for
+  nights whose timings are plainly daytime (09:00-18:00) is the giveaway.
+
+  Then rebuild those dates: Attendance -> Biometric Sync -> "Rebuild from
+  stored punches". Nothing is re-fetched.
+
 ================================================================================
 ================================================================================
   PART 13 -- REFERENCE
@@ -2670,6 +2841,9 @@ it is, for corrections and for any site the punch machine does not cover.
     BIOMETRIC_MAX_SHIFT_HOURS      16
     BIOMETRIC_NIGHT_IN_FROM        12:00
     BIOMETRIC_NIGHT_OUT_UNTIL      12:00
+    SHIFT_ROSTER_ARCHIVE_AFTER_DAYS
+                                   7      days after a rotation ends before it
+                                          leaves the active roster; see 9.4
     BIOMETRIC_FUTURE_PUNCH_TOLERANCE_DAYS
                                    1      reject punches dated beyond
                                           today + this many days
@@ -2718,7 +2892,11 @@ it is, for corrections and for any site the punch machine does not cover.
         writes nothing. Development PC only.
 
     ... --pull
-        Read punches from the eSSL SQL Server first. Needs pyodbc and a
+        Read punches from the eSSL SQL Server first.
+
+    python manage.py archive_past_shift_assignments [--dry-run]
+        Move finished shift rotations out of the active roster.
+        Attendance for those dates is unaffected -- see 9.4. Needs pyodbc and a
         route to it. Development PC only.
 
   ON THE WINDOWS SERVER  (from C:\HRMS-Agent)

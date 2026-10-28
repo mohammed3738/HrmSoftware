@@ -303,6 +303,14 @@ BIOMETRIC_MSSQL_READ_BUFFER = env_bool('BIOMETRIC_MSSQL_READ_BUFFER', False)
 BIOMETRIC_FUTURE_PUNCH_TOLERANCE_DAYS = int(
     os.environ.get('BIOMETRIC_FUTURE_PUNCH_TOLERANCE_DAYS', '1'))
 
+# Days after a shift rotation ends before it leaves the ACTIVE Shift Roster.
+# Attendance for those dates is untouched -- the biometric sync keeps
+# honouring auto-archived entries when recalculating them (see
+# website/services/shift_roster_cleanup.py). Keep it above
+# BIOMETRIC_SYNC_LOOKBACK_DAYS.
+SHIFT_ROSTER_ARCHIVE_AFTER_DAYS = int(
+    os.environ.get('SHIFT_ROSTER_ARCHIVE_AFTER_DAYS', '7'))
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators

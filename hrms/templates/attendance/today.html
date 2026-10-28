@@ -663,72 +663,12 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
 <script>
+// The picker jumps straight to that employee's attendance. clearOnSelect so
+// the box does not keep a name that the page is about to navigate away from.
 document.addEventListener("DOMContentLoaded", function () {
-
-  const input = document.getElementById("employeeSearch");
-  const dropdown = document.getElementById("employeeDropdown");
-
-  let controller = null;
-
-  input.addEventListener("input", async function () {
-    const query = this.value.trim();
-
-    if (query.length < 1) {
-      dropdown.style.display = "none";
-      dropdown.innerHTML = "";
-      return;
-    }
-
-    // Abort previous request
-    if (controller) controller.abort();
-    controller = new AbortController();
-
-    try {
-      const res = await fetch(
-        `/ajax/employees/search/?q=${encodeURIComponent(query)}`,
-        { signal: controller.signal }
-      );
-
-      const data = await res.json();
-
-      dropdown.innerHTML = "";
-
-      if (data.length === 0) {
-        dropdown.innerHTML = `
-          <li class="list-group-item text-muted">
-            No employees found
-          </li>`;
-      } else {
-        data.forEach(emp => {
-          const li = document.createElement("li");
-          li.className = "list-group-item list-group-item-action";
-          li.innerHTML = `
-            <strong>${emp.name}</strong>
-            <small class="text-muted ms-1">(${emp.code})</small>
-          `;
-          li.onclick = () => {
-            window.location.href = `/attendance/${emp.id}/`;
-          };
-          dropdown.appendChild(li);
-        });
-      }
-
-      dropdown.style.display = "block";
-
-    } catch (err) {
-      if (err.name !== "AbortError") {
-        console.error("Search failed", err);
-      }
-    }
+  wireEmployeeAutocomplete("employeeSearch", "employeeDropdown", function (emp) {
+    window.location.href = "/attendance/" + emp.id + "/";
   });
-
-  // Hide dropdown when clicking outside
-  document.addEventListener("click", function (e) {
-    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-      dropdown.style.display = "none";
-    }
-  });
-
 });
 </script>
 

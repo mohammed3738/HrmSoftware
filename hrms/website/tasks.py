@@ -418,3 +418,21 @@ def sync_biometric_attendance_task(self):
         "updated": run.attendance_updated,
         "skipped": run.attendance_skipped,
     }
+
+
+@shared_task
+def archive_past_shift_assignments_task():
+    """Nightly tidy-up of the Shift Roster: rotations whose dates have gone
+    by leave the active list, so "who is on nights this week" stays readable
+    as the roster rotates.
+
+    Changes no attendance. Entries archived here are flagged auto_archived,
+    and the biometric sync keeps honouring those for the dates they covered
+    -- recalculating an old night shift still reaches the same answer. Only
+    a manual archive (the app's soft delete) takes an entry out of the
+    sync's reckoning. See services/shift_roster_cleanup.py.
+    """
+    from .services import shift_roster_cleanup
+
+    count, _rows = shift_roster_cleanup.archive_past_assignments()
+    return count

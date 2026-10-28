@@ -42,6 +42,7 @@ from collections import defaultdict
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils.timezone import now
 
 from ..models import (
@@ -291,40 +292,79 @@ def _crosses_midnight(start, end):
     return bool(start and end and start > end)
 
 
+# Words that mark a rostered shift as overnight when nothing more definite
+# is available. A fallback for rosters entered before ShiftAssignment grew
+# its own is_night_shift tick -- not something to rely on for new ones,
+# since "B Shift" or "Shift 3" say nothing either way.
+_NIGHT_NAME_HINTS = ("night", "overnight", "graveyard", "nite")
+
+
 class NightShiftResolver:
     """Whether an employee is on nights on a given date.
 
-    The Shift Roster is the authority where it has an entry -- that is the
-    point of rostering a rotating employee -- and Employee.is_night_shift is
-    the standing answer everywhere else. Rosters are fetched once for the
-    whole window rather than per employee-day.
+    THE SHIFT ROSTER WINS wherever it covers the date. That is the whole
+    point of rostering: night duty rotates, so who is on nights changes week
+    to week, and a standing tick on the employee cannot express that.
+    Employee.is_night_shift is only the fallback for staff who are
+    permanently on nights and are never rostered.
+
+    Within a roster entry the checks run most-definite first:
+
+        1. its own is_night_shift tick      -- HR said so outright
+        2. timings that cross midnight      -- 22:00-07:00 says so itself
+        3. a name containing "night" etc.   -- legacy entries, best effort
+        4. ordinary daytime timings         -- a positive "not nights",
+                                               which overrides the standing
+                                               tick for these dates
+
+    An entry that matches none of those is no answer at all, so the next
+    entry is tried and then the employee's own setting -- rather than
+    silently reading it as a day shift, which would hand a night employee a
+    nonsense in-time.
+
+    Rosters are fetched once for the whole window, not per employee-day.
     """
 
     def __init__(self, employees, from_date, to_date):
         self._assignments = defaultdict(list)
         if not employees:
             return
+        # is_active OR auto_archived, deliberately. An entry archived by the
+        # nightly tidy-up (its dates have simply gone by) is still the true
+        # record of what the roster said for those dates, and recalculating
+        # them later must reach the same answer. Only a MANUAL archive --
+        # this app's soft delete, meaning somebody decided the entry was
+        # wrong -- takes an entry out of the sync's reckoning.
         rows = ShiftAssignment.objects.filter(
+            Q(is_active=True) | Q(auto_archived=True),
             employee__in=employees,
-            is_active=True,
             start_date__lte=to_date,
             end_date__gte=from_date,
         ).only("employee_id", "shift_name", "start_date", "end_date",
-               "shift_start_time", "shift_end_time")
+               "shift_start_time", "shift_end_time", "is_night_shift")
         for assignment in rows:
             self._assignments[assignment.employee_id].append(assignment)
+
+    @staticmethod
+    def _from_assignment(assignment):
+        """True/False from a roster entry, or None when it does not say."""
+        if assignment.is_night_shift:
+            return True
+        if _crosses_midnight(assignment.shift_start_time, assignment.shift_end_time):
+            return True
+        name = (assignment.shift_name or "").lower()
+        if any(hint in name for hint in _NIGHT_NAME_HINTS):
+            return True
+        if assignment.shift_start_time and assignment.shift_end_time:
+            return False
+        return None
 
     def is_night(self, employee, day):
         for assignment in self._assignments.get(employee.id, ()):
             if assignment.start_date <= day <= assignment.end_date:
-                if _crosses_midnight(assignment.shift_start_time, assignment.shift_end_time):
-                    return True
-                if "night" in (assignment.shift_name or "").lower():
-                    return True
-                # A roster entry that clearly describes a daytime shift is an
-                # answer too, and overrides the standing flag for these dates.
-                if assignment.shift_start_time and assignment.shift_end_time:
-                    return False
+                answer = self._from_assignment(assignment)
+                if answer is not None:
+                    return answer
         if employee.is_night_shift:
             return True
         return _crosses_midnight(employee.shift_start_time, employee.shift_end_time)

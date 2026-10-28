@@ -12,6 +12,7 @@ Run with:
     pytest website/tests/test_biometric_sync.py
 """
 import datetime
+import os
 from datetime import date, time
 
 from django.test import Client, TestCase
@@ -477,3 +478,252 @@ class FuturePunchTest(BiometricSyncBaseTest):
         ])
         self.assertEqual(self.times(self.day_employee, WED), (time(9, 30), time(18, 30)))
         self.assertEqual(run.punches_stored, 2)
+
+
+class RosterNightShiftTest(BiometricSyncBaseTest):
+    """Night duty rotates, so the Shift Roster -- not the standing tick on the
+    employee -- decides who is on nights for a given date. These pin the
+    order the two are consulted in, and the explicit is_night_shift tick on
+    the roster entry that removes the guesswork."""
+
+    def roster(self, employee, **extra):
+        fields = dict(
+            employee=employee, shift_name="Rotating", start_date=TUE,
+            end_date=THU, is_active=True,
+        )
+        fields.update(extra)
+        return ShiftAssignment.objects.create(**fields)
+
+    def night_punches(self, code):
+        """A clean overnight pattern: in on WED, out on THU morning."""
+        biometric_sync.ingest([
+            punch(code, WED, "21:45:00"),
+            punch(code, THU, "06:10:00"),
+        ])
+
+    # ── the explicit tick ────────────────────────────────────────────────
+    def test_a_rostered_night_shift_is_honoured_with_no_timings_at_all(self):
+        """The case the old code missed: a roster entry whose name says
+        nothing and whose timings were left blank."""
+        self.roster(self.day_employee, shift_name="B Shift", is_night_shift=True)
+        self.night_punches("BIO001")
+        self.assertEqual(self.times(self.day_employee, WED), (time(21, 45), time(6, 10)))
+
+    def test_the_tick_wins_over_daytime_timings_on_the_same_entry(self):
+        self.roster(self.day_employee, shift_name="Shift 3", is_night_shift=True,
+                    shift_start_time=time(9, 0), shift_end_time=time(18, 0))
+        self.night_punches("BIO001")
+        self.assertEqual(self.times(self.day_employee, WED), (time(21, 45), time(6, 10)))
+
+    # ── the roster overrides the employee's standing setting ─────────────
+    def test_a_daytime_roster_entry_overrides_the_employees_night_tick(self):
+        self.roster(self.night_employee, shift_name="General",
+                    shift_start_time=time(9, 0), shift_end_time=time(18, 0))
+        biometric_sync.ingest([
+            punch("BIO002", WED, "09:05:00"),
+            punch("BIO002", WED, "18:20:00"),
+        ])
+        self.assertEqual(self.times(self.night_employee, WED), (time(9, 5), time(18, 20)))
+
+    def test_outside_the_rostered_dates_the_employee_setting_applies_again(self):
+        # Rostered onto days for TUE..THU only; the night tick governs FRI.
+        self.roster(self.night_employee, shift_name="General",
+                    shift_start_time=time(9, 0), shift_end_time=time(18, 0))
+        friday = datetime.date(2026, 10, 23)
+        biometric_sync.ingest([
+            punch("BIO002", friday, "21:50:00"),
+            punch("BIO002", friday + datetime.timedelta(days=1), "06:05:00"),
+        ])
+        self.assertEqual(self.times(self.night_employee, friday), (time(21, 50), time(6, 5)))
+
+    # ── an entry that says nothing must not be read as "day" ────────────
+    def test_an_entry_that_says_nothing_falls_through_to_the_employee(self):
+        """No tick, no timings, a neutral name -- that is not evidence of a
+        day shift, so a permanently-night employee stays on nights."""
+        self.roster(self.night_employee, shift_name="Shift 3")
+        self.night_punches("BIO002")
+        self.assertEqual(self.times(self.night_employee, WED), (time(21, 45), time(6, 10)))
+
+    def test_an_archived_roster_entry_is_ignored(self):
+        self.roster(self.night_employee, shift_name="General", is_active=False,
+                    shift_start_time=time(9, 0), shift_end_time=time(18, 0))
+        self.night_punches("BIO002")
+        self.assertEqual(self.times(self.night_employee, WED), (time(21, 45), time(6, 10)))
+
+    # ── the legacy inference still works ────────────────────────────────
+    def test_timings_crossing_midnight_still_imply_nights(self):
+        self.roster(self.day_employee, shift_name="Rotating",
+                    shift_start_time=time(22, 0), shift_end_time=time(7, 0))
+        self.night_punches("BIO001")
+        self.assertEqual(self.times(self.day_employee, WED), (time(21, 45), time(6, 10)))
+
+    def test_a_name_hint_still_implies_nights(self):
+        for name in ("Night Shift", "OVERNIGHT", "graveyard"):
+            with self.subTest(name=name):
+                ShiftAssignment.objects.all().delete()
+                Attendance.objects.all().delete()
+                BiometricPunch.objects.all().delete()
+                self.roster(self.day_employee, shift_name=name)
+                self.night_punches("BIO001")
+                self.assertEqual(self.times(self.day_employee, WED),
+                                 (time(21, 45), time(6, 10)))
+
+class RosterFormDefaultsToNightTest(TestCase):
+    """The Shift Roster's add form starts with "Night shift" ticked, because
+    the roster is used mainly for night rotations and HR should not have to
+    tick it 16 times a cycle. The consequence is that a DAY rotation saved
+    without unticking gets its in-time from the wrong end of the day, so the
+    default and its warning are both worth pinning."""
+
+    def template_html(self):
+        from django.conf import settings as dj_settings
+
+        for directory in dj_settings.TEMPLATES[0]["DIRS"]:
+            candidate = os.path.join(str(directory), "attendance", "shift_roster.html")
+            if os.path.exists(candidate):
+                with open(candidate, encoding="utf-8") as handle:
+                    return handle.read()
+        self.fail("shift_roster.html not found in TEMPLATES DIRS")
+
+    def test_the_add_form_checkbox_is_checked_by_default(self):
+        html = self.template_html()
+        self.assertIn('name="is_night_shift" id="addShiftIsNight" checked', html)
+
+    def test_the_edit_form_checkbox_is_not_hardcoded_checked(self):
+        """An existing entry must show what was saved. A `checked` attribute
+        here would silently flip every day-shift entry the first time anyone
+        opened it."""
+        html = self.template_html()
+        self.assertIn('name="is_night_shift" id="editShiftIsNight">', html)
+        self.assertNotIn('id="editShiftIsNight" checked', html)
+
+    def test_the_form_warns_that_a_day_shift_must_be_unticked(self):
+        html = self.template_html()
+        self.assertIn("Untick it for a day shift", html)
+
+    def test_the_model_default_stays_false(self):
+        """Only the form defaults to night. A ShiftAssignment created in code
+        -- an import, a fixture, a test -- must not quietly become a night
+        shift."""
+        self.assertIs(ShiftAssignment._meta.get_field("is_night_shift").default, False)
+
+class RosterAutoArchiveTest(BiometricSyncBaseTest):
+    """Finished rotations leave the active roster so it stays readable, and
+    that must not move a single in/out time. The sync therefore keeps
+    honouring auto-archived entries for the dates they covered, while a
+    MANUAL archive -- the app's soft delete -- still takes an entry out of
+    its reckoning."""
+
+    def setUp(self):
+        super().setUp()
+        from website.services import shift_roster_cleanup
+        self.cleanup = shift_roster_cleanup
+
+    def roster(self, employee, start, end, **extra):
+        fields = dict(employee=employee, shift_name="Night Rotation",
+                      start_date=start, end_date=end, is_night_shift=True,
+                      is_active=True)
+        fields.update(extra)
+        return ShiftAssignment.objects.create(**fields)
+
+    # ── what gets archived ──────────────────────────────────────────────
+    def test_a_finished_rotation_past_the_grace_period_is_archived(self):
+        old = self.roster(self.day_employee,
+                          datetime.date(2026, 1, 5), datetime.date(2026, 1, 9))
+        count, rows = self.cleanup.archive_past_assignments()
+        self.assertEqual(count, 1)
+        old.refresh_from_db()
+        self.assertFalse(old.is_active)
+        self.assertTrue(old.auto_archived)
+        self.assertEqual(rows[0]["employee_code"], "BIO001")
+
+    def test_a_rotation_inside_the_grace_period_is_left_alone(self):
+        today = datetime.date.today()
+        recent = self.roster(self.day_employee,
+                             today - datetime.timedelta(days=4),
+                             today - datetime.timedelta(days=2))
+        count, _ = self.cleanup.archive_past_assignments()
+        self.assertEqual(count, 0)
+        recent.refresh_from_db()
+        self.assertTrue(recent.is_active,
+                        "a rotation that only just finished is still being "
+                        "re-read by the sync and must stay visible")
+
+    def test_a_current_or_future_rotation_is_left_alone(self):
+        today = datetime.date.today()
+        current = self.roster(self.day_employee, today, today + datetime.timedelta(days=6))
+        count, _ = self.cleanup.archive_past_assignments()
+        self.assertEqual(count, 0)
+        current.refresh_from_db()
+        self.assertTrue(current.is_active)
+
+    def test_dry_run_reports_without_changing_anything(self):
+        old = self.roster(self.day_employee,
+                          datetime.date(2026, 1, 5), datetime.date(2026, 1, 9))
+        count, rows = self.cleanup.archive_past_assignments(dry_run=True)
+        self.assertEqual(count, 1)
+        self.assertEqual(len(rows), 1)
+        old.refresh_from_db()
+        self.assertTrue(old.is_active)
+        self.assertFalse(old.auto_archived)
+
+    def test_an_already_archived_entry_is_not_picked_up_again(self):
+        self.roster(self.day_employee, datetime.date(2026, 1, 5),
+                    datetime.date(2026, 1, 9), is_active=False, auto_archived=True)
+        count, _ = self.cleanup.archive_past_assignments()
+        self.assertEqual(count, 0)
+
+    def test_the_grace_period_is_configurable(self):
+        today = datetime.date.today()
+        self.roster(self.day_employee,
+                    today - datetime.timedelta(days=4),
+                    today - datetime.timedelta(days=3))
+        self.assertEqual(self.cleanup.archive_past_assignments(grace=30, dry_run=True)[0], 0)
+        self.assertEqual(self.cleanup.archive_past_assignments(grace=1, dry_run=True)[0], 1)
+
+    # ── and the whole point: attendance does not move ───────────────────
+    def test_archiving_does_not_change_the_attendance_it_already_built(self):
+        self.roster(self.day_employee, TUE, THU)
+        biometric_sync.ingest([
+            punch("BIO001", WED, "21:45:00"),
+            punch("BIO001", THU, "06:10:00"),
+        ])
+        before = self.times(self.day_employee, WED)
+        self.assertEqual(before, (time(21, 45), time(6, 10)),
+                         "precondition: the rostered night shift applied")
+
+        self.cleanup.archive_past_assignments(
+            today=THU + datetime.timedelta(days=30))
+        self.assertFalse(ShiftAssignment.objects.get(
+            employee=self.day_employee).is_active)
+
+        self.assertEqual(self.times(self.day_employee, WED), before)
+
+    def test_recalculating_an_archived_night_shift_still_reads_as_nights(self):
+        """The real risk. Archiving tidies the roster; a later rebuild --
+        the two-hourly job does this constantly -- must not quietly turn
+        those nights back into day shifts."""
+        self.roster(self.day_employee, TUE, THU)
+        biometric_sync.ingest([
+            punch("BIO001", WED, "21:45:00"),
+            punch("BIO001", THU, "06:10:00"),
+        ])
+        self.cleanup.archive_past_assignments(
+            today=THU + datetime.timedelta(days=30))
+
+        biometric_sync.resync_window(from_date=TUE, to_date=THU, force=True)
+        self.assertEqual(self.times(self.day_employee, WED), (time(21, 45), time(6, 10)))
+
+    def test_a_manual_archive_is_still_ignored_by_the_sync(self):
+        """Unchanged behaviour: a manual archive means somebody judged the
+        entry wrong, so it must not keep steering attendance."""
+        self.roster(self.night_employee, TUE, THU, shift_name="General",
+                    is_night_shift=False, is_active=False, auto_archived=False,
+                    shift_start_time=time(9, 0), shift_end_time=time(18, 0))
+        biometric_sync.ingest([
+            punch("BIO002", WED, "21:45:00"),
+            punch("BIO002", THU, "06:10:00"),
+        ])
+        # The manually archived day-shift entry is ignored, so the employee's
+        # own night tick governs.
+        self.assertEqual(self.times(self.night_employee, WED), (time(21, 45), time(6, 10)))

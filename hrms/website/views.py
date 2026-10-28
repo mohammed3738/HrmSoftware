@@ -29,6 +29,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Sum
 # from .signals import recalculate_leave_balance_for_employee
 from django.db.models import Q
+from django.db.models import Case, IntegerField, When
 import io
 import os
 from django.http import FileResponse, Http404
@@ -1258,6 +1259,10 @@ def add_shift_assignment(request):
     end_date = request.POST.get("end_date", "").strip()
     shift_start_time = request.POST.get("shift_start_time", "").strip() or None
     shift_end_time = request.POST.get("shift_end_time", "").strip() or None
+    # Explicit beats guessing: without this the biometric sync can only infer
+    # an overnight shift from the timings or the name (see
+    # services/biometric_sync.py, NightShiftResolver).
+    is_night_shift = request.POST.get("is_night_shift") in ("1", "true", "on", "yes")
     notes = request.POST.get("notes", "").strip()
 
     if not employee_ids:
@@ -1287,6 +1292,7 @@ def add_shift_assignment(request):
             employee=employee, shift_name=shift_name,
             start_date=start_date, end_date=end_date,
             shift_start_time=shift_start_time, shift_end_time=shift_end_time,
+            is_night_shift=is_night_shift,
             notes=notes, created_by=request.user,
         )
         try:
@@ -1327,6 +1333,7 @@ def edit_shift_assignment(request, pk):
     assignment.end_date = new_end_date
     assignment.shift_start_time = request.POST.get("shift_start_time", "").strip() or None
     assignment.shift_end_time = request.POST.get("shift_end_time", "").strip() or None
+    assignment.is_night_shift = request.POST.get("is_night_shift") in ("1", "true", "on", "yes")
     assignment.notes = request.POST.get("notes", "").strip()
 
     try:
@@ -1369,6 +1376,7 @@ def api_get_shift_assignment(request, pk):
         "end_date": assignment.end_date.isoformat(),
         "shift_start_time": assignment.shift_start_time.strftime("%H:%M") if assignment.shift_start_time else "",
         "shift_end_time": assignment.shift_end_time.strftime("%H:%M") if assignment.shift_end_time else "",
+        "is_night_shift": assignment.is_night_shift,
         "notes": assignment.notes,
         "created_by": assignment.created_by.get_full_name() or assignment.created_by.username if assignment.created_by else "—",
         "created_at": assignment.created_at.strftime("%d %b %Y, %I:%M %p"),
@@ -1680,19 +1688,45 @@ def employee_attendance_detail(request, employee_id):
 
 @login_required
 def employee_search(request):
+    """Type-ahead suggestions for every employee picker in the app
+    (static/js/employee_autocomplete.js).
+
+    Scoped the same way the list pages are: a user without global access
+    only ever sees their own company. Without that, a type-ahead would
+    happily name employees of a company the person cannot otherwise open --
+    and it is used on a dozen pages, so the scoping belongs here rather
+    than in each caller.
+    """
     q = request.GET.get("q", "").strip()
+    if not q:
+        # An empty query used to match everything (icontains="") and return
+        # the first ten employees in the database to anybody who asked.
+        return JsonResponse([], safe=False)
 
     employees = Employee.objects.filter(
         Q(first_name__icontains=q) |
         Q(last_name__icontains=q) |
         Q(employee_code__icontains=q)
-    )[:10]
+    )
+
+    company_filter = get_company_filter(request.user)
+    if company_filter:
+        employees = employees.filter(company=company_filter)
+
+    # Someone who has left is still worth finding -- their old attendance
+    # and payroll are still being looked at -- but the living come first.
+    employees = employees.order_by(
+        Case(When(status="Active", then=0), default=1, output_field=IntegerField()),
+        "employee_code",
+    ).only("id", "first_name", "last_name", "employee_code", "department", "status")[:15]
 
     data = [
         {
             "id": emp.id,
-            "name": f"{emp.first_name} {emp.last_name}",
-            "code": emp.employee_code
+            "name": f"{emp.first_name or ''} {emp.last_name or ''}".strip() or "(no name)",
+            "code": emp.employee_code or "",
+            "department": emp.department or "",
+            "status": emp.status or "",
         }
         for emp in employees
     ]
@@ -5165,6 +5199,59 @@ def calculate_leave_balance_for_period(employee, payroll_settings, from_date, to
     # -- see docstring above.
     # ============================================
     leave_taken = Decimal(str(working_days)) - paid_days + Decimal(pre_joining_gap_days)
+
+    # ── Approved leave the employee actually applied for ──────────────────
+    # Everything above infers leave purely from attendance rows. Approving a
+    # LeaveApplication does not create one (see _approve_leave_item), so an
+    # approved leave day was invisible here and Leave Taken sat at 0 however
+    # much leave had been granted. Those days are added on.
+    #
+    # Two things this must not do:
+    #
+    #   Count a day twice. A leave day that DOES have an attendance row is
+    #   skipped -- whatever that row failed to pay is already inside
+    #   working_days - paid_days, so adding it again would double it.
+    #
+    #   Spend a day that was free anyway. A leave running Friday to Monday
+    #   does not consume the weekend, and nor does one over a holiday;
+    #   neither is a working day to be absent from, which is exactly why the
+    #   attendance pool above excludes them too.
+    leave_dates = set()
+    for leave in LeaveApplication.objects.filter(
+        employee=employee, status="Approved",
+        start_date__lte=to_date, end_date__gte=effective_from_date,
+    ).only("start_date", "end_date"):
+        day = max(leave.start_date, effective_from_date)
+        last = min(leave.end_date, to_date)
+        while day <= last:
+            leave_dates.add(day)
+            day += timedelta(days=1)
+
+    if leave_dates:
+        already_counted = set(attendance_records.values_list("date", flat=True))
+
+        holiday_dates = set()
+        for holiday in Holiday.objects.filter(
+            holiday_date__in=leave_dates, is_active=True,
+        ).select_related("holiday_calendar__branch").prefetch_related("branches"):
+            if (holiday.is_applicable_to_branch(employee.branch)
+                    and holiday.is_applicable_to_employee(employee)):
+                holiday_dates.add(holiday.holiday_date)
+
+        # Python's weekday(): Monday 0 ... Saturday 5, Sunday 6 -- the same
+        # days weekend_exclude names in Django's 1=Sunday..7=Saturday terms.
+        weekend_weekdays = {6} if sunday_only else {5, 6}
+        if employee.week_off_day is not None:
+            weekend_weekdays = {employee.week_off_day}
+
+        unrecorded_leave_days = [
+            day for day in leave_dates
+            if day not in already_counted
+            and day not in holiday_dates
+            and day.weekday() not in weekend_weekdays
+        ]
+        leave_taken += Decimal(len(unrecorded_leave_days))
+
     if leave_taken < 0:
         leave_taken = Decimal("0.00")
     

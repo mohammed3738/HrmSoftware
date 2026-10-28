@@ -56,6 +56,14 @@ app.conf.beat_schedule = {
     # touching this file. Midnight is in the default list on purpose: a night
     # shift's out-punch lands after it, and that run is what closes the
     # previous day.
+    # Finished shift rotations leave the active roster, so it stays readable
+    # as night duty rotates. Attendance for those dates is untouched -- see
+    # website/services/shift_roster_cleanup.py.
+    'archive-past-shift-assignments': {
+        'task': 'website.tasks.archive_past_shift_assignments_task',
+        'schedule': crontab(hour=1, minute=30),
+    },
+
     'sync-biometric-attendance': {
         'task': 'website.tasks.sync_biometric_attendance_task',
         'schedule': crontab(minute=0, hour=_biometric_sync_hours()),

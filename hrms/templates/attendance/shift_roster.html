@@ -182,6 +182,22 @@
               <input type="time" name="shift_end_time" class="form-control">
             </div>
             <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="1" name="is_night_shift" id="addShiftIsNight" checked>
+                <label class="form-check-label" for="addShiftIsNight">
+                  <strong>Night shift</strong> &mdash; this shift runs past midnight
+                </label>
+              </div>
+              <div class="form-text">
+                <strong>On by default</strong>, because the roster is normally used for
+                night rotations. Leave it ticked and the biometric sync takes each
+                day&rsquo;s in-time from its <strong>last</strong> punch and the out-time
+                from the <strong>next</strong> day&rsquo;s first punch.
+                <strong>Untick it for a day shift</strong> &mdash; otherwise that
+                rotation&rsquo;s in-time will be read off the wrong end of the day.
+              </div>
+            </div>
+            <div class="col-12">
               <label class="form-label">Notes</label>
               <textarea name="notes" class="form-control" rows="2"></textarea>
             </div>
@@ -239,6 +255,19 @@
               <input type="time" id="editShiftEndTime" name="shift_end_time" class="form-control">
             </div>
             <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="1" name="is_night_shift" id="editShiftIsNight">
+                <label class="form-check-label" for="editShiftIsNight">
+                  <strong>Night shift</strong> &mdash; this shift runs past midnight
+                </label>
+              </div>
+              <div class="form-text">
+                Ticked means the biometric sync takes each day&rsquo;s in-time from its
+                <strong>last</strong> punch and the out-time from the <strong>next</strong>
+                day&rsquo;s first punch. Untick it for a day shift.
+              </div>
+            </div>
+            <div class="col-12">
               <label class="form-label">Notes</label>
               <textarea id="editShiftNotes" name="notes" class="form-control" rows="2"></textarea>
             </div>
@@ -258,49 +287,21 @@ function getCSRFToken() {
   return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
 }
 
-// ── Filter-form employee autocomplete ──────────────────────────────────
-function wireEmployeeAutocomplete(inputId, dropdownId, onSelect) {
-  const input = document.getElementById(inputId);
-  const dropdown = document.getElementById(dropdownId);
-  let controller = null;
-
-  input.addEventListener('input', async function () {
-    const query = this.value.trim();
-    if (query.length < 1) { dropdown.style.display = 'none'; dropdown.innerHTML = ''; return; }
-    if (controller) controller.abort();
-    controller = new AbortController();
-    try {
-      const res = await fetch(`/ajax/employees/search/?q=${encodeURIComponent(query)}`, { signal: controller.signal });
-      const data = await res.json();
-      dropdown.innerHTML = '';
-      if (data.length === 0) {
-        dropdown.innerHTML = '<li class="list-group-item text-muted">No employees found</li>';
-      } else {
-        data.forEach(emp => {
-          const li = document.createElement('li');
-          li.className = 'list-group-item list-group-item-action';
-          li.innerHTML = `<strong>${emp.name}</strong> <small class="text-muted ms-1">(${emp.code})</small>`;
-          li.onclick = () => { onSelect(emp); dropdown.style.display = 'none'; input.value = ''; };
-          dropdown.appendChild(li);
-        });
-      }
-      dropdown.style.display = 'block';
-    } catch (err) {
-      if (err.name !== 'AbortError') console.error('Employee search failed', err);
-    }
-  });
-
-  document.addEventListener('click', function (e) {
-    if (!input.contains(e.target) && !dropdown.contains(e.target)) dropdown.style.display = 'none';
-  });
-}
-
+// ── Employee pickers ────────────────────────────────────────────────────
+// wireEmployeeAutocomplete lives in static/js/employee_autocomplete.js and
+// is loaded for every page by base2.html.
 document.addEventListener('DOMContentLoaded', function () {
-  wireEmployeeAutocomplete('filterEmployeeSearch', 'filterEmployeeDropdown', emp => {
-    document.getElementById('filterEmployeeSearch').value = emp.code;
-    document.getElementById('filterEmployeeSearch').form.submit();
-  });
-  wireEmployeeAutocomplete('addShiftEmployeeSearch', 'addShiftEmployeeDropdown', emp => {
+  // The filter posts the employee CODE to the server, so onSelect overwrites
+  // whatever the helper put in the box and submits.
+  wireEmployeeAutocomplete('filterEmployeeSearch', 'filterEmployeeDropdown', function (emp) {
+    const input = document.getElementById('filterEmployeeSearch');
+    input.value = emp.code;
+    input.form.submit();
+  }, { clearOnSelect: false });
+
+  // The Assign Shift modal collects several employees, so the box clears
+  // after each one and the chosen names are listed below it instead.
+  wireEmployeeAutocomplete('addShiftEmployeeSearch', 'addShiftEmployeeDropdown', function (emp) {
     selectedShiftEmployees[emp.id] = { name: emp.name, code: emp.code };
     renderSelectedShiftEmployees();
   });
@@ -369,6 +370,7 @@ function openEditShiftModal(id) {
       document.getElementById('editShiftEndDate').value = data.end_date;
       document.getElementById('editShiftStartTime').value = data.shift_start_time;
       document.getElementById('editShiftEndTime').value = data.shift_end_time;
+      document.getElementById('editShiftIsNight').checked = !!data.is_night_shift;
       document.getElementById('editShiftNotes').value = data.notes;
       document.getElementById('editShiftCreatedBy').innerText = data.created_by;
       document.getElementById('editShiftCreatedAt').innerText = data.created_at;
@@ -421,5 +423,6 @@ function restoreShiftAssignment(id) {
   })
   .catch(() => alert('Something went wrong while restoring.'));
 }
+
 </script>
 {% endblock %}

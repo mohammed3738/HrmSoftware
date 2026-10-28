@@ -966,6 +966,10 @@
         }
       </script>
 
+    <!-- Employee type-ahead, shared by every employee picker. Pages call
+         wireEmployeeAutocomplete(...) from their own page_scripts block. -->
+    <script src="{% static 'js/employee_autocomplete.js' %}"></script>
+
       {% block page_scripts %}{% endblock %}
 
   

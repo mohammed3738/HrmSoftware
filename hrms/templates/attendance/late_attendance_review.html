@@ -177,58 +177,14 @@ function getCSRFToken() {
 
 // ── Employee autocomplete ──────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", function () {
-  const input = document.getElementById("employeeSearch");
-  const dropdown = document.getElementById("employeeDropdown");
-  let controller = null;
-
-  input.addEventListener("input", async function () {
-    const query = this.value.trim();
-
-    if (query.length < 1) {
-      dropdown.style.display = "none";
-      dropdown.innerHTML = "";
-      return;
-    }
-
-    if (controller) controller.abort();
-    controller = new AbortController();
-
-    try {
-      const res = await fetch(
-        `/ajax/employees/search/?q=${encodeURIComponent(query)}`,
-        { signal: controller.signal }
-      );
-      const data = await res.json();
-
-      dropdown.innerHTML = "";
-
-      if (data.length === 0) {
-        dropdown.innerHTML = `<li class="list-group-item text-muted">No employees found</li>`;
-      } else {
-        data.forEach(emp => {
-          const li = document.createElement("li");
-          li.className = "list-group-item list-group-item-action";
-          li.innerHTML = `<strong>${emp.name}</strong> <small class="text-muted ms-1">(${emp.code})</small>`;
-          li.onclick = () => {
-            input.value = emp.code;
-            dropdown.style.display = "none";
-            input.form.submit();
-          };
-          dropdown.appendChild(li);
-        });
-      }
-
-      dropdown.style.display = "block";
-    } catch (err) {
-      if (err.name !== "AbortError") console.error("Employee search failed", err);
-    }
-  });
-
-  document.addEventListener("click", function (e) {
-    if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-      dropdown.style.display = "none";
-    }
-  });
+  // Shared helper: static/js/employee_autocomplete.js, loaded by base2.html.
+  // This input is the form's own `employee` filter, so the code goes in the
+  // box and the filter runs straight away.
+  wireEmployeeAutocomplete("employeeSearch", "employeeDropdown", function (emp) {
+    const input = document.getElementById("employeeSearch");
+    input.value = emp.code;
+    if (input.form) input.form.submit();
+  }, { clearOnSelect: false });
 });
 
 const LATE_STATUS_STYLES = {

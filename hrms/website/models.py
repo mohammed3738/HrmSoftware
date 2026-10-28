@@ -2163,9 +2163,31 @@ class ShiftAssignment(models.Model):
     end_date = models.DateField()
     shift_start_time = models.TimeField(null=True, blank=True, help_text="Optional, for reference only")
     shift_end_time = models.TimeField(null=True, blank=True, help_text="Optional, for reference only")
+    is_night_shift = models.BooleanField(
+        default=False,
+        verbose_name="Night shift (crosses midnight)",
+        help_text="Tick when this rostered shift runs past midnight. The biometric "
+                   "sync then takes the day's in-time from its LAST punch and the "
+                   "out-time from the NEXT day's first punch. Without this the sync "
+                   "can only guess from the timings or the shift name, which misses "
+                   "an entry called e.g. 'B Shift' with no timings filled in.",
+    )
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     is_active = models.BooleanField(default=True)
+    # Cleared out of the active roster because its dates are in the past, not
+    # because anybody decided it was wrong. The distinction matters: a
+    # manually archived entry is a soft delete and the biometric sync ignores
+    # it, while this one is still the true record of what the roster said for
+    # those dates, so the sync keeps honouring it. Without the distinction,
+    # tidying the roster would silently recompute old night shifts as days
+    # the next time anything rebuilt them.
+    auto_archived = models.BooleanField(
+        default=False,
+        verbose_name="Archived automatically (dates passed)",
+        help_text="Set by the nightly tidy-up for rotations whose end date has gone by. "
+                   "Still used when recalculating attendance for those dates.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

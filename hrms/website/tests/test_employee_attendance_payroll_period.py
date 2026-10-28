@@ -5,6 +5,7 @@ calendar month, when one is configured.
 Run with: python manage.py test website.tests.test_employee_attendance_payroll_period
 """
 from datetime import date, time, timedelta
+from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.test import TestCase, Client
@@ -120,6 +121,10 @@ class EmployeeAttendancePayrollPeriodTest(TestCase):
         computed only from the currently selected payroll period, and a
         leave that only partially overlaps the period must be counted by
         its overlapping days, not its full length."""
+        # Leaves Taken is no longer "calendar days of approved leave": it is
+        # the same figure the attendance register shows -- unpaid working
+        # days, plus approved leave days nothing else already accounts for.
+        # See website.views.count_leave_days_in_range.
         Attendance.objects.create(
             employee=self.employee, date=date(2026, 6, 5), in_time=time(9, 0), out_time=time(15, 0),
         )  # 6h worked -> Half Day
@@ -150,7 +155,15 @@ class EmployeeAttendancePayrollPeriodTest(TestCase):
         self.assertEqual(resp.context["days_present_count"], 4)
         self.assertEqual(resp.context["late_remarks_count"], 1)
         self.assertEqual(resp.context["half_days_count"], 1)
-        self.assertEqual(resp.context["leaves_taken"], 5)  # 3 + 2 (partial overlap), excludes the April leave
+        # 3.0  15-17 Jun, approved leave with no attendance row
+        # 1.0  28 May, the only day of the 25-28 May leave that is both
+        #      inside the period and not already accounted for -- 27 May is
+        #      inside it too, but the employee is marked Present that day,
+        #      so it is not a day of leave. The old figure of 5 counted it.
+        # 0.5  the unpaid half of the 5 Jun Half Day, which the old figure
+        #      ignored entirely
+        # The April leave is outside the period and counts nothing.
+        self.assertEqual(resp.context["leaves_taken"], Decimal("4.5"))
 
     def test_period_filter_shows_all_days_on_one_page_without_pagination(self):
         """A payroll period (27 May - 26 Jun 2026 = 31 days) used to be

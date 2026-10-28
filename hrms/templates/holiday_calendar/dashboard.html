@@ -1689,7 +1689,8 @@
                         <label>Select Specific Employees</label>
                         <div style="position:relative;">
                             <input type="text" id="addEmployeeSearchInput" placeholder="Search employee by name or code..." autocomplete="off" class="form-control">
-                            <ul id="addEmployeeSearchDropdown" style="position:absolute; z-index:1000; display:none; max-height:200px; overflow-y:auto; background:white; width:100%; border:1px solid #e5e7eb; border-radius:6px; list-style:none; margin:4px 0 0; padding:0;"></ul>
+                            <ul id="addEmployeeSearchDropdown" class="list-group position-absolute w-100 shadow"
+                                style="z-index:1000; display:none; max-height:260px; overflow-y:auto;"></ul>
                         </div>
                         <div id="addSelectedEmployeesList" style="margin-top:0.5rem; display:flex; flex-wrap:wrap; gap:0.4rem;"></div>
                     </div>
@@ -1775,7 +1776,8 @@
                         <label>Select Specific Employees</label>
                         <div style="position:relative;">
                             <input type="text" id="editEmployeeSearchInput" placeholder="Search employee by name or code..." autocomplete="off" class="form-control">
-                            <ul id="editEmployeeSearchDropdown" style="position:absolute; z-index:1000; display:none; max-height:200px; overflow-y:auto; background:white; width:100%; border:1px solid #e5e7eb; border-radius:6px; list-style:none; margin:4px 0 0; padding:0;"></ul>
+                            <ul id="editEmployeeSearchDropdown" class="list-group position-absolute w-100 shadow"
+                                style="z-index:1000; display:none; max-height:260px; overflow-y:auto;"></ul>
                         </div>
                         <div id="editSelectedEmployeesList" style="margin-top:0.5rem; display:flex; flex-wrap:wrap; gap:0.4rem;"></div>
                     </div>
@@ -2066,54 +2068,18 @@
             renderSelectedEmployees(prefix);
         }
 
+        // Shared helper: static/js/employee_autocomplete.js, loaded by base2.html.
+        // Names already on the chip list below the box stop being offered.
         function initEmployeeAutocomplete(prefix) {
-            const input = document.getElementById(prefix + 'EmployeeSearchInput');
-            const dropdown = document.getElementById(prefix + 'EmployeeSearchDropdown');
-            let controller = null;
-
-            input.addEventListener('input', async function () {
-                const query = this.value.trim();
-                if (query.length < 1) {
-                    dropdown.style.display = 'none';
-                    dropdown.innerHTML = '';
-                    return;
-                }
-                if (controller) controller.abort();
-                controller = new AbortController();
-                try {
-                    const res = await fetch(`/ajax/employees/search/?q=${encodeURIComponent(query)}`, { signal: controller.signal });
-                    const data = await res.json();
-                    dropdown.innerHTML = '';
-                    const results = data.filter(emp => !selectedEmployees[prefix][emp.id]);
-                    if (results.length === 0) {
-                        dropdown.innerHTML = '<li style="padding:0.5rem 0.75rem; color:#6b7280;">No employees found</li>';
-                    } else {
-                        results.forEach(emp => {
-                            const li = document.createElement('li');
-                            li.style.cssText = 'padding:0.5rem 0.75rem; cursor:pointer;';
-                            li.innerHTML = `<strong>${emp.name}</strong> <small style="color:#6b7280;">(${emp.code})</small>`;
-                            li.onmouseover = () => { li.style.background = '#f0f7ff'; };
-                            li.onmouseout = () => { li.style.background = 'white'; };
-                            li.onclick = () => {
-                                selectedEmployees[prefix][emp.id] = { name: emp.name, code: emp.code };
-                                renderSelectedEmployees(prefix);
-                                input.value = '';
-                                dropdown.style.display = 'none';
-                            };
-                            dropdown.appendChild(li);
-                        });
-                    }
-                    dropdown.style.display = 'block';
-                } catch (err) {
-                    if (err.name !== 'AbortError') console.error('Employee search failed', err);
-                }
-            });
-
-            document.addEventListener('click', function (e) {
-                if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-                    dropdown.style.display = 'none';
-                }
-            });
+            wireEmployeeAutocomplete(
+                prefix + 'EmployeeSearchInput',
+                prefix + 'EmployeeSearchDropdown',
+                function (emp) {
+                    selectedEmployees[prefix][emp.id] = { name: emp.name, code: emp.code };
+                    renderSelectedEmployees(prefix);
+                },
+                { filter: function (emp) { return !selectedEmployees[prefix][emp.id]; } }
+            );
         }
 
         document.addEventListener('DOMContentLoaded', function () {

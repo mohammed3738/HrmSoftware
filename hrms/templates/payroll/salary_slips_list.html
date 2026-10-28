@@ -15,7 +15,14 @@
       {% if can_view_all %}
       <div class="col-md-5">
         <label class="form-label fw-semibold">Employee</label>
-        <select name="employee" class="form-select form-select-sm" onchange="this.form.year.value=''; this.form.submit();">
+        <!-- Type-ahead over the list below: see static/js/employee_autocomplete.js -->
+        <div class="position-relative mb-2">
+          <input type="text" id="slipEmployeePicker" class="form-control form-control-sm" autocomplete="off"
+                 placeholder="Search employee by name or code…">
+          <ul id="slipEmployeePickerDropdown" class="list-group position-absolute w-100 shadow"
+              style="z-index:1000; display:none; max-height:260px; overflow-y:auto;"></ul>
+        </div>
+        <select name="employee" id="slipEmployeeSelect" class="form-select form-select-sm" onchange="this.form.year.value=''; this.form.submit();">
           <option value="">— Select employee —</option>
           {% for e in employee_choices %}
           <option value="{{ e.id }}" {% if employee and e.id == employee.id %}selected{% endif %}>
@@ -132,5 +139,12 @@
     form.target = (e.submitter && e.submitter.name === "format") ? "_self" : "_blank";
   });
 })();
+</script>
+
+<script>
+// base2.html loads the helper after this block, so wait for the document.
+document.addEventListener("DOMContentLoaded", function () {
+  wireEmployeeSelectSearch("slipEmployeePicker", "slipEmployeePickerDropdown", "slipEmployeeSelect");
+});
 </script>
 {% endblock %}

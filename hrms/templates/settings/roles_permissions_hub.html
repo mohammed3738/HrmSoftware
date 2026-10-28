@@ -197,7 +197,7 @@
                   </thead>
                   <tbody>
                     {% for emp in users %}
-                    <tr class="user-row" data-search="{{ emp.first_name|lower }} {{ emp.last_name|lower }} {{ emp.employee_code|lower }}">
+                    <tr class="user-row" data-search="{{ emp.first_name|lower }} {{ emp.middle_name|lower }} {{ emp.last_name|lower }} {{ emp.employee_code|lower }} {{ emp.user.username|lower }}">
                       <td>{{ emp.first_name }} {{ emp.last_name }}</td>
                       <td>{{ emp.employee_code }}</td>
                       <td class="text-muted">{{ emp.user.username }}</td>
@@ -365,9 +365,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const userSearch = document.getElementById('userSearch');
   if (userSearch) {
     userSearch.addEventListener('input', () => {
-      const q = userSearch.value.trim().toLowerCase();
+      // Each word has to land somewhere in the row, in any order: a single
+      // substring match meant "doe john" found nobody.
+      const words = userSearch.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
       document.querySelectorAll('.user-row').forEach(row => {
-        row.style.display = row.dataset.search.includes(q) ? '' : 'none';
+        const haystack = row.dataset.search || '';
+        const visible = words.every(word => haystack.indexOf(word) !== -1);
+        row.style.display = visible ? '' : 'none';
       });
     });
   }

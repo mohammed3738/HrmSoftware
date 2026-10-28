@@ -43,8 +43,8 @@
       <!-- SEARCH & FILTER ROW -->
       <div class="row mb-3">
         <div class="col-md-4">
-          <input type="text" id="searchBox" class="form-control"
-            placeholder="Search employee, date, reason...">
+          <input type="text" id="searchBox" class="form-control" autocomplete="off"
+            placeholder="Search employee by name or code, date, reason…">
         </div>
 
         <div class="col-md-3 d-flex align-items-center">
@@ -83,10 +83,12 @@
             </tr>
           </thead>
 
-          <tbody>
+          <tbody id="incrementRows">
           {% for inc in increments %}
-          <tr>
-              <td>{{ inc.employee.first_name }} ({{ inc.employee.employee_code }})</td>
+          <tr class="increment-row"
+              data-search="{{ inc.employee.first_name|lower }} {{ inc.employee.middle_name|lower }} {{ inc.employee.last_name|lower }} {{ inc.employee.employee_code|lower }} {{ inc.effective_date }} {{ inc.change_set.reason|default:''|lower }}"
+              data-status="{% if inc.is_processed %}applied{% else %}pending{% endif %}">
+              <td>{{ inc.employee.first_name }} {{ inc.employee.last_name }} ({{ inc.employee.employee_code }})</td>
               <td>{{ inc.effective_date }}</td>
               <td>{{ inc.change_set.monthly.gross_ctc }}</td>
               <td>{{ inc.change_set.monthly.net_salary }}</td>
@@ -196,6 +198,13 @@
 
                   <div class="mb-3">
                     <label class="form-label">Select Employee</label>
+                    <!-- Type-ahead over the list below: see static/js/employee_autocomplete.js -->
+                    <div class="position-relative mb-2">
+                      <input type="text" id="incrementEmployeePicker" class="form-control" autocomplete="off"
+                             placeholder="Search employee by name or code…">
+                      <ul id="incrementEmployeePickerDropdown" class="list-group position-absolute w-100 shadow"
+                          style="z-index:1000; display:none; max-height:260px; overflow-y:auto;"></ul>
+                    </div>
                     <select class="form-select" id="employeeSelect" name="employee" required>
                       <option value="">Select Employee</option>
                       {% for emp in employees %}
@@ -1036,4 +1045,60 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
+
+<script>
+// base2.html loads the helper after this block, so wait for the document.
+document.addEventListener("DOMContentLoaded", function () {
+  wireEmployeeSelectSearch("incrementEmployeePicker", "incrementEmployeePickerDropdown", "employeeSelect");
+});
+</script>
+
+<script>
+// The search box and the status dropdown above the table had no handlers at
+// all -- typing in them did nothing. They filter the rows that are on screen;
+// the list is paginated, so they narrow this page, not the whole history.
+document.addEventListener("DOMContentLoaded", function () {
+  const searchBox = document.getElementById("searchBox");
+  const statusFilter = document.getElementById("statusFilter");
+  const body = document.getElementById("incrementRows");
+  if (!searchBox || !statusFilter || !body) return;
+
+  const rows = Array.prototype.slice.call(
+    body.querySelectorAll("tr.increment-row"));
+
+  let emptyRow = null;
+
+  function apply() {
+    const words = searchBox.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const status = statusFilter.value;
+    let shown = 0;
+
+    rows.forEach(function (tr) {
+      const haystack = tr.dataset.search || "";
+      // Every word has to appear somewhere in the row, in any order, so
+      // "rao 101" and "101 rao" both work.
+      const matches = words.every(function (word) {
+        return haystack.indexOf(word) !== -1;
+      });
+      const statusOk = status === "all" || tr.dataset.status === status;
+      const visible = matches && statusOk;
+      tr.style.display = visible ? "" : "none";
+      if (visible) shown++;
+    });
+
+    if (!emptyRow) {
+      emptyRow = document.createElement("tr");
+      emptyRow.innerHTML =
+        '<td colspan="7" class="text-center text-muted py-3">' +
+        "No increments match this filter on this page.</td>";
+      body.appendChild(emptyRow);
+    }
+    emptyRow.style.display = rows.length && !shown ? "" : "none";
+  }
+
+  searchBox.addEventListener("input", apply);
+  statusFilter.addEventListener("change", apply);
+  apply();
+});
+</script>
 {% endblock %}

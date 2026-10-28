@@ -573,10 +573,14 @@
           <div class="lb-form-group">
             <label for="search-input">Search Employee</label>
             <div style="display:flex;gap:6px;align-items:center;">
-              <input type="text" name="q" id="search-input"
-                     value="{{ search_query }}"
-                     placeholder="Name or code…"
-                     style="padding:0.5rem 0.75rem;border:1px solid var(--border-color);border-radius:var(--border-radius);font-size:0.875rem;min-width:200px;color:var(--text-heading);">
+              <div class="position-relative">
+                <input type="text" name="q" id="search-input"
+                       value="{{ search_query }}"
+                       placeholder="Name or code…" autocomplete="off"
+                       style="padding:0.5rem 0.75rem;border:1px solid var(--border-color);border-radius:var(--border-radius);font-size:0.875rem;min-width:200px;color:var(--text-heading);">
+                <ul id="search-inputDropdown" class="list-group position-absolute w-100 shadow"
+                     style="z-index:1000; display:none; max-height:260px; overflow-y:auto;"></ul>
+              </div>
               <button type="submit" style="padding:0.5rem 0.875rem;background:var(--bs-primary);color:#fff;border:none;border-radius:var(--border-radius);font-size:0.875rem;cursor:pointer;">Search</button>
               {% if search_query or company_filter_q %}
               <a href="?{% if selected_company_id %}company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}"
@@ -926,5 +930,20 @@
     }
     return val;
   }
+</script>
+
+<script>
+// Shared helper: static/js/employee_autocomplete.js, loaded by base2.html --
+// which means it is not parsed yet while this block runs.
+document.addEventListener("DOMContentLoaded", function () {
+  wireEmployeeAutocomplete("search-input", "search-inputDropdown", function (emp) {
+    // The code goes in the box and the filter runs straight away: the
+    // server side matches a lone word against the code exactly, so the
+    // chosen person is the only row left.
+    const input = document.getElementById("search-input");
+    input.value = emp.code;
+    if (input.form) input.form.submit();
+  }, { clearOnSelect: false });
+});
 </script>
 {% endblock %}

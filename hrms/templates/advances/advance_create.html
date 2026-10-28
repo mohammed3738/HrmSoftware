@@ -36,6 +36,13 @@
                 Employee <span class="text-danger">*</span>
               </label>
               {{ form.employee.errors }}
+              <!-- Type-ahead over the list below: see static/js/employee_autocomplete.js -->
+              <div class="position-relative mb-2">
+                <input type="text" id="advanceEmployeePicker" class="form-control" autocomplete="off"
+                       placeholder="Search employee by name or code…">
+                <ul id="advanceEmployeePickerDropdown" class="list-group position-absolute w-100 shadow"
+                    style="z-index:1000; display:none; max-height:260px; overflow-y:auto;"></ul>
+              </div>
               <select name="employee" id="id_employee" class="form-select{% if form.employee.errors %} is-invalid{% endif %}" required>
                 <option value="">— Select Employee —</option>
                 {% for val, label in form.fields.employee.choices %}
@@ -152,5 +159,12 @@
   amountInput.addEventListener("input", updatePreview);
   monthsInput.addEventListener("input", updatePreview);
   updatePreview();
+</script>
+
+<script>
+// base2.html loads the helper after this block, so wait for the document.
+document.addEventListener("DOMContentLoaded", function () {
+  wireEmployeeSelectSearch("advanceEmployeePicker", "advanceEmployeePickerDropdown", "id_employee");
+});
 </script>
 {% endblock %}

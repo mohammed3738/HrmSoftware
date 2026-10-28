@@ -16,6 +16,9 @@
  *   minChars       1     -- how much to type before asking the server.
  *   submitOnSelect false -- submit the input's form after choosing, for a
  *                           filter that takes effect immediately.
+ *   filter         null  -- predicate(employee) -> keep?  For a picker that
+ *                           builds a list, so names already on the list stop
+ *                           being offered again.
  *
  * Marked up as:
  *   <input type="text" id="x" autocomplete="off">
@@ -43,6 +46,7 @@
     var clearOnSelect = opts.clearOnSelect !== false;   // default true
     var minChars = opts.minChars || 1;
     var submitOnSelect = opts.submitOnSelect === true;
+    var filter = typeof opts.filter === "function" ? opts.filter : null;
 
     var controller = null;
     var debounce = null;
@@ -85,6 +89,7 @@
     }
 
     function render(data) {
+      if (filter) data = data.filter(filter);
       dropdown.innerHTML = "";
       rows = [];
       active = -1;
@@ -188,5 +193,39 @@
     });
 
     return { search: search, close: close, input: input, dropdown: dropdown };
+  };
+
+  /*
+   * A type-ahead that drives an existing <select name="employee">.
+   *
+   *   wireEmployeeSelectSearch('empSearch', 'empSearchDropdown', 'id_employee')
+   *
+   * The select stays the field that is submitted, so required-ness,
+   * server-side validation and any change handlers already on it keep
+   * working -- the box only picks the option. Only employees the select
+   * actually offers are suggested: the search endpoint is scoped to the
+   * company, but a form's own list is often narrower than that (active
+   * employees, employees without a slip yet), and offering somebody the
+   * form cannot accept would be a dead end.
+   */
+  window.wireEmployeeSelectSearch = function (inputId, dropdownId, selectId, options) {
+    var select = document.getElementById(selectId);
+    if (!select) return null;
+
+    function optionFor(id) {
+      return select.querySelector('option[value="' + String(id) + '"]');
+    }
+
+    var opts = options || {};
+    opts.clearOnSelect = false;
+    opts.filter = function (employee) { return !!optionFor(employee.id); };
+
+    return window.wireEmployeeAutocomplete(inputId, dropdownId, function (employee) {
+      var option = optionFor(employee.id);
+      if (!option) return;
+      select.value = option.value;
+      // Pages hang salary lookups and totals off this event.
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }, opts);
   };
 })();

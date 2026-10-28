@@ -93,8 +93,13 @@
       </div>
       <form method="get" class="d-flex gap-2 ms-auto">
         {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
-        <input type="text" name="q" value="{{ search }}" placeholder="Search employee…"
-               class="form-control form-control-sm" style="min-width:200px;">
+        <div class="position-relative" style="min-width:200px;">
+          <input type="text" name="q" id="advanceEmployeeSearch" value="{{ search }}"
+                 placeholder="Search employee by name or code…" autocomplete="off"
+                 class="form-control form-control-sm">
+          <ul id="advanceEmployeeSearchDropdown" class="list-group position-absolute w-100 shadow"
+               style="z-index:1000; display:none; max-height:260px; overflow-y:auto;"></ul>
+        </div>
         <button class="btn btn-sm btn-primary">Search</button>
         {% if search %}
         <a href="?{% if status_filter %}status={{ status_filter }}{% endif %}" class="btn btn-sm btn-outline-secondary">✕ Clear</a>
@@ -187,4 +192,19 @@
   </div>
 
 </div>
+
+<script>
+// Shared helper: static/js/employee_autocomplete.js, loaded by base2.html --
+// which means it is not parsed yet while this block runs.
+document.addEventListener("DOMContentLoaded", function () {
+  wireEmployeeAutocomplete("advanceEmployeeSearch", "advanceEmployeeSearchDropdown", function (emp) {
+    // The code goes in the box and the filter runs straight away: the
+    // server side matches a lone word against the code exactly, so the
+    // chosen person is the only row left.
+    const input = document.getElementById("advanceEmployeeSearch");
+    input.value = emp.code;
+    if (input.form) input.form.submit();
+  }, { clearOnSelect: false });
+});
+</script>
 {% endblock %}

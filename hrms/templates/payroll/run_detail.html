@@ -570,6 +570,15 @@ const clearBtn     = document.getElementById("clearSearch");
 const searchCount  = document.getElementById("searchCount");
 const noResult     = document.getElementById("noSearchResult");
 
+// Each word has to land in the name or the code, in any order -- a single
+// substring match meant "rao asha" found nobody.
+function matchesEmployee(tr, query) {
+  const haystack = (tr.dataset.empname || "") + " " + (tr.dataset.empcode || "");
+  return query.split(/\s+/).filter(Boolean).every(function (word) {
+    return haystack.indexOf(word) !== -1;
+  });
+}
+
 function applySearch() {
   const q = searchInput.value.trim().toLowerCase();
   clearBtn.style.display = q ? "" : "none";
@@ -578,8 +587,7 @@ function applySearch() {
   let visible = 0;
   rows.forEach(tr => {
     const match = !q
-      || (tr.dataset.empname || "").includes(q)
-      || (tr.dataset.empcode || "").includes(q);
+      || matchesEmployee(tr, q);
     tr.style.display = match ? "" : "none";
     if (match) visible++;
   });

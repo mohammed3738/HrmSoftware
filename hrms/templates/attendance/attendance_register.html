@@ -44,7 +44,13 @@
 
       <div class="col-md-3">
         <label class="form-label fw-semibold">Employee</label>
-        <input type="text" name="q" value="{{ search_query }}" class="form-control form-control-sm" placeholder="Name or code">
+        <div class="position-relative">
+          <input type="text" name="q" id="registerEmployeeSearch" value="{{ search_query }}"
+                 class="form-control form-control-sm" placeholder="Name or code"
+                 autocomplete="off">
+          <ul id="registerEmployeeSearchDropdown" class="list-group position-absolute w-100 shadow"
+               style="z-index:1000; display:none; max-height:260px; overflow-y:auto;"></ul>
+        </div>
       </div>
 
       {% if page_size %}<input type="hidden" name="per_page" value="{{ page_size }}">{% endif %}
@@ -408,5 +414,20 @@ function openDayOverride(cellEl) {
     });
   });
 }
+</script>
+
+<script>
+// Shared helper: static/js/employee_autocomplete.js, loaded by base2.html --
+// which means it is not parsed yet while this block runs.
+document.addEventListener("DOMContentLoaded", function () {
+  wireEmployeeAutocomplete("registerEmployeeSearch", "registerEmployeeSearchDropdown", function (emp) {
+    // The code goes in the box and the filter runs straight away: the
+    // server side matches a lone word against the code exactly, so the
+    // chosen person is the only row left.
+    const input = document.getElementById("registerEmployeeSearch");
+    input.value = emp.code;
+    if (input.form) input.form.submit();
+  }, { clearOnSelect: false });
+});
 </script>
 {% endblock %}

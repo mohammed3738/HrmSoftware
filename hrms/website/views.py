@@ -932,16 +932,7 @@ def late_attendance_review(request):
 
     employee_search = request.GET.get("employee", "").strip()
     if employee_search:
-        from django.db.models import Value
-        from django.db.models.functions import Concat
-        # Match first name, last name, "First Last" combined (autocomplete
-        # fills the full name), or employee code.
-        qs = qs.annotate(
-            full_name=Concat("employee__first_name", Value(" "), "employee__last_name")
-        ).filter(
-            Q(full_name__icontains=employee_search) |
-            Q(employee__employee_code__icontains=employee_search)
-        )
+        qs = apply_employee_search(qs, employee_search)
 
     # Late-day count per employee within the current filters. Computed from
     # an unordered copy — order_by() fields leak into GROUP BY otherwise,
@@ -1192,14 +1183,7 @@ def shift_roster_list(request):
 
     employee_search = request.GET.get("employee", "").strip()
     if employee_search:
-        from django.db.models import Value
-        from django.db.models.functions import Concat
-        qs = qs.annotate(
-            full_name=Concat("employee__first_name", Value(" "), "employee__last_name")
-        ).filter(
-            Q(full_name__icontains=employee_search) |
-            Q(employee__employee_code__icontains=employee_search)
-        )
+        qs = apply_employee_search(qs, employee_search)
 
     shift_name = request.GET.get("shift_name", "").strip()
     if shift_name:
@@ -1686,6 +1670,34 @@ def employee_attendance_detail(request, employee_id):
 
 
 
+def apply_employee_search(qs, term, prefix="employee__"):
+    """Filter `qs` by a typed employee search term -- a name or a code.
+
+    Every word has to land somewhere in the name, in any order, so both
+    "john doe" and "doe john" find John Doe; matching the whole string
+    against each name column on its own finds neither, because no single
+    column holds both words. A single word can be a code instead -- a
+    multi-word term is a name by definition.
+
+    `prefix` is the lookup path to the Employee: "" when filtering
+    Employee itself, "employee__" from a related model.
+    """
+    term = (term or "").strip()
+    if not term:
+        return qs
+    words = term.split()
+    for word in words:
+        match = (
+            Q(**{prefix + "first_name__icontains": word}) |
+            Q(**{prefix + "middle_name__icontains": word}) |
+            Q(**{prefix + "last_name__icontains": word})
+        )
+        if len(words) == 1:
+            match |= Q(**{prefix + "employee_code__icontains": word})
+        qs = qs.filter(match)
+    return qs
+
+
 @login_required
 def employee_search(request):
     """Type-ahead suggestions for every employee picker in the app
@@ -1703,11 +1715,7 @@ def employee_search(request):
         # the first ten employees in the database to anybody who asked.
         return JsonResponse([], safe=False)
 
-    employees = Employee.objects.filter(
-        Q(first_name__icontains=q) |
-        Q(last_name__icontains=q) |
-        Q(employee_code__icontains=q)
-    )
+    employees = apply_employee_search(Employee.objects.all(), q, prefix="")
 
     company_filter = get_company_filter(request.user)
     if company_filter:
@@ -1718,12 +1726,19 @@ def employee_search(request):
     employees = employees.order_by(
         Case(When(status="Active", then=0), default=1, output_field=IntegerField()),
         "employee_code",
-    ).only("id", "first_name", "last_name", "employee_code", "department", "status")[:15]
+    ).only(
+        "id", "first_name", "middle_name", "last_name",
+        "employee_code", "department", "status",
+    )[:15]
 
     data = [
         {
             "id": emp.id,
-            "name": f"{emp.first_name or ''} {emp.last_name or ''}".strip() or "(no name)",
+            # Middle name included: it is searchable, so a row matched on it
+            # has to show why it is in the list.
+            "name": " ".join(
+                part for part in (emp.first_name, emp.middle_name, emp.last_name) if part
+            ).strip() or "(no name)",
             "code": emp.employee_code or "",
             "department": emp.department or "",
             "status": emp.status or "",
@@ -5567,15 +5582,9 @@ def leave_balance_view(request):
 
         # Text search
         if search_query:
-            sq = search_query.lower()
-            employees_qs = employees_qs.filter(
-                first_name__icontains=sq
-            ) | employees_qs.filter(
-                last_name__icontains=sq
-            ) | employees_qs.filter(
-                employee_code__icontains=sq
-            )
-            employees_qs = employees_qs.order_by('company__name', 'first_name', 'last_name')
+            employees_qs = apply_employee_search(
+                employees_qs, search_query, prefix=""
+            ).order_by('company__name', 'first_name', 'last_name')
 
         # Company text filter
         if company_filter_q:
@@ -6532,11 +6541,20 @@ def leave_apply_view(request):
         leaves = leaves.filter(status=status)
 
     if search:
-        leaves = leaves.filter(
-            Q(employee__first_name__icontains=search) | 
-            Q(employee__last_name__icontains=search) |
-            Q(leave_type__icontains=search)
-        )
+        # One box, three things people type into it: a name, an employee code
+        # or a leave type. A multi-word term is a name, so each word has to
+        # land somewhere in it -- "john doe" used to find nobody.
+        words = search.split()
+        if len(words) == 1:
+            leaves = leaves.filter(
+                Q(employee__first_name__icontains=search) |
+                Q(employee__middle_name__icontains=search) |
+                Q(employee__last_name__icontains=search) |
+                Q(employee__employee_code__icontains=search) |
+                Q(leave_type__icontains=search)
+            )
+        else:
+            leaves = apply_employee_search(leaves, search)
 
     # Pagination
     paginator = Paginator(leaves, 8)  # 8 rows per page
@@ -7876,7 +7894,7 @@ def salary_history(request):
     date_to = request.GET.get("to", "")
 
     if emp:
-        qs = qs.filter(employee__employee_code__icontains=emp)
+        qs = apply_employee_search(qs, emp)
 
     if date_from:
         qs = qs.filter(start_date__gte=date_from)
@@ -7924,18 +7942,10 @@ def salary_history_export_excel(request):
     date_to = request.GET.get("date_to", "").strip()
 
     if q:
-        qs = qs.filter(
-            Q(employee__first_name__icontains=q) |
-            Q(employee__last_name__icontains=q) |
-            Q(employee__employee_code__icontains=q)
-        )
+        qs = apply_employee_search(qs, q)
 
     if emp_code:
-        qs = qs.filter(
-            Q(employee__employee_code__icontains=emp_code) |
-            Q(employee__first_name__icontains=emp_code) |
-            Q(employee__last_name__icontains=emp_code)
-        )
+        qs = apply_employee_search(qs, emp_code)
 
     if date_from:
         try:
@@ -8925,12 +8935,7 @@ def advance_list(request):
         qs = qs.filter(status=status_filter)
 
     if search:
-        from django.db.models import Q as _Q
-        qs = qs.filter(
-            _Q(employee__first_name__icontains=search) |
-            _Q(employee__last_name__icontains=search) |
-            _Q(employee__employee_code__icontains=search)
-        )
+        qs = apply_employee_search(qs, search)
 
     all_qs = AdvanceMaster.objects.all() if can_see_all else AdvanceMaster.objects.filter(employee=own_employee)
     active_qs = all_qs.filter(status='active')
@@ -9834,8 +9839,12 @@ def salary_slips_list(request):
             Employee.objects.filter(payrollrecord__isnull=False).distinct(),
             key=lambda e: _natural_key(e.employee_code),
         )
-        emp_id = request.GET.get("employee")
+        # A non-numeric ?employee= -- a hand-edited or stale URL -- used to
+        # raise ValueError out of the ORM and return a 500 rather than a 404.
+        emp_id = request.GET.get("employee", "").strip()
         if emp_id:
+            if not emp_id.isdigit():
+                raise Http404("No employee matches the given query.")
             employee = get_object_or_404(Employee, pk=emp_id)
 
     records, years = [], []

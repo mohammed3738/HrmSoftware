@@ -21,16 +21,25 @@ the "view file" links are for.
 Run with:
     python manage.py test website.tests.test_attachment_inline_execution
 """
+import shutil
+import tempfile
 from datetime import date
 
 from django.contrib.auth.models import Group, User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
 from website.models import Company, Employee, EmployeeAttachment
 
 
+# Uploading through SimpleUploadedFile writes into MEDIA_ROOT, and the
+# test runner does not clean it up -- without this every run left a new
+# batch of randomly-suffixed files in the developer's hrms/media/.
+_MEDIA_ROOT = tempfile.mkdtemp(prefix="hrms-test-media-")
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_ROOT)
 class AttachmentInlineExecutionTest(TestCase):
     def setUp(self):
         self.company = Company.objects.create(
@@ -136,3 +145,8 @@ class AttachmentInlineExecutionTest(TestCase):
         client.force_login(other_user, backend="django.contrib.auth.backends.ModelBackend")
         resp = client.get(reverse("download_attachment", args=[attachment.pk]))
         self.assertEqual(resp.status_code, 403)
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(_MEDIA_ROOT, ignore_errors=True)

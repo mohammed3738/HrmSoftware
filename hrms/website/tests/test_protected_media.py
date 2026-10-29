@@ -26,6 +26,8 @@ asserted on only indirectly, by proving no /media/ URL is emitted.
 Run with:
     python manage.py test website.tests.test_protected_media
 """
+import shutil
+import tempfile
 from datetime import date
 
 from django.contrib.auth.models import Group, User
@@ -58,6 +60,13 @@ def make_employee(company, code, first_name, user=None):
     )
 
 
+# Uploading through SimpleUploadedFile writes into MEDIA_ROOT, and the
+# test runner does not clean it up -- without this every run left a new
+# batch of randomly-suffixed files in the developer's hrms/media/.
+_MEDIA_ROOT = tempfile.mkdtemp(prefix="hrms-test-media-")
+
+
+@override_settings(MEDIA_ROOT=_MEDIA_ROOT)
 class ProtectedMediaTest(TestCase):
     def setUp(self):
         self.company = Company.objects.create(
@@ -223,3 +232,8 @@ class ProtectedMediaTest(TestCase):
                     args=[self.offboarding.pk, "other_documents"]),
         )
         self.assertIn("attachment", resp["Content-Disposition"])
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(_MEDIA_ROOT, ignore_errors=True)

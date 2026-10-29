@@ -35,14 +35,84 @@ def env_list(name, default):
     return default if value is None else [item.strip() for item in value.split(',') if item.strip()]
 
 
-SECRET_KEY = os.environ.get(
-    'DJANGO_SECRET_KEY',
-    'django-insecure-7o9%azh!(65zeu619gay11-&^5kzime&x@o71gc_!o&s*ed$=#',
-)
+# DEBUG defaults to False. It used to default to True, so a server whose
+# .env was missing, unreadable or had the variable mis-spelled served full
+# tracebacks -- including settings and database credentials -- to anyone
+# who could provoke an error, and nothing about the running site said so.
+# A wrong default should fail safe, and the direction that fails safe is
+# off. Local development sets DJANGO_DEBUG=true in hrms/.env (see
+# .env.example).
+DEBUG = env_bool('DJANGO_DEBUG', False)
 
-DEBUG = env_bool('DJANGO_DEBUG', True)
+# Running the test suite needs a key but must not need a .env file.
+RUNNING_TESTS = 'test' in sys.argv
 
-ALLOWED_HOSTS = env_list('DJANGO_ALLOWED_HOSTS', ['*'])
+# Placeholder values .env.example ships with: present but never filled in.
+# Accepting them is worse than refusing, because the result looks
+# configured. The database block below already does this for DB_PASSWORD.
+_SECRET_PLACEHOLDERS = {'change-me', 'changeme', 'change_me'}
+
+
+def _secret_key():
+    """The signing key for sessions, password-reset tokens and CSRF.
+
+    This used to fall back to a hardcoded 'django-insecure-...' literal
+    that is in the repository, so a server with no DJANGO_SECRET_KEY
+    signed its sessions with a key anybody could read -- forgeable login
+    cookies, with nothing to indicate it had happened. A missing key is
+    now refused outright rather than silently replaced.
+    """
+    value = os.environ.get('DJANGO_SECRET_KEY', '').strip()
+    if value and value.lower() not in _SECRET_PLACEHOLDERS:
+        return value
+
+    if DEBUG or RUNNING_TESTS:
+        # Development and tests: a throwaway key, generated per process so
+        # it is never a known constant. Sessions do not survive a restart,
+        # which locally is fine.
+        import secrets
+        return secrets.token_urlsafe(50)
+
+    if value:
+        raise ImproperlyConfigured(
+            f"DJANGO_SECRET_KEY in hrms/.env is still the placeholder {value!r} "
+            f"from .env.example. Generate a real one:\n"
+            f"    python -c \"import secrets; print(secrets.token_urlsafe(50))\""
+        )
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY is not set in hrms/.env, and DEBUG is off so there "
+        "is no safe fallback: it signs session cookies and password-reset "
+        "tokens.\n"
+        "Generate one with:\n"
+        "    python -c \"import secrets; print(secrets.token_urlsafe(50))\"\n"
+        "Changing it later logs every user out."
+    )
+
+
+SECRET_KEY = _secret_key()
+
+
+def _allowed_hosts():
+    """Hosts this site answers to.
+
+    The default used to be ['*'], which with DEBUG off accepts any Host
+    header -- so password-reset and other absolute links could be pointed
+    at a domain of the attacker's choosing. Wide open is a reasonable
+    convenience while developing and is not reasonable on a server.
+    """
+    hosts = env_list('DJANGO_ALLOWED_HOSTS', [])
+    if hosts:
+        return hosts
+    if DEBUG or RUNNING_TESTS:
+        return ['*']
+    raise ImproperlyConfigured(
+        "DJANGO_ALLOWED_HOSTS is not set in hrms/.env, and DEBUG is off. "
+        "List the domains this site answers to, comma-separated, e.g.\n"
+        "    DJANGO_ALLOWED_HOSTS=hrms.example.com,127.0.0.1,localhost"
+    )
+
+
+ALLOWED_HOSTS = _allowed_hosts()
 
 CSRF_TRUSTED_ORIGINS = env_list('DJANGO_CSRF_TRUSTED_ORIGINS', [])
 
@@ -337,7 +407,16 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# This is an India-operating HRMS: CELERY_TIMEZONE below has always been
+# Asia/Kolkata, while Django itself was left on UTC. That 5h30m gap is a
+# real difference for an attendance system, where "today" decides which
+# day a punch belongs to and which payroll period a date falls in -- from
+# midnight to 05:30 IST the two disagreed about what day it was.
+#
+# USE_TZ is on and every timestamp is stored in UTC, so this changes how
+# datetimes are rendered and what timezone.localdate() returns, not what is
+# in the database. Overridable for a deployment in another timezone.
+TIME_ZONE = os.environ.get('TIME_ZONE', 'Asia/Kolkata')
 
 USE_I18N = True
 
@@ -449,7 +528,7 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TASK_SERIALIZER = 'json'
 # CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'  # Use Redis to store task results
 CELERY_RESULT_BACKEND = 'django-db'  # Use Redis to store task results
-CELERY_TIMEZONE = 'Asia/Kolkata'
+CELERY_TIMEZONE = TIME_ZONE
 
 
 

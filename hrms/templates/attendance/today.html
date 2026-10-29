@@ -86,7 +86,6 @@
           <option value="{{ p.to_date|date:'Y-m-d' }}" {% if selected_period == p.to_date|date:'Y-m-d' %}selected{% endif %}>{{ p.label }}</option>
           {% endfor %}
         </select>
-        <div class="form-text">Union of every active company's payroll cycle.</div>
       </div>
       <div class="col-md-3 d-flex gap-2">
         <button type="submit" class="btn btn-sm btn-primary mt-auto">

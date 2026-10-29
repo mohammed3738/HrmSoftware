@@ -15,7 +15,7 @@ Branch `main`. Started 2026-10-29.
 | Django | 5.2.8 |
 | App code | `hrms/website/` (views.py 12,217 lines; models.py 2,605) |
 | Test command | from `hrms/`: `DB_ENGINE=sqlite ../.venv/Scripts/python.exe manage.py test website` |
-| Test files at start | 73 under `hrms/website/tests/` |
+| Test files at start | 73 under `hrms/website/tests/` (81 after this pass) |
 | Baseline suite result | **731 tests, OK, 1 skipped, 2493s (41.6 min)** at `09ce8e2`, before any change |
 | Working tree at start | clean at `09ce8e2` |
 
@@ -23,6 +23,23 @@ Only one suite may run at a time — two concurrent runs collide on the same
 SQLite test DB file.
 
 ---
+
+### Final suite run
+
+Whole suite, after every change in this pass:
+
+| | Baseline (`09ce8e2`) | Final (`03bc12c`) |
+|---|---|---|
+| Tests | 731 | **798** (+67) |
+| Result | OK | **OK** |
+| Failures / errors | 0 / 0 | **0 / 0** |
+| Skipped | 1 | 1 |
+| Wall clock | 2493.1s (41.6 min) | **1486.6s (24.8 min)** |
+| Per test | 3.41s | **1.86s** |
+
+67 more tests in 40% less wall clock, which is the D-27 cache fix showing
+up across the whole suite rather than only on the attendance path.
+
 
 ## 2. Module inventory
 

@@ -138,6 +138,32 @@ def json_for_script(value):
     return json.dumps(value).translate(_JSON_SCRIPT_ESCAPES)
 
 
+def report_unexpected(request, exc, doing, *, as_json=False, status=500):
+    """Log an unexpected exception and tell the user something neutral.
+
+    `messages.error(request, f"Error: {exc}")` was the house pattern, which
+    put raw exception text on the page: "duplicate key value violates
+    unique constraint website_holiday_holiday_date_key" names a table and a
+    column to whoever provoked it, and means nothing to the HR officer who
+    did. Worse, with the whole handler wrapped in `except Exception` the
+    message was also the only record that anything had gone wrong -- it
+    never reached the log.
+
+    `doing` is a short phrase for the user, e.g. "saving the holiday
+    settings". Expected, actionable problems (a bad date, a bad number)
+    should be caught specifically and reported in their own words; this is
+    only for the ones nobody anticipated.
+    """
+    logging.getLogger(__name__).exception("Unexpected error while %s", doing)
+    text = (f"Something went wrong while {doing}. It has been logged. "
+            f"Please try again, and tell your administrator if it keeps "
+            f"happening.")
+    if as_json:
+        return JsonResponse({"success": False, "error": text}, status=status)
+    messages.error(request, text)
+    return None
+
+
 def _can_assign_roles(user):
     """Changing someone's login role (e.g. to Admin) is account
     administration, not employee-record editing: HR may edit details but
@@ -9408,8 +9434,8 @@ def pay_advance(request, pk):
     # Use service to apply payment
     try:
         apply_payment(adv, amount, note=note)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    except Exception as exc:
+        return report_unexpected(request, exc, "loading that data", as_json=True)
 
     schedules = [
         {
@@ -9451,8 +9477,8 @@ def skip_advance_month(request, pk):
         skip_month(adv, due_month)
     except ValueError as e:
         return JsonResponse({'error': str(e)}, status=400)
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    except Exception as exc:
+        return report_unexpected(request, exc, "loading that data", as_json=True)
 
     schedules = [
         {
@@ -10678,8 +10704,8 @@ def save_holiday_settings(request):
         
         messages.success(request, '✓ Holiday settings saved successfully!')
         
-    except Exception as e:
-        messages.error(request, f'❌ Error saving settings: {str(e)}')
+    except Exception as exc:
+        report_unexpected(request, exc, "saving the holiday settings")
     
     return redirect('holiday-calendar')
 
@@ -10994,8 +11020,8 @@ def earned_leaves_config(request):
 
         return render(request, 'holiday_calendar/dashboard.html', context)
 
-    except Exception as e:
-        messages.error(request, f"❌ Error loading earned leaves: {str(e)}")
+    except Exception as exc:
+        report_unexpected(request, exc, "loading the earned leaves")
         return render(request, 'holiday_calendar/dashboard.html', {
             'monthly_leaves': [],
             'year': timezone.now().year,
@@ -11035,7 +11061,7 @@ def edit_earned_leave(request, leave_id):
         # Try to convert to Decimal
         try:
             earned_leaves_decimal = Decimal(earned_leaves_value)
-        except:
+        except (InvalidOperation, ValueError, TypeError):
             messages.error(
                 request,
                 f'❌ Invalid value "{earned_leaves_value}". Use decimal numbers like 2.5 or 3.75'
@@ -11068,10 +11094,11 @@ def edit_earned_leave(request, leave_id):
     
     except MonthlyEarnedLeaves.DoesNotExist:
         messages.error(request, '❌ Earned leave record not found!')
-    except ValueError as e:
-        messages.error(request, f'❌ Invalid input: {str(e)}')
-    except Exception as e:
-        messages.error(request, f'❌ Error updating earned leaves: {str(e)}')
+    except ValueError:
+        # Raised by the Decimal conversion above for something like "2,5".
+        messages.error(request, '❌ Enter a number of days, e.g. 2.5.')
+    except Exception as exc:
+        report_unexpected(request, exc, "updating the earned leaves")
     
     return redirect('holiday-calendar')
 
@@ -11137,8 +11164,8 @@ def api_earned_leaves(request):
         
         return JsonResponse(data, safe=False)
     
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    except Exception as exc:
+        return report_unexpected(request, exc, "loading that data", as_json=True)
 
 
 @login_required
@@ -11193,8 +11220,16 @@ def add_half_day_scenario(request):
                 request,
                 f'✓ Half-day scenario added for {branch_label} on {parsed_date.strftime("%b %d, %Y")}!'
             )
-        except Exception as e:
-            messages.error(request, f'❌ Error: {str(e)}')
+        except (ValueError, InvalidOperation):
+            # date.fromisoformat raises ValueError; Decimal("half") raises
+            # InvalidOperation, which is an ArithmeticError and not a
+            # ValueError, so both have to be named.
+            messages.error(
+                request,
+                '❌ Check the date and the credit value: the date must be '
+                'YYYY-MM-DD and the credit a number like 0.50.')
+        except Exception as exc:
+            report_unexpected(request, exc, "adding the half-day scenario")
 
     return redirect('holiday-calendar')
 
@@ -11227,8 +11262,13 @@ def edit_half_day_scenario(request, scenario_id):
 
         scenario.save()
         messages.success(request, '✓ Half-day scenario updated!')
-    except Exception as e:
-        messages.error(request, f'❌ Error: {str(e)}')
+    except (ValueError, InvalidOperation):
+        messages.error(
+            request,
+            '❌ Check the date and the credit value: the date must be '
+            'YYYY-MM-DD and the credit a number like 0.50.')
+    except Exception as exc:
+        report_unexpected(request, exc, "updating the half-day scenario")
 
     return redirect('holiday-calendar')
 
@@ -11573,8 +11613,8 @@ def api_payroll_settings(request):
         
         return JsonResponse(data)
     
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+    except Exception as exc:
+        return report_unexpected(request, exc, "loading that data", as_json=True)
 
 
 # ============================================================================

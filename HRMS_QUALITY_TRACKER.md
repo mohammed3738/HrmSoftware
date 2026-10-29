@@ -295,55 +295,73 @@ fixtures.
 
 **Open defects, highest first**
 
-| ID | Sev | Summary |
-|---|---|---|
-| D-23 | **P0** | `/media/` is served by nginx with no authentication; 13 of 14 upload fields keep the uploader's original filename. KYC scans, offboarding letters and bulk-upload spreadsheets are anonymously readable to anyone who guesses or is given the path. **Needs a deployment decision.** |
-| D-14 | P2 | `esic_percentage` defaults to 3.67 and is applied as the *employee* ESIC deduction; the statutory employee share is 0.75%. If the default was never changed, employee ESIC is over-deducted ~4.9x. **Needs the user's confirmation of actual policy.** |
-| D-15 | P2 | Payroll deducts an advance EMI but never calls `apply_payment`, so `AdvanceSchedule.status` stays pending and `outstanding_amount` never falls. |
-| D-18 | P2 | `payroll_run_create` with company="all" has no outer transaction. |
-| D-08 | P2 | `DEBUG` defaults to `True`, `SECRET_KEY` falls back to a hardcoded literal, `ALLOWED_HOSTS` to `['*']`. |
-| D-09 | P2 | `TIME_ZONE = 'UTC'` hardcoded while `CELERY_TIMEZONE = 'Asia/Kolkata'`; mixed `date.today()` / `timezone.now()`. |
-| D-13, D-16 | P3 | Phantom `esic_threshold` setting; `revert_skip` divides by a possibly-zero count; `get_advance_for_employee_month` uses an unordered `.first()`. |
-| D-05, D-25, D-26, D-28 | P3 | Low-sensitivity ungated reads; 36 raw-exception messages; 14 silent excepts; ~200 unlabelled form controls. |
+| ID | Sev | Summary | Why still open |
+|---|---|---|---|
+| D-23 (deployment half) | **P0 until applied** | The public `location /media/ { alias ...; }` block is still live on the server, so the old paths keep working until it is replaced. | Only the user can change the server. `DEPLOYMENT.md` now ships the `internal;` + `X-Accel-Redirect` configuration and `.env.example` the matching `MEDIA_ACCEL_REDIRECT` line. The application no longer emits a single `/media/` path and every document has a checked route in. |
+| D-14 | P2 | `esic_percentage` defaults to 3.67 and is applied as the *employee* ESIC deduction; the statutory employee share is 0.75%. If untouched, employee ESIC is over-deducted ~4.9x on every payslip. | Changing a statutory rate is a policy decision. The ceiling beside it (D-13) is now a real, tested field, so once the rate is confirmed both are configurable. |
+| D-15 | P2 | Payroll deducts an advance EMI but never records it, so `AdvanceSchedule.status` stays pending and `outstanding_amount` never falls. | Two plausible designs: record on finalize, or leave it to the existing manual payment screen (`apply_payment`, views.py:9263). Picking one silently risks double-counting against the other. |
+| D-10 | P3 | No login throttling or lockout; no session idle timeout. | Worth a conversation about what the org wants rather than a unilateral lockout policy. |
+| D-11 | P3 | `is_staff` is a full bypass in every decorator and in `can_access_employee_record`. | Deliberate and documented in the codebase, but it means "can open Django admin" silently equals "can do anything". |
+| D-05 | P3 | Low-sensitivity cross-company config reads (`get_branch` now gated; `department_defaults_api`, `attendance_upload_progress`, `download_empty_excel` remain open). | Deliberately left: the feature registry's own comment warns against locking down pages that are open today without deciding to. |
+| D-25 / D-26 (rest) | P3 | 26 `str(e)` sites and 8 bare excepts outside the holiday-calendar family. | Each needs its own reading of what the expected failures are; guessing turns a useless error message into a misleading one. |
+| D-28 (rest) | P3 | ~94 unnamed form controls remain on the employee list (63) and holiday calendar (31). | Mechanical, but large; the bulk-action tables were the ones where an unnamed control is a decision about someone's pay. |
+| D-20 | P3 | `holiday_calendar_dashboard` serialises every company's holidays, unbounded. | Small volume today (0 holidays in the working database). |
 
 **Blocked / not in scope**
 
 * The eSSL biometric integration cannot be exercised live (SQL Server uses
   Windows auth with an `SA` password the user does not have). Covered only
-  by the existing `test_biometric_sync.py` fixtures.
-* Production-side, the user's to do, not code work: apply migrations
-  0052/0053/0054, audit night-shift roster ticks, confirm production
+  by the existing `test_biometric_sync.py` fixtures — 36 KB of them, which
+  do pass.
+* Production-side, the user's to do: apply migrations (now including
+  **0055**), audit night-shift roster ticks, confirm production
   `employee_code` values against eSSL, set `weekend_days` to `sun`.
+
+**Deploy-affecting changes in this pass — read before the next restart**
+
+1. `DEBUG` now defaults to **False**, and with DEBUG off `DJANGO_SECRET_KEY`
+   and `DJANGO_ALLOWED_HOSTS` are **required**: the app refuses to start and
+   names the missing variable. A server built by following DEPLOYMENT.md
+   Step 5 already sets all three and is unaffected.
+2. `TIME_ZONE` moves from UTC to **Asia/Kolkata**. Stored data does not
+   change (USE_TZ is on, timestamps are UTC), but rendered times and
+   `timezone.localdate()` shift by 5h30m. Reporting boundaries deserve a
+   look in staging.
+3. Migration **0055** adds `PayrollSettings.esic_threshold`, defaulting to
+   21000 — the figure the calculation already used, so no figures move.
 
 ## 8. Next actions
 
-1. **D-23** — decide how `/media/` should be served. Recommended: make the
-   nginx location `internal;` and have `_serve_employee_file` return an
-   `X-Accel-Redirect`, so the existing `can_access_employee_record` check
-   becomes the only way in. Everything else is secondary to this.
-2. **D-14** — confirm the intended ESIC employee rate and correct the
-   default if 3.67 is wrong.
-3. D-15, D-18 — wire advance recovery to `apply_payment`; wrap the
-   all-companies run creation in a transaction.
-4. D-08, D-09 — flip the `DEBUG` default to `False`, make `SECRET_KEY`
-   required, and decide on `TIME_ZONE` (`Asia/Kolkata` with
-   `timezone.localdate()` throughout, most likely).
-5. The mechanical breadth pass: D-05, D-25, D-26, D-28.
+1. **Apply the nginx change** from DEPLOYMENT.md and set
+   `MEDIA_ACCEL_REDIRECT=/protected-media/`. Until then D-23 is only half
+   closed. Everything else on this list is secondary to it.
+2. **Confirm the ESIC employee rate** (D-14) and correct the default if
+   3.67 is wrong.
+3. Decide how advance recovery should be recorded (D-15).
+4. Validate the timezone change against a month of real reports in staging.
+5. The mechanical breadth work: the rest of D-25/D-26 and D-28.
 
 ## 9. Readiness
 
-**Needs more fixes before staging validation.**
+**Ready for staging validation, not for production sign-off.**
 
-Not "not ready": the suite is green, the critical workflows have real
-coverage, and the defects fixed here were specific and are now pinned by
-tests. Not "ready" either, because D-23 is an unauthenticated exposure of
-identity documents and D-14 may be mis-deducting statutory contributions
-from every payslip. Both need a decision from the user rather than more
-code from me, and neither should reach a staging sign-off unresolved.
+Moved up from "needs more fixes" after the second pass, because the two
+things that were holding it there have changed state. D-23's application
+half is done and tested, leaving a one-line server change that is written
+down and reviewable. D-14 is now a single confirmed number away from being
+settled, with the ceiling beside it already a real field.
 
-Scope of this pass, stated plainly: it covered the authorization matrix,
-the payroll and attendance calculation paths, the holiday/half-day rules,
-transaction boundaries, the responsive shell, and cache performance. It
-did **not** audit the eSSL integration beyond reading it, leave accrual
-across financial years, or the ~200 accessibility gaps. No claim is made
-that the application is free of further defects.
+What staging has to prove, rather than what tests can:
+
+* the nginx change serves documents correctly through `X-Accel-Redirect`
+  and refuses them without a session;
+* the timezone move does not shift any reporting boundary the business
+  cares about;
+* a payroll run for a real month reconciles against the register.
+
+Not claimed: that the application is free of further defects. This pass
+covered the authorization matrix, payroll and attendance calculation,
+holiday and half-day rules, transaction boundaries, media serving,
+configuration posture, the responsive shell and cache performance. It did
+not audit the eSSL integration beyond reading it, leave accrual across
+financial years, or the remaining accessibility gaps.

@@ -448,7 +448,7 @@
           <table class="table table-sm table-hover mb-0">
             <thead class="table-light">
               <tr>
-                <th style="width:32px;"><input type="checkbox" class="form-check-input" id="leaveSelectAll" onchange="toggleSelectAll('leave', this.checked)"></th>
+                <th style="width:32px;"><input type="checkbox" class="form-check-input" id="leaveSelectAll" aria-label="Select all leave requests" onchange="toggleSelectAll('leave', this.checked)"></th>
                 <th>Employee</th>
                 <th>Type</th>
                 <th>Dates</th>
@@ -459,7 +459,9 @@
             <tbody>
               {% for l in leave_requests %}
               <tr>
-                <td><input type="checkbox" class="form-check-input leave-check" value="{{ l.id }}" onchange="updateBulkSelection('leave')"></td>
+                <td><input type="checkbox" class="form-check-input leave-check" value="{{ l.id }}"
+                           aria-label="Select leave request from {{ l.employee.first_name }} {{ l.employee.last_name }}, {{ l.start_date|date:'d M' }} to {{ l.end_date|date:'d M' }}"
+                           onchange="updateBulkSelection('leave')"></td>
                 <td class="fw-medium">{{ l.employee.first_name }} {{ l.employee.last_name }}</td>
                 <td>{% if l.leave_type %}<span class="badge bg-label-primary">{{ l.get_leave_type_display }}</span>{% else %}—{% endif %}</td>
                 <td class="text-muted">{{ l.start_date|date:"d M" }} – {{ l.end_date|date:"d M" }}</td>
@@ -498,7 +500,7 @@
           <table class="table table-sm table-hover mb-0">
             <thead class="table-light">
               <tr>
-                <th style="width:32px;"><input type="checkbox" class="form-check-input" id="compoffSelectAll" onchange="toggleSelectAll('compoff', this.checked)"></th>
+                <th style="width:32px;"><input type="checkbox" class="form-check-input" id="compoffSelectAll" aria-label="Select all comp-off requests" onchange="toggleSelectAll('compoff', this.checked)"></th>
                 <th>Employee</th>
                 <th>From</th>
                 <th>To</th>
@@ -508,7 +510,9 @@
             <tbody>
               {% for c in compoff_requests %}
               <tr>
-                <td><input type="checkbox" class="form-check-input compoff-check" value="{{ c.id }}" onchange="updateBulkSelection('compoff')"></td>
+                <td><input type="checkbox" class="form-check-input compoff-check" value="{{ c.id }}"
+                           aria-label="Select comp-off request from {{ c.employee.first_name }} {{ c.employee.last_name }}, {{ c.from_date|date:'d M Y' }}"
+                           onchange="updateBulkSelection('compoff')"></td>
                 <td class="fw-medium">{{ c.employee.first_name }} {{ c.employee.last_name }}</td>
                 <td class="text-muted">{{ c.from_date|date:"d M Y" }}</td>
                 <td class="text-muted">{{ c.to_date|date:"d M Y" }}</td>
@@ -553,7 +557,7 @@
           <table class="table table-sm table-hover mb-0">
             <thead class="table-light">
               <tr>
-                <th style="width:32px;"><input type="checkbox" class="form-check-input" id="correctionSelectAll" onchange="toggleSelectAll('correction', this.checked)"></th>
+                <th style="width:32px;"><input type="checkbox" class="form-check-input" id="correctionSelectAll" aria-label="Select all attendance corrections" onchange="toggleSelectAll('correction', this.checked)"></th>
                 <th>Employee</th>
                 <th>Date</th>
                 <th>Old In/Out</th>
@@ -563,7 +567,9 @@
             <tbody>
               {% for req in correction_requests %}
               <tr>
-                <td><input type="checkbox" class="form-check-input correction-check" value="{{ req.id }}" onchange="updateBulkSelection('correction')"></td>
+                <td><input type="checkbox" class="form-check-input correction-check" value="{{ req.id }}"
+                           aria-label="Select correction for {{ req.attendance.employee.first_name }} on {{ req.attendance.date|date:'d M Y' }}"
+                           onchange="updateBulkSelection('correction')"></td>
                 <td class="fw-medium">{{ req.attendance.employee.first_name }}</td>
                 <td class="text-muted">{{ req.attendance.date|date:"d M Y" }}</td>
                 <td class="text-muted small">{{ req.attendance.in_time|default:"–" }} / {{ req.attendance.out_time|default:"–" }}</td>

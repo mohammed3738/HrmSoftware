@@ -53,7 +53,9 @@
             {% for cr in change_requests %}
             <tr>
               {% if bulk and status == "pending" %}
-              <td data-label="Select"><input type="checkbox" class="form-check-input request-box" name="ids" value="{{ cr.pk }}" form="bulkDecisionForm"></td>
+              <td data-label="Select"><input type="checkbox" class="form-check-input request-box" name="ids" value="{{ cr.pk }}"
+                     aria-label="Select change request for {{ cr.employee.first_name }} {{ cr.employee.last_name }}"
+                     form="bulkDecisionForm"></td>
               {% endif %}
               <td data-label="Employee">
                 <a href="{% url 'employee_detail' cr.employee.pk %}">{{ cr.employee.employee_code }}</a>

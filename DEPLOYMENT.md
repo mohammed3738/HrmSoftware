@@ -407,6 +407,18 @@ First disable the old site for this domain. Use the file name Step 1 printed fro
 sudo rm /etc/nginx/sites-enabled/OLD_FILE      # <-- the name from Step 1; this only removes the symlink, the file stays in sites-available
 ```
 
+The media location below is `internal`, so it pairs with one line in
+`hrms/.env`:
+
+```
+MEDIA_ACCEL_REDIRECT=/protected-media/
+```
+
+With that set, the document download views hand the file body to nginx
+instead of streaming it through gunicorn, while still doing the permission
+check first. Leaving the variable unset also works and is still safe --
+Django just serves the bytes itself, more slowly.
+
 Then create and enable the `hrms_prod` site:
 
 ```bash
@@ -424,7 +436,18 @@ server {
         access_log off;
     }
 
-    location /media/ {
+    # Uploaded files are employee documents: KYC scans (Aadhaar, PAN),
+    # offboarding letters, asset receipts, and the bulk-upload
+    # spreadsheets that carry the whole company's attendance and salary
+    # data. `internal` means nginx will NOT serve this location to a
+    # request from outside -- only to an X-Accel-Redirect issued by Django,
+    # which has already checked that this user may see that file.
+    #
+    # Do NOT change this back to a plain `location /media/`. That served
+    # every uploaded document to anyone who asked, with no login, which is
+    # the hole described in HRMS_QUALITY_TRACKER.md as D-23.
+    location /protected-media/ {
+        internal;
         alias /home/multihost/hrms_prod/hrms/media/;
     }
 

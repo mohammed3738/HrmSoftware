@@ -5,6 +5,7 @@ from django.urls import reverse
 from .forms import *
 from .utils.dates import day_in_month
 from django.http import HttpResponse, Http404
+from django.conf import settings
 # from .tasks import *
 # Create your views here.
 from django.utils.timezone import make_aware
@@ -3831,29 +3832,117 @@ _NEVER_INLINE_EXTENSIONS = frozenset({
 })
 
 
-def _serve_employee_file(request, field_file, employee):
-    """Stream an employee document to someone allowed to see that
-    employee's record. Opens in the browser; ?download=1 saves it.
+def _stream_protected_file(request, field_file):
+    """Stream a file from MEDIA_ROOT after the caller has already decided
+    the request is allowed. Never call this without a permission check in
+    front of it.
 
-    Types that would execute script in this origin are forced to download
-    whatever the caller asked for."""
-    if not can_access_employee_record(request.user, employee, "employee_records", "view"):
-        raise PermissionDenied
+    Opens in the browser; ?download=1 saves it. Types that would execute
+    script in this origin are forced to download whatever the caller asked
+    for (an uploaded .html or .svg otherwise runs with the viewer's
+    session, since nothing validates the type of an upload).
+
+    With MEDIA_ACCEL_REDIRECT set, the body is handed to nginx through
+    X-Accel-Redirect instead of being pushed through Python. That is what
+    makes it practical to take the public `location /media/` away: nginx
+    still serves the bytes, but only when this view says so. See
+    DEPLOYMENT.md.
+    """
     if not field_file:
         raise Http404("File not found")
+
+    name = os.path.basename(field_file.name)
+    executable_inline = os.path.splitext(name)[1].lower() in _NEVER_INLINE_EXTENSIONS
+    as_attachment = bool(request.GET.get("download")) or executable_inline
+
+    accel_prefix = getattr(settings, "MEDIA_ACCEL_REDIRECT", "")
+    if accel_prefix:
+        response = HttpResponse()
+        # nginx fills in the body, so Django must not set a length.
+        del response["Content-Type"]
+        response["X-Accel-Redirect"] = "%s%s" % (
+            accel_prefix.rstrip("/") + "/", field_file.name.lstrip("/"),
+        )
+        disposition = "attachment" if as_attachment else "inline"
+        response["Content-Disposition"] = '%s; filename="%s"' % (disposition, name)
+        response["X-Content-Type-Options"] = "nosniff"
+        return response
+
     try:
         file_handle = field_file.open("rb")
     except Exception:
         raise Http404("Unable to open file")
-    name = os.path.basename(field_file.name)
-    executable_inline = os.path.splitext(name)[1].lower() in _NEVER_INLINE_EXTENSIONS
-    response = FileResponse(
-        file_handle,
-        as_attachment=bool(request.GET.get("download")) or executable_inline,
-        filename=name,
-    )
+    response = FileResponse(file_handle, as_attachment=as_attachment, filename=name)
     response["X-Content-Type-Options"] = "nosniff"
     return response
+
+
+def _serve_employee_file(request, field_file, employee):
+    """Stream an employee document to someone allowed to see that
+    employee's record."""
+    if not can_access_employee_record(request.user, employee, "employee_records", "view"):
+        raise PermissionDenied
+    return _stream_protected_file(request, field_file)
+
+
+# Offboarding paperwork is gated by the offboarding feature rather than by
+# the employee's own record: these are HR documents about a leaver, and the
+# leaver has no login by the time they exist.
+_OFFBOARDING_DOCUMENT_FIELDS = (
+    "experience_certificate", "relieving_letter", "other_documents", "fnf_documents",
+)
+_ASSET_DOCUMENT_FIELDS = ("asset_photo", "receipt")
+
+
+@login_required
+@feature_required("offboarding", action="view")
+def download_offboarding_document(request, off_id, field):
+    """One of an Offboarding record's four document fields."""
+    if field not in _OFFBOARDING_DOCUMENT_FIELDS:
+        raise Http404("Unknown document")
+    offboarding = get_object_or_404(Offboarding, id=off_id)
+    return _stream_protected_file(request, getattr(offboarding, field))
+
+
+@login_required
+@feature_required("offboarding", action="view")
+def download_asset_document(request, asset_id, field):
+    """An AssetHandover photo or receipt."""
+    if field not in _ASSET_DOCUMENT_FIELDS:
+        raise Http404("Unknown document")
+    asset = get_object_or_404(AssetHandover, id=asset_id)
+    return _stream_protected_file(request, getattr(asset, field))
+
+
+@login_required
+def download_change_request_file(request, pk):
+    """A file attached to an EmployeeChangeRequest. Visible to whoever may
+    see that employee's record, and to the approvers who act on it."""
+    doc = get_object_or_404(
+        EmployeeChangeRequestFile.objects.select_related("change_request__employee"), pk=pk,
+    )
+    employee = doc.change_request.employee
+    if not can_access_employee_record(request.user, employee, "employee_records", "view"):
+        raise PermissionDenied
+    return _stream_protected_file(request, doc.file)
+
+
+def _offboarding_document_url(offboarding, field):
+    """The gated URL for one of an Offboarding record's documents, or None.
+
+    Deliberately not `FieldFile.url`: that is a raw /media/ path, which
+    nginx serves with no authentication at all (DEPLOYMENT.md). Handing
+    those out in a JSON response published them to anyone who received the
+    response, permanently."""
+    if not getattr(offboarding, field):
+        return None
+    return reverse("download-offboarding-document", args=[offboarding.id, field])
+
+
+def _asset_document_url(asset, field):
+    if not getattr(asset, field):
+        return None
+    return reverse("download-asset-document", args=[asset.id, field])
 
 
 @login_required
@@ -4056,8 +4145,8 @@ def offboarding_detail(request, off_id):
             "condition": a.condition_on_return,
             "remarks": a.remarks or "-",
             "returned": "Yes" if a.returned else "No",
-            "asset_photo": a.asset_photo.url if a.asset_photo else None,
-            "receipt": a.receipt.url if a.receipt else None,
+            "asset_photo": _asset_document_url(a, "asset_photo"),
+            "receipt": _asset_document_url(a, "receipt"),
         })
 
     notice_days = (off.date_of_relieving - off.date_of_resignation).days if off.date_of_resignation and off.date_of_relieving else None
@@ -4076,11 +4165,12 @@ def offboarding_detail(request, off_id):
         "relieving_date": off.date_of_relieving.strftime("%b %d, %Y") if off.date_of_relieving else "-",
         "notice_period_days": notice_days,
 
-        # Documents
-        "experience_certificate": off.experience_certificate.url if off.experience_certificate else None,
-        "relieving_letter": off.relieving_letter.url if off.relieving_letter else None,
-        "other_documents": off.other_documents.url if off.other_documents else None,
-        "fnf_documents": off.fnf_documents.url if off.fnf_documents else None,
+        # Documents. Gated URLs, never the raw /media/ path -- see
+        # _offboarding_document_url.
+        "experience_certificate": _offboarding_document_url(off, "experience_certificate"),
+        "relieving_letter": _offboarding_document_url(off, "relieving_letter"),
+        "other_documents": _offboarding_document_url(off, "other_documents"),
+        "fnf_documents": _offboarding_document_url(off, "fnf_documents"),
 
         # Assets
         "assets": asset_data
@@ -4104,19 +4194,19 @@ def offboarding_edit_data(request, id):
             # File info (name + url)
             "experience_certificate": {
                 "name": off.experience_certificate.name.split("/")[-1] if off.experience_certificate else "",
-                "url": off.experience_certificate.url if off.experience_certificate else ""
+                "url": _offboarding_document_url(off, "experience_certificate") or ""
             },
             "relieving_letter": {
                 "name": off.relieving_letter.name.split("/")[-1] if off.relieving_letter else "",
-                "url": off.relieving_letter.url if off.relieving_letter else ""
+                "url": _offboarding_document_url(off, "relieving_letter") or ""
             },
             "other_documents": {
                 "name": off.other_documents.name.split("/")[-1] if off.other_documents else "",
-                "url": off.other_documents.url if off.other_documents else ""
+                "url": _offboarding_document_url(off, "other_documents") or ""
             },
             "fnf_documents": {
                 "name": off.fnf_documents.name.split("/")[-1] if off.fnf_documents else "",
-                "url": off.fnf_documents.url if off.fnf_documents else ""
+                "url": _offboarding_document_url(off, "fnf_documents") or ""
             },
         },
 
@@ -4132,11 +4222,11 @@ def offboarding_edit_data(request, id):
                 # Asset files
                 "asset_photo": {
                     "name": a.asset_photo.name.split("/")[-1] if a.asset_photo else "",
-                    "url": a.asset_photo.url if a.asset_photo else ""
+                    "url": _asset_document_url(a, "asset_photo") or ""
                 },
                 "receipt": {
                     "name": a.receipt.name.split("/")[-1] if a.receipt else "",
-                    "url": a.receipt.url if a.receipt else ""
+                    "url": _asset_document_url(a, "receipt") or ""
                 },
             }
             for a in assets

@@ -22,6 +22,15 @@ urlpatterns = [
     path('employee-changes/<int:pk>/', views.employee_change_request_detail, name='employee_change_request_detail'),
     path('attachments/<int:pk>/download/', views.download_attachment, name='download_attachment'),
     path('previous-employment-documents/<int:pk>/download/', views.download_previous_attachment, name='download_previous_attachment'),
+    # Offboarding and change-request documents go through a permission
+    # check instead of their raw /media/ path, which nginx serves with no
+    # authentication at all (see DEPLOYMENT.md and HRMS_QUALITY_TRACKER.md D-23).
+    path('offboarding/<int:off_id>/document/<str:field>/',
+         views.download_offboarding_document, name='download-offboarding-document'),
+    path('offboarding/asset/<int:asset_id>/document/<str:field>/',
+         views.download_asset_document, name='download-asset-document'),
+    path('employee-changes/file/<int:pk>/download/',
+         views.download_change_request_file, name='download-change-request-file'),
     path('offboarding/', views.offboarding_list, name='offboarding-list'),
     path('offboarding/export-excel/', views.offboarding_export_excel, name='offboarding-export-excel'),
 

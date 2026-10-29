@@ -364,6 +364,21 @@ STATICFILES_DIRS = [
 MEDIA_URL = '/media/'  # URL for accessing media files
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')  # Directory to store uploaded files
 
+# Uploaded files are employee documents -- KYC scans, offboarding letters,
+# bulk-upload spreadsheets -- and nothing about them should be readable
+# without a permission check. They are served by the download views in
+# website/views.py, which check access before streaming.
+#
+# Set this to the nginx `internal;` location that aliases MEDIA_ROOT (e.g.
+# "/protected-media/") and those views hand the body to nginx through
+# X-Accel-Redirect instead of pushing it through Python. Left empty, Django
+# streams the file itself, which is correct but slower.
+#
+# This only does its job once the PUBLIC `location /media/` is removed from
+# the nginx config -- otherwise the same bytes stay reachable without
+# logging in. See DEPLOYMENT.md.
+MEDIA_ACCEL_REDIRECT = os.environ.get('MEDIA_ACCEL_REDIRECT', '')
+
 
 
 # Default primary key field type

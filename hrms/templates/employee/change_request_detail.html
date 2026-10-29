@@ -90,7 +90,7 @@
       {% endfor %}
       {% for f in prev_files %}
       <div class="mb-1 small"><span class="badge bg-label-success me-1">Upload</span>
-        <a href="{{ f.file.url }}" target="_blank">{{ f.document_name|default:"Document" }}</a> for {{ f.prev_label }}
+        <a href="{% url 'download-change-request-file' f.pk %}" target="_blank">{{ f.document_name|default:"Document" }}</a> for {{ f.prev_label }}
       </div>
       {% endfor %}
     </div>
@@ -104,7 +104,7 @@
       {% for f in kyc_files %}
       <div class="mb-1">
         <span class="badge {% if f.replaces_attachment_id %}bg-label-info{% else %}bg-label-success{% endif %} me-1">{% if f.replaces_attachment_id %}Replace{% else %}Upload{% endif %}</span>
-        {{ f.kind_label }} &middot; <a href="{{ f.file.url }}" target="_blank">view file</a>
+        {{ f.kind_label }} &middot; <a href="{% url 'download-change-request-file' f.pk %}" target="_blank">view file</a>
       </div>
       {% endfor %}
       {% for d in cr.documents_to_delete %}

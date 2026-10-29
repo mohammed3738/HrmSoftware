@@ -255,7 +255,7 @@
                         {{ f.asset_photo }}
                         {% if f.instance.pk and f.instance.asset_photo %}
                         <div class="small mt-1">
-                          <a href="{{ f.instance.asset_photo.url }}" target="_blank">View</a>
+                          <a href="{% url 'download-asset-document' f.instance.pk 'asset_photo' %}" target="_blank">View</a>
                         </div>
                         {% endif %}
                         {% for err in f.asset_photo.errors %}
@@ -266,7 +266,7 @@
                         {{ f.receipt }}
                         {% if f.instance.pk and f.instance.receipt %}
                         <div class="small mt-1">
-                          <a href="{{ f.instance.receipt.url }}" target="_blank">View</a>
+                          <a href="{% url 'download-asset-document' f.instance.pk 'receipt' %}" target="_blank">View</a>
                         </div>
                         {% endif %}
                         {% for err in f.receipt.errors %}

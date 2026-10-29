@@ -224,22 +224,34 @@ from `HEAD`: **18 failures + 20 errors**, each mapping to a documented
 defect. Against the fixed code: **64 pass**. So the tests demonstrably
 catch what they claim to.
 
+### Second pass (same day, after the first report)
+
+| Commit | Group | Tests added |
+|---|---|---|
+| `0204315` | D-23 uploaded documents behind a permission check, X-Accel-Redirect support, nginx config in DEPLOYMENT.md | `test_protected_media.py` (13) |
+| `3c96b3b` | D-13 `esic_threshold` as a real field (migration 0055), D-16 advance EMI ordering + `revert_skip` zero guard, D-18 partial-batch reporting | `test_advance_and_payroll_edge_cases.py` (9) |
+| `be21f63` | D-08 `DEBUG`/`SECRET_KEY`/`ALLOWED_HOSTS` fail safe, D-09 `TIME_ZONE` to Asia/Kolkata | — (config; 139 time-sensitive tests re-run) |
+| `8fffe26` | D-25/D-26 error handling in the holiday-calendar family | `test_error_reporting.py` (6) |
+| `e94faf2` | D-28 accessible names on bulk-action tables | `test_bulk_table_accessibility.py` (2) |
+
 ### Fixed in this pass
 
-D-01a/b/c/d/e, D-02a/b, D-03, D-04, D-07, D-12, D-17, D-19, D-21, D-22,
-D-24 (partially — see D-23), D-27, D-29, D-30, D-31.
+First pass: D-01a/b/c/d/e, D-02a/b, D-03, D-04, D-07, D-12, D-17, D-19,
+D-21, D-22, D-24, D-27, D-29, D-30, D-31.
+
+Second pass: D-08, D-09, D-13, D-16, D-18, D-23 (application half),
+D-25/D-26 (holiday-calendar family), D-28 (bulk-action tables).
 
 ### Disclosed, deliberately not changed
 
 | ID | Why |
 |---|---|
-| D-23 | The real fix is a deployment change (serve `/media/` through the gated view, or nginx `internal;` + `X-Accel-Redirect`), which is the user's production decision. Randomising the other 13 upload paths the way `employee_photo_path` already does would be obscurity, not authorization, and would turn the filename shown in the offboarding edit modal into a hex string. **This is the single most important item for the user to act on.** |
+| D-23 (deployment half) | The application no longer hands out a single `/media/` path and every document has a checked route in, but **the public `location /media/` block has to be removed on the server** before the old paths stop working. `DEPLOYMENT.md` now configures `internal;` + `X-Accel-Redirect` instead. Code cannot make a web server forget a directory. |
 | D-14 | Changing a statutory rate is a payroll-policy decision, not a bug fix. |
-| D-06 | Dead code, not routed. Deleting `test()` and `tasks.test_func` is tidy-up, not a fix. |
-| D-08, D-09, D-10, D-11 | Deployment/configuration posture. Changing `DEBUG`'s default or the timezone affects every environment and needs the user's agreement — see "Next actions". |
-| D-05, D-25, D-26, D-28 | Breadth without depth: 36 `str(e)` sites, 14 bare excepts, ~200 unlabelled controls. Each is small; together they are a separate, mechanical pass. |
-
----
+| D-15 | Payroll deducts an advance EMI but never records it, so `outstanding_amount` never falls. Two plausible designs — record on finalize, or leave it to the existing manual payment screen — and choosing one silently risks double-counting against the other. |
+| D-06 | Dead code, not routed. |
+| D-10, D-11 | Login throttling and the `is_staff` bypass: both are deliberate-looking design choices worth a conversation, not unilateral change. |
+| D-05, D-25/D-26 (rest), D-28 (rest) | Breadth without depth: 26 remaining `str(e)` sites, 8 bare excepts, and the employee-list / holiday-calendar form controls. The same mechanical change, but each needs its own reading of what the expected failures are. |
 
 ## 5. Calculations verified
 

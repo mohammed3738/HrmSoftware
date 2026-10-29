@@ -196,6 +196,23 @@ class ProtectedMediaTest(TestCase):
         )
         self.assertEqual(resp.status_code, 403)
 
+    # ── the page that renders those links ────────────────────────────────
+
+    def test_the_offboarding_page_renders_and_leaks_no_media_path(self):
+        """The asset rows build their link with {% url %} and a pk, while
+        the formset renders blank extra rows whose instance has no pk --
+        and {% url %} with None raises NoReverseMatch. The surrounding
+        `{% if f.instance.pk %}` guard is what keeps that from being a 500,
+        so it is load-bearing and worth a test: this page had none.
+
+        The saved asset's own link is not asserted here because the list
+        page renders an empty formset for a *new* offboarding record; the
+        links for an existing one are built by JavaScript from
+        offboarding-edit-data, which is covered above."""
+        resp = self._as(self.hr_user).get(reverse("offboarding-list"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("/media/offboarding/", resp.content.decode())
+
     @override_settings(MEDIA_ACCEL_REDIRECT="/protected-media/")
     def test_accel_redirect_forces_download_for_executable_types(self):
         self.offboarding.other_documents = SimpleUploadedFile(

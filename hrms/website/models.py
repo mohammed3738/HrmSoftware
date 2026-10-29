@@ -3,6 +3,7 @@ from django.db import models
 from django.utils.timezone import now
 import datetime
 from django.core.validators import MinValueValidator, MaxValueValidator
+from .utils.dates import day_in_month
 from datetime import date, timedelta
 from django.conf import settings
 import datetime
@@ -1006,7 +1007,8 @@ class PayrollSettings(models.Model):
                     end_month = 1
                     end_year += 1
 
-            return date(start_year, start_month, from_day), date(end_year, end_month, to_day)
+            return (day_in_month(start_year, start_month, from_day),
+                    day_in_month(end_year, end_month, to_day))
 
         # Fallback: calendar month
         first_day = today.replace(day=1)
@@ -1829,14 +1831,23 @@ class Attendance(models.Model):
         return None
 
     def get_half_day_scenario(self, branch):
-        '''Get half-day scenario for this branch on this date'''
-        scenario = _rule_lookup(("half-day", branch.pk, self.date), lambda: HalfDayScenario.objects.filter(
-            branch=branch,
+        '''The half-day scenario in force for this employee on this date.
+
+        A scenario stored with branch=NULL is the "All Branches" option on
+        the holiday calendar (see add_half_day_scenario, and the two partial
+        unique constraints on HalfDayScenario that treat NULL as its own
+        scope), so it applies to everybody -- including an employee who has
+        no branch of their own. Matching only `branch=branch` meant an
+        all-branches scenario reached nobody at all.
+
+        A scenario for this specific branch wins over an all-branches one on
+        the same day; `branch` sorts non-NULL first with nulls_last.'''
+        branch_pk = branch.pk if branch is not None else None
+        return _rule_lookup(("half-day", branch_pk, self.date), lambda: HalfDayScenario.objects.filter(
+            models.Q(branch=branch) | models.Q(branch__isnull=True),
             scenario_date=self.date,
-            is_approved=True
-        ).first())
-        
-        return scenario
+            is_approved=True,
+        ).order_by(models.F("branch").asc(nulls_last=True)).first())
     
     def calculate_status(self):
             """
@@ -1875,29 +1886,34 @@ class Attendance(models.Model):
                 self.late = 0
                 return
             
-            # Get employee's branch
+            # Get employee's branch. It is nullable, and both lookups below
+            # handle None deliberately -- an all-branches half-day scenario
+            # (branch=NULL) and a national holiday
+            # (is_applicable_to_branch returns True regardless) apply to an
+            # employee with no branch just as much as to anyone else. These
+            # two steps used to sit inside `if branch:`, so a branchless
+            # employee was credited Absent on a national holiday.
             branch = self.employee.branch
-            
-            # STEP 1: Check for half-day scenario (branch-specific)
-            if branch:
-                half_day = self.get_half_day_scenario(branch)
-                if half_day:
-                    self.is_half_day = True
-                    self.half_day_scenario = half_day
-                    self.status = "Present (Half-Day)"
-                    self.count = half_day.credit_count
-                    self.late = 0
-                    return
-                
-                # STEP 2: Check for holiday (branch-specific!)
-                holiday = self.get_applicable_holiday(branch)
-                if holiday:
-                    self.is_holiday = True
-                    self.holiday = holiday
-                    self.status = "Holiday"
-                    self.count = Decimal("1.00")
-                    self.late = 0
-                    return
+
+            # STEP 1: Check for half-day scenario (this branch, or all branches)
+            half_day = self.get_half_day_scenario(branch)
+            if half_day:
+                self.is_half_day = True
+                self.half_day_scenario = half_day
+                self.status = "Present (Half-Day)"
+                self.count = half_day.credit_count
+                self.late = 0
+                return
+
+            # STEP 2: Check for holiday (branch-aware)
+            holiday = self.get_applicable_holiday(branch)
+            if holiday:
+                self.is_holiday = True
+                self.holiday = holiday
+                self.status = "Holiday"
+                self.count = Decimal("1.00")
+                self.late = 0
+                return
             
             # STEP 3: Normal attendance calculation (EXISTING CODE - DON'T CHANGE)
             # If no in_time or out_time, mark as Absent. Also treat

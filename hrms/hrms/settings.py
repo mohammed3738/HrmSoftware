@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
@@ -381,9 +382,37 @@ CACHES = {
         "LOCATION": os.environ.get('REDIS_CACHE_URL', "redis://127.0.0.1:6379/1"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            # Without these, a Redis that is down costs ~2 seconds per cache
+            # call while the TCP connect times out. Attendance.save() fires a
+            # leave-balance recalculation that reaches the cache twice, so a
+            # single attendance row took ~4 seconds of pure connect timeout
+            # (measured: 4.04s of a 4.1s save, against 0.018s of actual SQL).
+            # Failing fast turns a Redis outage into "no cache" instead of an
+            # application-wide stall.
+            "SOCKET_CONNECT_TIMEOUT": 0.2,
+            "SOCKET_TIMEOUT": 1,
+            # Callers already treat a cache miss as normal (see
+            # get_all_payroll_periods_from_attendance), so a connection error
+            # should look like a miss rather than propagate.
+            "IGNORE_EXCEPTIONS": True,
         }
     }
 }
+
+DJANGO_REDIS_IGNORE_EXCEPTIONS = True
+
+# The test suite has no Redis to talk to and does not want one: every cached
+# call would otherwise pay the connect timeout above. Local memory gives the
+# same cache semantics in-process, and keeps a test run from depending on a
+# service being up. (Django does not expose a "running tests" flag before the
+# runner starts, so this reads argv, which is the usual idiom.)
+if 'test' in sys.argv:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "hrms-test-cache",
+        }
+    }
 
 
 LOGIN_URL = "login"

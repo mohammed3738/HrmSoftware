@@ -955,6 +955,13 @@ class PayrollSettings(models.Model):
     esic_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=3.67)
     gratuity_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=4.61)
     professional_tax = models.DecimalField(max_digits=10, decimal_places=2, default=200.00)
+    esic_threshold = models.DecimalField(
+        max_digits=10, decimal_places=2, default=Decimal("21000.00"),
+        verbose_name="ESIC wage ceiling",
+        help_text="Gross pay at or below which ESIC is deducted. Above it, no "
+                  "ESIC. The default matches the figure the calculation used "
+                  "before this became a field.",
+    )
     bonus_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=8.33)
 
     basic_percentage = models.FloatField(default=50.0)

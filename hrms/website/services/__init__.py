@@ -163,6 +163,13 @@ def revert_skip(advance: AdvanceMaster, due_month: date):
     remaining_count = pending.count()
     outstanding = advance.outstanding_amount
 
+    if not remaining_count:
+        # Nothing left to spread the balance over -- reverting the skip of
+        # the only remaining month, with every other month already paid.
+        # Dividing here raised ZeroDivisionError and lost the revert.
+        advance.save()
+        return advance
+
     base = outstanding // remaining_count
     remainder = outstanding % remaining_count
 
@@ -263,11 +270,17 @@ def get_attendance_summary(employee, start_date, end_date, payroll_settings=None
 
 
 def get_advance_for_employee_month(employee, start_date, end_date):
+    """The EMI falling due inside this payroll period, if any.
+
+    Ordered: .first() on an unordered queryset returns an arbitrary row, so
+    an employee with two advances running at once had whichever EMI the
+    database felt like deducted from their pay, and not necessarily the
+    same one on a recalculation. Oldest due month first, then by id."""
     emi = AdvanceSchedule.objects.filter(
         advance__employee=employee,
         due_month__range=[start_date, end_date],
         status=AdvanceSchedule.STATUS_PENDING
-    ).first()
+    ).order_by("due_month", "pk").first()
     if emi:
         return money_int(emi.scheduled_amount)
     return money_int(0)
@@ -496,7 +509,11 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
     esic_emp = Decimal(0)
     if record.opted_for_esic:
         esic_percentage = Decimal(getattr(payroll_settings, "esic_percentage", 0) or 0)
-        esic_threshold = Decimal(getattr(payroll_settings, "esic_threshold", 21000))
+        # Was getattr(payroll_settings, "esic_threshold", 21000) against a
+        # field PayrollSettings never had, so the default was the only value
+        # this could ever take while reading as though it were configurable.
+        # It is a real field now, defaulting to the same 21000.
+        esic_threshold = Decimal(str(getattr(payroll_settings, "esic_threshold", None) or 21000))
         if gross_proc <= esic_threshold:
             esic_emp = money_int(gross_proc * (esic_percentage / Decimal(100)))
 

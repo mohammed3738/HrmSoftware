@@ -9579,7 +9579,7 @@ def payroll_run_create(request):
             return render(request, "payroll/run_create.html", {"companies": companies})
 
         if company_id == "all":
-            created, skipped, blocked = [], [], []
+            created, skipped, blocked, failed = [], [], [], []
             for company in companies:
                 ps = PayrollSettings.objects.filter(company=company).first()
                 month_start, month_end = _compute_payroll_dates(ps, year, m)
@@ -9590,10 +9590,29 @@ def payroll_run_create(request):
                 if pending:
                     blocked.append(pending_approvals_message(company, month_start, month_end, pending))
                     continue
-                create_payroll_run(company, month_start, month_end)
+                # create_payroll_run is atomic per company, so a company that
+                # fails leaves no half-built run of its own. What was missing
+                # was saying so: the exception propagated as a 500 and the
+                # companies already created went unreported, so the operator
+                # had no idea which half of the batch had happened.
+                try:
+                    create_payroll_run(company, month_start, month_end)
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Payroll run creation failed for %s", company)
+                    failed.append(company.name)
+                    continue
                 created.append(company.name)
             for message in blocked:
                 messages.error(request, message)
+            if failed:
+                messages.error(
+                    request,
+                    f"Payroll run could not be created for {len(failed)} "
+                    f"compan{'y' if len(failed) == 1 else 'ies'}: {', '.join(failed)}. "
+                    f"The others below were created; re-run for these once the "
+                    f"cause is fixed."
+                )
 
             if created:
                 messages.success(
@@ -9607,7 +9626,7 @@ def payroll_run_create(request):
                     f"Skipped {len(skipped)} compan{'y' if len(skipped) == 1 else 'ies'} that already had a run "
                     f"for this period: {', '.join(skipped)}."
                 )
-            if not created and not skipped and not blocked:
+            if not created and not skipped and not blocked and not failed:
                 messages.error(request, "No active companies found.")
             return redirect("payroll-run-list")
 

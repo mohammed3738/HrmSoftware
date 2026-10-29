@@ -3,6 +3,7 @@ from urllib import request
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 from .forms import *
+from .utils.dates import day_in_month
 from django.http import HttpResponse, Http404
 # from .tasks import *
 # Create your views here.
@@ -111,6 +112,29 @@ def company_details_api(request, pk):
     }
 
     return JsonResponse(data)
+
+
+# json.dumps escapes quotes and backslashes but not "<", and an HTML parser
+# ends a <script> element at the first "</script" whatever the JavaScript
+# quoting around it. So a holiday called "</script><img src=x onerror=...>"
+# serialized into an inline script body closes the tag and the rest of the
+# page is parsed as markup -- stored XSS against everyone who later opens
+# that page. Escaping "<", ">" and "&" as \uXXXX is exactly what Django's
+# own json_script filter does, and it is value-preserving: a \u003C
+# escape inside a JavaScript string literal *is* the character "<".
+_JSON_SCRIPT_ESCAPES = {
+    ord("<"): "\\u003C",
+    ord(">"): "\\u003E",
+    ord("&"): "\\u0026",
+}
+
+
+def json_for_script(value):
+    """json.dumps() safe to interpolate straight into a <script> body.
+
+    Use this, never a bare json.dumps(), for anything reaching a template
+    through |safe inside <script>...</script>."""
+    return json.dumps(value).translate(_JSON_SCRIPT_ESCAPES)
 
 
 def _can_assign_roles(user):
@@ -1346,6 +1370,7 @@ def delete_shift_assignment(request, pk):
 
 
 @login_required
+@feature_required("shift_roster", action="view")
 def api_get_shift_assignment(request, pk):
     assignment = get_object_or_404(
         ShiftAssignment.objects.select_related("employee", "created_by"), id=pk
@@ -1672,7 +1697,7 @@ def employee_attendance_detail(request, employee_id):
         "leaves_taken": leaves_taken,
         "calendar_start": calendar_start,
         "calendar_end": calendar_end,
-        "calendar_attendance_json": json.dumps(calendar_attendance),
+        "calendar_attendance_json": json_for_script(calendar_attendance),
         "page_size": page_size,
         "page_size_choices": PAGE_SIZE_CHOICES,
     }
@@ -3794,9 +3819,24 @@ def _team_panel_for(approver, today):
         "correction_requests": pending_corrections,
     }
 
+# Extensions a browser will execute in the page's own origin if it is
+# allowed to render them inline. Nothing validates the type of an uploaded
+# KYC or offboarding document (see HRMS_QUALITY_TRACKER.md D-24), so an
+# .html or .svg attachment served inline from this app's own domain runs
+# with the viewer's session. These always download instead of rendering;
+# PDFs and images still preview, which is what the "view file" links want.
+_NEVER_INLINE_EXTENSIONS = frozenset({
+    ".html", ".htm", ".xhtml", ".shtml", ".xml", ".svg", ".svgz",
+    ".js", ".mjs", ".mhtml", ".mht",
+})
+
+
 def _serve_employee_file(request, field_file, employee):
     """Stream an employee document to someone allowed to see that
-    employee's record. Opens in the browser; ?download=1 saves it."""
+    employee's record. Opens in the browser; ?download=1 saves it.
+
+    Types that would execute script in this origin are forced to download
+    whatever the caller asked for."""
     if not can_access_employee_record(request.user, employee, "employee_records", "view"):
         raise PermissionDenied
     if not field_file:
@@ -3805,10 +3845,15 @@ def _serve_employee_file(request, field_file, employee):
         file_handle = field_file.open("rb")
     except Exception:
         raise Http404("Unable to open file")
-    return FileResponse(
-        file_handle, as_attachment=bool(request.GET.get("download")),
-        filename=os.path.basename(field_file.name),
+    name = os.path.basename(field_file.name)
+    executable_inline = os.path.splitext(name)[1].lower() in _NEVER_INLINE_EXTENSIONS
+    response = FileResponse(
+        file_handle,
+        as_attachment=bool(request.GET.get("download")) or executable_inline,
+        filename=name,
     )
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @login_required
@@ -3996,6 +4041,7 @@ def offboarding_export_excel(request):
 
 
 @login_required
+@feature_required("offboarding", action="view")
 def offboarding_detail(request, off_id):
     """Return JSON data for view modal"""
     off = get_object_or_404(Offboarding, id=off_id)
@@ -4043,6 +4089,7 @@ def offboarding_detail(request, off_id):
     return JsonResponse(data)
 
 @login_required
+@feature_required("offboarding", action="view")
 def offboarding_edit_data(request, id):
     """Return JSON data for edit modal"""
     off = get_object_or_404(Offboarding, id=id)
@@ -4401,6 +4448,7 @@ def upload_branch_excel(request):
 
 
 @login_required
+@feature_required("branch_management", action="edit")
 def edit_branch(request, branch_id):
     branch = get_object_or_404(Branch, id=branch_id)
 
@@ -4417,6 +4465,7 @@ def edit_branch(request, branch_id):
 
 
 @login_required
+@feature_required("branch_management", action="view")
 def get_branch(request, branch_id):
     branch = Branch.objects.get(id=branch_id)
     return JsonResponse({
@@ -4810,8 +4859,16 @@ def delete_company(request, company_id):
 
 @login_required
 def employee_leave_history(request, employee_id):
-    """Return HTML for the employee’s month-by-month leave history."""
-    history = LeaveBalanceHistory.objects.filter(employee_id=employee_id).order_by("-recorded_on")
+    """Return HTML for the employee’s month-by-month leave history.
+
+    Ordered by "-month": LeaveBalanceHistory has no "recorded_on" field, so
+    the old ordering raised FieldError and the endpoint had no working path.
+    `month` is the first-of-month date each snapshot is keyed on, which is
+    what the model’s own Meta.ordering sorts on."""
+    employee = get_object_or_404(Employee, pk=employee_id)
+    if not can_access_employee_record(request.user, employee, "leave_management", "view"):
+        raise PermissionDenied
+    history = LeaveBalanceHistory.objects.filter(employee=employee).order_by("-month")
     html = render_to_string("leave_balance/_leave_history_table.html", {"history": history})
     return JsonResponse({"html": html})
 
@@ -4946,34 +5003,34 @@ def get_payroll_period_for_date(payroll_settings, target_date):
         if from_day <= to_day:
             # Same-month period (e.g. 1 → 31)
             if target_date.day >= from_day:
-                from_d = date(target_date.year, target_date.month, from_day)
-                to_d = date(target_date.year, target_date.month, to_day)
+                from_d = day_in_month(target_date.year, target_date.month, from_day)
+                to_d = day_in_month(target_date.year, target_date.month, to_day)
             else:
                 prev_month = target_date.month - 1
                 prev_year = target_date.year
                 if prev_month == 0:
                     prev_month = 12
                     prev_year -= 1
-                from_d = date(prev_year, prev_month, from_day)
-                to_d = date(prev_year, prev_month, to_day)
+                from_d = day_in_month(prev_year, prev_month, from_day)
+                to_d = day_in_month(prev_year, prev_month, to_day)
         else:
             # Cross-month period (e.g. 27 → 26)
             if target_date.day >= from_day:
-                from_d = date(target_date.year, target_date.month, from_day)
+                from_d = day_in_month(target_date.year, target_date.month, from_day)
                 next_month = target_date.month + 1
                 next_year = target_date.year
                 if next_month > 12:
                     next_month = 1
                     next_year += 1
-                to_d = date(next_year, next_month, to_day)
+                to_d = day_in_month(next_year, next_month, to_day)
             else:
                 prev_month = target_date.month - 1
                 prev_year = target_date.year
                 if prev_month == 0:
                     prev_month = 12
                     prev_year -= 1
-                from_d = date(prev_year, prev_month, from_day)
-                to_d = date(target_date.year, target_date.month, to_day)
+                from_d = day_in_month(prev_year, prev_month, from_day)
+                to_d = day_in_month(target_date.year, target_date.month, to_day)
         return from_d, to_d
 
     # Fallback: calendar month (is_auto behaviour)
@@ -9398,14 +9455,14 @@ def _compute_payroll_dates(ps, year, m):
         from_day, to_day = ps.from_date, ps.to_date
         if from_day <= to_day:
             # Same-month cycle (e.g. 1 → 30)
-            month_start = date(year, m, from_day)
-            month_end = date(year, m, to_day)
+            month_start = day_in_month(year, m, from_day)
+            month_end = day_in_month(year, m, to_day)
         else:
             # Cross-month cycle (e.g. 27 → 26): month m is the ending month
-            month_end = date(year, m, to_day)
+            month_end = day_in_month(year, m, to_day)
             prev_m = m - 1 if m > 1 else 12
             prev_y = year if m > 1 else year - 1
-            month_start = date(prev_y, prev_m, from_day)
+            month_start = day_in_month(prev_y, prev_m, from_day)
     else:
         # Calendar month fallback
         month_start = date(year, m, 1)
@@ -9640,10 +9697,15 @@ def payroll_run_finalize(request, run_id):
                              "error": pending_approvals_message(run.company, run.start_date, run.end_date, pending)},
                             status=400)
     record_count = run.records.count()
-    for rec in run.records.all():
-        recalc_and_save_record(rec, manual_overrides=rec.manual_override or {})
-    run.status = PayrollRun.STATUS_FINALIZED
-    run.save()
+    # One transaction for the whole run: recalculating every record and
+    # then marking the run finalized is a single operation on pay data.
+    # Without this, a failure on one employee left the records before it
+    # rewritten, the records after it stale, and the run still in draft.
+    with transaction.atomic():
+        for rec in run.records.all():
+            recalc_and_save_record(rec, manual_overrides=rec.manual_override or {})
+        run.status = PayrollRun.STATUS_FINALIZED
+        run.save()
 
     log_audit(request.user, AuditLog.Action.PAYROLL_FINALIZED, run, company=run.company,
                summary=f"Finalized payroll for {run.month:%b %Y} ({run.company}) — {record_count} record(s)")
@@ -10341,7 +10403,7 @@ def holiday_calendar_dashboard(request):
     # ----------------------------------------------------
     # 5️⃣ Holidays JSON for calendar UI
     # ----------------------------------------------------
-    holidays_json = json.dumps([
+    holidays_json = json_for_script([
         {
             'id': h.id,
             'holiday_date': h.holiday_date.isoformat(),
@@ -10389,7 +10451,7 @@ def holiday_calendar_dashboard(request):
         all_half_day_scenarios = all_half_day_scenarios.filter(is_active=False)
 
     active_half_day_scenarios = HalfDayScenario.objects.filter(is_active=True)
-    half_day_json = json.dumps([
+    half_day_json = json_for_script([
         {
             'id': s.id,
             'scenario_date': s.scenario_date.isoformat(),
@@ -10464,6 +10526,7 @@ def holiday_calendar_dashboard(request):
 
 
 @login_required
+@feature_required("holiday_calendar", action="edit")
 @require_http_methods(["POST"])
 def save_holiday_settings(request):
     try:
@@ -10831,6 +10894,7 @@ def earned_leaves_config(request):
 
 
 @login_required
+@feature_required("holiday_calendar", action="edit")
 @require_http_methods(["POST"])
 def edit_earned_leave(request, leave_id):
     """
@@ -10969,6 +11033,7 @@ def api_earned_leaves(request):
 
 
 @login_required
+@feature_required("holiday_calendar", action="edit")
 @require_http_methods(["GET", "POST"])
 def add_half_day_scenario(request):
     if request.method == 'POST':
@@ -11026,6 +11091,7 @@ def add_half_day_scenario(request):
 
 
 @login_required
+@feature_required("holiday_calendar", action="edit")
 @require_http_methods(["POST"])
 def edit_half_day_scenario(request, scenario_id):
     scenario = get_object_or_404(HalfDayScenario, id=scenario_id)

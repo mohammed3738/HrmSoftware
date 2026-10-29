@@ -194,7 +194,7 @@ def money_int(v):
     return Decimal(v or 0).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
 
-def get_attendance_summary(employee, start_date, end_date):
+def get_attendance_summary(employee, start_date, end_date, payroll_settings=None):
     """date_of_joining awareness: Total Days is always the FULL payroll
     period (e.g. 31 for a calendar month), never shrunk to the employment
     window -- standard pro-rata salary math divides the monthly component
@@ -221,7 +221,8 @@ def get_attendance_summary(employee, start_date, end_date):
         effective_from_date = employee.date_of_joining
     pre_joining_gap_days = (effective_from_date - start_date).days
 
-    payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
+    if payroll_settings is None:
+        payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
     sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
     weekend_exclude = [1] if sunday_only else [1, 7]
 
@@ -285,7 +286,7 @@ def create_payroll_run(company, month_start, month_end, create_records=True):
     return run
 
 
-def _build_record_snapshot(emp, salary, run):
+def _build_record_snapshot(emp, salary, run, payroll_settings=None):
     """Everything a PayrollRecord pulls from source data (employee master,
     salary master, attendance, leave balance, advance schedule) as of right
     now for this run's period. Shared by generate_records_for_month (first
@@ -296,7 +297,7 @@ def _build_record_snapshot(emp, salary, run):
     # having to defer to the other -- deferring to a LeaveBalance row is
     # fragile when that row was created by a different path (e.g. a bare
     # LWP-only override) and never had its day-count fields populated.
-    att = get_attendance_summary(emp, run.start_date, run.end_date)
+    att = get_attendance_summary(emp, run.start_date, run.end_date, payroll_settings)
     advance_amt = get_advance_for_employee_month(emp, run.start_date, run.end_date)
 
     # Get LeaveBalance for this specific payroll period
@@ -344,16 +345,47 @@ def _build_record_snapshot(emp, salary, run):
     }
 
 
+def _run_lookups(run):
+    """The things every record in a run needs that are the same for all of
+    them, read once instead of once per employee: the company's payroll
+    settings, and each employee's active salary structure.
+
+    Generating a run used to cost 15.5 queries per employee, of which 4
+    were these repeats (2x PayrollSettings, 1x SalaryMaster, and the
+    company/branch rows pulled in lazily by the snapshot)."""
+    payroll_settings = PayrollSettings.objects.filter(company=run.company).first()
+    salaries = {}
+    # setdefault keeps the lowest-pk row per employee, which is what the
+    # per-employee .first() on an unordered queryset returned in practice.
+    # An employee with more than one active SalaryMaster is a data problem
+    # either way; this at least makes the choice deterministic.
+    for salary in SalaryMaster.objects.filter(
+        employee__company=run.company, is_active=True
+    ).order_by("pk"):
+        salaries.setdefault(salary.employee_id, salary)
+    return payroll_settings, salaries
+
+
+def _run_employees(run):
+    """Active employees of the run's company, with the company and branch
+    rows the snapshot reads already joined in."""
+    return Employee.objects.filter(
+        company=run.company, status="Active"
+    ).select_related("company", "branch")
+
+
 def generate_records_for_month(run: PayrollRun):
-    employees = Employee.objects.filter(company=run.company, status="Active")
-    for emp in employees:
+    payroll_settings, salaries = _run_lookups(run)
+    for emp in _run_employees(run):
         if emp.date_of_joining and emp.date_of_joining > run.end_date:
             continue  # not yet employed during this run's period
-        salary = SalaryMaster.objects.filter(employee=emp, is_active=True).first()
+        salary = salaries.get(emp.id)
         if not salary:
             continue
-        rec = PayrollRecord.objects.create(payroll=run, employee=emp, **_build_record_snapshot(emp, salary, run))
-        recalc_and_save_record(rec, manual_overrides={})
+        rec = PayrollRecord.objects.create(
+            payroll=run, employee=emp,
+            **_build_record_snapshot(emp, salary, run, payroll_settings))
+        recalc_and_save_record(rec, manual_overrides={}, payroll_settings=payroll_settings)
 
 
 @transaction.atomic
@@ -383,19 +415,19 @@ def recalculate_payroll_run(run: PayrollRun):
     active_employee_ids = set()
     refreshed = added = deleted = 0
 
-    employees = Employee.objects.filter(company=run.company, status="Active")
-    for emp in employees:
+    payroll_settings, salaries = _run_lookups(run)
+    for emp in _run_employees(run):
         if emp.date_of_joining and emp.date_of_joining > run.end_date:
             stale = existing.get(emp.id)
             if stale is not None:
                 stale.delete()
                 deleted += 1
             continue  # not yet employed during this run's period
-        salary = SalaryMaster.objects.filter(employee=emp, is_active=True).first()
+        salary = salaries.get(emp.id)
         if not salary:
             continue
         active_employee_ids.add(emp.id)
-        snapshot = _build_record_snapshot(emp, salary, run)
+        snapshot = _build_record_snapshot(emp, salary, run, payroll_settings)
 
         rec = existing.get(emp.id)
         if rec is None:
@@ -411,7 +443,7 @@ def recalculate_payroll_run(run: PayrollRun):
             setattr(rec, field, value)
         rec.save()
 
-        recalc_and_save_record(rec, manual_overrides=manual)
+        recalc_and_save_record(rec, manual_overrides=manual, payroll_settings=payroll_settings)
 
     skipped = sum(1 for emp_id in existing if emp_id not in active_employee_ids) - deleted
     return {"refreshed": refreshed, "added": added, "skipped": skipped, "deleted": deleted}
@@ -518,9 +550,12 @@ def calculate_and_populate_record(record: PayrollRecord, payroll_run: PayrollRun
 
 
 @transaction.atomic
-def recalc_and_save_record(record: PayrollRecord, manual_overrides: dict = None):
+def recalc_and_save_record(record: PayrollRecord, manual_overrides: dict = None,
+                           payroll_settings: PayrollSettings = None):
     run = record.payroll
-    settings = PayrollSettings.objects.filter(company=run.company).first()
+    settings = payroll_settings
+    if settings is None:
+        settings = PayrollSettings.objects.filter(company=run.company).first()
     record.leave_without_pay = money_d(max(Decimal(0), record.leave_without_pay))
     result = calculate_and_populate_record(record, run, settings, manual_overrides)
     for field in [

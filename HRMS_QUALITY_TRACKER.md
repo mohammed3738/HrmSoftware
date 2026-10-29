@@ -24,22 +24,24 @@ SQLite test DB file.
 
 ---
 
-### Final suite run
+### Suite runs
 
-Whole suite, after every change in this pass:
+Every run is the whole suite, `DB_ENGINE=sqlite python manage.py test website`.
 
-| | Baseline (`09ce8e2`) | Final (`03bc12c`) |
-|---|---|---|
-| Tests | 731 | **798** (+67) |
-| Result | OK | **OK** |
-| Failures / errors | 0 / 0 | **0 / 0** |
-| Skipped | 1 | 1 |
-| Wall clock | 2493.1s (41.6 min) | **1486.6s (24.8 min)** |
-| Per test | 3.41s | **1.86s** |
+| Tree | Tests | Result | Failures / errors | Wall clock | Per test |
+|---|---|---|---|---|---|
+| `09ce8e2` baseline, before any change | 731 | OK (1 skipped) | 0 / 0 | 2493.1s (41.6 min) | 3.41s |
+| `385ebf0` after pass 1 | 798 | OK (1 skipped) | 0 / 0 | 1486.6s (24.8 min) | 1.86s |
+| `e94faf2` after pass 2 | 828 | OK (1 skipped) | 0 / 0 | 1716.9s (28.6 min) | 2.07s |
+| **`2f414d3` final** | **829** | **OK (1 skipped)** | **0 / 0** | 1593.0s (26.6 min) | 1.92s |
 
-67 more tests in 40% less wall clock, which is the D-27 cache fix showing
-up across the whole suite rather than only on the attendance path.
+98 more tests than the baseline, in 36% less wall clock. That drop is the
+D-27 Redis connect-timeout fix showing up across the whole suite rather
+than only on the attendance path it was found on.
 
+One commit lands after the final run, `b46e764`, which gives the two
+upload-test classes a temporary `MEDIA_ROOT`. It changes no application
+code and adds no tests; its 21 tests were run on their own and pass.
 
 ## 2. Module inventory
 

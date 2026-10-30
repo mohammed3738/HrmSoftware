@@ -236,6 +236,80 @@ catch what they claim to.
 | `8fffe26` | D-25/D-26 error handling in the holiday-calendar family | `test_error_reporting.py` (6) |
 | `e94faf2` | D-28 accessible names on bulk-action tables | `test_bulk_table_accessibility.py` (2) |
 
+### Third pass — two features requested by the user (2026-10-30)
+
+Not defects: behaviour the user asked for. Both change attendance, and
+therefore pay, so both are written up with the decisions that shaped them.
+
+| Commit | What | Tests |
+|---|---|---|
+| `48df6e9` | A working day with no punch is recorded as **Absent** instead of producing no row at all | `test_absent_backfill.py` (13) |
+| `2d84472` | **Weekly off on the shift roster**, and counted from there by attendance, payroll and leave alike | `test_roster_week_off.py` (21) |
+| `277acbf` | `--dry-run` previews the absences a real run would mark, and no longer names people who punched | `test_sync_dry_run_preview.py` (5) |
+
+**Absent backfill.** The sync only ever created a row for a day it could
+derive an in-time for, and `dates_by_employee` is built from the dates that
+*have* punches — so a day nobody punched on was outside the work set
+entirely, not merely unprocessed. Payroll counts working days from the rows
+that exist, so an unnoticed absence cost the employee nothing.
+
+Three guards, each of which the user's answer or the code forced:
+
+* **A day only counts when at least one punch on it matched an employee.**
+  Chosen by the user over "always mark Absent". If the agent is down or the
+  network drops, no punches arrive — and marking the whole company absent
+  would quietly take a day's pay from everyone. A day whose punches all
+  failed to match does not count either: that is the broken code mapping
+  this guard exists to survive.
+* **Strictly before today.** A night employee punches in at 21:45; calling
+  them absent at 10:00 would be wrong for hours.
+* **Weekends, weekly offs, holidays and half-day scenarios are not
+  absences.** Rather than re-deriving which is which, the row is built and
+  `calculate_status()` is asked — one set of rules — and only a row coming
+  back "Absent" is saved.
+
+Existing rows are never touched: that row is either a real punch or
+somebody's deliberate correction.
+
+**Roster weekly off.** `ShiftAssignment.week_off_day` (migration 0056).
+The roster wins for the dates it covers, the same rule the roster already
+follows for night duty, `is_active OR auto_archived` included. Order:
+roster entry → the employee's own day → the company weekend setting.
+
+The half that makes it a pay question is that every reader has to agree. A
+weekly off is a credited free day; if the register treats Wednesday as one
+while payroll still counts a working day the employee missed, the same
+Wednesday is credited on one screen and docked on the payslip. One
+resolver — `week_off_weekday()` / `week_off_dates_in_range()` — now backs
+`Attendance.calculate_status()`, `get_attendance_summary()` and
+`unrecorded_approved_leave_days()`.
+
+That also closed a pre-existing gap: `get_attendance_summary()` never
+honoured `Employee.week_off_day` at all, so an employee with a custom off
+day already had it counted as a working day by payroll while the register
+credited it.
+
+Two mistakes worth recording, both caught by running things rather than
+reading them:
+
+* A first attempt resolved the off day per day, costing a roster query per
+  employee-day — payroll generation went 10.8 → **41** queries per
+  employee. `test_payroll_run_query_count` caught it; the range form reads
+  the overlapping entries once.
+* Inserting a helper above `add_shift_assignment` put it *between* the
+  decorators and the view, so `@login_required` and
+  `@feature_required("shift_roster", "edit")` decorated the helper and the
+  view was left ungated. `test_shift_roster` caught it.
+
+**Still on `Employee`.** `week_off_day` remains on the employee form as the
+fallback for staff who are never rostered. Removing it from the form is a
+separate decision and was not assumed.
+
+**Backfilling history.** `mark_absent_days` runs over whatever window the
+sync is given, so past absences can be filled in with
+`manage.py sync_biometric_attendance --from YYYY-MM-DD --to YYYY-MM-DD`.
+`--dry-run` previews it and writes nothing.
+
 ### Fixed in this pass
 
 First pass: D-01a/b/c/d/e, D-02a/b, D-03, D-04, D-07, D-12, D-17, D-19,
@@ -319,8 +393,12 @@ fixtures.
   **0055**), audit night-shift roster ticks, confirm production
   `employee_code` values against eSSL, set `weekend_days` to `sun`.
 
-**Deploy-affecting changes in this pass — read before the next restart**
+**Deploy-affecting changes — read before the next restart**
 
+0. **Migrations 0055 and 0056 are not applied to the local Postgres
+   database.** `manage.py migrate` is needed before the dev server or the
+   sync will run — a dry run against it fails with
+   `column website_shiftassignment.week_off_day does not exist`.
 1. `DEBUG` now defaults to **False**, and with DEBUG off `DJANGO_SECRET_KEY`
    and `DJANGO_ALLOWED_HOSTS` are **required**: the app refuses to start and
    names the missing variable. A server built by following DEPLOYMENT.md

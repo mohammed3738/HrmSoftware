@@ -96,9 +96,11 @@ class Command(BaseCommand):
             self.stdout.write(run.message)
 
     def _dry_run(self, from_date, to_date, employees):
-        """Print the in/out time each day would get, without writing. Reads
-        the same derive_day_times() the real run does, so what it prints is
-        what would happen."""
+        """Print what a real run would do, without writing: the in/out time
+        each punched day would get, then the days that would be marked
+        Absent. Reads the same derive_day_times(), reported_days() and
+        calculate_status() the real run does, so what it prints is what
+        would happen."""
         from collections import defaultdict
 
         from website.models import Attendance, BiometricPunch
@@ -130,6 +132,12 @@ class Command(BaseCommand):
         resolver = biometric_sync.NightShiftResolver(list(people.values()), from_date, to_date)
 
         day_count = (to_date - from_date).days + 1
+        # A real run derives punch times FIRST and only then looks for
+        # absences, so a day that gets an in-time here is not a candidate
+        # for one. Without tracking that, the preview lists people who
+        # actually punched as "would mark Absent", because in a dry run no
+        # row has been written for them yet.
+        would_have_times = set()
         for employee_id, employee in sorted(people.items(), key=lambda kv: kv[1].employee_code or ""):
             punches = by_employee[employee_id]
             lines = []
@@ -144,6 +152,8 @@ class Command(BaseCommand):
                     existing_in=None if attendance is None else attendance.in_time,
                     existing_out=None if attendance is None else attendance.out_time,
                 )
+                if in_time is not None:
+                    would_have_times.add((employee_id, day))
                 was = "-" if attendance is None else f"{attendance.in_time or '--'} / {attendance.out_time or '--'}"
                 locked = " [manual, would be skipped]" if attendance is not None and attendance.times_locked else ""
                 lines.append(
@@ -155,7 +165,78 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {employee.employee_code} {employee.first_name or ''} {employee.last_name or ''}".rstrip())
                 self.stdout.write("\n".join(lines))
 
+        self._dry_run_absences(from_date, to_date, employees, would_have_times)
         self.stdout.write(self.style.WARNING("Dry run: nothing was written."))
+
+    def _dry_run_absences(self, from_date, to_date, employees, would_have_times):
+        """The days a real run would mark Absent.
+
+        Without this the dry run under-reports: it only prints days that
+        have punches, and the whole point of the absence pass is the days
+        that do not. Reads the same reported_days() and calculate_status()
+        the real run uses, and writes nothing -- the candidate rows are
+        built in memory and thrown away.
+        """
+        from collections import defaultdict
+
+        from django.utils.timezone import now
+
+        from website.models import Attendance, Employee, attendance_rule_cache
+        from website.utils.payroll_lock import get_locking_run
+
+        days = sorted(
+            day for day in biometric_sync.reported_days(from_date, to_date)
+            if from_date <= day <= to_date and day < now().date()
+        )
+        if not days:
+            self.stdout.write(
+                "\nNo completed day in that range has a matched punch, so nothing "
+                "would be marked Absent."
+            )
+            return
+
+        people = employees or Employee.objects.filter(
+            status__in=biometric_sync.ACTIVE_EMPLOYEE_STATUSES)
+        people = list(people)
+
+        existing = {
+            (row.employee_id, row.date)
+            for row in Attendance.objects.filter(
+                employee__in=people, date__gte=days[0], date__lte=days[-1],
+            ).only("employee_id", "date")
+        }
+
+        would_mark = defaultdict(list)
+        with attendance_rule_cache():
+            for employee in people:
+                for day in days:
+                    if (employee.id, day) in existing:
+                        continue
+                    if (employee.id, day) in would_have_times:
+                        continue  # the punch pass would give this day a time
+                    if employee.date_of_joining and day < employee.date_of_joining:
+                        continue
+                    if get_locking_run(employee.company, day):
+                        continue
+                    candidate = Attendance(employee=employee, date=day)
+                    candidate.calculate_status()
+                    if candidate.status == "Absent":
+                        would_mark[employee].append(day)
+
+        total = sum(len(v) for v in would_mark.values())
+        if not total:
+            self.stdout.write("\nNo day would be marked Absent.")
+            return
+
+        self.stdout.write(f"\nWould mark Absent ({total} day(s)):")
+        for employee, absent_days in sorted(
+            would_mark.items(), key=lambda kv: kv[0].employee_code or ""
+        ):
+            name = f"{employee.first_name or ''} {employee.last_name or ''}".strip()
+            self.stdout.write(
+                f"  {employee.employee_code} {name}: "
+                f"{', '.join(str(d) for d in absent_days)}"
+            )
 
     def _test_connection(self):
         """Say whether this machine can read the eSSL SQL Server, and if not,

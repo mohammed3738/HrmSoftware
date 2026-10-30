@@ -152,8 +152,18 @@ class NightShiftRuleTest(BiometricSyncBaseTest):
     def test_a_lone_morning_punch_is_not_an_in_time(self):
         # That punch is the PREVIOUS night's out-punch; it must not become an
         # in-time for a shift that never started.
+        #
+        # This used to assert that no Attendance row existed at all, which
+        # was a proxy for the real rule. Days with no in-time are now
+        # recorded as absences rather than left blank, so the row exists --
+        # the rule being tested is unchanged and is asserted directly: the
+        # morning punch did not become an in-time.
         biometric_sync.ingest([punch("BIO002", WED, "06:02:00")])
-        self.assertIsNone(self.attendance(self.night_employee, WED))
+        row = self.attendance(self.night_employee, WED)
+        self.assertIsNotNone(row)
+        self.assertIsNone(row.in_time)
+        self.assertIsNone(row.out_time)
+        self.assertEqual(row.status, "Absent")
 
     def test_the_out_time_waits_for_the_next_days_punch(self):
         biometric_sync.ingest([punch("BIO002", TUE, "21:40:00")])

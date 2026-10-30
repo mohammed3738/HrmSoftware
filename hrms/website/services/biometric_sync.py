@@ -538,6 +538,115 @@ def rebuild_attendance(dates_by_employee, force=False):
     return counters
 
 
+def reported_days(from_date, to_date):
+    """The days in the window the punch machine actually reported for.
+
+    A day is "reported" when at least one punch in it was matched to an
+    employee -- proof the whole chain worked that day: device, agent,
+    network, and the employee-code mapping. Unmatched punches do not count,
+    because a day where every punch failed to match is exactly the broken
+    mapping this guard exists to survive.
+    """
+    return set(
+        BiometricPunch.objects.filter(
+            employee__isnull=False,
+            punch_date__gte=from_date,
+            punch_date__lte=to_date,
+        ).values_list("punch_date", flat=True).distinct()
+    )
+
+
+def mark_absent_days(from_date, to_date, employees=None):
+    """Record an Absent day for anyone who did not punch on a day the
+    machine was reporting.
+
+    Until now a day with no punch produced no Attendance row at all, so it
+    was simply blank: not present, not absent, nothing. Payroll counts
+    working days from the rows that exist, so a genuine absence that nobody
+    noticed cost the employee nothing and the day never appeared on any
+    report.
+
+    What stops this from being dangerous is `reported_days`. If the agent
+    is not running, the device is offline or the network is down, no
+    punches arrive -- and marking the entire company absent for that day
+    would quietly take a day's pay from everybody. So a day is only
+    considered when somebody's punch did land on it.
+
+    Weekends and holidays are not absences. Rather than re-deriving which
+    is which -- the rules involve the company's weekend setting, the
+    employee's own weekly off, the shift roster, branch-specific holidays
+    and half-day scenarios -- this builds the row and asks
+    calculate_status() what it is, keeping the one set of rules. Only a row
+    that comes back "Absent" is saved.
+
+    Days already holding a row are left alone, whatever it says: that row
+    is either a real punch or somebody's deliberate correction.
+    """
+    counters = {"absent_created": 0, "absent_days_considered": 0}
+
+    days = sorted(day for day in reported_days(from_date, to_date)
+                  if from_date <= day <= to_date)
+    if not days:
+        return counters
+
+    # Strictly before today. A day still running is not an absence yet: a
+    # night employee punches in at 21:45, so marking them Absent at 10:00
+    # would be wrong for hours, and anyone on a late shift likewise. Today
+    # gets its turn on the next run, and the lookback window covers it.
+    today = now().date()
+    days = [day for day in days if day < today]
+    if not days:
+        return counters
+    counters["absent_days_considered"] = len(days)
+
+    people = employees
+    if people is None:
+        people = Employee.objects.filter(status__in=ACTIVE_EMPLOYEE_STATUSES)
+    people = list(people)
+    if not people:
+        return counters
+
+    existing = {
+        (row.employee_id, row.date)
+        for row in Attendance.objects.filter(
+            employee__in=people, date__gte=days[0], date__lte=days[-1],
+        ).only("employee_id", "date")
+    }
+
+    from ..models import attendance_rule_cache
+    from ..signals import recalculate_leave_balance_for_employee, suspend_leave_balance_auto_recalc
+
+    touched = {}
+    with transaction.atomic(), suspend_leave_balance_auto_recalc(), attendance_rule_cache():
+        for employee in people:
+            for day in days:
+                if (employee.id, day) in existing:
+                    continue
+                if employee.date_of_joining and day < employee.date_of_joining:
+                    continue
+                if get_locking_run(employee.company, day):
+                    continue
+
+                candidate = Attendance(employee=employee, date=day)
+                candidate.calculate_status()
+                if candidate.status != "Absent":
+                    continue  # weekend, weekly off, holiday or half-day scenario
+
+                candidate.save()
+                counters["absent_created"] += 1
+                previous = touched.get(employee.id)
+                if previous is None or day < previous[1]:
+                    touched[employee.id] = (employee, day)
+
+    for employee, min_date in touched.values():
+        try:
+            recalculate_leave_balance_for_employee(employee, min_date)
+        except Exception:
+            logger.exception("Biometric sync: leave balance recalc failed for %s", employee)
+
+    return counters
+
+
 # ── entry points ──────────────────────────────────────────────────────────
 
 def ingest(records, source=BiometricSyncRun.SOURCE_AGENT, force=False):
@@ -563,11 +672,14 @@ def ingest(records, source=BiometricSyncRun.SOURCE_AGENT, force=False):
         }
         counters = rebuild_attendance(expanded, force=force)
 
+        absent = {"absent_created": 0}
         if records:
             dates = [_as_date(r.get("punch_date")) for r in records]
             dates = [day for day in dates if day]
             if dates:
                 run.from_date, run.to_date = min(dates), max(dates)
+                # Anyone who did not punch on a day this batch covers.
+                absent = mark_absent_days(run.from_date, run.to_date)
 
         run.punches_stored = stored
         run.punches_unmatched = BiometricPunch.objects.filter(employee__isnull=True).count()
@@ -580,6 +692,11 @@ def ingest(records, source=BiometricSyncRun.SOURCE_AGENT, force=False):
             notes.append(f"{unmatched} punch(es) in this batch matched no employee.")
         if relinked:
             notes.append(f"{relinked} earlier unmatched punch(es) linked to an employee.")
+        if absent["absent_created"]:
+            notes.append(
+                f"{absent['absent_created']} day(s) marked Absent: no punch on a day "
+                f"the machine reported for."
+            )
         notes.extend(errors[:20])
         run.message = "\n".join(notes)
     except Exception as exc:
@@ -652,6 +769,7 @@ def resync_window(from_date=None, to_date=None, employees=None, source=Biometric
                 work[employee] = in_window
 
         counters = rebuild_attendance(work, force=force)
+        absent = mark_absent_days(from_date, to_date, employees=employees)
 
         run.punches_received = punch_rows.count()
         run.punches_unmatched = BiometricPunch.objects.filter(employee__isnull=True).count()
@@ -659,7 +777,15 @@ def resync_window(from_date=None, to_date=None, employees=None, source=Biometric
         run.attendance_updated = counters["updated"]
         run.attendance_skipped = counters["skipped"]
         run.status = BiometricSyncRun.STATUS_SUCCESS
-        run.message = f"{relinked} unmatched punch(es) linked." if relinked else ""
+        notes = []
+        if relinked:
+            notes.append(f"{relinked} unmatched punch(es) linked.")
+        if absent["absent_created"]:
+            notes.append(
+                f"{absent['absent_created']} day(s) marked Absent: no punch on a day "
+                f"the machine reported for."
+            )
+        run.message = "\n".join(notes)
     except Exception as exc:
         logger.exception("Biometric resync failed")
         run.status = BiometricSyncRun.STATUS_FAILED

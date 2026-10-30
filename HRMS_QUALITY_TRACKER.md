@@ -33,15 +33,14 @@ Every run is the whole suite, `DB_ENGINE=sqlite python manage.py test website`.
 | `09ce8e2` baseline, before any change | 731 | OK (1 skipped) | 0 / 0 | 2493.1s (41.6 min) | 3.41s |
 | `385ebf0` after pass 1 | 798 | OK (1 skipped) | 0 / 0 | 1486.6s (24.8 min) | 1.86s |
 | `e94faf2` after pass 2 | 828 | OK (1 skipped) | 0 / 0 | 1716.9s (28.6 min) | 2.07s |
-| **`2f414d3` final** | **829** | **OK (1 skipped)** | **0 / 0** | 1593.0s (26.6 min) | 1.92s |
+| `2f414d3` end of the audit passes | 829 | OK (1 skipped) | 0 / 0 | 1593.0s (26.6 min) | 1.92s |
+| `2d84472` after the two attendance features | 863 | OK (1 skipped) | 0 / 0 | 2107.0s (35.1 min) | 2.44s |
+| **`be41646` final** | **868** | **OK (1 skipped)** | **0 / 0** | 1964.5s (32.7 min) | 2.26s |
 
-98 more tests than the baseline, in 36% less wall clock. That drop is the
+137 more tests than the baseline (731 -> 868), in 21% less wall clock. That drop is the
 D-27 Redis connect-timeout fix showing up across the whole suite rather
 than only on the attendance path it was found on.
 
-One commit lands after the final run, `b46e764`, which gives the two
-upload-test classes a temporary `MEDIA_ROOT`. It changes no application
-code and adds no tests; its 21 tests were run on their own and pass.
 
 ## 2. Module inventory
 

@@ -1662,6 +1662,116 @@ def _rule_lookup(key, compute):
     return store[key]
 
 
+def rostered_week_off_day(employee, day):
+    """The weekday number rostered as this employee's weekly off on `day`,
+    or None when the roster does not say.
+
+    THE SHIFT ROSTER WINS wherever it covers the date, for the same reason
+    it wins for night duty (see NightShiftResolver in
+    services/biometric_sync.py): a rotating crew's off day moves with the
+    shift, and a standing tick on the employee cannot express that.
+
+    `is_active OR auto_archived`, deliberately, matching the night-shift
+    resolver. An entry the nightly tidy-up archived because its dates went
+    by is still the true record of what the roster said for those dates, so
+    recalculating them later has to reach the same answer. Only a manual
+    archive -- somebody deciding the entry was wrong -- takes it out of the
+    reckoning.
+    """
+    if employee is None:
+        return None
+
+    def compute():
+        rows = ShiftAssignment.objects.filter(
+            models.Q(is_active=True) | models.Q(auto_archived=True),
+            employee_id=employee.id,
+            start_date__lte=day,
+            end_date__gte=day,
+            week_off_day__isnull=False,
+        ).order_by("-start_date", "-id").values_list("week_off_day", flat=True)
+        return rows.first()
+
+    return _rule_lookup(("roster-week-off", employee.id, day), compute)
+
+
+def week_off_weekday(employee, day, payroll_settings=None):
+    """Which weekday is this employee's weekly off on `day`, as a
+    Python weekday number (Monday 0 ... Sunday 6), or None to mean "no
+    single day -- use the company's weekend rule".
+
+    Resolved most specific first:
+
+        1. the shift roster entry covering this date
+        2. the employee's own Weekly Off Day
+        3. neither, so the company's weekend setting applies
+
+    One function so attendance, payroll day-counting and leave all agree.
+    Letting them each decide separately is how a Wednesday weekly off ends
+    up credited as a free day on the register and docked as leave on the
+    payslip.
+    """
+    rostered = rostered_week_off_day(employee, day)
+    if rostered is not None:
+        return rostered
+    if employee is not None and employee.week_off_day is not None:
+        return employee.week_off_day
+    return None
+
+
+def week_off_dates_in_range(employee, from_date, to_date, sunday_only):
+    """Every day in [from_date, to_date] that is this employee's weekly off.
+
+    The range form exists because the single-day one costs a query per day:
+    walking a 31-day payroll period for 200 employees through
+    is_week_off() was 31 roster lookups each. This reads the overlapping
+    roster entries once and answers the whole period from memory, which is
+    what payroll and leave-day counting need.
+
+    Same precedence as week_off_weekday(): roster entry, then the
+    employee's own day, then the company rule.
+    """
+    assignments = list(
+        ShiftAssignment.objects.filter(
+            models.Q(is_active=True) | models.Q(auto_archived=True),
+            employee_id=employee.id,
+            start_date__lte=to_date,
+            end_date__gte=from_date,
+            week_off_day__isnull=False,
+        ).order_by("-start_date", "-id")
+        .values_list("start_date", "end_date", "week_off_day")
+    )
+
+    def rostered(day):
+        for start, end, off_day in assignments:
+            if start <= day <= end:
+                return off_day
+        return None
+
+    own = employee.week_off_day
+    days = set()
+    day = from_date
+    while day <= to_date:
+        specific = rostered(day)
+        if specific is None:
+            specific = own
+        if specific is not None:
+            if day.weekday() == specific:
+                days.add(day)
+        elif (day.weekday() == 6) if sunday_only else (day.weekday() >= 5):
+            days.add(day)
+        day += timedelta(days=1)
+    return days
+
+
+def is_week_off(employee, day, sunday_only):
+    """Is `day` this employee's weekly off? `sunday_only` is the company's
+    setting, used only when nothing more specific applies."""
+    specific = week_off_weekday(employee, day)
+    if specific is not None:
+        return day.weekday() == specific
+    return (day.weekday() == 6) if sunday_only else (day.weekday() >= 5)
+
+
 class Attendance(models.Model):
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
     date = models.DateField(default=now)
@@ -1875,8 +1985,11 @@ class Attendance(models.Model):
             except Exception:
                 ps = None
 
-            if self.employee.week_off_day is not None:
-                is_weekend = (self.date.weekday() == self.employee.week_off_day)
+            # Roster first, then the employee's own day, then the company
+            # rule -- see week_off_weekday().
+            specific_off = week_off_weekday(self.employee, self.date)
+            if specific_off is not None:
+                is_weekend = (self.date.weekday() == specific_off)
             else:
                 if ps is not None:
                     sunday_only = ps.weekend_days == 'sun'
@@ -2194,6 +2307,16 @@ class ShiftAssignment(models.Model):
                    "out-time from the NEXT day's first punch. Without this the sync "
                    "can only guess from the timings or the shift name, which misses "
                    "an entry called e.g. 'B Shift' with no timings filled in.",
+    )
+    week_off_day = models.IntegerField(
+        null=True, blank=True,
+        choices=[(0, 'Monday'), (1, 'Tuesday'), (2, 'Wednesday'), (3, 'Thursday'),
+                 (4, 'Friday'), (5, 'Saturday'), (6, 'Sunday')],
+        verbose_name="Weekly Off Day",
+        help_text="The weekly off for these dates. A rotating crew's off day moves "
+                   "with the shift, which a standing tick on the employee cannot "
+                   "express. Leave blank to use the employee's own weekly off, or "
+                   "the company default.",
     )
     notes = models.TextField(blank=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)

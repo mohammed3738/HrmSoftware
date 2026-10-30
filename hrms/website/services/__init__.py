@@ -231,30 +231,39 @@ def get_attendance_summary(employee, start_date, end_date, payroll_settings=None
     if payroll_settings is None:
         payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
     sunday_only = getattr(payroll_settings, 'weekend_days', 'sat_sun') == 'sun'
-    weekend_exclude = [1] if sunday_only else [1, 7]
 
-    attendance_records = Attendance.objects.filter(
-        employee=employee,
-        date__gte=effective_from_date,
-        date__lte=end_date,
-        is_holiday=False,
-    ).filter(Q(status_overridden=True) | ~Q(date__week_day__in=weekend_exclude))
+    # Which days are this employee's weekly off, day by day. Not a weekday
+    # test any more: the shift roster can set a different off day for part
+    # of the period (a rotating crew's off moves with the shift), so the
+    # answer varies within one period. is_week_off() is the same resolver
+    # Attendance.calculate_status() uses, which is what keeps the register
+    # and the payslip from disagreeing -- without it a Wednesday weekly off
+    # shows as a credited free day on one and is docked as leave on the
+    # other.
+    from ..models import week_off_dates_in_range
 
-    working_days = attendance_records.count()
-    paid_days = attendance_records.aggregate(total=Sum("count"))["total"] or Decimal("0.00")
+    week_off_dates = week_off_dates_in_range(
+        employee, effective_from_date, end_date, sunday_only)
 
     overridden_dates = set(
         Attendance.objects.filter(
             employee=employee, date__gte=effective_from_date, date__lte=end_date, status_overridden=True,
         ).values_list('date', flat=True)
     )
-    free_weekend_days = 0
-    d = effective_from_date
-    while d <= end_date:
-        is_weekend = (d.weekday() == 6) if sunday_only else (d.weekday() >= 5)
-        if is_weekend and d not in overridden_dates:
-            free_weekend_days += 1
-        d += timedelta(days=1)
+
+    # A weekly off is not a working day unless somebody overrode it (which
+    # is how working a day off gets credited).
+    attendance_records = Attendance.objects.filter(
+        employee=employee,
+        date__gte=effective_from_date,
+        date__lte=end_date,
+        is_holiday=False,
+    ).exclude(date__in=[d for d in week_off_dates if d not in overridden_dates])
+
+    working_days = attendance_records.count()
+    paid_days = attendance_records.aggregate(total=Sum("count"))["total"] or Decimal("0.00")
+
+    free_weekend_days = sum(1 for d in week_off_dates if d not in overridden_dates)
 
     present_days = paid_days + Decimal(free_weekend_days)
 

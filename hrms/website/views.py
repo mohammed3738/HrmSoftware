@@ -1280,6 +1280,21 @@ def shift_roster_list(request):
     })
 
 
+def _parse_week_off_day(raw):
+    """The Weekly Off Day field from a roster form: 0-6, or None for
+    "leave it to the employee / company default"."""
+    raw = (raw or "").strip()
+    if raw == "":
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError("Weekly off day must be a day of the week.")
+    if not 0 <= value <= 6:
+        raise ValueError("Weekly off day must be a day of the week.")
+    return value
+
+
 @login_required
 @feature_required("shift_roster", action="edit")
 @require_http_methods(["POST"])
@@ -1298,6 +1313,13 @@ def add_shift_assignment(request):
     # an overnight shift from the timings or the name (see
     # services/biometric_sync.py, NightShiftResolver).
     is_night_shift = request.POST.get("is_night_shift") in ("1", "true", "on", "yes")
+    # The weekly off travels with the roster: a rotating crew's off day
+    # moves with the shift, which the standing tick on the employee record
+    # cannot express. Blank means "keep using whatever applied before".
+    try:
+        week_off_day = _parse_week_off_day(request.POST.get("week_off_day"))
+    except ValueError as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
     notes = request.POST.get("notes", "").strip()
 
     if not employee_ids:
@@ -1327,7 +1349,7 @@ def add_shift_assignment(request):
             employee=employee, shift_name=shift_name,
             start_date=start_date, end_date=end_date,
             shift_start_time=shift_start_time, shift_end_time=shift_end_time,
-            is_night_shift=is_night_shift,
+            is_night_shift=is_night_shift, week_off_day=week_off_day,
             notes=notes, created_by=request.user,
         )
         try:
@@ -1369,6 +1391,10 @@ def edit_shift_assignment(request, pk):
     assignment.shift_start_time = request.POST.get("shift_start_time", "").strip() or None
     assignment.shift_end_time = request.POST.get("shift_end_time", "").strip() or None
     assignment.is_night_shift = request.POST.get("is_night_shift") in ("1", "true", "on", "yes")
+    try:
+        assignment.week_off_day = _parse_week_off_day(request.POST.get("week_off_day"))
+    except ValueError as exc:
+        return JsonResponse({"success": False, "error": str(exc)}, status=400)
     assignment.notes = request.POST.get("notes", "").strip()
 
     try:
@@ -1413,6 +1439,8 @@ def api_get_shift_assignment(request, pk):
         "shift_start_time": assignment.shift_start_time.strftime("%H:%M") if assignment.shift_start_time else "",
         "shift_end_time": assignment.shift_end_time.strftime("%H:%M") if assignment.shift_end_time else "",
         "is_night_shift": assignment.is_night_shift,
+        "week_off_day": "" if assignment.week_off_day is None else assignment.week_off_day,
+        "week_off_display": assignment.get_week_off_day_display() or "",
         "notes": assignment.notes,
         "created_by": assignment.created_by.get_full_name() or assignment.created_by.username if assignment.created_by else "—",
         "created_at": assignment.created_at.strftime("%d %b %Y, %I:%M %p"),
@@ -5299,17 +5327,18 @@ def unrecorded_approved_leave_days(employee, from_date, to_date, sunday_only,
                 and holiday.is_applicable_to_employee(employee)):
             holiday_dates.add(holiday.holiday_date)
 
-    # Python's weekday(): Monday 0 ... Saturday 5, Sunday 6 -- the same days
-    # weekend_exclude names in Django's 1=Sunday..7=Saturday terms.
-    weekend_weekdays = {6} if sunday_only else {5, 6}
-    if employee.week_off_day is not None:
-        weekend_weekdays = {employee.week_off_day}
+    # Which days are this employee's weekly off is decided per day, not per
+    # weekday: a shift roster entry can move the off day for part of the
+    # range. is_week_off() is the same resolver attendance and payroll use.
+    from .models import week_off_dates_in_range
 
+    off_dates = week_off_dates_in_range(
+        employee, min(leave_dates), max(leave_dates), sunday_only)
     return [
         day for day in sorted(leave_dates)
         if day not in recorded_dates
         and day not in holiday_dates
-        and day.weekday() not in weekend_weekdays
+        and day not in off_dates
     ]
 
 

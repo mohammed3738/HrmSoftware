@@ -213,6 +213,37 @@ Found and fixed during that pass: `{# ... #}` only comments out a
 **single** line, so the two multi-line comments in the new templates were
 rendering as page text at the top of the Forgot Password page.
 
+### Mail configuration (Gmail)
+
+The user chose Gmail SMTP for the reset emails. Nothing in the code needed
+to change -- the settings were already env-driven and the defaults (port
+587, STARTTLS) are Gmail's -- so this is configuration and documentation
+plus one way to check it:
+
+* `.env.example` grew an **Email** block and a **Password policy** block,
+  with the App Password requirement spelled out: Gmail refuses the
+  account's normal password, and the App passwords page only exists once
+  2-Step Verification is on.
+* `DEPLOYMENT.md` has a new **Email for Forgot Password** section before
+  Backups, cross-referenced from Step 5, Step 12 and the overview table.
+  Step 5's `grep -n "change-me"` check had to learn about the new
+  placeholder lines, or that step would now fail.
+* `manage.py send_test_email you@example.com` sends one message and says
+  what came back, because `PasswordResetView` reports success whether or
+  not the mail went out -- so a wrong App Password is indistinguishable
+  from a working reset from the outside. It prints the settings in use and
+  never the password.
+
+Verified by running it, not by reading it: the console backend reports
+"printed above instead of sent" rather than success; an unreachable mail
+server comes back as `Could not reach 127.0.0.1:2525`; and `EMAIL_HOST`
+unset with DEBUG off gives a one-line CommandError naming the setting
+instead of the Django traceback it produced on the first attempt.
+
+Still the user's to do: create the App Password and fill in the five
+`EMAIL_*` lines. Gmail's ~500 messages/day limit is far above password
+resets, but that mailbox may also be carrying the nightly backup.
+
 ### Attendance rules
 
 | ID | Sev | Finding |

@@ -27,6 +27,7 @@ Every command block is meant to be pasted into the SSH session as `multihost`. R
 | Web server | nginx site `/etc/nginx/sites-available/hrms_prod`, HTTPS via Let's Encrypt |
 | Static files | `/home/multihost/hrms_prod/hrms/staticfiles` (served by nginx) |
 | Uploaded files | `/home/multihost/hrms_prod/hrms/media` (served by nginx) |
+| Outgoing email | Gmail SMTP, for the **Forgot password?** link on the login page (see [Email for Forgot Password](#email-for-forgot-password)) |
 | Backups | Emailed nightly, nothing stored on the server (see [Backups](#backups)) |
 | Import working files | `/home/multihost/hrms_prod_backups` (Option B only; delete after go-live) |
 
@@ -154,11 +155,11 @@ sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=${SECRET}|" .env
 sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=${DBPASS}|" .env
 unset SECRET DBPASS
 
-grep -n "change-me" .env | grep -v BACKUP_EMAIL || echo "Secrets filled in"
+grep -n "change-me" .env | grep -v -E "BACKUP_EMAIL|EMAIL_HOST_USER|EMAIL_HOST_PASSWORD|DEFAULT_FROM_EMAIL" || echo "Secrets filled in"
 grep -v -E "^#|^$|SECRET_KEY|PASSWORD" .env
 ```
 
-The first `grep` must print `Secrets filled in`. The `change-me` values left on the `BACKUP_EMAIL_*` lines are filled in later, in [Backups](#backups). The last command shows the settings with the two secrets hidden. If you ever need the database password, it's in `.env` (`grep DB_PASSWORD .env`).
+The first `grep` must print `Secrets filled in`. The `change-me` values left on the `BACKUP_EMAIL_*` lines are filled in later, in [Backups](#backups), and the ones on the `EMAIL_*` lines in [Email for Forgot Password](#email-for-forgot-password). The last command shows the settings with the two secrets hidden. If you ever need the database password, it's in `.env` (`grep DB_PASSWORD .env`).
 
 ---
 
@@ -520,7 +521,7 @@ grep -l "HrmSoftware" /etc/systemd/system/*.service          # lists the old ins
 rm -rf /home/multihost/hrms_prod_backups
 ```
 
-Finally, set up the nightly email backup: see [Backups](#backups).
+Finally, two things that need an email account: the **Forgot password?** link on the login page (see [Email for Forgot Password](#email-for-forgot-password)) and the nightly database backup (see [Backups](#backups)).
 
 ---
 
@@ -565,6 +566,73 @@ systemctl is-active hrms-prod-gunicorn
 The `grep` output should show `--worker-class gthread`, `--workers 3` and `--threads 4` on separate lines, and the last command should print `active`.
 
 Each thread can hold its own database connection, so the app uses up to about 12 PostgreSQL connections, plus a few for Celery. That is well inside PostgreSQL's default limit of 100, which is shared by every project on this server. If the server has more than 2 CPU cores and memory to spare, raising `--workers` (roughly 2 × cores + 1) helps further.
+
+---
+
+## Email for Forgot Password
+
+The **Forgot password?** link on the login page emails a one-time link. It is the only thing the application itself sends mail for, and it needs an SMTP account. Until one is configured the link is reachable but cannot work: with `DJANGO_DEBUG=false` the app refuses to send and says which setting is missing, rather than telling an employee that an email is on its way that nobody ever sent.
+
+This is separate from the nightly backup email below. That is a standalone script with its own `BACKUP_EMAIL_*` connection; the two can share a mailbox or use different ones.
+
+### Gmail
+
+Gmail will not accept the account's normal password. It needs a 16-character **App Password**, and that page only exists once 2-Step Verification is on:
+
+1. Google Account → **Security** → turn on **2-Step Verification** (if it is not already).
+2. Still under Security → **App passwords** → create one, named e.g. `HRMS`.
+3. Copy the 16 characters. Google shows them in four groups of four — **paste them without the spaces**.
+
+Then, on the server:
+
+```bash
+cd /home/multihost/hrms_prod/hrms
+nano .env
+```
+
+Set these five lines, leaving the rest of the block as it is:
+
+```
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=true
+EMAIL_HOST_USER=yourmailbox@gmail.com
+EMAIL_HOST_PASSWORD=the16charapppassword
+DEFAULT_FROM_EMAIL=yourmailbox@gmail.com
+```
+
+Keep `DEFAULT_FROM_EMAIL` as the Gmail address itself: Gmail rewrites the `From` header to the authenticated mailbox anyway, unless the address is a verified alias on that account.
+
+### Check it, before an employee has to
+
+```bash
+cd /home/multihost/hrms_prod/hrms
+source ../venv/bin/activate
+python manage.py send_test_email you@example.com
+```
+
+It prints the settings in use (never the password), sends one message, and says what came back. The three answers worth knowing:
+
+| What it says | What to do |
+|---|---|
+| `Sent.` | Check the inbox, and the spam folder. |
+| The mail server refused the username or password | The App Password is wrong, or it is the normal account password. Regenerate it; paste without spaces. |
+| `Timed out … connecting to smtp.gmail.com:587` | Outbound SMTP is firewalled, or the port and mode do not match — 587 goes with `EMAIL_USE_TLS=true`, 465 with `EMAIL_USE_SSL=true`. |
+
+Then restart the app so it picks up the new `.env`:
+
+```bash
+sudo systemctl restart hrms_prod
+```
+
+Finally, try the real thing once: open the login page, click **Forgot password?**, and enter the email address on your own employee record.
+
+> **Gmail sending limits.** A normal Gmail account allows roughly 500 messages a day, a Workspace account about 2,000. Password resets are nowhere near that, but the same mailbox also carrying the nightly database backup is worth keeping in mind.
+
+Two related settings sit alongside these, both with working defaults:
+
+* `PASSWORD_RESET_TIMEOUT` — how long a reset link stays usable, `14400` (4 hours). Django's own default is 3 days, which is a long life for a link that grants account access by itself. The page and the email both quote whatever this is set to.
+* `EMAIL_TIMEOUT` — `10` seconds, so a slow or blocked SMTP connection cannot hold a web request open.
 
 ---
 
@@ -743,6 +811,15 @@ The template is [`hrms/.env.example`](hrms/.env.example). Its comments explain e
 | `SQLITE_PATH` | Location of the SQLite file when `DB_ENGINE=sqlite` | `hrms/db.sqlite3` (default) |
 | `CELERY_BROKER_URL` | Redis database for the Celery task queue | `redis://127.0.0.1:6379/10` |
 | `REDIS_CACHE_URL` | Redis database for Django's cache | `redis://127.0.0.1:6379/11` |
+| `EMAIL_HOST` / `EMAIL_PORT` | SMTP server for the Forgot Password email | `smtp.gmail.com` / `587` |
+| `EMAIL_USE_TLS` / `EMAIL_USE_SSL` | STARTTLS on port 587, or SSL on 465 | `true` / `false` |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | Sending mailbox and its 16-character App Password | Your Gmail account |
+| `DEFAULT_FROM_EMAIL` | Sender on the reset email. Gmail rewrites anything else. | Same as `EMAIL_HOST_USER` |
+| `EMAIL_TIMEOUT` | Seconds to wait for the mail server | `10` |
+| `PASSWORD_RESET_TIMEOUT` | Seconds a reset link stays usable | `14400` (4 hours) |
+| `PASSWORD_FORBID_USER_ATTRIBUTES` | Refuse a password resembling the user's name. Off here by choice. | `false` |
+| `PASSWORD_MIN_LENGTH` | Shortest password accepted (`0` disables the check) | `8` |
+| `PASSWORD_FORBID_COMMON` / `PASSWORD_FORBID_NUMERIC` | Refuse common-list and all-digit passwords | `true` / `true` |
 | `BACKUP_EMAIL_HOST` / `BACKUP_EMAIL_PORT` | SMTP server for the nightly backup email | `smtp.gmail.com` / `587` |
 | `BACKUP_EMAIL_USER` / `BACKUP_EMAIL_PASSWORD` | Sending mailbox and its App Password | Your backup Gmail account |
 | `BACKUP_EMAIL_FROM` / `BACKUP_EMAIL_TO` | Sender, and recipient(s) separated by commas | Your addresses |

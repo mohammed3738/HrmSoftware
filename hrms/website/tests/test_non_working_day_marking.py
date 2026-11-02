@@ -204,6 +204,34 @@ class NonWorkingDayMarkingTest(TestCase):
         self._sync(SUNDAY, SUNDAY)
         self.assertIsNone(self.row(SUNDAY))
 
+    def test_a_lone_worker_on_a_day_nobody_else_works_is_left_blank(self):
+        """A known limit of the per-day absence guard, pinned rather than
+        hidden.
+
+        This employee's roster makes Sunday an ordinary working day (their
+        weekly off is Wednesday), while the rest of the company is off. So
+        no punch ever lands on a Sunday, Sunday is never a "reported" day,
+        and their genuine Sunday absences are never marked -- the day stays
+        blank instead.
+
+        That is the conservative direction: the guard would rather miss an
+        absence than invent one, and marking absences on days with no
+        evidence the machine ran is exactly what it exists to prevent. But
+        it does mean the attendance list is not completely gap-free for an
+        employee whose working pattern is disjoint from everyone else's.
+        Changing it is a pay decision -- see HRMS_QUALITY_TRACKER.md D-33.
+        """
+        ShiftAssignment.objects.create(
+            employee=self.employee, shift_name="Sunday crew",
+            start_date=PREV_WED - timedelta(days=7), end_date=SUNDAY,
+            week_off_day=2,  # Wednesday off, so Sunday is a working day
+        )
+        self._sync(SUNDAY, SUNDAY)
+        self.assertIsNone(
+            self.row(SUNDAY),
+            "an absence was marked on a day the machine never reported",
+        )
+
     def test_the_run_says_what_it_recorded(self):
         run = self._sync(SUNDAY, SUNDAY)
         self.assertIn("non-working day", run.message)

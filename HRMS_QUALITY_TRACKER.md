@@ -36,12 +36,18 @@ Every run is the whole suite, `DB_ENGINE=sqlite python manage.py test website`.
 | `2f414d3` end of the audit passes | 829 | OK (1 skipped) | 0 / 0 | 1593.0s (26.6 min) | 1.92s |
 | `2d84472` after the two attendance features | 863 | OK (1 skipped) | 0 / 0 | 2107.0s (35.1 min) | 2.44s |
 | `be41646` after the roster weekly off | 868 | OK (1 skipped) | 0 / 0 | 1964.5s (32.7 min) | 2.26s |
-| **`d34a0cc` final** | **885** | **OK (1 skipped)** | **0 / 0** | 2097.2s (35.0 min) | 2.37s |
+| `d34a0cc` after the day-marking work | 885 | OK (1 skipped) | 0 / 0 | 2097.2s (35.0 min) | 2.37s |
+| `aa96e92` after Forgot Password | 913 | OK (1 skipped) | 0 / 0 | 1828.0s (30.5 min) | 2.00s |
+| **`abe376b` final** | **922** | **OK (1 skipped)** | **0 / 0** | 2019.6s (33.7 min) | 2.19s |
 
-154 more tests than the baseline (731 -> 885), and still 16% less wall
-clock than the baseline took for 731. That drop is the
+191 more tests than the baseline (731 -> 922), and still 19% less wall
+clock than the baseline took for its 731. That drop is the
 D-27 Redis connect-timeout fix showing up across the whole suite rather
 than only on the attendance path it was found on.
+
+The 913-test run covers everything except `test_send_test_email_command`,
+which was written while that run was already in flight; its 9 tests were
+run on their own (OK) and then together with the rest in the 922 run.
 
 
 ## 2. Module inventory

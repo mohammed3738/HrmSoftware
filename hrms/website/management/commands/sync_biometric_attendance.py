@@ -97,8 +97,9 @@ class Command(BaseCommand):
 
     def _dry_run(self, from_date, to_date, employees):
         """Print what a real run would do, without writing: the in/out time
-        each punched day would get, then the days that would be marked
-        Absent. Reads the same derive_day_times(), reported_days() and
+        each punched day would get, then the days it would fill in --
+        absences, and the weekends, weekly offs and holidays nobody punches
+        on. Reads the same derive_day_times(), reported_days() and
         calculate_status() the real run does, so what it prints is what
         would happen."""
         from collections import defaultdict
@@ -165,17 +166,20 @@ class Command(BaseCommand):
                 self.stdout.write(f"  {employee.employee_code} {employee.first_name or ''} {employee.last_name or ''}".rstrip())
                 self.stdout.write("\n".join(lines))
 
-        self._dry_run_absences(from_date, to_date, employees, would_have_times)
+        self._dry_run_marked_days(from_date, to_date, employees, would_have_times)
         self.stdout.write(self.style.WARNING("Dry run: nothing was written."))
 
-    def _dry_run_absences(self, from_date, to_date, employees, would_have_times):
-        """The days a real run would mark Absent.
+    def _dry_run_marked_days(self, from_date, to_date, employees, would_have_times):
+        """The days a real run would fill in, and what it would call them.
 
         Without this the dry run under-reports: it only prints days that
-        have punches, and the whole point of the absence pass is the days
-        that do not. Reads the same reported_days() and calculate_status()
-        the real run uses, and writes nothing -- the candidate rows are
-        built in memory and thrown away.
+        have punches, and the point of the marking pass is the days that do
+        not. Reads the same reported_days() and calculate_status() the real
+        run uses, builds the candidate rows in memory and throws them away.
+
+        The two kinds are listed separately because they carry different
+        weight. An Absent day is a pay question and is only marked on a day
+        the machine reported; a weekend, weekly off or holiday is neither.
         """
         from collections import defaultdict
 
@@ -184,16 +188,21 @@ class Command(BaseCommand):
         from website.models import Attendance, Employee, attendance_rule_cache
         from website.utils.payroll_lock import get_locking_run
 
-        days = sorted(
-            day for day in biometric_sync.reported_days(from_date, to_date)
-            if from_date <= day <= to_date and day < now().date()
-        )
-        if not days:
-            self.stdout.write(
-                "\nNo completed day in that range has a matched punch, so nothing "
-                "would be marked Absent."
-            )
+        last_day = min(to_date, now().date() - datetime.timedelta(days=1))
+        if last_day < from_date:
+            self.stdout.write("\nNo completed day in that range: nothing would be marked.")
             return
+
+        days = []
+        day = from_date
+        while day <= last_day:
+            days.append(day)
+            day += datetime.timedelta(days=1)
+
+        absence_allowed = {
+            d for d in biometric_sync.reported_days(from_date, last_day)
+            if from_date <= d <= last_day
+        }
 
         people = employees or Employee.objects.filter(
             status__in=biometric_sync.ACTIVE_EMPLOYEE_STATUSES)
@@ -206,7 +215,8 @@ class Command(BaseCommand):
             ).only("employee_id", "date")
         }
 
-        would_mark = defaultdict(list)
+        absent = defaultdict(list)
+        non_working = defaultdict(int)
         with attendance_rule_cache():
             for employee in people:
                 for day in days:
@@ -221,22 +231,31 @@ class Command(BaseCommand):
                     candidate = Attendance(employee=employee, date=day)
                     candidate.calculate_status()
                     if candidate.status == "Absent":
-                        would_mark[employee].append(day)
+                        if day in absence_allowed:
+                            absent[employee].append(day)
+                    else:
+                        non_working[candidate.status] += 1
 
-        total = sum(len(v) for v in would_mark.values())
-        if not total:
+        total_absent = sum(len(v) for v in absent.values())
+        if total_absent:
+            self.stdout.write(f"\nWould mark Absent ({total_absent} day(s)):")
+            for employee, absent_days in sorted(
+                absent.items(), key=lambda kv: kv[0].employee_code or ""
+            ):
+                name = f"{employee.first_name or ''} {employee.last_name or ''}".strip()
+                self.stdout.write(
+                    f"  {employee.employee_code} {name}: "
+                    f"{', '.join(str(d) for d in absent_days)}"
+                )
+        else:
             self.stdout.write("\nNo day would be marked Absent.")
-            return
 
-        self.stdout.write(f"\nWould mark Absent ({total} day(s)):")
-        for employee, absent_days in sorted(
-            would_mark.items(), key=lambda kv: kv[0].employee_code or ""
-        ):
-            name = f"{employee.first_name or ''} {employee.last_name or ''}".strip()
-            self.stdout.write(
-                f"  {employee.employee_code} {name}: "
-                f"{', '.join(str(d) for d in absent_days)}"
-            )
+        if non_working:
+            summary = ", ".join(
+                f"{count} {status}" for status, count in sorted(non_working.items()))
+            self.stdout.write(f"Would record non-working days: {summary}.")
+        else:
+            self.stdout.write("No non-working day is missing a row.")
 
     def _test_connection(self):
         """Say whether this machine can read the eSSL SQL Server, and if not,

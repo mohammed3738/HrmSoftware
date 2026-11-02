@@ -130,12 +130,17 @@ class AbsentBackfillTest(TestCase):
     # ── days that are not absences ───────────────────────────────────────
 
     def test_a_weekly_off_is_not_an_absence(self):
+        # The row exists now -- non-working days are recorded too -- so the
+        # rule is asserted directly instead of through the absence of a row.
         sunday = MON - timedelta(days=1)
         biometric_sync.ingest([punch("ABS001", sunday, "10:00:00")])
         row = self.row(self.absentee, sunday)
-        self.assertIsNone(row, "a Sunday was recorded as an absence")
+        self.assertIsNotNone(row)
+        self.assertEqual(row.status, "Weekend")
+        self.assertNotEqual(row.status, "Absent")
 
     def test_a_holiday_is_not_an_absence(self):
+        # As above: recorded as Holiday, never as Absent.
         author = User.objects.create_user("abs_hr", "abs_hr@test.com", "pass12345")
         holiday_type = HolidayType.objects.create(name="National", type_category="national")
         Holiday.objects.create(
@@ -144,7 +149,9 @@ class AbsentBackfillTest(TestCase):
         )
         biometric_sync.ingest([punch("ABS001", MON, "09:00:00")])
         row = self.row(self.absentee, MON)
-        self.assertIsNone(row, "a declared holiday was recorded as an absence")
+        self.assertIsNotNone(row)
+        self.assertEqual(row.status, "Holiday")
+        self.assertTrue(row.is_holiday)
 
     def test_a_rostered_weekly_off_is_not_an_absence(self):
         ShiftAssignment.objects.create(
@@ -152,9 +159,11 @@ class AbsentBackfillTest(TestCase):
             end_date=MON + timedelta(days=7), week_off_day=MON.weekday(),
         )
         biometric_sync.ingest([punch("ABS001", MON, "09:00:00")])
-        self.assertIsNone(
-            self.row(self.absentee, MON),
-            "the roster's weekly off was recorded as an absence",
+        row = self.row(self.absentee, MON)
+        self.assertIsNotNone(row)
+        self.assertEqual(
+            row.status, "Weekend",
+            "the roster's weekly off was not recorded as a weekly off",
         )
 
     def test_a_day_before_the_employee_joined_is_not_an_absence(self):

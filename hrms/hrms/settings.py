@@ -165,12 +165,6 @@ AUTHENTICATION_BACKENDS = [
 
 
 
-AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
-]
 
 ROOT_URLCONF = 'hrms.urls'
 
@@ -385,21 +379,43 @@ SHIFT_ROSTER_ARCHIVE_AFTER_DAYS = int(
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
+#
+# Declared once, here. Previously this list appeared twice in this file and
+# the second copy silently won, so editing the first one did nothing.
+#
+# Site policy: a name, surname or any part of the username is ALLOWED as a
+# password. Django's UserAttributeSimilarityValidator is what produced
+# "The password is too similar to the first name." on the change-password
+# form, so it is deliberately not enabled. Set
+# PASSWORD_FORBID_USER_ATTRIBUTES=true to put that check back.
+#
+# The remaining checks are each switchable, because they can also reject a
+# name: CommonPasswordValidator's word list contains common first names
+# (michael, jessica, ...), and a name shorter than PASSWORD_MIN_LENGTH is
+# refused on length alone.
+AUTH_PASSWORD_VALIDATORS = []
 
-AUTH_PASSWORD_VALIDATORS = [
-    {
+if env_bool('PASSWORD_FORBID_USER_ATTRIBUTES', False):
+    AUTH_PASSWORD_VALIDATORS.append({
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
+    })
+
+PASSWORD_MIN_LENGTH = int(os.environ.get('PASSWORD_MIN_LENGTH', '8'))
+if PASSWORD_MIN_LENGTH > 0:
+    AUTH_PASSWORD_VALIDATORS.append({
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
+        'OPTIONS': {'min_length': PASSWORD_MIN_LENGTH},
+    })
+
+if env_bool('PASSWORD_FORBID_COMMON', True):
+    AUTH_PASSWORD_VALIDATORS.append({
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
+    })
+
+if env_bool('PASSWORD_FORBID_NUMERIC', True):
+    AUTH_PASSWORD_VALIDATORS.append({
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
-]
+    })
 
 
 # Internationalization

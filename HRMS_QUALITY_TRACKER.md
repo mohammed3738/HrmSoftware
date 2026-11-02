@@ -116,7 +116,7 @@ Admin / Super Admin / HR / Payroll Officer is intended
 | D-07 | P2 | **Stored XSS.** `json.dumps(...)` piped through `\|safe` directly into `<script>` bodies. `json.dumps` does not escape `<`, so a `</script>` in any serialized value closes the tag. Carriers: `holidays_json` (`Holiday.name`), `half_day_json` (`HalfDayScenario.description`), `calendar_attendance_json`. Templates: `templates/holiday_calendar/dashboard.html:1853-1854`, `templates/attendance/employee_attendance_detail.html:810`. P2 rather than P1 because once D-01b/c are gated, writing those fields needs `holiday_calendar:edit` — so it is staff-to-staff/employee escalation, not anyone-to-everyone. `calendar_attendance_json` carries only `Attendance.status`, a choices field, so that carrier is not currently injectable. |
 | D-08 | P2 | `settings.py`: `DEBUG` defaults to **True** and `SECRET_KEY` falls back to a hardcoded `django-insecure-…` literal when the env var is absent. A server with a missing/mis-spelled `.env` key silently serves debug tracebacks and signs sessions with a key that is in the repository. `ALLOWED_HOSTS` defaults to `['*']`. |
 | D-09 | P2 | `TIME_ZONE = 'UTC'` (hardcoded, not env-driven) while `CELERY_TIMEZONE = 'Asia/Kolkata'`. Day boundaries for an India-operating HRMS are 5h30m out. Compounded by mixed `date.today()` (12 uses in views.py, OS-local) vs `timezone.now()` (10 uses, UTC) vs no `localdate()` at all. |
-| D-10 | P3 | No brute-force throttling or lockout on `login_view`; no `SESSION_COOKIE_AGE` / idle timeout; `AUTH_PASSWORD_VALIDATORS` declared twice in `settings.py` (second wins, identical). |
+| D-10 | P3 | No brute-force throttling or lockout on `login_view`; no `SESSION_COOKIE_AGE` / idle timeout. The duplicate `AUTH_PASSWORD_VALIDATORS` declaration (two copies, second silently winning) was part of this entry and is **fixed** -- the list is now declared once, see the password-policy note below. |
 | D-23 | **P0** | **Uploaded files are served with no authentication at all.** `DEPLOYMENT.md:427-429` configures nginx as `location /media/ { alias .../hrms/media/; }`, so everything under `MEDIA_ROOT` is fetched straight off disk by any anonymous request — `_serve_employee_file`'s `can_access_employee_record()` check is bypassed by requesting the same bytes one URL over. The team knows media is public: `employee_photo_path` (models.py:141) randomises photo filenames with a comment saying *"media files are served publicly, so the URL must not be guessable"*. That mitigation was applied to **1 of 14** upload fields. The other 13 keep the uploader's original filename, including `EmployeeAttachment.file` → `employee_attachments/` (KYC: Aadhaar and PAN scans), `PreviousEmploymentAttachment.file`, the four `Offboarding` document fields, `AssetHandover.asset_photo`/`receipt`, `AttendanceCorrectionRequest.mom_attachment`, and `AttendanceUpload.file` / `EmployeeImportUpload.file` / `SalaryUpload.file` (whole-company attendance, employee-master and salary spreadsheets). Names like `aadhaar.pdf` or `pan.jpg` are trivially guessable, and any URL ever leaked stays public forever. D-02 made it worse: the ungated `offboarding_detail` / `offboarding_edit_data` handed those `/media/` paths out in JSON. |
 | D-24 | P2 | No extension, MIME or size validation on any document upload field. Only `Employee.photo` (forms.py:108) and `Company.logo` (forms.py:344,360) check size and content type. An `.html` or `.svg` attachment uploaded through the KYC or offboarding forms is served inline from the application's own origin by `_serve_employee_file` (no `as_attachment` unless `?download=1`), which makes it stored XSS with the viewer's session; the same file is also world-readable per D-23. |
 | D-11 | P3 | `is_staff` grants a full bypass in every decorator and in `can_access_employee_record`. That is deliberate and documented, but it means "can open Django admin" silently equals "can do everything", with no second check. |
@@ -130,6 +130,33 @@ Admin / Super Admin / HR / Payroll Officer is intended
 | D-14 | P2 | **Disclosed, not changed** (policy, not a bug to fix unilaterally): `PayrollSettings.esic_percentage` defaults to `3.67`, and `calculate_and_populate_record` applies it as the *employee* ESIC deduction. The statutory employee ESIC share is 0.75% (employer 3.25%); 3.67% is the EPF employer EPS split. If the default has ever been left untouched, employee ESIC is over-deducted by ~4.9x. Needs the user's decision. |
 | D-15 | P2 | Payroll deducts an advance EMI from net pay but nothing calls `services.apply_payment`, so `AdvanceSchedule.status` stays `pending` and `AdvanceMaster.outstanding_amount` never falls. The advance ledger shown to employees and HR diverges from what payroll has actually recovered. |
 | D-16 | P3 | `services.revert_skip` computes `outstanding // remaining_count` with no guard; `remaining_count == 0` raises `ZeroDivisionError`. `get_advance_for_employee_month` takes `.first()` with no `order_by`, so the EMI chosen is non-deterministic when a period contains more than one. |
+
+### Password policy
+
+The change-password form refused a password built from the user's own name:
+`new_password2: The password is too similar to the first name.` That is
+Django's `UserAttributeSimilarityValidator`, on by default. The user's
+policy is the opposite -- staff set passwords from their names -- so that
+validator is now off, and the whole list is declared **once** instead of
+twice (editing the first copy used to do nothing, since the second one won).
+
+Each remaining check is switchable by environment variable, because two of
+them can also reject a name: `CommonPasswordValidator`'s word list contains
+common first names, and a name shorter than the minimum is refused on
+length alone. Defaults keep them on.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `PASSWORD_FORBID_USER_ATTRIBUTES` | `false` | `true` restores the name/username similarity check |
+| `PASSWORD_MIN_LENGTH` | `8` | `0` removes the length check entirely |
+| `PASSWORD_FORBID_COMMON` | `true` | `false` allows `password`, `michael`, ... |
+| `PASSWORD_FORBID_NUMERIC` | `true` | `false` allows an all-digit password |
+
+Pinned by `test_password_policy.py` (8 tests), including that the other
+three rules did **not** quietly relax with it and that the similarity check
+still works when switched back on. Red/green: with
+`PASSWORD_FORBID_USER_ATTRIBUTES=true` the suite reports 3 failures and
+3 errors; with the policy as shipped, all 8 pass.
 
 ### Attendance rules
 

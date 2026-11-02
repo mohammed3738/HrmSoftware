@@ -377,6 +377,43 @@ SHIFT_ROSTER_ARCHIVE_AFTER_DAYS = int(
     os.environ.get('SHIFT_ROSTER_ARCHIVE_AFTER_DAYS', '7'))
 
 
+# Email
+#
+# Needed by the Forgot Password flow on the login page -- that is the only
+# thing in the application that sends mail today, and a reset link that
+# never arrives looks exactly like a broken login page, so the backend is
+# chosen explicitly rather than left to Django's default (SMTP on
+# localhost:25, which fails on a machine with no local mail server).
+#
+# With EMAIL_HOST set, real SMTP. Without it: the console backend while
+# DEBUG is on, so a developer can read the reset link straight out of the
+# runserver output, and otherwise a backend that raises -- a silent failure
+# here means an employee is locked out with no way to know why.
+EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', True)
+EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
+EMAIL_TIMEOUT = int(os.environ.get('EMAIL_TIMEOUT', '10'))
+DEFAULT_FROM_EMAIL = os.environ.get(
+    'DEFAULT_FROM_EMAIL', EMAIL_HOST_USER or 'no-reply@localhost')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+if os.environ.get('EMAIL_BACKEND'):
+    EMAIL_BACKEND = os.environ['EMAIL_BACKEND']
+elif EMAIL_HOST:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+elif DEBUG or RUNNING_TESTS:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+else:
+    EMAIL_BACKEND = 'website.mail.UnconfiguredEmailBackend'
+
+# How long a password reset link stays valid. Django's default is 3 days,
+# which is a long time for a link that grants account access by itself.
+PASSWORD_RESET_TIMEOUT = int(os.environ.get('PASSWORD_RESET_TIMEOUT', str(60 * 60 * 4)))
+
+
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
 #

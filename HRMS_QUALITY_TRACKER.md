@@ -158,6 +158,61 @@ still works when switched back on. Red/green: with
 `PASSWORD_FORBID_USER_ATTRIBUTES=true` the suite reports 3 failures and
 3 errors; with the policy as shipped, all 8 pass.
 
+### Forgot Password and the password checklist
+
+The login page had no way back in for an employee who forgot their
+password -- the only route was asking HR to reset it by hand. Django's
+four-step reset flow is now wired up behind a **Forgot password?** link
+next to the Password label, with the application-specific parts in
+`website/views_password_reset.py`.
+
+Three things were not free:
+
+* **Nothing in this application sent email.** There were no `EMAIL_*`
+  settings at all, so Django's default would have been SMTP on
+  localhost:25 -- and `PasswordResetView` reports success whether or not
+  the message went out, by design, so an employee would be told "check
+  your email" for a message that never existed. Settings are now
+  env-driven, and with `EMAIL_HOST` unset the backend is the console one
+  under DEBUG and `website.mail.UnconfiguredEmailBackend` otherwise, which
+  raises and names the missing setting instead of failing silently.
+* **`force_password_change` had to be cleared on a completed reset.** An
+  auto-provisioned login starts with the shared temporary password and the
+  flag set, and ForcePasswordChangeMiddleware bounces such a user to the
+  change-password page -- which asks for a current password they have
+  never had. `PasswordResetConfirmView.form_valid` now clears it, the same
+  as `change_password` does. Red/green: removing those four lines fails
+  `test_finishing_a_reset_clears_force_password_change`.
+* **An employee who has Left must not be able to reset.** That already
+  held, but through two separate pieces -- the Employee signal
+  deactivates the user, and Django only mails active users -- so it is
+  pinned rather than assumed.
+
+Link expiry is `PASSWORD_RESET_TIMEOUT`, 4 hours by default rather than
+Django's 3 days, and both the page and the email say so.
+
+**The checklist.** The change-password and reset-password pages now list
+the rules and turn each one green as it is met, and every password field
+has a show/hide button. The list is built by
+`website/utils/password_rules.py` from `AUTH_PASSWORD_VALIDATORS`, not
+written into the template: switching a validator off removes its line, and
+changing `PASSWORD_MIN_LENGTH` changes the number shown, so the page
+cannot promise something the server will refuse. Two rules cannot be
+judged in the browser -- the 20,000-word common-password list and the
+name-similarity check -- and are shown greyed, as "checked when you save",
+rather than guessed at.
+
+Verified in a browser, not from the source: the full loop on a throwaway
+SQLite database -- Forgot password -> the emailed link -> a name-based
+password accepted with three green ticks -> signed in and landed on the
+employee dashboard rather than being bounced to change-password. The
+reused link then reports "This link no longer works". No horizontal
+overflow at 375px.
+
+Found and fixed during that pass: `{# ... #}` only comments out a
+**single** line, so the two multi-line comments in the new templates were
+rendering as page text at the top of the Forgot Password page.
+
 ### Attendance rules
 
 | ID | Sev | Finding |

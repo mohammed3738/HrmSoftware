@@ -95,8 +95,11 @@
           </div>
 
           <div class="mb-3">
-            <label for="password" class="form-label">Password</label>
-            <div class="input-group input-group-merge">
+            <div class="d-flex justify-content-between align-items-center">
+              <label for="password" class="form-label mb-0">Password</label>
+              <a href="{% url 'password-reset' %}" class="small">Forgot password?</a>
+            </div>
+            <div class="input-group input-group-merge mt-1">
               <input type="password" id="password" name="password" class="form-control" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;" required>
               <span class="input-group-text password-toggle" id="togglePassword">
                 <i class="ri-eye-off-line" id="toggleIcon"></i>

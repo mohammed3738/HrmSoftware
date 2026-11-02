@@ -10413,6 +10413,8 @@ from django.contrib.auth.forms import PasswordChangeForm
 from django.contrib.auth import update_session_auth_hash
 from django.contrib import messages
 
+from website.utils.password_rules import password_rules
+
 @login_required
 def change_password(request):
     if request.method == "POST":
@@ -10444,7 +10446,14 @@ def change_password(request):
     else:
         form = PasswordChangeForm(request.user)
 
-    return render(request, "auth/change_password.html", {"form": form})
+    # The on-screen checklist is built from the validators actually
+    # configured (website/utils/password_rules.py), so switching one off or
+    # changing PASSWORD_MIN_LENGTH cannot leave the page promising a rule
+    # the server no longer enforces -- or hiding one it does.
+    return render(request, "auth/change_password.html", {
+        "form": form,
+        "password_rules": password_rules(),
+    })
 
 
 

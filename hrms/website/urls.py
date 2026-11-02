@@ -3,6 +3,7 @@ from django.urls import path
 
 from website import views
 from website import views_biometric
+from website import views_password_reset
 
 urlpatterns = [    
     # path('',views.test,name="test"),
@@ -65,6 +66,18 @@ urlpatterns = [
     path("create-user/", views.create_user_view, name="create-user"),
     path("logout/", views.logout_view, name="logout"),
     path("change-password/", views.change_password, name="change-password"),
+
+    # Forgot Password, linked from the login page. Django's own four-step
+    # flow, subclassed in views_password_reset to clear
+    # force_password_change when a reset completes -- see that module.
+    path("forgot-password/", views_password_reset.PasswordResetView.as_view(),
+         name="password-reset"),
+    path("forgot-password/sent/", views_password_reset.PasswordResetDoneView.as_view(),
+         name="password-reset-done"),
+    path("reset/<uidb64>/<token>/", views_password_reset.PasswordResetConfirmView.as_view(),
+         name="password_reset_confirm"),
+    path("reset/done/", views_password_reset.PasswordResetCompleteView.as_view(),
+         name="password-reset-complete"),
 
     path('create-salary',views.create_salary,name="create-salary"),
     path("salary/export-excel/", views.salary_master_export_excel, name="salary-master-export-excel"),

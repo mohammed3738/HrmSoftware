@@ -1,0 +1,67 @@
+{% load static %}
+{% comment %}
+Shared chrome for the standalone auth pages (Forgot Password and the reset
+steps). login.html predates this and carries its own copy of the markup;
+this exists so the four reset pages do not each repeat it.
+
+{# #} only comments out a SINGLE line -- a multi-line one renders as page
+text, which is how the first version of this file put its own comment at
+the top of the Forgot Password page.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="en" class="light-style" dir="ltr" data-theme="theme-default" data-assets-path="{% static 'assets/' %}" data-style="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}HRMS{% endblock %}</title>
+
+  <link rel="icon" type="image/svg+xml" href="{% static 'assets/img/branding/hrms-icon.svg' %}" />
+  <link rel="alternate icon" type="image/png" href="{% static 'assets/img/branding/favicon.png' %}" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="{% static 'assets/vendor/fonts/remixicon/remixicon.css' %}" />
+  <link rel="stylesheet" href="{% static 'assets/vendor/css/rtl/core.css' %}" />
+  <link rel="stylesheet" href="{% static 'assets/vendor/css/rtl/theme-default.css' %}" />
+  <link rel="stylesheet" href="{% static 'assets/vendor/css/pages/page-auth.css' %}" />
+  <link rel="stylesheet" href="{% static 'assets/css/demo.css' %}" />
+
+  <style>
+    html, body { height: 100%; }
+    .hrms-auth-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      width: 100%;
+    }
+    .auth-form-panel { width: 100%; max-width: 26rem; }
+    .password-toggle { cursor: pointer; }
+    .app-logo-white { display: none !important; }
+    html.dark-style .app-logo-colour { display: none !important; }
+    html.dark-style .app-logo-white  { display: inline-block !important; }
+  </style>
+</head>
+
+<body>
+  <div class="hrms-auth-wrapper authentication-bg p-4 p-sm-5">
+    <div class="auth-form-panel mx-auto">
+
+      <div class="app-brand mb-4 d-flex align-items-center gap-2">
+        <img src="{% static 'assets/img/branding/hrms-logo.svg' %}"
+             alt="HRMS — a product of Zaco Information Technology"
+             class="app-logo app-logo-colour" style="height:100px; width:auto;">
+        <img src="{% static 'assets/img/branding/hrms-logo-white.svg' %}"
+             alt="HRMS — a product of Zaco Information Technology"
+             class="app-logo app-logo-white" style="height:100px; width:auto;">
+      </div>
+
+      {% block content %}{% endblock %}
+
+    </div>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

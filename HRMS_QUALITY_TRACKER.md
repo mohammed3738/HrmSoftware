@@ -133,6 +133,8 @@ Admin / Super Admin / HR / Payroll Officer is intended
 
 | ID | Sev | Finding |
 |---|---|---|
+| D-32 | P2 | **A declared holiday is not counted in `present_days`.** `get_attendance_summary()` filters `is_holiday=False`, so a Holiday row never reaches `paid_days`, and holidays are not weekend days so they never reach `free_weekend_days` either. An employee present every working day of a week containing one holiday reads **6.00 of 7**. It does **not** read as leave — `leave_taken` is correctly 0.00, so pro-rata pay is unaffected — but `present_days` is a payroll figure shown on the record. Pre-existing and unchanged by the marking work: the figure is 6.00 whether or not the Holiday row exists, which `test_marked_days_do_not_change_payroll` asserts directly. Moving it is the user's decision. |
+| D-33 | P3 | **An employee whose working days are disjoint from everyone else's never has absences marked.** The absence guard asks, per day, whether the machine reported — so an employee rostered to work Sundays (weekly off on Wednesday) while the company is off gets no Sunday absence, because no punch ever lands on a Sunday. The conservative direction, and the one the user chose, but it means the attendance list is not completely gap-free for that employee. Pinned by `test_non_working_day_marking.test_a_lone_worker_on_a_day_nobody_else_works_is_left_blank`. |
 | D-29 | P2 | **"All Branches" half-day scenarios applied to nobody.** `add_half_day_scenario` stores `branch=NULL` for the All Branches option and reports success, but `Attendance.get_half_day_scenario()` looked it up with `filter(branch=branch)` — for an employee in branch 5 that is `branch_id = 5`, which never matches the `NULL` row. The model's two partial unique constraints (`branch__isnull=False` / `branch__isnull=True`) show `NULL` was meant as "all branches". `credit_count` is attendance credit, so this is a pay difference. **Fixed.** |
 | D-30 | P2 | **Employees with no branch were skipped by holiday and half-day evaluation.** Both steps sat inside `if branch:` in `calculate_status()`, and `Employee.branch` is nullable — **2 of the 104 employees in the working database have no branch**. A national holiday was computed as an ordinary working day for them: no punch, therefore `Absent` / count 0.00 instead of `Holiday` / count 1.00, costing a paid day per holiday. `Holiday.is_applicable_to_branch()` already handled `None` deliberately, so the guard was the only obstacle. **Fixed.** |
 | D-31 | P3 | `HalfDayScenario` had **no test coverage at all** before this pass, despite setting a day's pay credit. Now covered by `test_half_day_scenario_application.py` (11 tests). |
@@ -299,6 +301,25 @@ reading them:
   decorators and the view, so `@login_required` and
   `@feature_required("shift_roster", "edit")` decorated the helper and the
   view was left ungated. `test_shift_roster` caught it.
+
+**Marking the rest of the month (2026-11-02).** Absences alone still left
+gaps: a weekly off, a holiday and an unplugged device all looked the same
+on the attendance list — nothing at all. `mark_absent_days` became
+`mark_unrecorded_days`, and the two kinds of day are filled in on
+different terms, which is the whole design:
+
+* a **non-working day** (Weekend, weekly off, Holiday, half-day scenario)
+  is marked on every completed day in the window, with **no** requirement
+  that punches arrived. Requiring one would mean Sundays and holidays were
+  never marked, since those are precisely the days nobody punches on.
+  Recording them cannot cost anybody pay.
+* an **Absent** day keeps the strict rule — only on a day the machine
+  reported, judged **per day**, because a working day on which nobody in
+  the company punched is indistinguishable from an unplugged device.
+
+Verified end to end in a browser: an employee who punched three days out
+of fourteen now shows all fourteen — 3 Present, 8 Absent, 2 Weekend,
+1 Holiday — where before only the 3 Present rows existed.
 
 **Still on `Employee`.** `week_off_day` remains on the employee form as the
 fallback for staff who are never rostered. Removing it from the form is a

@@ -453,6 +453,13 @@ server {
     }
 
     location / {
+        # No proxy_cache here, on purpose. Everything behind this location
+        # is per-user: a salary slip, a KYC scan, a 403 meant for one
+        # person. Django marks all of it `Cache-Control: no-store`, and
+        # nginx honours that -- but only while nobody adds
+        # `proxy_ignore_headers Cache-Control`, which would override it and
+        # hand one employee's page to the next. See "One 403 turns into
+        # 403 on every page" in Troubleshooting.
         proxy_pass http://127.0.0.1:8025;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -790,8 +797,47 @@ sudo tail -n 50 /var/log/nginx/error.log                       # nginx errors (5
 | Scheduled jobs never run | `systemctl status hrms-prod-celerybeat hrms-prod-celery`. Both must be active, and `CELERY_BROKER_URL` must use a Redis database no other project uses. |
 | `pip install` fails building **pycairo** | Re-run Step 2. `libcairo2-dev` and `pkg-config` are required. |
 | Changed `.env` but nothing happened | Settings load once at start-up: `sudo systemctl restart hrms-prod-gunicorn hrms-prod-celery hrms-prod-celerybeat` |
-| **One 403 turns into 403 on every page** until the cache is cleared | A cache in front of Django stored the 403 and is replaying it. Nothing on the server remembers a refusal, which is why only clearing a cache helps. Fixed in the app: every response now carries `Cache-Control: no-store`. If it persists, something between the browser and nginx is ignoring that — purge it once (a CDN needs a manual purge for anything stored before the fix), and check for a `proxy_cache` in the nginx site. |
+| **One 403 turns into 403 on every page** until the cache is cleared | A cache in front of Django stored the 403 and is replaying it. Nothing on the server remembers a refusal, which is why only clearing a cache helps. Fixed in the app: every response now carries `Cache-Control: no-store`. See [Checking the cache headers](#checking-the-cache-headers) if it comes back. |
 | **Old CSS or JavaScript after a deploy**, fixed by clearing the browser cache | `/static/` is served with `expires 7d` and the filenames are not content-hashed, so a browser keeps last week's files. Covered in [Static files after a deploy](#static-files-after-a-deploy). |
+
+---
+
+## Checking the cache headers
+
+Every response this application generates says `Cache-Control: no-store`, so
+nothing in front of it may keep a copy. Two commands confirm that end to end.
+
+**Is the header actually going out?** From anywhere:
+
+```bash
+curl -sI https://hrms.zacoinfotech.com/login/ | grep -i -E "cache-control|pragma|vary"
+```
+
+Expect `Cache-Control: no-store, no-cache, must-revalidate, private`. If the
+header is missing, gunicorn is still running the old code:
+`sudo systemctl restart hrms-prod-gunicorn`.
+
+**Is nginx caching anything it shouldn't?** On the server:
+
+```bash
+grep -rn "proxy_cache\|proxy_ignore_headers" /etc/nginx/ | grep -v "#"
+```
+
+This should print nothing. (The second `grep` drops comment lines, so the
+explanatory comment inside the `hrms_prod` site file is filtered out —
+only a real directive would show.) `proxy_cache` makes nginx
+store responses; `proxy_ignore_headers Cache-Control` makes it store them *even
+though* Django said not to, which is worse — it would serve one employee's
+pages to another. If either appears in `hrms_prod`, remove it and
+`sudo nginx -t && sudo systemctl reload nginx`.
+
+**If a sticky 403 still happens** with both of those clean, it is the browser's
+own cache, and the thing to capture is the evidence rather than clearing it
+again: open DevTools → Network, reproduce, and look at the 403's **Size**
+column. `(disk cache)` or `(memory cache)` means it was replayed locally and
+never reached the server; a byte count means the server really did return 403,
+which is a permissions question and not a caching one — check the user's role
+under Roles & Permissions.
 
 ---
 

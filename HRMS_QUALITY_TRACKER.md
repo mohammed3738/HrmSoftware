@@ -285,10 +285,15 @@ carrying the header.
 | D-34 | P1 | **No `Cache-Control` on any response.** A stored 403 was replayed across the whole site, and private employee pages could be stored by a shared cache or left in a browser's disk cache after logout. Fixed. |
 | D-35 | P3 | **`/static/` is served with `expires 7d` and unhashed filenames.** After a deploy, returning browsers keep last week's CSS and JavaScript; a hard refresh fixes one person, everyone else waits out the week. Documented with a one-line mitigation rather than fixed: the real answer is `ManifestStaticFilesStorage`, which fails the whole `collectstatic` if any vendor CSS references a missing asset, so it needs a staging run with time to fix the fallout -- not a release-day change. |
 
-Open question for the user: what sits in front of staging. If a CDN or a
-caching proxy is there, anything it stored **before** this fix stays
-stored until it is purged once -- the new header only governs what it
-stores from now on.
+Staging is nginx with no CDN (confirmed by the user, 2026-11-04). nginx
+honours `no-store` by default, so the fix is enough there -- unless
+somebody adds `proxy_ignore_headers Cache-Control`, which would override
+Django and hand one employee's page to the next. That is now a comment in
+the nginx site in DEPLOYMENT.md and a check in **Checking the cache
+headers**, alongside what to capture if a sticky 403 recurs: the 403's
+Size column in DevTools says whether it was replayed from the local cache
+or genuinely returned by the server, which separates a caching problem
+from a permissions one.
 
 ### Attendance rules
 

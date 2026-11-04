@@ -1,0 +1,107 @@
+{% comment %}
+  The capture step both buttons go through: location, then a live selfie,
+  then submit.
+
+  Live camera only, by the choice recorded in HRMS_QUALITY_TRACKER.md --
+  there is no file input here on purpose. A file picker would let an old
+  photo stand in for a selfie, which is the one thing this record exists to
+  rule out. getUserMedia needs a secure context, so on a phone this page
+  has to be opened over HTTPS; the error panel below says so rather than
+  failing silently.
+{% endcomment %}
+<div class="modal fade" id="fieldDutyCaptureModal" tabindex="-1"
+     aria-labelledby="fieldDutyCaptureTitle" aria-hidden="true"
+     data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title" id="fieldDutyCaptureTitle">Take your selfie</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+
+        {% comment %}
+          The page's CSRF token. Here rather than relying on the csrftoken
+          cookie: this page has no ordinary form of its own when there is
+          nothing awaiting a report, and a page that never renders a token
+          may not have the cookie set at all.
+        {% endcomment %}
+        <form id="field-duty-csrf" hidden>{% csrf_token %}</form>
+
+        {% comment %}
+          What has been captured so far, as plain sentences -- one row per
+          thing the punch needs, each with its own state and its own way
+          out. Separate rows rather than a single error box because the two
+          fail independently: the camera can be fine while the location is
+          still being refused, and a shared box would show only whichever
+          failed last.
+
+          Each row carries its own button. A permission that was refused,
+          or a prompt that got dismissed, is not a dead end -- pressing the
+          button asks the browser again.
+        {% endcomment %}
+        <ul class="list-unstyled small mb-3" id="field-duty-capture-status" aria-live="polite">
+          <li class="d-flex align-items-start gap-2 mb-2" data-step="camera">
+            <i class="ri-loader-4-line mt-1" aria-hidden="true"></i>
+            <div class="flex-grow-1">
+              <span data-step-text>Starting the camera…</span>
+              <div class="text-muted d-none" data-step-help></div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none flex-shrink-0"
+                    data-step-retry>Allow</button>
+          </li>
+          <li class="d-flex align-items-start gap-2" data-step="location">
+            <i class="ri-loader-4-line mt-1" aria-hidden="true"></i>
+            <div class="flex-grow-1">
+              <span data-step-text>Getting your location…</span>
+              <div class="text-muted d-none" data-step-help></div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary d-none flex-shrink-0"
+                    data-step-retry>Allow</button>
+          </li>
+        </ul>
+
+        {% comment %}
+          Only for problems that are not about one permission -- an
+          insecure origin, say, where neither API will even prompt.
+        {% endcomment %}
+        <div class="alert alert-danger d-none" id="field-duty-capture-error" role="alert"></div>
+
+        <div class="ratio ratio-4x3 bg-dark rounded-3 overflow-hidden mb-3"
+             id="field-duty-stage">
+          {% comment %}
+            muted + playsinline are what let this autoplay on iOS Safari
+            instead of showing a tap-to-play poster.
+          {% endcomment %}
+          <video id="field-duty-video" autoplay muted playsinline
+                 class="w-100 h-100 object-fit-cover"></video>
+          <img id="field-duty-preview" alt="The selfie you just took"
+               class="w-100 h-100 object-fit-cover d-none">
+        </div>
+        <canvas id="field-duty-canvas" class="d-none"></canvas>
+
+        <p class="text-muted small mb-0" id="field-duty-capture-hint">
+          Hold the phone at arm's length so your face is in frame, then tap Capture.
+        </p>
+      </div>
+
+      <div class="modal-footer flex-nowrap">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button type="button" class="btn btn-primary flex-grow-1" id="field-duty-capture-btn" disabled>
+          <i class="ri-camera-line me-1"></i> Capture
+        </button>
+        <button type="button" class="btn btn-outline-secondary d-none" id="field-duty-retake-btn">
+          Retake
+        </button>
+        <button type="button" class="btn btn-success flex-grow-1 d-none" id="field-duty-submit-btn">
+          <i class="ri-check-line me-1"></i> <span data-submit-label>Confirm &amp; Start</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>

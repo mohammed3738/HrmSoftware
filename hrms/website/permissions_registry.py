@@ -56,6 +56,8 @@ FEATURES = [
      "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 30},
     {"key": "attendance_corrections", "name": "Attendance Corrections", "category": "Attendance & Scheduling",
      "has_view": True, "has_create": True, "has_edit": False, "has_approve": True, "sort_order": 40},
+    {"key": "field_duty", "name": "Field Duty Log", "category": "Attendance & Scheduling",
+     "has_view": True, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 45},
 
     {"key": "leave_management", "name": "Leave Management", "category": "Leave & Comp-Off",
      "has_view": True, "has_create": True, "has_edit": True, "has_approve": True, "sort_order": 10},
@@ -154,6 +156,14 @@ SEED_GRANTS = {
     ("attendance_corrections", "approve"): _NOT_HR,
     # Raising a correction for someone else's attendance (your own needs no grant).
     ("attendance_corrections", "create"): _NOT_HR,
+    # Field Duty. Starting and ending one's own duty needs no grant at all
+    # (it is self-service, like My Attendance) -- these two are about
+    # reading the whole company's log, which includes employees'
+    # whereabouts and photographs, and uploading a Minutes of Meeting on
+    # somebody else's behalf. HR is included: chasing the field team for
+    # missing minutes is HR's job, and neither action touches pay.
+    ("field_duty", "view"): _ALL_STAFF,
+    ("field_duty", "edit"): _ALL_STAFF,
 
     # ── Leave & Comp-Off ──────────────────────────────────────────────
     # HR reads leave balances -- their own and everyone's -- but neither

@@ -1,5 +1,10 @@
 {% extends 'base2.html' %}
 {% load static %}
+{% comment %}
+  Tag libraries do not inherit from the parent, so this is needed here even
+  though base2.html loads the same one.
+{% endcomment %}
+{% load custom_filters %}
 {% block title %}My Dashboard{% endblock %}
 
 {% block body %}
@@ -36,7 +41,25 @@
 
           <!-- Self-service actions -->
           <div class="mt-3 d-flex flex-wrap gap-2 justify-content-sm-start justify-content-center">
-            <a href="{% url 'leave_apply' %}" class="btn btn-primary">
+            {% comment %}
+              Field Duty leads the row, and says which half of it is next.
+              Somebody standing outside a client's office opens the
+              dashboard to end a duty, not to read it -- an "open the Field
+              Duty page" link would be a step in the way, and a Start button
+              shown to somebody already out would be the wrong button
+              entirely.
+            {% endcomment %}
+            {% if open_field_duty %}
+              <a href="{% url 'field-duty' %}" class="btn btn-danger">
+                <i class="ri-logout-circle-line me-1"></i> End Field Duty
+                <span class="badge bg-white text-danger ms-1">{{ open_field_duty.get_activity_display }}</span>
+              </a>
+            {% else %}
+              <a href="{% url 'field-duty' %}" class="btn btn-primary">
+                <i class="ri-login-circle-line me-1"></i> Start Field Duty
+              </a>
+            {% endif %}
+            <a href="{% url 'leave_apply' %}" class="btn btn-outline-primary">
               <i class="ri-calendar-event-line me-1"></i> Apply for Leave
             </a>
             <a href="{% url 'employee_attendance_detail' employee.id %}" class="btn btn-outline-secondary">
@@ -45,6 +68,17 @@
             <a href="{% url 'my_profile' %}" class="btn btn-outline-secondary">
               <i class="ri-id-card-line me-1"></i> My Details
             </a>
+            {% comment %}
+              A team leader lands here rather than on the admin dashboard, so
+              their team's field duty has to be reachable from this row --
+              otherwise the only way in is the Attendance menu.
+            {% endcomment %}
+            {% if request.user|has_feature:"field_duty:view" or request.user|has_reportees %}
+              <a href="{% url 'field-duty-log' %}" class="btn btn-outline-info">
+                <i class="ri-team-line me-1"></i>
+                {% if request.user|has_feature:"field_duty:view" %}Field Duty Log{% else %}My Team's Field Duty{% endif %}
+              </a>
+            {% endif %}
           </div>
         </div>
       </div>

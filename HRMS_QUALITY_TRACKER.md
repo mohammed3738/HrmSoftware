@@ -295,6 +295,164 @@ Size column in DevTools says whether it was replayed from the local cache
 or genuinely returned by the server, which separates a caching problem
 from a permissions one.
 
+### Field Duty (feature requested by the user, 2026-11-04)
+
+Asked for: a salesperson marks a meeting started / ended, an engineer clocks
+in / out for a field visit, a delivery rider marks out for delivery / done.
+Each punch captures date and time, geolocation and a selfie. One common
+option for everybody, with good names. A salesperson's record stays
+**pending** until the minutes of meeting are uploaded. And: "if there is no
+in punch then the starting time would become the punch in time, and the end
+time if latest would become the punch out time."
+
+**Decisions taken with the user** (all four as recommended):
+
+| Question | Chosen | Alternative rejected |
+|---|---|---|
+| Name | **Field Duty** — "Start Field Duty" / "End Field Duty" | "Field Visit" reads oddly for a delivery round; "On Duty" collides with the payroll meaning of that phrase |
+| Who | **Every employee** | A per-employee "field staff" flag — HR would have to tick it for each joiner or they cannot punch |
+| Activity types | **Fixed in code**: Client Meeting, Site / Field Visit, Delivery, Other Field Work | An admin-managed master with a per-type "needs a report" flag; more to build, nothing asked for it yet |
+| Selfie | **Live camera only** — no file input anywhere in the flow | Camera with a gallery fallback; an old photo would stop the selfie being evidence of presence |
+
+Three names rather than three features: the record is the same shape for all
+of them (start somewhere, end somewhere, with the time, place and face at
+both ends), so `activity` is one field and the only thing it decides is
+whether a report is needed to close the duty
+(`FieldDuty.REPORT_REQUIRED_ACTIVITIES`, currently Client Meeting alone).
+"Pending" is named **Pending Report** on screen, labelled *Minutes of
+Meeting* for a meeting — matching the MoM vocabulary already in
+`AttendanceCorrectionRequest.is_mom`.
+
+**What the server does not trust.** `started_at` and `ended_at` are the
+server's own clock. A browser can post any timestamp it likes, and a record
+whose times came from the thing being evidenced would be evidence of
+nothing. The coordinates and the photo necessarily come from the device, so
+they prove what the device reported, not fact — which is why
+`start_accuracy_m` is stored and shown: a fix with a 2 km radius was a
+network lookup, not GPS, and the detail view says so in words rather than
+drawing a confident pin. What the server *can* enforce it does: a punch
+missing either the photo or the coordinates is refused, not stored
+half-blind, and the image header is decoded rather than its claimed content
+type believed.
+
+**The attendance side is one-directional.** `services/field_duty.py` fills
+gaps and extends the day; it never overwrites. Left alone: an in-time that
+already exists from any source, an out-time already later than this duty's
+end, a row with `times_locked` (an approved correction or an upload — the
+same rows `biometric_sync` skips), and any date inside a finalized payroll
+run. The 00:00/00:00 pair this app's uploads use to mean "absent" counts as
+a gap, not as an in-time of midnight. Nothing new was needed in the other
+direction: `biometric_sync.derive_day_times` already honours "an in-time
+once set never moves" and "an out-time only moves forward", so a
+self-reported time survives a later sync while a real device punch can
+still extend the day past it. A duty that ran past midnight leaves the
+out-time alone and says why — overnight spans belong to the shift roster.
+
+**Privacy.** A selfie is an employee's face and the coordinates are their
+movements. Neither is ever a `/media/` URL (nginx serves those with no
+authentication at all — D-23): both go through a view that re-checks
+permission per request. The log page deliberately does not render selfies
+inline, only links them, so the photos are not splashed across a list left
+open on a shared screen. Reading the whole company's log is gated on the new
+`field_duty:view`; punching your own duty needs no grant, like My
+Attendance.
+
+Red/green on the three load-bearing guards, each broken on purpose and the
+suite re-run: removing the "never overwrite an in-time" check fails
+`test_an_in_time_that_already_exists_is_never_overwritten`; ignoring
+`times_locked` fails `test_a_day_whose_times_were_set_by_hand_is_left_alone`;
+bypassing the payroll lock fails
+`test_a_finalized_payroll_period_is_not_touched`.
+
+**Who sees what** (second round, same day, after the user asked for the
+team view and the month filter):
+
+Two separate ways into the log, because they answer different questions.
+`field_duty:view` is a company-wide grant taken on the Roles & Permissions
+page — Super Admin, Admin, Payroll Officer, HR. A team leader's authority
+is not a role at all: it is whoever a department or an employee record
+points at (`Employee.reporting_person` and `Employee.manager`, the same
+pair that already routes approvals), so it cannot be expressed in the
+permission matrix. Granting HOD the company-wide right instead would have
+shown one team's leader every other team as well — which is exactly what
+the red/green run proves is caught: bypassing the team filter fails
+`test_a_team_leader_does_not_see_another_team`, and widening the
+per-record check fails four tests across both scopes.
+
+So `field_duty_log` is **not** `@feature_required`. It asks `log_scope()`,
+which answers *everyone*, *their own team* (reportees plus the leader's own
+duties, since a team leader goes to meetings too), or *no*. The employee
+dropdown is built from the same scope, so it cannot be used to probe for
+names outside it, and `_visible_duty_or_403` gives the same three answers —
+otherwise a row visible in the list would refuse to open, or worse, a
+selfie would open for somebody the list would never have shown.
+
+**Asking for camera and location.** The first version put both failures
+into one error box and offered no way back: whichever failed last
+overwrote the other, and a refused permission could only be retried by
+closing and reopening the modal. Fixed after the user reported seeing
+"Location unavailable. Camera unavailable." with nothing to press.
+
+Each permission now owns a row with its own state, its own sentence and
+its own **Allow** button, and the two are requested and retried
+independently — a working camera is not torn down because the location
+failed. Asking is driven by the button: every open of the modal, and every
+press of Allow, calls `getUserMedia` / `getCurrentPosition` again, and
+those calls *are* the prompt (there is no separate "ask" API), so a
+dismissed prompt or a mis-tap is always one press from being asked again.
+
+The Permissions API is used only to decide what to **say**, never whether
+to ask: `granted` → used silently, `prompt` → the browser raises its own
+dialog, `denied` → the browser will not prompt however often it is asked,
+so telling somebody to "try again" would be a loop with no exit and the
+row names the padlock instead. It stays advisory — Safari has no `camera`
+descriptor and older browsers have none at all — so the request is made
+regardless and a browser that would have prompted still does. A
+`permissionStatus.onchange` listener picks up a switch flipped in site
+settings without needing the modal reopened. The two prompts are also
+staggered by 400 ms, because some mobile browsers silently drop the second
+of two raised in the same moment.
+
+Verified in the browser against a profile where both were `denied`: both
+rows named the block with the unblock instructions and an Allow button;
+stubbing geolocation to `granted` and pressing Allow turned that row green
+with its accuracy and removed its button, while the camera row stayed red
+and independently retryable.
+
+**On the dashboards.** Field Duty leads the self-service action row on the
+employee dashboard, and the button says which half is next — *End Field
+Duty* with the activity named when one is running, *Start Field Duty*
+otherwise. Somebody standing outside a client's office opens the dashboard
+to end a duty, not to read one, so a neutral "open the Field Duty page"
+link would be a step in the way and a Start button shown to somebody
+already out would be the wrong button. The log gets a button in the admin
+dashboard's Quick Actions and, for a team leader — who lands on the
+*employee* dashboard, not the admin one — in that action row too, or the
+only way in would be the Attendance menu. Both are drawn on the same two
+conditions the page itself enforces, so a drawn button never leads to a
+403. `templates/d/f.html` and `employee_dashboard.html` each needed
+`{% load custom_filters %}` added: tag libraries do not inherit from the
+parent template, and leaving it out is a `TemplateSyntaxError` on the
+dashboard rather than a missing button (confirmed by removing it).
+
+Both lists are browsed **a month at a time** (`<input type="month">`,
+defaulting to this month; a junk value quietly falls back rather than
+erroring, since this is a filter in a URL). The employee's own page shows
+Location and Photo per row — the coordinates open in Google Maps, the
+selfies through the gated route. The open duty and anything awaiting a
+report are deliberately *not* month-filtered: they are live work, and
+hiding them because somebody was looking at last month would hide the End
+Field Duty button itself.
+
+**Not built, deliberately** — say the word on any of these:
+
+| Item | Why it was left |
+|---|---|
+| Excel export of the log | Every other list in this app has one; nothing asked for it and the page has filters |
+| Geofencing (refusing a punch too far from the client's address) | There is no customer master to hold an address to compare against |
+| Reverse geocoding to a street address | Needs an external API key and sends an employee's coordinates to a third party; the map link does the same job locally |
+| Editing or deleting a duty from the office side | The record is evidence; an editable one is worth less. Admins view only |
+
 ### Attendance rules
 
 | ID | Sev | Finding |
@@ -581,10 +739,13 @@ fixtures.
 
 **Deploy-affecting changes — read before the next restart**
 
-0. **Migrations 0055 and 0056 are not applied to the local Postgres
-   database.** `manage.py migrate` is needed before the dev server or the
-   sync will run — a dry run against it fails with
-   `column website_shiftassignment.week_off_day does not exist`.
+0. **Migrations 0055, 0056, 0057 and 0058 are not applied to the local
+   Postgres database.** `manage.py migrate` is needed before the dev server
+   or the sync will run — a dry run against it fails with
+   `column website_shiftassignment.week_off_day does not exist`. On the
+   server the same applies: **0057** creates the `FieldDuty` table and
+   **0058** registers the `field_duty` feature with its role grants, so
+   Field Duty does not exist until both are applied.
 1. `DEBUG` now defaults to **False**, and with DEBUG off `DJANGO_SECRET_KEY`
    and `DJANGO_ALLOWED_HOSTS` are **required**: the app refuses to start and
    names the missing variable. A server built by following DEPLOYMENT.md
@@ -595,12 +756,24 @@ fixtures.
    look in staging.
 3. Migration **0055** adds `PayrollSettings.esic_threshold`, defaulting to
    21000 — the figure the calculation already used, so no figures move.
+4. **Field Duty only works over HTTPS.** The camera and the location APIs
+   are secure-context only in every current browser, so an employee given
+   an `http://` or bare-IP link cannot punch at all. Step 11 of
+   DEPLOYMENT.md already provides HTTPS; nothing extra is needed beyond not
+   handing out the other kind of link.
+5. **D-23 matters more now than it did.** Field duty selfies live under
+   `media/`, and until the public `location /media/` block is replaced by
+   the `internal;` + `X-Accel-Redirect` configuration, employees'
+   photographs are served by nginx to anyone with the path. The filenames
+   are random, which buys time, not safety.
 
 ## 8. Next actions
 
 1. **Apply the nginx change** from DEPLOYMENT.md and set
    `MEDIA_ACCEL_REDIRECT=/protected-media/`. Until then D-23 is only half
-   closed. Everything else on this list is secondary to it.
+   closed. Everything else on this list is secondary to it — and more so
+   since Field Duty, whose selfies are photographs of employees' faces
+   stored under `media/`.
 2. **Confirm the ESIC employee rate** (D-14) and correct the default if
    3.67 is wrong.
 3. Decide how advance recovery should be recorded (D-15).

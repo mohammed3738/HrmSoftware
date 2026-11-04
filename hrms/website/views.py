@@ -3798,10 +3798,18 @@ def employee_dashboard(request):
     birthdays = _upcoming_birthdays(colleagues, today)
     my_birthday_today = any(b["is_today"] and b["employee"].pk == employee.pk for b in birthdays)
 
+    # The dashboard's Field Duty button says Start or End depending on
+    # whether one is running, so it needs the open duty rather than just a
+    # link. One query; the partial unique index guarantees at most one row.
+    open_field_duty = FieldDuty.objects.filter(
+        employee=employee, ended_at__isnull=True,
+    ).first()
+
     return render(request, "employee/employee_dashboard.html", {
         "birthdays": birthdays,
         "my_birthday_today": my_birthday_today,
         "employee": employee,
+        "open_field_duty": open_field_duty,
         "today_attendance": today_attendance,
         "period_from": period_from,
         "period_to": period_to,

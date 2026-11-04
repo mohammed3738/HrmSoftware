@@ -81,6 +81,11 @@ GOLDEN_TABLE = {
     ("attendance_corrections", "view"): NOT_HR,
     ("attendance_corrections", "approve"): NOT_HR,
     ("attendance_corrections", "create"): NOT_HR,
+    # Field Duty: punching your own needs no grant (self-service). These two
+    # are reading the whole company's log and uploading somebody else's
+    # Minutes of Meeting -- HR included, since neither touches pay.
+    ("field_duty", "view"): STAFF,
+    ("field_duty", "edit"): STAFF,
 
     # Leave & comp-off -- HR reads balances but approves nothing.
     ("leave_management", "view"): STAFF,

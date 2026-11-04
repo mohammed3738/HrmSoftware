@@ -1,4 +1,9 @@
 {% extends 'base2.html' %}
+{% comment %}
+  Tag libraries do not inherit from the parent template, so this is needed
+  here even though base2.html loads the same one.
+{% endcomment %}
+{% load custom_filters %}
 {% block body %}
 
 <style>
@@ -105,6 +110,23 @@
         {% if can_run_payroll %}
         <a href="{% url 'payroll-run-create' %}" class="btn btn-success btn-sm">
           <i class="ti ti-cash me-1"></i> New Payroll Run
+        </a>
+        {% endif %}
+        {% comment %}
+          Field Duty, for whoever may read a log at all -- the company-wide
+          grant, or a reporting line with somebody on it. The page itself
+          scopes what they see; this only decides whether the button is
+          worth showing, and the label says which log it opens.
+        {% endcomment %}
+        {% if request.user|has_feature:"field_duty:view" or request.user|has_reportees %}
+        <a href="{% url 'field-duty-log' %}" class="btn btn-outline-info btn-sm">
+          <i class="ti ti-map-pin me-1"></i>
+          {% if request.user|has_feature:"field_duty:view" %}Field Duty Log{% else %}My Team's Field Duty{% endif %}
+        </a>
+        {% endif %}
+        {% if request.user|has_employee_profile %}
+        <a href="{% url 'field-duty' %}" class="btn btn-outline-primary btn-sm">
+          <i class="ti ti-walk me-1"></i> My Field Duty
         </a>
         {% endif %}
       </div>

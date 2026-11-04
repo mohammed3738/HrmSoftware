@@ -2749,3 +2749,224 @@ class AuditLog(models.Model):
         return f"{self.get_action_display()} — {self.target_repr}"
 
 
+
+# ============================================
+# Field Duty
+# ============================================
+
+def field_duty_selfie_path(instance, filename):
+    """Random name, under a per-employee folder.
+
+    Random because MEDIA is served by nginx straight off disk unless
+    MEDIA_ACCEL_REDIRECT is set (DEPLOYMENT.md, tracker D-23), so a
+    guessable path would be a photograph of an employee's face published to
+    anyone who could guess it. Same reasoning as employee_photo_path.
+    """
+    import uuid
+    ext = os.path.splitext(filename)[1].lower() or ".jpg"
+    folder = instance.employee_id or "unknown"
+    return f"field_duty/selfies/{folder}/{uuid.uuid4().hex}{ext}"
+
+
+def field_duty_report_path(instance, filename):
+    import uuid
+    ext = os.path.splitext(filename)[1].lower()
+    return f"field_duty/reports/{uuid.uuid4().hex}{ext}"
+
+
+class FieldDuty(models.Model):
+    """One trip out of the office, from leaving to coming back.
+
+    The same two buttons for everybody -- a salesperson's client meeting, an
+    engineer's site visit and a delivery round are the same shape of record:
+    start somewhere, end somewhere, with the time, the place and a photo of
+    who it was captured at both ends. Only the `activity` differs, and the
+    only thing it changes is whether the duty needs a written report before
+    it counts as finished (see REPORT_REQUIRED_ACTIVITIES).
+
+    Why the photo and the coordinates live on the row rather than being
+    derived: they are evidence about a moment, and the moment is gone. A
+    duty is never back-dated and never edited -- `started_at` and `ended_at`
+    are set by the server from its own clock, not from anything the browser
+    sends, so neither can be moved by replaying a request with a different
+    body.
+
+    The attendance side is deliberately one-directional: a field duty may
+    *fill in* a missing punch for the day (see
+    website/services/field_duty.py), never overwrite one that already
+    exists. Somebody who punched in at the office and then went out keeps
+    their real in-time.
+    """
+
+    class Activity(models.TextChoices):
+        MEETING = "Meeting", "Client Meeting"
+        SITE_VISIT = "Site Visit", "Site / Field Visit"
+        DELIVERY = "Delivery", "Delivery"
+        OTHER = "Other", "Other Field Work"
+
+    # Activities that are not finished when the employee gets back: a
+    # meeting is only closed once its minutes are in. Everything else
+    # completes on End Field Duty.
+    REPORT_REQUIRED_ACTIVITIES = (Activity.MEETING,)
+
+    # What the required report is called, per activity, so the employee is
+    # asked for the thing they actually have to produce.
+    REPORT_LABELS = {Activity.MEETING: "Minutes of Meeting"}
+    DEFAULT_REPORT_LABEL = "Field Report"
+
+    class Status(models.TextChoices):
+        IN_PROGRESS = "In Progress", "In Progress"
+        PENDING_REPORT = "Pending Report", "Pending Report"
+        COMPLETED = "Completed", "Completed"
+
+    employee = models.ForeignKey(
+        "Employee", on_delete=models.CASCADE, related_name="field_duties",
+    )
+    activity = models.CharField(
+        max_length=20, choices=Activity.choices, default=Activity.OTHER,
+        verbose_name="Activity",
+    )
+    # Who or where: the client, the site, the delivery destination. Free
+    # text on purpose -- this app has no customer master to point at.
+    purpose = models.CharField(
+        max_length=255, blank=True, verbose_name="Client / Site / Destination",
+    )
+    notes = models.TextField(blank=True, verbose_name="Notes")
+
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.IN_PROGRESS, db_index=True,
+    )
+
+    # The day the duty belongs to, taken from started_at in the project's
+    # timezone. Stored rather than derived so the attendance join and the
+    # date filters are one indexed column instead of a timezone conversion
+    # in SQL.
+    duty_date = models.DateField(db_index=True)
+
+    started_at = models.DateTimeField()
+    start_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    start_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    # How far off the browser thinks the fix might be, in metres. Worth
+    # keeping: a 2 km accuracy radius means the coordinates came from a
+    # network lookup, not from GPS, and should not be read as a location.
+    start_accuracy_m = models.PositiveIntegerField(null=True, blank=True)
+    start_selfie = models.ImageField(upload_to=field_duty_selfie_path)
+
+    ended_at = models.DateTimeField(null=True, blank=True)
+    end_latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    end_longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    end_accuracy_m = models.PositiveIntegerField(null=True, blank=True)
+    end_selfie = models.ImageField(upload_to=field_duty_selfie_path, null=True, blank=True)
+
+    report = models.FileField(
+        upload_to=field_duty_report_path, null=True, blank=True,
+        verbose_name="Minutes of Meeting / Field Report",
+    )
+    report_notes = models.TextField(blank=True, verbose_name="Report Notes")
+    report_uploaded_at = models.DateTimeField(null=True, blank=True)
+
+    # Whether this duty is what put the day's in/out time on the attendance
+    # row. Recorded so the attendance page can say where a time came from,
+    # and so applying a duty twice cannot double-count.
+    filled_attendance_in = models.BooleanField(default=False)
+    filled_attendance_out = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-started_at"]
+        verbose_name = "Field Duty"
+        verbose_name_plural = "Field Duties"
+        indexes = [
+            models.Index(fields=["employee", "duty_date"]),
+            models.Index(fields=["duty_date", "status"]),
+        ]
+        constraints = [
+            # One open duty per employee at a time. A partial unique index:
+            # ended_at IS NULL is the definition of "still out", so the
+            # database itself refuses a second Start Field Duty even if two
+            # taps land at the same moment.
+            models.UniqueConstraint(
+                fields=["employee"],
+                condition=models.Q(ended_at__isnull=True),
+                name="one_open_field_duty_per_employee",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.employee} - {self.get_activity_display()} on {self.duty_date}"
+
+    # -- State ---------------------------------------------------------
+
+    @property
+    def is_open(self):
+        """Still out: started and not yet ended."""
+        return self.ended_at is None
+
+    @property
+    def needs_report(self):
+        """True when this activity cannot complete without a report."""
+        return self.activity in self.REPORT_REQUIRED_ACTIVITIES
+
+    @property
+    def report_label(self):
+        return self.REPORT_LABELS.get(self.activity, self.DEFAULT_REPORT_LABEL)
+
+    @property
+    def has_report(self):
+        return bool(self.report)
+
+    def resolved_status(self):
+        """The status the current field values imply.
+
+        Single place that decides, so `status` can never disagree with the
+        row it is stored on -- it is recomputed on every save rather than
+        set by whichever view happened to touch the record.
+        """
+        if self.ended_at is None:
+            return self.Status.IN_PROGRESS
+        if self.needs_report and not self.has_report:
+            return self.Status.PENDING_REPORT
+        return self.Status.COMPLETED
+
+    @property
+    def duration(self):
+        """How long the duty ran, or None while it is still open."""
+        if self.ended_at is None or self.started_at is None:
+            return None
+        return self.ended_at - self.started_at
+
+    @property
+    def duration_display(self):
+        """'2h 35m', or '' while the duty is open."""
+        span = self.duration
+        if span is None:
+            return ""
+        hours, minutes = divmod(int(span.total_seconds() // 60), 60)
+        return f"{hours}h {minutes}m"
+
+    # -- Location ------------------------------------------------------
+
+    @staticmethod
+    def _map_url(latitude, longitude):
+        if latitude is None or longitude is None:
+            return ""
+        return f"https://www.google.com/maps?q={latitude},{longitude}"
+
+    @property
+    def start_map_url(self):
+        return self._map_url(self.start_latitude, self.start_longitude)
+
+    @property
+    def end_map_url(self):
+        return self._map_url(self.end_latitude, self.end_longitude)
+
+    def save(self, *args, **kwargs):
+        # duty_date and status are both derived. Deriving them here means no
+        # caller can store a duty whose date disagrees with its start time,
+        # or whose status disagrees with its own fields.
+        if self.started_at and not self.duty_date:
+            self.duty_date = timezone.localtime(self.started_at).date()
+        self.status = self.resolved_status()
+        super().save(*args, **kwargs)

@@ -558,6 +558,32 @@
                       </li>
                       {% endif %}
 
+                      {% comment %}
+                        Field Duty. Punching one's own is self-service, like
+                        My Attendance; reading everyone's log is gated,
+                        because it is a record of where named employees were.
+                      {% endcomment %}
+                      {% if request.user|has_employee_profile %}
+                      <li class="menu-item">
+                        <a href="{% url 'field-duty' %}" class="menu-link">
+                          <div>Field Duty</div>
+                        </a>
+                      </li>
+                      {% endif %}
+                      {% comment %}
+                        Two ways in, and the second is not a role: a team
+                        leader or manager is whoever the reporting line
+                        points at, so it cannot come from the permission
+                        matrix. The page itself shows only their own team.
+                      {% endcomment %}
+                      {% if request.user|has_feature:"field_duty:view" or request.user|has_reportees %}
+                      <li class="menu-item">
+                        <a href="{% url 'field-duty-log' %}" class="menu-link">
+                          <div>{% if request.user|has_feature:"field_duty:view" %}Field Duty Log{% else %}My Team's Field Duty{% endif %}</div>
+                        </a>
+                      </li>
+                      {% endif %}
+
 {% comment %}Scoped per viewer: staff see everyone's, an employee sees only their own.{% endcomment %}
                       <li class="menu-item">
                         <a href="{% url 'attendance_correction_requests_list' %}" class="menu-link">

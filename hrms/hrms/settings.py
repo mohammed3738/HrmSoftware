@@ -421,6 +421,14 @@ else:
 PASSWORD_RESET_TIMEOUT = int(os.environ.get('PASSWORD_RESET_TIMEOUT', str(60 * 60 * 4)))
 
 
+# ── Field Duty ────────────────────────────────────────────────────────
+# Upload ceilings for a field duty punch. The capture page downscales a
+# selfie to 720px before uploading, so a real one is a few hundred KB --
+# these are limits on what is accepted, not a size to aim for.
+FIELD_DUTY_SELFIE_MAX_BYTES = int(os.environ.get('FIELD_DUTY_SELFIE_MAX_BYTES', str(5 * 1024 * 1024)))
+FIELD_DUTY_REPORT_MAX_BYTES = int(os.environ.get('FIELD_DUTY_REPORT_MAX_BYTES', str(10 * 1024 * 1024)))
+
+
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
 #

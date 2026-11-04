@@ -1,0 +1,260 @@
+{% extends 'base2.html' %}
+{% load static %}
+{% block body %}
+{% comment %}
+  The employee's own Field Duty page. Phone-first: this is read standing in
+  a car park, so the one action that matters is a full-width button at the
+  top and everything else is below it.
+
+  There is deliberately no form that can be submitted on its own. Start and
+  End both go through the capture modal, because a duty with no selfie and
+  no coordinates is refused by the server anyway (views_field_duty.py) --
+  letting the form post without them would only produce an error the
+  employee cannot act on.
+{% endcomment %}
+<div class="container-xxl flex-grow-1 container-p-y">
+
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+    <div>
+      <h4 class="mb-0 fw-bold">Field Duty</h4>
+      <p class="mb-0 text-muted small">
+        Punch when you leave and when you are done. Each punch records the
+        time, your location and a selfie.
+      </p>
+    </div>
+    <a href="{% url 'my_attendance' %}" class="btn btn-sm btn-outline-secondary">
+      <i class="ri-calendar-check-line me-1"></i> My Attendance
+    </a>
+  </div>
+
+  {% comment %} ── The one action ───────────────────────────────────── {% endcomment %}
+  {% if open_duty %}
+    <div class="card border-warning shadow-sm rounded-4 mb-4">
+      <div class="card-body">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <span class="badge bg-label-warning">In Progress</span>
+          <span class="fw-semibold">{{ open_duty.get_activity_display }}</span>
+        </div>
+        {% if open_duty.purpose %}
+          <div class="mb-1"><i class="ri-map-pin-2-line me-1 text-muted"></i>{{ open_duty.purpose }}</div>
+        {% endif %}
+        <div class="text-muted small mb-3">
+          Started {{ open_duty.started_at|date:"d M Y, H:i" }}
+          <span data-elapsed-since="{{ open_duty.started_at|date:'c' }}"></span>
+        </div>
+        <button type="button" class="btn btn-danger btn-lg w-100"
+                data-field-duty-action="end">
+          <i class="ri-logout-circle-line me-1"></i> End Field Duty
+        </button>
+      </div>
+    </div>
+  {% else %}
+    <div class="card shadow-sm rounded-4 mb-4">
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12 col-md-4">
+            <label class="form-label fw-semibold" for="field-duty-activity">What are you going out for?</label>
+            <select class="form-select" id="field-duty-activity">
+              {% for value, label in activities %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-5">
+            <label class="form-label fw-semibold" for="field-duty-purpose">Client / Site / Destination</label>
+            <input type="text" class="form-control" id="field-duty-purpose" maxlength="255"
+                   placeholder="Who or where (optional)">
+          </div>
+          <div class="col-12 col-md-3">
+            <label class="form-label fw-semibold" for="field-duty-notes">Notes</label>
+            <input type="text" class="form-control" id="field-duty-notes"
+                   placeholder="Optional">
+          </div>
+        </div>
+        <div class="alert alert-info d-flex gap-2 mt-3 mb-3 py-2 small" role="note">
+          <i class="ri-information-line"></i>
+          <span id="field-duty-report-hint">
+            A Client Meeting stays <strong>Pending Report</strong> until you upload
+            its Minutes of Meeting.
+          </span>
+        </div>
+        <button type="button" class="btn btn-primary btn-lg w-100"
+                data-field-duty-action="start">
+          <i class="ri-login-circle-line me-1"></i> Start Field Duty
+        </button>
+      </div>
+    </div>
+  {% endif %}
+
+  {% comment %} ── Waiting on a report ──────────────────────────────── {% endcomment %}
+  {% if awaiting_report %}
+    <div class="card shadow-sm rounded-4 mb-4">
+      <div class="card-body">
+        <h6 class="fw-bold mb-3">
+          <i class="ri-file-warning-line me-1 text-warning"></i>
+          Waiting for your report ({{ awaiting_report|length }})
+        </h6>
+        {% for duty in awaiting_report %}
+          <div class="border rounded-3 p-3 {% if not forloop.last %}mb-2{% endif %}">
+            <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+              <div>
+                <span class="fw-semibold">{{ duty.get_activity_display }}</span>
+                {% if duty.purpose %}<span class="text-muted">— {{ duty.purpose }}</span>{% endif %}
+                <div class="text-muted small">
+                  {{ duty.duty_date|date:"d M Y" }} ·
+                  {{ duty.started_at|date:"H:i" }}–{{ duty.ended_at|date:"H:i" }}
+                  ({{ duty.duration_display }})
+                </div>
+              </div>
+              <span class="badge bg-label-warning align-self-start">Pending Report</span>
+            </div>
+            <form method="post" enctype="multipart/form-data"
+                  action="{% url 'field-duty-upload-report' duty.id %}"
+                  class="row g-2 align-items-end" data-field-duty-report-form>
+              {% csrf_token %}
+              <div class="col-12 col-md-5">
+                <label class="form-label small fw-semibold" for="report-file-{{ duty.id }}">
+                  {{ duty.report_label }}
+                </label>
+                <input type="file" class="form-control form-control-sm" name="report"
+                       id="report-file-{{ duty.id }}" required
+                       accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.rtf,image/*">
+              </div>
+              <div class="col-12 col-md-5">
+                <label class="form-label small fw-semibold" for="report-notes-{{ duty.id }}">Notes</label>
+                <input type="text" class="form-control form-control-sm" name="report_notes"
+                       id="report-notes-{{ duty.id }}" placeholder="Optional">
+              </div>
+              <div class="col-12 col-md-2">
+                <button type="submit" class="btn btn-sm btn-primary w-100">
+                  <i class="ri-upload-2-line me-1"></i> Upload
+                </button>
+              </div>
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {% comment %} ── Today, and the recent log ────────────────────────── {% endcomment %}
+  <div class="card shadow-sm rounded-4">
+    <div class="card-body">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h6 class="fw-bold mb-0">My field duty</h6>
+        {% if today_attendance %}
+          <span class="text-muted small">
+            Today ({{ today|date:"d M" }}):
+            in {{ today_attendance.in_time|time:"H:i"|default:"—" }},
+            out {{ today_attendance.out_time|time:"H:i"|default:"—" }},
+            {{ today_attendance.status }}
+          </span>
+        {% endif %}
+      </div>
+
+      {% comment %}
+        Browsed a month at a time. Submitting on change rather than behind a
+        Filter button: there is one control, and this page is used on a phone.
+      {% endcomment %}
+      <form method="GET" class="row g-2 align-items-end mb-3">
+        <div class="col-8 col-sm-4 col-md-3">
+          <label class="form-label fw-semibold small" for="duty-month">Month</label>
+          <input type="month" class="form-control form-control-sm" id="duty-month"
+                 name="month" value="{{ month_value }}" onchange="this.form.submit()">
+        </div>
+        <div class="col-4 col-sm-3 col-md-2">
+          <button type="submit" class="btn btn-sm btn-outline-secondary w-100">Show</button>
+        </div>
+      </form>
+
+      {% if month_duties %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th scope="col">Date</th>
+                <th scope="col">Activity</th>
+                <th scope="col">Where</th>
+                <th scope="col">Time</th>
+                <th scope="col">Duration</th>
+                <th scope="col">Location</th>
+                <th scope="col">Photo</th>
+                <th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for duty in month_duties %}
+                <tr>
+                  <td class="text-nowrap">{{ duty.duty_date|date:"d M Y" }}</td>
+                  <td class="text-nowrap">{{ duty.get_activity_display }}</td>
+                  <td>{{ duty.purpose|default:"—" }}</td>
+                  <td class="text-nowrap">
+                    {{ duty.started_at|date:"H:i" }}
+                    {% if duty.ended_at %}– {{ duty.ended_at|date:"H:i" }}{% else %}– …{% endif %}
+                  </td>
+                  <td class="text-nowrap">{{ duty.duration_display|default:"—" }}</td>
+                  {% comment %}
+                    The coordinates open in Google Maps. Start and end are
+                    separate links because they are two different places.
+                  {% endcomment %}
+                  <td class="text-nowrap">
+                    {% if duty.start_map_url %}
+                      <a href="{{ duty.start_map_url }}" target="_blank" rel="noopener noreferrer"
+                         title="Where you started, on a map">
+                        <i class="ri-map-pin-2-line"></i> Start
+                      </a>
+                    {% endif %}
+                    {% if duty.end_map_url %}
+                      <a href="{{ duty.end_map_url }}" target="_blank" rel="noopener noreferrer"
+                         class="ms-2" title="Where you finished, on a map">
+                        <i class="ri-map-pin-2-line"></i> End
+                      </a>
+                    {% endif %}
+                    {% if not duty.start_map_url and not duty.end_map_url %}—{% endif %}
+                  </td>
+                  <td class="text-nowrap">
+                    <a href="{% url 'field-duty-selfie' duty.id 'start' %}" target="_blank"
+                       rel="noopener noreferrer" title="Selfie taken at the start">
+                      <i class="ri-user-smile-line"></i>
+                    </a>
+                    {% if duty.end_selfie %}
+                      <a href="{% url 'field-duty-selfie' duty.id 'end' %}" target="_blank"
+                         rel="noopener noreferrer" class="ms-2" title="Selfie taken at the end">
+                        <i class="ri-user-received-line"></i>
+                      </a>
+                    {% endif %}
+                  </td>
+                  <td class="text-nowrap">
+                    {% if duty.status == "Completed" %}
+                      <span class="badge bg-label-success">Completed</span>
+                    {% elif duty.status == "Pending Report" %}
+                      <span class="badge bg-label-warning">Pending Report</span>
+                    {% else %}
+                      <span class="badge bg-label-info">In Progress</span>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-muted mb-0">
+          No field duty in {{ month_start|date:"F Y" }}.
+        </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% include "field_duty/_capture_modal.html" %}
+
+{{ report_required_activities|json_script:"field-duty-report-activities" }}
+<script id="field-duty-config" type="application/json">
+  {"startUrl": "{% url 'field-duty-start' %}", "endUrl": "{% url 'field-duty-end' %}"}
+</script>
+{% endblock %}
+
+{% block page_scripts %}
+<script src="{% static 'js/field-duty.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% comment %}
+  One field duty in full, loaded into the modal on the log page.
+
+  A fragment, not a page: it is fetched and dropped into a modal body, so it
+  has no {% extends %} and no scripts of its own.
+
+  The selfies are shown here, where somebody has asked for this one record,
+  rather than in the list. Each <img> is a request to field-duty-selfie,
+  which checks permission again -- the markup carries no /media/ path, so
+  nothing here is readable by anyone this view would have refused.
+{% endcomment %}
+<div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+  <div>
+    <h6 class="mb-0 fw-bold">
+      {{ duty.employee.first_name }} {{ duty.employee.last_name }}
+      <span class="text-muted fw-normal">({{ duty.employee.employee_code }})</span>
+    </h6>
+    <div class="text-muted small">
+      {{ duty.employee.designation|default:"" }}
+      {% if duty.employee.company %} · {{ duty.employee.company.name }}{% endif %}
+    </div>
+  </div>
+  <div class="text-end">
+    {% if duty.status == "Completed" %}
+      <span class="badge bg-label-success">Completed</span>
+    {% elif duty.status == "Pending Report" %}
+      <span class="badge bg-label-warning">Pending Report</span>
+    {% else %}
+      <span class="badge bg-label-info">In Progress</span>
+    {% endif %}
+    <div class="text-muted small mt-1">{{ duty.get_activity_display }}</div>
+  </div>
+</div>
+
+<dl class="row mb-3 small">
+  <dt class="col-5 col-sm-4">Date</dt>
+  <dd class="col-7 col-sm-8">{{ duty.duty_date|date:"d M Y" }}</dd>
+
+  {% if duty.purpose %}
+    <dt class="col-5 col-sm-4">Client / Site</dt>
+    <dd class="col-7 col-sm-8">{{ duty.purpose }}</dd>
+  {% endif %}
+
+  <dt class="col-5 col-sm-4">Duration</dt>
+  <dd class="col-7 col-sm-8">{{ duty.duration_display|default:"still out" }}</dd>
+
+  {% if duty.notes %}
+    <dt class="col-5 col-sm-4">Notes</dt>
+    <dd class="col-7 col-sm-8" style="white-space: pre-line;">{{ duty.notes }}</dd>
+  {% endif %}
+
+  {% if duty.filled_attendance_in or duty.filled_attendance_out %}
+    <dt class="col-5 col-sm-4">Attendance</dt>
+    <dd class="col-7 col-sm-8">
+      This duty supplied the day's
+      {% if duty.filled_attendance_in %}in-time{% endif %}
+      {% if duty.filled_attendance_in and duty.filled_attendance_out %} and {% endif %}
+      {% if duty.filled_attendance_out %}out-time{% endif %}.
+    </dd>
+  {% endif %}
+</dl>
+
+<div class="row g-3">
+  {% comment %} Start and end side by side: the two moments being compared. {% endcomment %}
+  <div class="col-12 col-sm-6">
+    <div class="border rounded-3 p-2 h-100">
+      <div class="fw-semibold small mb-2">
+        <i class="ri-login-circle-line me-1"></i>
+        Start · {{ duty.started_at|date:"H:i" }}
+      </div>
+      <img src="{% url 'field-duty-selfie' duty.id 'start' %}"
+           alt="Selfie taken when the duty started"
+           class="w-100 rounded-2 mb-2" loading="lazy">
+      {% if duty.start_map_url %}
+        <a href="{{ duty.start_map_url }}" target="_blank" rel="noopener noreferrer"
+           class="d-block small text-truncate">
+          <i class="ri-map-pin-2-line me-1"></i>{{ duty.start_latitude }}, {{ duty.start_longitude }}
+        </a>
+      {% else %}
+        <div class="small text-muted">No location recorded.</div>
+      {% endif %}
+      {% if duty.start_accuracy_m %}
+        <div class="small text-muted">
+          Accurate to about {{ duty.start_accuracy_m }} m{% if duty.start_accuracy_m > 500 %} — too coarse to place precisely{% endif %}.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-12 col-sm-6">
+    <div class="border rounded-3 p-2 h-100">
+      <div class="fw-semibold small mb-2">
+        <i class="ri-logout-circle-line me-1"></i>
+        End ·
+        {% if duty.ended_at %}{{ duty.ended_at|date:"H:i" }}{% else %}not yet{% endif %}
+      </div>
+      {% if duty.end_selfie %}
+        <img src="{% url 'field-duty-selfie' duty.id 'end' %}"
+             alt="Selfie taken when the duty ended"
+             class="w-100 rounded-2 mb-2" loading="lazy">
+      {% else %}
+        <div class="bg-light rounded-2 text-center text-muted small py-5 mb-2">
+          Still out
+        </div>
+      {% endif %}
+      {% if duty.end_map_url %}
+        <a href="{{ duty.end_map_url }}" target="_blank" rel="noopener noreferrer"
+           class="d-block small text-truncate">
+          <i class="ri-map-pin-2-line me-1"></i>{{ duty.end_latitude }}, {{ duty.end_longitude }}
+        </a>
+      {% endif %}
+      {% if duty.end_accuracy_m %}
+        <div class="small text-muted">
+          Accurate to about {{ duty.end_accuracy_m }} m{% if duty.end_accuracy_m > 500 %} — too coarse to place precisely{% endif %}.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if duty.needs_report or duty.report %}
+  <div class="border rounded-3 p-3 mt-3">
+    <div class="fw-semibold small mb-1">{{ duty.report_label }}</div>
+    {% if duty.report %}
+      <a href="{% url 'field-duty-report' duty.id %}" target="_blank" rel="noopener noreferrer">
+        <i class="ri-file-text-line me-1"></i>Open the uploaded file
+      </a>
+      <div class="text-muted small">
+        Uploaded {{ duty.report_uploaded_at|date:"d M Y, H:i" }}
+      </div>
+      {% if duty.report_notes %}
+        <div class="small mt-1" style="white-space: pre-line;">{{ duty.report_notes }}</div>
+      {% endif %}
+    {% else %}
+      <div class="text-warning small">
+        <i class="ri-time-line me-1"></i>Not uploaded yet — this duty stays
+        Pending Report until it is.
+      </div>
+    {% endif %}
+  </div>
+{% endif %}

@@ -643,6 +643,94 @@ Two related settings sit alongside these, both with working defaults:
 
 ---
 
+## Field Duty
+
+Employees punch Field Duty from the button on their **dashboard**, or from
+**Attendance → Field Duty**: Start when they leave for a meeting, site visit
+or delivery, End when they are done. The dashboard button says *Start* or
+*End* depending on whether one is already running, so there is nothing to
+read before tapping it. Each
+punch captures the server's time, the device's coordinates and a live
+selfie. Nothing needs configuring — but two things about the server have to
+be right, and both fail in ways that look like the feature is broken.
+
+### It only works over HTTPS
+
+The camera (`getUserMedia`) and the location (`geolocation`) are both
+**secure-context only** in every current browser. Over plain `http://` they
+do not prompt and do not work, so a punch cannot be completed at all. The
+page says so instead of failing silently, but the fix is on the server:
+employees must open `https://hrms.zacoinfotech.com`, never the bare IP
+address or `http://`. Step 11 already sets this up; there is nothing extra
+to do as long as nobody hands out an `http://` or IP link.
+
+Both permissions are per-site and per-browser. The first punch prompts for
+camera and location, and the capture screen asks again every time it is
+opened — so a prompt that was dismissed by accident comes back on the next
+tap.
+
+Tapping *Block*, though, is remembered: once a permission is denied the
+browser stops prompting for it altogether, no matter how many times the app
+asks. The capture screen says so plainly rather than retrying forever —
+each of the two rows names its own problem, shows where the switch is
+(padlock or ⓘ beside the web address → turn it on for this site), and
+carries its own **Allow** button that works the moment the switch is
+flipped. The camera and the location are independent: one can be working
+while the other is still blocked.
+
+### The selfies are not public files
+
+Selfies and uploaded minutes live under `media/`, and the app never hands
+out a `/media/` path for them: every view checks permission first. That
+protection is only complete once the nginx change in
+[Step 8](#step-8--static-files-uploads-and-file-permissions) /
+tracker **D-23** is in place — an `internal` location plus
+`MEDIA_ACCEL_REDIRECT`. Until then, `location /media/` serves any file to
+anyone who knows the path, and these are photographs of employees' faces.
+The filenames are random, which is a delay, not a control.
+
+Checking it is one command — this must **not** return the image:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" https://hrms.zacoinfotech.com/media/field_duty/selfies/1/
+```
+
+### Who sees what
+
+Three levels, and only the first is a role:
+
+| Who | Sees | Where it comes from |
+|---|---|---|
+| Any employee | Their own duties — dashboard button, or **Attendance → Field Duty** | Nothing to grant — self-service, like My Attendance |
+| A team leader or manager | **My Team's Field Duty**: the people who report to them, plus their own duties. Button on their dashboard, and in the Attendance menu | `Reporting Person` / `Manager` on the employee record (or inherited from the department). **Not** a role — see below |
+| Admin, HR, Payroll Officer | **Field Duty Log**: everybody. Button in the admin dashboard's Quick Actions, and in the Attendance menu | The `field_duty` → *View* right in **Settings → Roles & Permissions** |
+
+The middle row is the one worth understanding: a team leader's access comes
+from the reporting line, not from the permission matrix. If a leader says
+they cannot see somebody, the fix is on **that employee's** record —
+Employees → the person → *Reporting Person* or *Manager* — not in Roles &
+Permissions. Granting the role the company-wide *View* right instead would
+show that leader every other team as well.
+
+*Edit* on the `field_duty` row is narrower than it sounds: it only allows
+uploading a Minutes of Meeting on somebody else's behalf, for the employee
+who emails it in instead.
+
+Both lists are browsed one month at a time, and show the time, the
+location (the pin opens Google Maps) and the selfies from each end.
+
+### Attendance it fills in
+
+A field employee may never touch the punch machine, so a duty stands in for
+the missing punch: with no in-time for the day, the start time becomes it,
+and the end time becomes the out-time when it is later than whatever is
+there. It only ever fills gaps — an existing in-time, a later out-time, a
+day set by hand (an approved correction or an Excel upload) and any date
+inside a finalized payroll run are all left untouched. A real device punch
+can still extend the day afterwards.
+
+---
+
 ## Backups
 
 ### Nightly backup by email
@@ -798,6 +886,10 @@ sudo tail -n 50 /var/log/nginx/error.log                       # nginx errors (5
 | `pip install` fails building **pycairo** | Re-run Step 2. `libcairo2-dev` and `pkg-config` are required. |
 | Changed `.env` but nothing happened | Settings load once at start-up: `sudo systemctl restart hrms-prod-gunicorn hrms-prod-celery hrms-prod-celerybeat` |
 | **One 403 turns into 403 on every page** until the cache is cleared | A cache in front of Django stored the 403 and is replaying it. Nothing on the server remembers a refusal, which is why only clearing a cache helps. Fixed in the app: every response now carries `Cache-Control: no-store`. See [Checking the cache headers](#checking-the-cache-headers) if it comes back. |
+| **Field Duty: "Could not start the camera" / no prompt appears** | The page is open over `http://` or on the bare IP. The camera and location APIs are HTTPS-only in every current browser. Use `https://hrms.zacoinfotech.com`. See [Field Duty](#field-duty). |
+| **Field Duty: "The camera is blocked for this site"** / **"Location is blocked for this site"** | The employee tapped *Block* on that prompt once, and the browser now refuses to prompt again — the app cannot re-ask its way out of this. Padlock (or ⓘ) beside the web address → turn Camera / Location on for this site → press **Allow** on that row. No reload needed. |
+| **Field Duty: a team leader sees an empty list, or "403 Forbidden"** | Their access comes from the reporting line, not a role. Open each team member's record (Employees → the person) and set *Reporting Person* or *Manager* to the leader. With nobody reporting to them, the log is refused — their own duties are on the Field Duty page. |
+| **Field Duty: punch succeeds but attendance is unchanged** | Expected in four cases, and the message on screen says which: the day already had an in-time, the out-time was already later, the day was set by hand (`times_locked`), or the date is inside a finalized payroll run. |
 | **Old CSS or JavaScript after a deploy**, fixed by clearing the browser cache | `/static/` is served with `expires 7d` and the filenames are not content-hashed, so a browser keeps last week's files. Covered in [Static files after a deploy](#static-files-after-a-deploy). |
 
 ---
@@ -897,6 +989,8 @@ The template is [`hrms/.env.example`](hrms/.env.example). Its comments explain e
 | `PASSWORD_FORBID_USER_ATTRIBUTES` | Refuse a password resembling the user's name. Off here by choice. | `false` |
 | `PASSWORD_MIN_LENGTH` | Shortest password accepted (`0` disables the check) | `8` |
 | `PASSWORD_FORBID_COMMON` / `PASSWORD_FORBID_NUMERIC` | Refuse common-list and all-digit passwords | `true` / `true` |
+| `FIELD_DUTY_SELFIE_MAX_BYTES` | Largest Field Duty selfie accepted. The page downscales to 720px first, so this is a ceiling, not a target. | `5242880` (5 MB) |
+| `FIELD_DUTY_REPORT_MAX_BYTES` | Largest Minutes of Meeting / field report accepted | `10485760` (10 MB) |
 | `BACKUP_EMAIL_HOST` / `BACKUP_EMAIL_PORT` | SMTP server for the nightly backup email | `smtp.gmail.com` / `587` |
 | `BACKUP_EMAIL_USER` / `BACKUP_EMAIL_PASSWORD` | Sending mailbox and its App Password | Your backup Gmail account |
 | `BACKUP_EMAIL_FROM` / `BACKUP_EMAIL_TO` | Sender, and recipient(s) separated by commas | Your addresses |

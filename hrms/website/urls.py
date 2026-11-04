@@ -3,6 +3,7 @@ from django.urls import path
 
 from website import views
 from website import views_biometric
+from website import views_field_duty
 from website import views_password_reset
 
 urlpatterns = [    
@@ -292,5 +293,19 @@ urlpatterns = [
     path('api/biometric/status/', views_biometric.biometric_status_api, name='biometric-status-api'),
     path('attendance/biometric-sync/', views_biometric.biometric_sync_dashboard, name='biometric-sync'),
     path('attendance/biometric-sync/rebuild/', views_biometric.biometric_resync, name='biometric-sync-rebuild'),
+
+    # Field Duty. The employee's own two buttons are self-service (no
+    # feature grant, like My Attendance); the log is gated on
+    # field_duty:view. Selfies and reports are streamed through a
+    # permission check rather than handed out as /media/ URLs, which nginx
+    # serves with no authentication at all -- see views_field_duty.py.
+    path('field-duty/', views_field_duty.field_duty_home, name='field-duty'),
+    path('field-duty/start/', views_field_duty.field_duty_start, name='field-duty-start'),
+    path('field-duty/end/', views_field_duty.field_duty_end, name='field-duty-end'),
+    path('field-duty/log/', views_field_duty.field_duty_log, name='field-duty-log'),
+    path('field-duty/<int:pk>/details/', views_field_duty.field_duty_detail, name='field-duty-detail'),
+    path('field-duty/<int:pk>/report/upload/', views_field_duty.field_duty_upload_report, name='field-duty-upload-report'),
+    path('field-duty/<int:pk>/report/', views_field_duty.field_duty_report, name='field-duty-report'),
+    path('field-duty/<int:pk>/selfie/<str:side>/', views_field_duty.field_duty_selfie, name='field-duty-selfie'),
 
 ]

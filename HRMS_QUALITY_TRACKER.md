@@ -250,6 +250,45 @@ Still the user's to do: create the App Password and fill in the five
 `EMAIL_*` lines. Gmail's ~500 messages/day limit is far above password
 resets, but that mailbox may also be carrying the nightly backup.
 
+### Caching (found on staging, 2026-11-04)
+
+Reported symptom: one 403 on any page turned into 403 on **every** page
+until the cache was cleared.
+
+Nothing on the server remembers a refusal -- `has_feature_permission`
+caches grants on the request's own user object, which lives for one
+request, and the only Redis-backed cache in the app holds payroll period
+lists keyed by company. So a refusal that outlives its request had to have
+been *stored* in front of Django.
+
+It could be. Measured on the real responses: Django was sending **no
+`Cache-Control` header at all** -- not on a 403, not on a signed-in page,
+not on a redirect. `Vary: Cookie` was there, but that only tells a cache
+how to key a response, not whether it may keep one. What happened next was
+up to the browser's disk cache, an nginx `proxy_cache` or a CDN.
+
+The same gap is a privacy problem independent of the 403: a salary slip or
+a KYC scan could be served to whoever used that browser next, after logout.
+
+Fixed with `PrivateCacheControlMiddleware`, first in MIDDLEWARE so it has
+the last word on the response: `no-store, no-cache, must-revalidate,
+private` plus the HTTP/1.0 `Pragma`/`Expires` pair, on everything except
+`/static/` and except a response that set its own `Cache-Control`.
+Red/green: unregistering it fails 5 of the 10 tests in
+`test_cache_headers.py`. Verified in a browser too -- fetching `/`,
+`/employees/` and `/my-dashboard/` in one go returns 403, 403, 200, each
+carrying the header.
+
+| ID | Sev | Finding |
+|---|---|---|
+| D-34 | P1 | **No `Cache-Control` on any response.** A stored 403 was replayed across the whole site, and private employee pages could be stored by a shared cache or left in a browser's disk cache after logout. Fixed. |
+| D-35 | P3 | **`/static/` is served with `expires 7d` and unhashed filenames.** After a deploy, returning browsers keep last week's CSS and JavaScript; a hard refresh fixes one person, everyone else waits out the week. Documented with a one-line mitigation rather than fixed: the real answer is `ManifestStaticFilesStorage`, which fails the whole `collectstatic` if any vendor CSS references a missing asset, so it needs a staging run with time to fix the fallout -- not a release-day change. |
+
+Open question for the user: what sits in front of staging. If a CDN or a
+caching proxy is there, anything it stored **before** this fix stays
+stored until it is purged once -- the new header only governs what it
+stores from now on.
+
 ### Attendance rules
 
 | ID | Sev | Finding |

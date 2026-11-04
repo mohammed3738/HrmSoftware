@@ -790,6 +790,37 @@ sudo tail -n 50 /var/log/nginx/error.log                       # nginx errors (5
 | Scheduled jobs never run | `systemctl status hrms-prod-celerybeat hrms-prod-celery`. Both must be active, and `CELERY_BROKER_URL` must use a Redis database no other project uses. |
 | `pip install` fails building **pycairo** | Re-run Step 2. `libcairo2-dev` and `pkg-config` are required. |
 | Changed `.env` but nothing happened | Settings load once at start-up: `sudo systemctl restart hrms-prod-gunicorn hrms-prod-celery hrms-prod-celerybeat` |
+| **One 403 turns into 403 on every page** until the cache is cleared | A cache in front of Django stored the 403 and is replaying it. Nothing on the server remembers a refusal, which is why only clearing a cache helps. Fixed in the app: every response now carries `Cache-Control: no-store`. If it persists, something between the browser and nginx is ignoring that — purge it once (a CDN needs a manual purge for anything stored before the fix), and check for a `proxy_cache` in the nginx site. |
+| **Old CSS or JavaScript after a deploy**, fixed by clearing the browser cache | `/static/` is served with `expires 7d` and the filenames are not content-hashed, so a browser keeps last week's files. Covered in [Static files after a deploy](#static-files-after-a-deploy). |
+
+---
+
+## Static files after a deploy
+
+`/static/` is served by nginx with `expires 7d`, and the filenames are plain
+(`password-rules.js`, not `password-rules.8f3a2c1d.js`). Those two together mean
+that after a deploy a returning browser keeps serving **last week's** CSS and
+JavaScript, and the only cure the user knows is clearing their cache. A hard
+refresh fixes one person; everyone else sees stale files until the 7 days run
+out.
+
+Nothing is broken on the server, so this does not show up in any log.
+
+The quick mitigation, if a deploy changed CSS or JavaScript, is to shorten the
+window on the nginx site:
+
+```bash
+sudo nano /etc/nginx/sites-available/hrms_prod   # expires 7d  ->  expires 1h
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+The real fix is content-hashed filenames, so a changed file gets a new URL and
+`expires 7d` becomes correct rather than risky. That is Django's
+`ManifestStaticFilesStorage`, and it is **not** enabled here on purpose: it
+fails the whole `collectstatic` run if any CSS file references an asset that
+does not exist, and the bundled admin theme has a lot of vendor CSS. Turning it
+on needs a `collectstatic` run on a staging box first, with time to fix whatever
+it reports — not a change to make on the day of a release.
 
 ---
 

@@ -141,6 +141,13 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+
+    # First in the list, so it is the LAST to touch the response and has
+    # the final say on its cache headers. Django sends none of its own,
+    # which let a stored 403 be replayed across the whole site, and let
+    # private pages sit in a shared cache. See website/middleware.py.
+    'website.middleware.PrivateCacheControlMiddleware',
+
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

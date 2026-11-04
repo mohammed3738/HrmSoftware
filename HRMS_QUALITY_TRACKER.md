@@ -38,9 +38,10 @@ Every run is the whole suite, `DB_ENGINE=sqlite python manage.py test website`.
 | `be41646` after the roster weekly off | 868 | OK (1 skipped) | 0 / 0 | 1964.5s (32.7 min) | 2.26s |
 | `d34a0cc` after the day-marking work | 885 | OK (1 skipped) | 0 / 0 | 2097.2s (35.0 min) | 2.37s |
 | `aa96e92` after Forgot Password | 913 | OK (1 skipped) | 0 / 0 | 1828.0s (30.5 min) | 2.00s |
-| **`abe376b` final** | **922** | **OK (1 skipped)** | **0 / 0** | 2019.6s (33.7 min) | 2.19s |
+| `abe376b` after the password work | 922 | OK (1 skipped) | 0 / 0 | 2019.6s (33.7 min) | 2.19s |
+| **`3c31e90` final, after the cache fix** | **932** | **OK (1 skipped)** | **0 / 0** | 1988.5s (33.1 min) | 2.13s |
 
-191 more tests than the baseline (731 -> 922), and still 19% less wall
+201 more tests than the baseline (731 -> 932), and still 20% less wall
 clock than the baseline took for its 731. That drop is the
 D-27 Redis connect-timeout fix showing up across the whole suite rather
 than only on the attendance path it was found on.

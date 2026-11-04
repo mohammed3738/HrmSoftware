@@ -931,6 +931,69 @@ never reached the server; a byte count means the server really did return 403,
 which is a permissions question and not a caching one — check the user's role
 under Roles & Permissions.
 
+### Why a cached page produces a 403
+
+Worth understanding, because the obvious explanation is the wrong one and it
+sends you looking in the wrong place.
+
+A 403 is **not** one of the status codes a browser may store on its own
+initiative (RFC 9111 §4.2.2 lists 200, 203, 204, 206, 300, 301, 404, 405,
+410, 414 and 501 — no 403). So the 403 itself is usually *not* what was
+cached.
+
+What was cached is the ordinary **200 HTML page**, which with no
+`Cache-Control` at all is heuristically cacheable — and every page in this
+app embeds a `csrfmiddlewaretoken` in its forms. Serve that page from disk
+days later, after the `csrftoken` cookie has rotated (a new session, a
+re-login, a changed `DJANGO_SECRET_KEY`, or simple cookie expiry), and every
+form submission comes back **403 Forbidden**. That is what "403 everywhere"
+is, and it is why clearing the browser cache fixes it: the next page load
+carries a live token.
+
+So the `no-store` header is not mainly about refusing to store the 403. It
+is about refusing to store pages that carry a credential with a shelf life.
+
+**The other cause of a blanket 403 is not caching at all.** If
+`DJANGO_CSRF_TRUSTED_ORIGINS` does not contain this exact origin, Django
+rejects every POST with 403 regardless of the cache. Check it on the server:
+
+```bash
+grep -E "DJANGO_CSRF_TRUSTED_ORIGINS|DJANGO_ALLOWED_HOSTS" ~/hrms_staging/hrms/.env
+```
+
+Each must name the host actually in the address bar — for staging,
+`https://staging.zacoinfotech.com` and `staging.zacoinfotech.com`. A value
+left pointing at the production host fails constantly, not intermittently,
+and no amount of cache clearing helps.
+
+### Belt and braces at the nginx layer
+
+The application sets the header itself, so this is optional. But it makes
+the fix true the moment nginx reloads, without waiting for a deploy, and it
+keeps being true if someone later runs an older build. Inside `location /`:
+
+```nginx
+        # Everything proxied here is per-user: a salary slip, a KYC scan, a
+        # field duty selfie, a 403 meant for one person. hide-then-add
+        # rather than add alone, so there is exactly one Cache-Control on
+        # the response once the application sends its own as well.
+        proxy_hide_header Cache-Control;
+        proxy_hide_header Pragma;
+        proxy_hide_header Expires;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, private" always;
+        add_header Pragma "no-cache" always;
+        add_header Expires "0" always;
+```
+
+`Vary` is deliberately left alone: nginx's gzip sets `Vary: Accept-Encoding`
+and Django adds `Vary: Cookie`, and overriding it here would drop one of
+them.
+
+The trade-off, stated plainly: nginx now has the last word on caching for
+everything proxied, so if some page is ever *meant* to be cached it has to
+be excepted here rather than in Django. Every page in this app today is
+per-user, so nothing is given up.
+
 ---
 
 ## Static files after a deploy

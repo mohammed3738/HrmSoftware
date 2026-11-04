@@ -285,6 +285,32 @@ carrying the header.
 | D-34 | P1 | **No `Cache-Control` on any response.** A stored 403 was replayed across the whole site, and private employee pages could be stored by a shared cache or left in a browser's disk cache after logout. Fixed. |
 | D-35 | P3 | **`/static/` is served with `expires 7d` and unhashed filenames.** After a deploy, returning browsers keep last week's CSS and JavaScript; a hard refresh fixes one person, everyone else waits out the week. Documented with a one-line mitigation rather than fixed: the real answer is `ManifestStaticFilesStorage`, which fails the whole `collectstatic` if any vendor CSS references a missing asset, so it needs a staging run with time to fix the fallout -- not a release-day change. |
 
+**Redis eliminated** (asked 2026-11-04, after the staging nginx config
+ruled nginx out). Four things were checked rather than assumed:
+
+* **Sessions are not in Redis.** `SESSION_ENGINE` is unset, so Django's
+  default applies — `django.contrib.sessions.backends.db`, i.e. the
+  `django_session` table in Postgres. Redis being flushed, evicted or down
+  cannot sign anybody out, let alone refuse them.
+* **One thing in the whole codebase uses the Django cache**:
+  `views.py:5220-5259`, a list of payroll periods keyed by database name,
+  company pk, date range and payroll cycle. No user and no permission is
+  in the key or the value. A wrong entry would show the wrong periods in a
+  dropdown; it has no path to a 403.
+* **The permission cache is per request.** `has_feature_permission` stores
+  the grants with `setattr` on the `user` object, which is rebuilt from
+  the session on every request. Not Redis, not module-level, not shared
+  between requests or workers.
+* **`_rule_lookup` is thread-local and scoped.** Its store is non-None only
+  inside the `attendance_rule_cache` context manager (bulk recalculations)
+  and is set back to None on exit. It holds attendance rules and
+  payroll-lock lookups, never permissions.
+
+Decisive check available on the box: `redis-cli -n <cache db> --scan`
+returns only `payroll-periods:*`. And because `DJANGO_REDIS_IGNORE_EXCEPTIONS`
+is on with 0.2s connect timeouts, Redis can simply be stopped and the app
+keeps working — if the 403 survives that, no server-side cache is involved.
+
 Staging is nginx with no CDN (confirmed by the user, 2026-11-04). nginx
 honours `no-store` by default, so the fix is enough there -- unless
 somebody adds `proxy_ignore_headers Cache-Control`, which would override

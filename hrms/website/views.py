@@ -6572,6 +6572,17 @@ def recalc_employee_leave_balance(request, employee_id):
 
 
 
+def _carry_override_forward(lb):
+    """A Comp Off / LWP edit changes this period's closing balance, which is
+    the next period's opening -- so refresh every later period that already
+    has a balance (finalized payroll periods are left alone, as everywhere)."""
+    from website.signals import recalculate_leave_balance_for_employee
+    next_lb = (LeaveBalance.objects.filter(employee=lb.employee, period_from_date__gt=lb.period_from_date)
+               .order_by("period_from_date").first())
+    if next_lb:
+        recalculate_leave_balance_for_employee(lb.employee, next_lb.period_from_date)
+
+
 @login_required
 @feature_required("leave_management", action="edit")
 @require_http_methods(["POST"])
@@ -6630,6 +6641,7 @@ def override_lwp_view(request):
         lb.final_leave_balance = final_leave_balance
         lb.lwp_overridden = True
         lb.save(update_fields=['leave_without_pay', 'leave_balance', 'closing_balance', 'final_leave_balance', 'lwp_overridden'])
+        _carry_override_forward(lb)
 
         return JsonResponse({
             'success': True,
@@ -6715,6 +6727,7 @@ def override_compoff_view(request):
             'compoff', 'leave_without_pay', 'leave_balance', 'closing_balance',
             'final_leave_balance', 'compoff_overridden',
         ])
+        _carry_override_forward(lb)
 
         return JsonResponse({
             'success': True,

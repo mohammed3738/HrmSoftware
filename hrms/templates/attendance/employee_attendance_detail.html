@@ -9,6 +9,7 @@
                 <i class="ri-calendar-check-line me-2"></i>Attendance History – {{ employee.first_name }}
             </h4>
             <div class="d-flex align-items-center gap-2">
+                {% if can_switch_employee %}
                 <div class="position-relative" style="width: 260px;">
                     <input
                         type="text"
@@ -23,6 +24,7 @@
                         style="z-index: 1000; display: none; max-height: 250px; overflow-y: auto; background-color: white; cursor: pointer;"
                     ></ul>
                 </div>
+                {% endif %}
                 <a href="" class="btn btn-sm btn-outline-secondary">
                     <i class="ri-arrow-left-line me-1"></i> Back
                 </a>
@@ -864,6 +866,7 @@ function convertTo24Hour(time) {
 })();
 </script>
 
+{% if can_switch_employee %}
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   // Shared helper: static/js/employee_autocomplete.js, loaded by base2.html.
@@ -872,5 +875,6 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 });
 </script>
+{% endif %}
 
 {% endblock %}

@@ -569,7 +569,8 @@
           {% endif %}
           {% endif %}
 
-          <!-- Search -->
+          <!-- Search (only useful to people who see more than their own row) -->
+          {% if is_global %}
           <div class="lb-form-group">
             <label for="search-input">Search Employee</label>
             <div style="display:flex;gap:6px;align-items:center;">
@@ -588,6 +589,7 @@
               {% endif %}
             </div>
           </div>
+          {% endif %}
         </div>
 
         {% if can_recalculate %}
@@ -932,6 +934,7 @@
   }
 </script>
 
+{% if is_global %}
 <script>
 // Shared helper: static/js/employee_autocomplete.js, loaded by base2.html --
 // which means it is not parsed yet while this block runs.
@@ -946,4 +949,5 @@ document.addEventListener("DOMContentLoaded", function () {
   }, { clearOnSelect: false });
 });
 </script>
+{% endif %}
 {% endblock %}

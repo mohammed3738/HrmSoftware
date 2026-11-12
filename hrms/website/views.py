@@ -1737,6 +1737,10 @@ def employee_attendance_detail(request, employee_id):
 
     context = {
         "employee": employee,
+        # The "search employee" box jumps to someone else's attendance, so
+        # only people who may open other employees' attendance get it.
+        "can_switch_employee": (request.user.is_superuser or request.user.is_staff
+                                or has_feature_permission(request.user, "attendance_review", "view")),
         "attendance_records": attendance_records,
         "years": years,
         "months": months,

@@ -131,7 +131,7 @@
         <nav class="layout-navbar navbar navbar-expand-xl align-items-center bg-navbar-theme" id="layout-navbar">
           <div class="container-xxl">
             <div class="navbar-brand app-brand demo d-none d-xl-flex py-0 me-6">
-              <a href="index.html" class="app-brand-link gap-2">
+              <a href="{% if request.user|is_employee_role %}{% url 'employee-dashboard' %}{% else %}{% url 'admin-dashboard' %}{% endif %}" class="app-brand-link gap-2">
                 <span class="app-brand-logo demo">
                   {% comment %}
                     hrms-logo.svg is the full lockup (HRMS wordmark + mark)

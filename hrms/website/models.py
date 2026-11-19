@@ -1694,6 +1694,29 @@ def rostered_week_off_day(employee, day):
     return _rule_lookup(("roster-week-off", employee.id, day), compute)
 
 
+def prime_roster_week_offs(employee_ids, day):
+    """Inside attendance_rule_cache(): answer rostered_week_off_day() for
+    all of these employees on `day` from one query instead of one each --
+    for pages that work out a single day for everybody (the dashboards'
+    Absent Today list)."""
+    store = getattr(_attendance_rule_cache, "store", None)
+    if store is None:
+        return
+    found = {}
+    for emp_id, off_day in (
+        ShiftAssignment.objects.filter(
+            models.Q(is_active=True) | models.Q(auto_archived=True),
+            employee_id__in=list(employee_ids),
+            start_date__lte=day,
+            end_date__gte=day,
+            week_off_day__isnull=False,
+        ).order_by("-start_date", "-id").values_list("employee_id", "week_off_day")
+    ):
+        found.setdefault(emp_id, off_day)  # newest entry wins, as in rostered_week_off_day
+    for emp_id in employee_ids:
+        store.setdefault(("roster-week-off", emp_id, day), found.get(emp_id))
+
+
 def week_off_weekday(employee, day, payroll_settings=None):
     """Which weekday is this employee's weekly off on `day`, as a
     Python weekday number (Monday 0 ... Sunday 6), or None to mean "no

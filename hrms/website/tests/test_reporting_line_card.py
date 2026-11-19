@@ -9,7 +9,9 @@ from django.contrib.auth.models import Group, User
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from website.models import Company, Employee
+from datetime import time
+
+from website.models import Attendance, Company, Employee
 
 
 class ReportingLineCardTest(TestCase):
@@ -44,6 +46,7 @@ class ReportingLineCardTest(TestCase):
 
     def test_same_person_shown_once(self):
         self._set(self.boss, self.boss)
+        Attendance.objects.create(employee=self.boss, date=date.today(), in_time=time(9))
         resp = self.client.get(reverse("employee-dashboard"))
         self.assertContains(resp, "Reporting Person &amp; Manager")
         self.assertContains(resp, "Rita Boss", count=1)

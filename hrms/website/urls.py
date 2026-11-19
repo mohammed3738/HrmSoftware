@@ -105,7 +105,9 @@ urlpatterns = [
     path("attendance/shift-roster/<int:pk>/delete/", views.delete_shift_assignment, name="delete_shift_assignment"),
     path("api/shift-roster/<int:pk>/", views.api_get_shift_assignment, name="api_get_shift_assignment"),
     path("attendance/", views.attendance_list, name="attendance"),
+    path("attendance/export/", views.attendance_list_export, name="attendance_export"),
     path("attendance/<int:employee_id>/", views.employee_attendance_detail, name="employee_attendance_detail"),
+    path("attendance/<int:employee_id>/export/", views.employee_attendance_export, name="employee_attendance_export"),
     path("ajax/employees/search/", views.employee_search, name="employee_search"),
 
     path("submit-correction-request/", views.submit_correction_request, name="submit_correction_request"),

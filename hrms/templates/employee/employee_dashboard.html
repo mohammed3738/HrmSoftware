@@ -299,6 +299,7 @@
                 <th>Name</th>
                 <th>Branch</th>
                 <th>Department</th>
+                <th>Remarks</th>
               </tr>
             </thead>
             <tbody>
@@ -308,9 +309,10 @@
                 <td>{{ a.employee.first_name }} {{ a.employee.last_name }}</td>
                 <td class="text-muted">{{ a.employee.branch.branch_name|default:"—" }}</td>
                 <td class="text-muted">{{ a.employee.department|default:"—" }}</td>
+                <td>{% if a.remark == "On leave" %}<span class="badge bg-label-info">On leave</span>{% else %}<span class="badge bg-label-danger">No punch</span>{% endif %}</td>
               </tr>
               {% empty %}
-              <tr><td colspan="4" class="text-center text-muted py-3">No absentees marked for today</td></tr>
+              <tr><td colspan="5" class="text-center text-muted py-3">Nobody is absent today</td></tr>
               {% endfor %}
             </tbody>
           </table>

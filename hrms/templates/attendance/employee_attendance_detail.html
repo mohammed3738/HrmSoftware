@@ -71,6 +71,16 @@
             </div>
             {% endif %}
 
+            <!-- Custom range: when either date is filled it takes over from the pickers on the left -->
+            <div class="col-6 col-md-2">
+                <label class="form-label fw-semibold">From</label>
+                <input type="date" name="from_date" value="{{ from_date }}" class="form-control form-control-sm">
+            </div>
+            <div class="col-6 col-md-2">
+                <label class="form-label fw-semibold">To</label>
+                <input type="date" name="to_date" value="{{ to_date }}" class="form-control form-control-sm">
+            </div>
+
             <div class="col-md-3 d-flex gap-2">
                 <button type="submit" class="btn btn-sm btn-primary mt-auto">
                     <i class="ri-filter-2-line me-1"></i> Filter
@@ -78,6 +88,9 @@
                 <a href="{% url 'employee_attendance_detail' employee.id %}" class="btn btn-sm btn-outline-secondary mt-auto">
                     <i class="ri-refresh-line me-1"></i> Reset
                 </a>
+                <button type="button" class="btn btn-sm btn-outline-success mt-auto" data-bs-toggle="modal" data-bs-target="#attDownloadModal">
+                    <i class="ri-file-excel-2-line me-1"></i> Download
+                </button>
 
             </div>
 
@@ -170,6 +183,8 @@
                     {% if selected_year %}<input type="hidden" name="year" value="{{ selected_year }}">{% endif %}
                     {% if selected_month %}<input type="hidden" name="month" value="{{ selected_month }}">{% endif %}
                     {% if selected_period %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
+                    {% if from_date %}<input type="hidden" name="from_date" value="{{ from_date }}">{% endif %}
+                    {% if to_date %}<input type="hidden" name="to_date" value="{{ to_date }}">{% endif %}
                     <label class="text-muted small mb-0">Show</label>
                     <select name="per_page" class="form-select form-select-sm" style="width:auto;" onchange="document.getElementById('pageSizeForm').submit()">
                         {% for size in page_size_choices %}
@@ -250,10 +265,10 @@
                     </span>
                     <div>
                         {% if attendance_records.has_previous %}
-                            <a href="?page={{ attendance_records.previous_page_number }}{% if selected_year %}&year={{ selected_year }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+                            <a href="?page={{ attendance_records.previous_page_number }}{% if selected_year %}&year={{ selected_year }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if from_date %}&from_date={{ from_date }}{% endif %}{% if to_date %}&to_date={{ to_date }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
                         {% endif %}
                         {% if attendance_records.has_next %}
-                            <a href="?page={{ attendance_records.next_page_number }}{% if selected_year %}&year={{ selected_year }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary">Next</a>
+                            <a href="?page={{ attendance_records.next_page_number }}{% if selected_year %}&year={{ selected_year }}{% endif %}{% if selected_month %}&month={{ selected_month }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if from_date %}&from_date={{ from_date }}{% endif %}{% if to_date %}&to_date={{ to_date }}{% endif %}&per_page={{ page_size }}" class="btn btn-sm btn-outline-primary">Next</a>
                         {% endif %}
                     </div>
                 </div>
@@ -877,4 +892,85 @@ document.addEventListener("DOMContentLoaded", function () {
 </script>
 {% endif %}
 
+
+<!-- Download attendance -->
+<div class="modal fade" id="attDownloadModal" tabindex="-1" aria-labelledby="attDownloadTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="attDownloadTitle">Download attendance – {{ employee.first_name }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label fw-semibold" for="dlMode">Download for</label>
+        <select id="dlMode" class="form-select form-select-sm mb-3">
+          <option value="current">What's on screen now{% if export_from %} ({{ export_from }} to {{ export_to }}){% else %} (all records){% endif %}</option>
+          <option value="month">A month</option>
+          <option value="year">A year</option>
+          <option value="custom">Custom dates</option>
+        </select>
+        <div data-dl="month" class="d-none">
+          <label class="form-label" for="dlMonth">Month</label>
+          <input type="month" id="dlMonth" class="form-control form-control-sm">
+          <small class="text-muted">Calendar month, 1st to last day.</small>
+        </div>
+        <div data-dl="year" class="d-none">
+          <label class="form-label" for="dlYear">Year</label>
+          <input type="number" id="dlYear" class="form-control form-control-sm" min="2000" max="2100" value="{{ current_year }}">
+        </div>
+        <div data-dl="custom" class="d-none row g-2">
+          <div class="col-6"><label class="form-label" for="dlFrom">From</label><input type="date" id="dlFrom" class="form-control form-control-sm" value="{{ from_date }}"></div>
+          <div class="col-6"><label class="form-label" for="dlTo">To</label><input type="date" id="dlTo" class="form-control form-control-sm" value="{{ to_date }}"></div>
+        </div>
+        <div id="dlError" class="text-danger small mt-2 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-success" id="dlGo"><i class="ri-download-2-line me-1"></i>Download Excel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const exportUrl = "{% url 'employee_attendance_export' employee.id %}";
+  const current = { from: "{{ export_from }}", to: "{{ export_to }}" };
+  const mode = document.getElementById("dlMode");
+  const err = document.getElementById("dlError");
+  const pad = n => String(n).padStart(2, "0");
+
+  mode.addEventListener("change", function () {
+    document.querySelectorAll("[data-dl]").forEach(el => el.classList.toggle("d-none", el.dataset.dl !== mode.value));
+    err.classList.add("d-none");
+  });
+
+  function range() {
+    if (mode.value === "current") return current;
+    if (mode.value === "month") {
+      const v = document.getElementById("dlMonth").value;           // "2026-07"
+      if (!v) return "Pick a month.";
+      const [y, m] = v.split("-").map(Number);
+      return { from: `${v}-01`, to: `${v}-${pad(new Date(y, m, 0).getDate())}` };
+    }
+    if (mode.value === "year") {
+      const y = parseInt(document.getElementById("dlYear").value, 10);
+      if (!y) return "Enter a year.";
+      return { from: `${y}-01-01`, to: `${y}-12-31` };
+    }
+    const from = document.getElementById("dlFrom").value, to = document.getElementById("dlTo").value;
+    if (!from && !to) return "Pick at least one date.";
+    return { from, to };
+  }
+
+  document.getElementById("dlGo").addEventListener("click", function () {
+    const r = range();
+    if (typeof r === "string") { err.textContent = r; err.classList.remove("d-none"); return; }
+    const q = new URLSearchParams();
+    if (r.from) q.set("from_date", r.from);
+    if (r.to) q.set("to_date", r.to);
+    window.location.href = exportUrl + (q.toString() ? "?" + q : "");
+  });
+})();
+</script>
 {% endblock %}

@@ -41,6 +41,8 @@
               style="min-width: 0;"
               value="{{ selected_date }}"
             />
+            {% if selected_company_id %}<input type="hidden" name="company_id" value="{{ selected_company_id }}">{% endif %}
+            {% if selected_department %}<input type="hidden" name="department" value="{{ selected_department }}">{% endif %}
             <button type="submit" class="btn btn-primary flex-shrink-0">
               <i class="ri-search-line"></i><span class="d-none d-sm-inline ms-1">View</span>
             </button>
@@ -54,6 +56,8 @@
         <span class="text-muted">Showing the whole selected month below — use Reset to go back to a single day.</span>
         {% elif view_mode == 'period' %}
         <span class="text-muted">Showing the whole selected payroll month below — use Reset to go back to a single day.</span>
+        {% elif view_mode == 'range' %}
+        <span class="text-muted">Showing {{ range_start|date:"d M Y" }} to {{ range_end|date:"d M Y" }} — use Reset to go back to a single day.</span>
         {% endif %}
       </div>
     </div>
@@ -87,15 +91,54 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3 d-flex gap-2">
+      <!-- Custom range: when either date is filled it takes over from Month / Year / Payroll Month -->
+      <div class="col-6 col-md-2">
+        <label class="form-label fw-semibold">From</label>
+        <input type="date" name="from_date" value="{{ from_date }}" class="form-control form-control-sm">
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label fw-semibold">To</label>
+        <input type="date" name="to_date" value="{{ to_date }}" class="form-control form-control-sm">
+      </div>
+      {% if all_companies %}
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Company</label>
+        <select name="company_id" class="form-select form-select-sm">
+          <option value="">All Companies</option>
+          {% for c in all_companies %}
+          <option value="{{ c.id }}" {% if selected_company_id == c.id|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Department</label>
+        <select name="department" class="form-select form-select-sm">
+          <option value="">All Departments</option>
+          {% for d in departments %}
+          <option value="{{ d }}" {% if selected_department == d %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4 d-flex gap-2">
         <button type="submit" class="btn btn-sm btn-primary mt-auto">
           <i class="ri-filter-2-line me-1"></i> Filter
         </button>
         <a href="{% url 'attendance' %}" class="btn btn-sm btn-outline-secondary mt-auto">
           <i class="ri-refresh-line me-1"></i> Reset
         </a>
+        <button type="button" class="btn btn-sm btn-outline-success mt-auto" data-bs-toggle="modal" data-bs-target="#attAllDownloadModal">
+          <i class="ri-file-excel-2-line me-1"></i> Download
+        </button>
       </div>
     </form>
+
+    {% if too_many_rows %}
+    <div class="alert alert-info text-center">
+      This range has more than {{ max_rows }} attendance rows — too many to show on one page.
+      Narrow the dates, company or department, or use <b>Download</b> to get all of it in Excel.
+    </div>
+    {% endif %}
 
     <!-- 🔹 Attendance Table -->
     {% if attendance_records %}
@@ -171,9 +214,11 @@
         </tbody>
       </table>
     </div>
-    {% else %}
+    {% elif not too_many_rows %}
     <div class="alert alert-warning text-center mt-4">
-      {% if view_mode == 'month' %}
+      {% if view_mode == 'range' %}
+      No attendance found from {{ range_start|date:"d M Y" }} to {{ range_end|date:"d M Y" }}.
+      {% elif view_mode == 'month' %}
       No attendance found for the selected month.
       {% elif view_mode == 'period' %}
       No attendance found for the selected payroll month.
@@ -671,4 +716,92 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
+
+<!-- Download attendance for all employees -->
+<div class="modal fade" id="attAllDownloadModal" tabindex="-1" aria-labelledby="attAllDownloadTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="attAllDownloadTitle">Download attendance – all employees</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label fw-semibold" for="dlAllMode">Download for</label>
+        <select id="dlAllMode" class="form-select form-select-sm mb-3">
+          <option value="current">What's on screen now ({{ export_from }}{% if export_to != export_from %} to {{ export_to }}{% endif %})</option>
+          <option value="month">A month</option>
+          <option value="year">A year</option>
+          <option value="custom">Custom dates</option>
+        </select>
+        <div data-dlall="month" class="d-none">
+          <label class="form-label" for="dlAllMonth">Month</label>
+          <input type="month" id="dlAllMonth" class="form-control form-control-sm">
+          <small class="text-muted">Calendar month, 1st to last day.</small>
+        </div>
+        <div data-dlall="year" class="d-none">
+          <label class="form-label" for="dlAllYear">Year</label>
+          <input type="number" id="dlAllYear" class="form-control form-control-sm" min="2000" max="2100" value="{{ current_year }}">
+        </div>
+        <div data-dlall="custom" class="d-none row g-2">
+          <div class="col-6"><label class="form-label" for="dlAllFrom">From</label><input type="date" id="dlAllFrom" class="form-control form-control-sm" value="{{ from_date }}"></div>
+          <div class="col-6"><label class="form-label" for="dlAllTo">To</label><input type="date" id="dlAllTo" class="form-control form-control-sm" value="{{ to_date }}"></div>
+        </div>
+        <p class="text-muted small mt-3 mb-0">
+          Uses the Company and Department chosen on the page
+          ({% if selected_company_id %}one company{% else %}all companies{% endif %}, {{ selected_department|default:"all departments" }}).
+          The file has a day-by-day sheet and a per-employee summary sheet. Up to one year at a time.
+        </p>
+        <div id="dlAllError" class="text-danger small mt-2 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-sm btn-success" id="dlAllGo"><i class="ri-download-2-line me-1"></i>Download Excel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const exportUrl = "{% url 'attendance_export' %}";
+  const current = { from: "{{ export_from }}", to: "{{ export_to }}" };
+  const scope = { company_id: "{{ selected_company_id|escapejs }}", department: "{{ selected_department|escapejs }}" };
+  const mode = document.getElementById("dlAllMode");
+  const err = document.getElementById("dlAllError");
+  const pad = n => String(n).padStart(2, "0");
+
+  mode.addEventListener("change", function () {
+    document.querySelectorAll("[data-dlall]").forEach(el => el.classList.toggle("d-none", el.dataset.dlall !== mode.value));
+    err.classList.add("d-none");
+  });
+
+  function range() {
+    if (mode.value === "current") return current;
+    if (mode.value === "month") {
+      const v = document.getElementById("dlAllMonth").value;          // "2026-07"
+      if (!v) return "Pick a month.";
+      const [y, m] = v.split("-").map(Number);
+      return { from: `${v}-01`, to: `${v}-${pad(new Date(y, m, 0).getDate())}` };
+    }
+    if (mode.value === "year") {
+      const y = parseInt(document.getElementById("dlAllYear").value, 10);
+      if (!y) return "Enter a year.";
+      return { from: `${y}-01-01`, to: `${y}-12-31` };
+    }
+    const from = document.getElementById("dlAllFrom").value, to = document.getElementById("dlAllTo").value;
+    if (!from || !to) return "Pick both dates.";
+    if (Math.abs(new Date(to) - new Date(from)) / 86400000 > 366) return "Choose one year or less.";
+    return { from, to };
+  }
+
+  document.getElementById("dlAllGo").addEventListener("click", function () {
+    const r = range();
+    if (typeof r === "string") { err.textContent = r; err.classList.remove("d-none"); return; }
+    const q = new URLSearchParams({ from_date: r.from, to_date: r.to });
+    if (scope.company_id) q.set("company_id", scope.company_id);
+    if (scope.department) q.set("department", scope.department);
+    window.location.href = exportUrl + "?" + q;
+  });
+})();
+</script>
 {% endblock %}

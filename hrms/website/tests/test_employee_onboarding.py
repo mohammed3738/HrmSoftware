@@ -340,7 +340,7 @@ class OnboardingListsTest(OnboardingTestBase):
         self.assertContains(resp, "Needs approval")
         self._complete(emp)
         resp = self.hr.client.get(reverse("admin-dashboard"))
-        self.assertNotContains(resp, "ONB-DASH")
+        self.assertNotIn(emp, resp.context["pending_onboarding"])
 
     def test_dashboard_shows_change_count_to_approvers(self):
         emp = self._employee(code="ONB-CR", started=date.today() - timedelta(days=20))

@@ -1499,8 +1499,15 @@ def attendance_list(request):
     view_mode = 'date'
     range_start = range_end = None
 
+    # A From / To range (any number of days) beats every other picker.
+    from_date, to_date = _parse_date_range(request.GET.get('from_date'), request.GET.get('to_date'))
+    if from_date or to_date:
+        view_mode = 'range'
+        range_start = from_date or Attendance.objects.aggregate(m=Min('date'))['m'] or to_date
+        range_end = to_date or now().date()
+
     selected_period = None
-    if period_str:
+    if view_mode == 'date' and period_str:
         for p in available_periods:
             if p['to_date'].isoformat() == period_str:
                 selected_period = p
@@ -1525,7 +1532,7 @@ def attendance_list(request):
 
     selected_date = None
     prev_date = next_date = None
-    if view_mode in ('period', 'month'):
+    if view_mode in ('period', 'month', 'range'):
         attendance_records = (
             Attendance.objects.filter(date__gte=range_start, date__lte=range_end)
             .select_related('employee')
@@ -1546,9 +1553,16 @@ def attendance_list(request):
         prev_date = selected_date - timedelta(days=1)
         next_date = selected_date + timedelta(days=1)
 
+    scope = _attendance_list_scope(request)
+    attendance_records = scope['apply'](attendance_records)
+
+    # A long range across every employee can be tens of thousands of rows --
+    # more than a browser table copes with -- so past this the page asks
+    # for the Excel download instead of drawing the table.
+    too_many_rows = view_mode == 'range' and attendance_records.count() > ATTENDANCE_LIST_MAX_ROWS
+
     # Year/month dropdown options, drawn from actual attendance history so
-    # the dropdown never offers an empty month (page has no company
-    # scoping, so this spans every company same as the records table).
+    # the dropdown never offers an empty month.
     years = _attendance_years()
     months = [{'value': m, 'name': calendar.month_name[m]} for m in range(1, 13)]
 
@@ -1568,8 +1582,171 @@ def attendance_list(request):
         "raise_correction_for_others": _can_raise_for_others(user, "attendance_corrections"),
         "raise_compoff_for_others": _can_raise_for_others(user, "comp_off"),
         "own_employee_id": getattr(getattr(user, "employee_profile", None), "pk", None),
+        "from_date": from_date.isoformat() if from_date else "",
+        "to_date": to_date.isoformat() if to_date else "",
+        "range_start": range_start,
+        "range_end": range_end,
+        "too_many_rows": too_many_rows,
+        "max_rows": ATTENDANCE_LIST_MAX_ROWS,
+        # Download -> "What's on screen now": the range above, or the day.
+        "export_from": (range_start or selected_date).isoformat(),
+        "export_to": (range_end or selected_date).isoformat(),
+        "current_year": now().year,
+        **scope['context'],
     }
+    if too_many_rows:
+        context["attendance_records"] = []
     return render(request, "attendance/today.html", context)
+
+ATTENDANCE_LIST_MAX_ROWS = 15000
+
+
+def _attendance_list_scope(request):
+    """Company / department filters shared by the all-employees Attendance
+    page and its Excel download. A user without company-wide access is
+    always held to their own company, whatever the URL says."""
+    from website.models import Company
+    own_company = get_company_filter(request.user)
+    company_id = request.GET.get('company_id', '').strip()
+    department = request.GET.get('department', '').strip()
+
+    company = own_company
+    if own_company is None and company_id.isdigit():
+        company = Company.objects.filter(pk=company_id).first()
+
+    employees = Employee.objects.all()
+    if company:
+        employees = employees.filter(company=company)
+    departments = sorted(set(
+        employees.exclude(department__isnull=True).exclude(department='')
+        .values_list('department', flat=True).distinct()
+    ))
+
+    def apply(qs, prefix='employee__'):
+        if company:
+            qs = qs.filter(**{prefix + 'company': company})
+        if department:
+            qs = qs.filter(**{prefix + 'department': department})
+        return qs
+
+    return {
+        'company': company,
+        'department': department,
+        'apply': apply,
+        'context': {
+            'all_companies': Company.objects.order_by('name') if own_company is None else None,
+            'selected_company_id': str(company.pk) if company else '',
+            'departments': departments,
+            'selected_department': department,
+        },
+    }
+
+
+@login_required
+@feature_required("attendance_review", action="view")
+def attendance_list_export(request):
+    """eSSL-style Excel of every employee's attendance between from_date and
+    to_date (filtered by company / department like the page): a day-by-day
+    'Detailed' sheet and a per-employee 'Summary' sheet. Month / Year /
+    Custom on the page's Download dialog all arrive here as a from/to pair."""
+    from openpyxl.cell import WriteOnlyCell
+    from openpyxl.styles import Font, PatternFill
+
+    date_from, date_to = _parse_date_range(request.GET.get('from_date'), request.GET.get('to_date'))
+    if not (date_from or date_to):
+        date_from = date_to = now().date()
+    date_from = date_from or date_to
+    date_to = date_to or now().date()
+    if (date_to - date_from).days > 366:
+        return HttpResponse("Please choose a range of one year or less.", status=400)
+
+    scope = _attendance_list_scope(request)
+    records = scope['apply'](
+        Attendance.objects.filter(date__gte=date_from, date__lte=date_to)
+    ).select_related('employee', 'employee__company').order_by(
+        'employee__employee_code', 'employee__first_name', 'date')
+
+    head_font, head_fill = Font(bold=True, color="FFFFFF"), PatternFill("solid", fgColor="1F4E79")
+
+    def header(ws, titles):
+        row = []
+        for t in titles:
+            c = WriteOnlyCell(ws, value=t)
+            c.font, c.fill = head_font, head_fill
+            row.append(c)
+        ws.append(row)
+
+    wb = openpyxl.Workbook(write_only=True)
+    detail = wb.create_sheet("Detailed")
+    summary_ws = wb.create_sheet("Summary")
+    for ws, widths in ((detail, (12, 26, 18, 22, 12, 7, 9, 9, 11, 18)),
+                       (summary_ws, (12, 26, 18, 22, 10, 12, 10, 10, 10, 10, 10, 12))):
+        for col, w in zip("ABCDEFGHIJKL", widths):
+            ws.column_dimensions[col].width = w
+
+    span = f"{date_from:%d %b %Y} to {date_to:%d %b %Y}"
+    detail.append([f"Attendance - {span}"])
+    detail.append([])
+    header(detail, ["Emp Code", "Name", "Department", "Company", "Date", "Day",
+                    "In Time", "Out Time", "Work Hours", "Status"])
+
+    present_statuses = {"Present", "Late Present"}
+    half_statuses = {"Half Day", "Present (Half-Day)"}
+    totals = {}  # employee id -> running summary
+    for a in records.iterator(chunk_size=2000):
+        e = a.employee
+        name = " ".join(filter(None, [e.first_name, e.last_name]))
+        company_name = e.company.name if e.company else ""
+        minutes = a.get_worked_minutes() if a.in_time and a.out_time else None
+        detail.append([
+            e.employee_code, name, e.department or "", company_name,
+            a.date.strftime("%d-%m-%Y"), a.date.strftime("%a"),
+            a.in_time.strftime("%H:%M") if a.in_time else "",
+            a.out_time.strftime("%H:%M") if a.out_time else "",
+            f"{minutes // 60}:{minutes % 60:02d}" if minutes is not None else "",
+            a.status or "",
+        ])
+        t = totals.setdefault(e.pk, {
+            "row": [e.employee_code, name, e.department or "", company_name],
+            "present": 0, "late": 0, "half": 0, "absent": 0, "weekoff": 0, "holiday": 0, "other": 0, "minutes": 0,
+        })
+        status = a.status or ""
+        low = status.lower()
+        if status in present_statuses:
+            t["present"] += 1
+            if status == "Late Present":
+                t["late"] += 1
+        elif status in half_statuses:
+            t["half"] += 1
+        elif status == "Absent":
+            t["absent"] += 1
+        elif "weekend" in low or "week off" in low:
+            t["weekoff"] += 1
+        elif "holiday" in low:
+            t["holiday"] += 1
+        else:
+            t["other"] += 1
+        t["minutes"] += minutes or 0
+
+    summary_ws.append([f"Summary - {span}"])
+    summary_ws.append([])
+    header(summary_ws, ["Emp Code", "Name", "Department", "Company", "Present", "of which Late",
+                        "Half Day", "Absent", "Week Off", "Holiday", "Other", "Total Hours"])
+    for t in totals.values():
+        summary_ws.append(t["row"] + [
+            t["present"], t["late"], t["half"], t["absent"], t["weekoff"], t["holiday"], t["other"],
+            f"{t['minutes'] // 60}:{t['minutes'] % 60:02d}",
+        ])
+
+    f = io.BytesIO()
+    wb.save(f)
+    label = f"{date_from:%Y-%m-%d}_to_{date_to:%Y-%m-%d}"
+    if scope['company']:
+        label = (scope['company'].short_name or scope['company'].name).replace(" ", "_") + "_" + label
+    response = HttpResponse(
+        f.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = f'attachment; filename="attendance_all_{label}.xlsx"'
+    return response
 
 
 def _payroll_settings_with_cycle(company):
@@ -1615,6 +1792,81 @@ def _employee_payroll_periods(employee, payroll_settings):
             periods.append({"from_date": from_d, "to_date": to_d})
         from_d, to_d = get_payroll_period_for_date(payroll_settings, to_d + timedelta(days=1))
     return list(reversed(periods))
+
+
+def _parse_date_range(from_raw, to_raw):
+    """(from, to) dates from two YYYY-MM-DD strings; a blank or malformed
+    one comes back as None, and a reversed pair is swapped."""
+    def parse(raw):
+        try:
+            return date.fromisoformat((raw or "").strip())
+        except ValueError:
+            return None
+    date_from, date_to = parse(from_raw), parse(to_raw)
+    if date_from and date_to and date_from > date_to:
+        date_from, date_to = date_to, date_from
+    return date_from, date_to
+
+
+@login_required
+def employee_attendance_export(request, employee_id):
+    """Excel download of one employee's attendance between from_date and
+    to_date (either may be blank: open-ended; both blank: everything). The
+    page's Download menu turns "Month", "Year" and "Current filter" into a
+    from/to pair, so this is the only shape the endpoint has to handle."""
+    employee = get_object_or_404(Employee, id=employee_id)
+    if not can_access_employee_record(request.user, employee, "attendance_review", "view"):
+        raise PermissionDenied
+
+    date_from, date_to = _parse_date_range(request.GET.get("from_date"), request.GET.get("to_date"))
+    records = Attendance.objects.filter(employee=employee).order_by("date")
+    if date_from:
+        records = records.filter(date__gte=date_from)
+    if date_to:
+        records = records.filter(date__lte=date_to)
+
+    from openpyxl.styles import Font, PatternFill
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Attendance"
+    name = " ".join(filter(None, [employee.first_name, employee.last_name]))
+    span = f"{date_from:%d %b %Y}" if date_from else "Start"
+    span += f" to {date_to:%d %b %Y}" if date_to else " to Latest"
+    ws.append([f"{employee.employee_code} - {name}", span])
+    ws[1][0].font = Font(bold=True)
+    ws.append([])
+    headers = ["Date", "Day", "In Time", "Out Time", "Working Hours", "Status"]
+    ws.append(headers)
+    for cell in ws[3]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="1F4E79")
+
+    counts = {}
+    for a in records.only("date", "in_time", "out_time", "status"):
+        ws.append([
+            a.date.strftime("%d-%m-%Y"), a.date.strftime("%A"),
+            a.in_time.strftime("%H:%M") if a.in_time else "",
+            a.out_time.strftime("%H:%M") if a.out_time else "",
+            a.working_hours_display if a.in_time and a.out_time else "",
+            a.status or "",
+        ])
+        counts[a.status or "-"] = counts.get(a.status or "-", 0) + 1
+
+    ws.append([])
+    ws.append(["Summary"])
+    ws[ws.max_row][0].font = Font(bold=True)
+    for status, n in sorted(counts.items()):
+        ws.append([status, n])
+    for col, width in zip("ABCDEF", (14, 12, 10, 10, 15, 22)):
+        ws.column_dimensions[col].width = width
+
+    label = (f"{date_from:%Y-%m-%d}" if date_from else "start") + "_to_" + (f"{date_to:%Y-%m-%d}" if date_to else "latest")
+    f = io.BytesIO()
+    wb.save(f)
+    response = HttpResponse(
+        f.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    response["Content-Disposition"] = f'attachment; filename="attendance_{employee.employee_code}_{label}.xlsx"'.replace(" ", "_")
+    return response
 
 
 @login_required
@@ -1672,6 +1924,14 @@ def employee_attendance_detail(request, employee_id):
             range_start = date(int(selected_year), 1, 1)
             range_end = date(int(selected_year), 12, 31)
 
+    # A custom From / To range (e.g. just the 2nd to the 7th) takes over
+    # from the period / year / month pickers when either date is given.
+    date_from, date_to = _parse_date_range(request.GET.get("from_date"), request.GET.get("to_date"))
+    if date_from or date_to:
+        range_start = date_from or Attendance.objects.filter(employee=employee).aggregate(m=Min("date"))["m"] or date_to
+        range_end = date_to or date.today()
+        attendance_records = Attendance.objects.filter(employee=employee, date__gte=range_start, date__lte=range_end)
+
     # ── Summary counters (Present / Late / Half Day / Leaves Taken) ────────
     days_present_count = attendance_records.filter(status__in=["Present", "Late Present"]).count()
     late_remarks_count = attendance_records.filter(status="Late Present").count()
@@ -1710,7 +1970,7 @@ def employee_attendance_detail(request, employee_id):
     # across "Next" pages. Only paginate the unfiltered "all time" view,
     # which can span years of records.
     page_size = get_page_size(request, default=30)
-    if not (range_start and range_end):
+    if not (range_start and range_end) or (range_end - range_start).days > 62:
         paginator = Paginator(attendance_records, page_size)
         page = request.GET.get("page")
         attendance_records = paginator.get_page(page)
@@ -1720,7 +1980,7 @@ def employee_attendance_detail(request, employee_id):
     # selected it shows the current payroll period (or the current calendar
     # month for companies without a custom cycle).
     if range_start and range_end:
-        calendar_start, calendar_end = range_start, range_end
+        calendar_start, calendar_end = max(range_start, range_end - timedelta(days=41)), range_end
     elif uses_custom_period:
         calendar_start, calendar_end = get_payroll_period_for_date(payroll_settings, date.today())
     else:
@@ -1759,6 +2019,12 @@ def employee_attendance_detail(request, employee_id):
         "calendar_attendance_json": json_for_script(calendar_attendance),
         "page_size": page_size,
         "page_size_choices": PAGE_SIZE_CHOICES,
+        "from_date": date_from.isoformat() if date_from else "",
+        "to_date": date_to.isoformat() if date_to else "",
+        # What "Download -> Current filter" exports (blank = everything).
+        "export_from": range_start.isoformat() if range_start else "",
+        "export_to": range_end.isoformat() if range_end else "",
+        "current_year": date.today().year,
     }
     own = getattr(request.user, "employee_profile", None)
     is_own = own is not None and own.pk == employee.pk
@@ -2555,16 +2821,11 @@ def admin_dashboard(request):
     # ── Today's attendance breakdown ─────────────────────────────
     today_attn   = Attendance.objects.filter(employee__in=active_qs, date=today)
     present_today   = today_attn.filter(status__in=['Present', 'Late Present', 'Half Day']).count()
-    absent_today    = today_attn.filter(status='Absent').count()
+    absent_employees_today = _absent_today(active_qs, today)
+    absent_today    = len(absent_employees_today)
     late_today      = today_attn.filter(status='Late Present').count()
     on_leave_today  = today_attn.filter(status='On Leave').count()
     not_marked      = total_active - today_attn.count()
-
-    absent_employees_today = (
-        today_attn.filter(status='Absent', in_time__isnull=True)
-        .select_related('employee')
-        .order_by('employee__first_name', 'employee__last_name')
-    )
 
     # ── Department distribution ───────────────────────────────────
     dept_data = list(
@@ -2601,7 +2862,8 @@ def admin_dashboard(request):
         .order_by('date_of_relieving')[:5]
     )
 
-    birthdays = _upcoming_birthdays(active_qs, today)
+    # Birthdays are for everybody, across every company in the group.
+    birthdays = _upcoming_birthdays(Employee.objects.filter(status="Active"), today)
 
     # Onboarding still short of 100% (Active and Pending staff); each drops
     # off this list the moment its checklist is complete.
@@ -3721,6 +3983,58 @@ def my_attendance(request):
     return redirect('employee_attendance_detail', employee_id=request.user.employee_profile.pk)
 
 
+def _absent_today(employees, today):
+    """Everyone in `employees` who should be at work today but has no
+    punch-in -- including people with no attendance row at all yet (no
+    biometric punch, nothing uploaded), who the old list (rows marked
+    Absent only) never showed.
+
+    Left out: anyone who punched in or is marked present, whose day is a
+    weekend or a holiday for them (the same rules Attendance uses, so a
+    rostered week-off or a branch holiday counts), who hasn't joined yet,
+    or who is out on field duty today. People on approved leave stay in,
+    marked "On leave". Returns objects with .employee and .remark, by name."""
+    from types import SimpleNamespace
+    from website.models import attendance_rule_cache, prime_roster_week_offs
+
+    employees = (
+        employees.filter(status="Active")
+        .filter(Q(date_of_joining__isnull=True) | Q(date_of_joining__lte=today))
+        .select_related("branch", "company")
+        .order_by("first_name", "last_name")
+    )
+    rows = {a.employee_id: a for a in Attendance.objects.filter(employee__in=employees, date=today)}
+    on_duty = set(FieldDuty.objects.filter(employee__in=employees, duty_date=today).values_list("employee_id", flat=True))
+    on_leave = set(LeaveApplication.objects.filter(
+        employee__in=employees, status="Approved", start_date__lte=today, end_date__gte=today,
+    ).values_list("employee_id", flat=True))
+
+    not_working_day = {"Weekend", "Holiday"}
+    present = {"Present", "Late Present", "Half Day", "Present (Half-Day)"}
+    employees = list(employees)
+    absent = []
+    with attendance_rule_cache():
+        prime_roster_week_offs([e.pk for e in employees if e.pk not in rows], today)
+        for emp in employees:
+            if emp.pk in on_duty:
+                continue
+            row = rows.get(emp.pk)
+            if row is not None:
+                if row.in_time or row.status in present or row.status in not_working_day:
+                    continue
+                status = row.status
+            else:
+                # No row yet: work the day out exactly as saving one would.
+                probe = Attendance(employee=emp, date=today)
+                probe.calculate_status()
+                if probe.status in not_working_day or probe.status == "Present (Half-Day)":
+                    continue
+                status = probe.status
+            on_leave_today = emp.pk in on_leave or status == "On Leave"
+            absent.append(SimpleNamespace(employee=emp, remark="On leave" if on_leave_today else "No punch"))
+    return absent
+
+
 def _upcoming_birthdays(employees, today, days=7):
     """Birthdays from today through the next `days` days, soonest first.
     Only the day and month are used (never the year, so no ages are shown).
@@ -3758,11 +4072,7 @@ def employee_dashboard(request):
 
     today_attendance = Attendance.objects.filter(employee=employee, date=today).first()
 
-    absent_employees_today = (
-        Attendance.objects.filter(employee__company=employee.company, employee__status='Active', date=today, status='Absent', in_time__isnull=True)
-        .select_related('employee')
-        .order_by('employee__first_name', 'employee__last_name')
-    )
+    absent_employees_today = _absent_today(Employee.objects.filter(company=employee.company), today)
 
     period_from, period_to = _current_payroll_period(employee.company)
     if not period_from:
@@ -3795,11 +4105,8 @@ def employee_dashboard(request):
         .order_by("-payroll__end_date")[:6]
     )
 
-    # Colleagues in the same company (everyone, for an employee with none).
-    colleagues = Employee.objects.filter(status="Active")
-    if employee.company_id:
-        colleagues = colleagues.filter(company_id=employee.company_id)
-    birthdays = _upcoming_birthdays(colleagues, today)
+    # Everybody's birthdays, across every company in the group.
+    birthdays = _upcoming_birthdays(Employee.objects.filter(status="Active"), today)
     my_birthday_today = any(b["is_today"] and b["employee"].pk == employee.pk for b in birthdays)
 
     # The dashboard's Field Duty button says Start or End depending on

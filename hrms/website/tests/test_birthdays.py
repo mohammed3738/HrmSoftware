@@ -54,7 +54,7 @@ class UpcomingBirthdaysTest(TestCase):
         found = _upcoming_birthdays(Employee.objects.all(), date(2027, 2, 28))
         self.assertTrue(found and found[0]["is_today"])
 
-    def test_employee_dashboard_greets_and_lists_only_own_company(self):
+    def test_employee_dashboard_greets_and_lists_every_company(self):
         today = date.today()
         user = User.objects.create_user("bd_emp", password="pass12345")
         user.groups.add(Group.objects.get(name="Employee"))
@@ -68,7 +68,8 @@ class UpcomingBirthdaysTest(TestCase):
         resp = client.get(reverse("employee-dashboard"))
         self.assertContains(resp, f"Happy Birthday, {me.first_name}!")
         codes = [b["employee"].employee_code for b in resp.context["birthdays"]]
-        self.assertEqual(codes, ["ME", "MATE"])
+        # Everyone's birthday, across every company -- but never someone who has left.
+        self.assertEqual(sorted(codes), ["MATE", "ME", "STRANGER"])
         self.assertNotContains(resp, str(me.date_of_birth.year))  # never reveal birth year / age
 
     def test_admin_dashboard_shows_birthdays(self):

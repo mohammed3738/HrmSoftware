@@ -665,6 +665,93 @@ def mark_unrecorded_days(from_date, to_date, employees=None):
     return counters
 
 
+def mark_day_start(day=None):
+    """Start of day: give every active employee a row for `day` (today, in
+    local time) before any punch arrives -- Absent for a working day, and
+    Weekend / Holiday / half-day for the rest, named by calculate_status()
+    exactly as saving any row would. A punch later (biometric sync, Excel
+    upload or field duty) updates the row and the in/out rules turn it into
+    Present / Late Present / Half Day; none of those paths skip an existing
+    row whose times are blank.
+
+    Rows that already exist are never touched. The Absent ones placed here
+    carry auto_absent=True so release_unreported_day_start_absences() can
+    tell them from a recorded absence.
+    """
+    from django.utils.timezone import localdate
+
+    from ..models import attendance_rule_cache
+    from ..signals import recalculate_leave_balance_for_employee, suspend_leave_balance_auto_recalc
+
+    day = day or localdate()
+    counters = {"absent_created": 0, "non_working_created": 0}
+
+    people = list(
+        Employee.objects.filter(status__in=ACTIVE_EMPLOYEE_STATUSES)
+        .filter(Q(date_of_joining__isnull=True) | Q(date_of_joining__lte=day))
+        .exclude(attendance__date=day)
+        .select_related("company", "branch")
+    )
+    touched = []
+    with transaction.atomic(), suspend_leave_balance_auto_recalc(), attendance_rule_cache():
+        for employee in people:
+            if get_locking_run(employee.company, day):
+                continue
+            row = Attendance(employee=employee, date=day)
+            row.calculate_status()
+            if row.status == "Absent":
+                row.auto_absent = True
+                counters["absent_created"] += 1
+            else:
+                counters["non_working_created"] += 1
+            row.save()
+            touched.append(employee)
+
+    for employee in touched:
+        try:
+            recalculate_leave_balance_for_employee(employee, day)
+        except Exception:
+            logger.exception("Start of day: leave balance recalc failed for %s", employee)
+    return counters
+
+
+def release_unreported_day_start_absences(days_back=3):
+    """The safety net for mark_day_start(). If the punch machine reported
+    nothing at all for a finished day -- device off, agent stopped, network
+    down -- nobody could have punched, so the start-of-day Absent rows for
+    that day are not evidence of anything. They are removed (only while
+    still untouched: no punch, no upload, no correction, no override), the
+    same rule mark_unrecorded_days() has always applied: an outage must
+    never quietly cost everybody a day's pay.
+    """
+    from django.utils.timezone import localdate
+
+    from ..signals import recalculate_leave_balance_for_employee, suspend_leave_balance_auto_recalc
+
+    today = localdate()
+    first, last = today - datetime.timedelta(days=days_back), today - datetime.timedelta(days=1)
+    reported = reported_days(first, last)
+    stale = Attendance.objects.filter(
+        auto_absent=True, date__gte=first, date__lte=last,
+        in_time__isnull=True, out_time__isnull=True,
+        times_locked=False, status_overridden=False, status="Absent",
+    ).exclude(date__in=reported).select_related("employee")
+
+    rows = list(stale)
+    with transaction.atomic(), suspend_leave_balance_auto_recalc():
+        Attendance.objects.filter(pk__in=[r.pk for r in rows]).delete()
+    earliest = {}
+    for r in rows:
+        if r.employee_id not in earliest or r.date < earliest[r.employee_id][1]:
+            earliest[r.employee_id] = (r.employee, r.date)
+    for employee, day in earliest.values():
+        try:
+            recalculate_leave_balance_for_employee(employee, day)
+        except Exception:
+            logger.exception("Start of day release: leave balance recalc failed for %s", employee)
+    return len(rows)
+
+
 def _marked_days_note(counters):
     """One sentence for the sync run's message, or nothing to say."""
     parts = []

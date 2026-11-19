@@ -421,6 +421,20 @@ def sync_biometric_attendance_task(self):
 
 
 @shared_task
+def mark_day_start_task():
+    """00:05 every day: everybody starts the day Absent (or Weekend /
+    Holiday) until a punch says otherwise -- see
+    services/biometric_sync.mark_day_start. First releases the placeholders
+    of any recent day the punch machine never reported for, so an outage
+    can't cost anybody pay."""
+    from .services import biometric_sync
+
+    released = biometric_sync.release_unreported_day_start_absences()
+    counters = biometric_sync.mark_day_start()
+    return {"released": released, **counters}
+
+
+@shared_task
 def archive_past_shift_assignments_task():
     """Nightly tidy-up of the Shift Roster: rotations whose dates have gone
     by leave the active list, so "who is on nights this week" stays readable

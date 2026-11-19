@@ -1843,6 +1843,17 @@ class Attendance(models.Model):
                    "not from the punch machine. The biometric sync leaves these alone.",
     )
 
+    # Placed by the start-of-day job (services/biometric_sync.py
+    # mark_day_start): the day began and this person had no punch yet. A
+    # punch later turns the row into Present/Late/Half Day by the usual
+    # rules. Kept so the safety net can tell this placeholder from an
+    # absence somebody actually recorded.
+    auto_absent = models.BooleanField(
+        default=False,
+        verbose_name="Marked absent at start of day",
+        help_text="Created as Absent when the day began; replaced by the real status once a punch arrives.",
+    )
+
     class Meta:
         unique_together = [('employee', 'date')]
         indexes = [

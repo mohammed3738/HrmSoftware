@@ -59,6 +59,15 @@ app.conf.beat_schedule = {
     # Finished shift rotations leave the active roster, so it stays readable
     # as night duty rotates. Attendance for those dates is untouched -- see
     # website/services/shift_roster_cleanup.py.
+    # Everybody starts the day Absent (Weekend/Holiday where it applies);
+    # the punches during the day turn them Present. Just after midnight so
+    # the midnight biometric run (yesterday's night-shift out-punches) is
+    # not competing with it.
+    'mark-day-start': {
+        'task': 'website.tasks.mark_day_start_task',
+        'schedule': crontab(hour=0, minute=5),
+    },
+
     'archive-past-shift-assignments': {
         'task': 'website.tasks.archive_past_shift_assignments_task',
         'schedule': crontab(hour=1, minute=30),

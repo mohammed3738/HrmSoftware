@@ -6012,7 +6012,11 @@ def generate_leave_balances_for_all_periods(company, payroll_settings):
 
     total_calculated = 0
 
-    for period_info in periods:
+    # Oldest first: each period opens with the previous one's final balance,
+    # so the previous one must already be up to date. (The periods list
+    # comes newest-first for the dropdowns; walking it in that order made
+    # every month open with the month before's OLD closing balance.)
+    for period_info in sorted(periods, key=lambda p: p['from_date']):
         from_date = period_info['from_date']
         to_date = period_info['to_date']
 
@@ -6851,7 +6855,7 @@ def recalc_employee_leave_balance(request, employee_id):
     """Recalculate for single employee"""
     if not (request.user.is_staff or user_has_global_access(request.user)):
         messages.error(request, "Permission denied.")
-        return redirect("leave-balance")
+        return redirect("leave_balance")
 
     try:
         employee = Employee.objects.select_related('company').get(id=employee_id)
@@ -6859,14 +6863,18 @@ def recalc_employee_leave_balance(request, employee_id):
         company_filter = get_company_filter(request.user)
         if company_filter and company_filter.id != employee.company_id:
             messages.error(request, "Company mismatch.")
-            return redirect("leave-balance")
+            return redirect("leave_balance")
         
         payroll_settings = PayrollSettings.objects.get(company=employee.company)
         
         periods = get_all_payroll_periods_from_attendance(employee.company, payroll_settings)
         count = 0
-        
-        for period in periods:
+
+        # Oldest first, so each period opens with the freshly recalculated
+        # previous one; finalized payroll periods are left as paid.
+        for period in sorted(periods, key=lambda p: p['from_date']):
+            if get_locking_run_for_period(employee.company, period['from_date'], period['to_date']):
+                continue
             calculate_leave_balance_for_period(
                 employee,
                 payroll_settings,
@@ -6879,7 +6887,7 @@ def recalc_employee_leave_balance(request, employee_id):
     except Exception as e:
         messages.error(request, f"Error: {str(e)}")
     
-    return redirect("leave-balance")
+    return redirect("leave_balance")
 
 
 
@@ -7060,13 +7068,13 @@ def recalc_all_employees(request):
     """Recalculate for all employees"""
     if not (request.user.is_staff or user_has_global_access(request.user)):
         messages.error(request, "Permission denied.")
-        return redirect("leave-balance")
+        return redirect("leave_balance")
 
     user_company = get_user_company(request.user)
 
     if not user_company:
         messages.error(request, "No company.")
-        return redirect("leave-balance")
+        return redirect("leave_balance")
     
     try:
         payroll_settings = PayrollSettings.objects.get(company=user_company)
@@ -7077,7 +7085,7 @@ def recalc_all_employees(request):
     except Exception as e:
         messages.error(request, f"Error: {str(e)}")
     
-    return redirect("leave-balance")
+    return redirect("leave_balance")
 
 
 

@@ -179,6 +179,57 @@ def auto_recalc_leave_balance_on_compoff_delete(sender, instance, origin=None, *
     recalculate_leave_balance_for_employee(instance.employee, instance.from_date)
 
 
+# Approved leave for a day with no attendance row yet counts as Leave Taken
+# (see unrecorded_approved_leave_days), so approving, rejecting, editing or
+# deleting a leave must refresh the balance too -- otherwise it only showed
+# up on the next attendance change or the monthly job.
+from django.db.models.signals import pre_save
+
+
+def _leave_recalc_from(instance):
+    """Earliest date this leave touches, before or after the edit; None for
+    a leave wholly in the future with no balance yet to update (the
+    start-of-day job picks it up when the day comes)."""
+    from django.utils.timezone import localdate
+
+    starts = [d for d in (instance.start_date, getattr(instance, "_old_start_date", None)) if d]
+    if not starts:
+        return None
+    first = min(starts)
+    if first <= localdate() or LeaveBalance.objects.filter(
+        employee_id=instance.employee_id, period_to_date__gte=first,
+    ).exists():
+        return first
+    return None
+
+
+@receiver(pre_save, sender=LeaveApplication)
+def _remember_leave_before_edit(sender, instance, **kwargs):
+    old = sender.objects.filter(pk=instance.pk).values("start_date", "status").first() if instance.pk else None
+    instance._old_start_date = old["start_date"] if old else None
+    instance._old_status = old["status"] if old else None
+
+
+@receiver(post_save, sender=LeaveApplication)
+def auto_recalc_leave_balance_on_leave_save(sender, instance, **kwargs):
+    if _auto_recalc_suspended():
+        return
+    if instance.status != "Approved" and getattr(instance, "_old_status", None) != "Approved":
+        return  # never counted, still not counted
+    first = _leave_recalc_from(instance)
+    if first:
+        recalculate_leave_balance_for_employee(instance.employee, first)
+
+
+@receiver(post_delete, sender=LeaveApplication)
+def auto_recalc_leave_balance_on_leave_delete(sender, instance, origin=None, **kwargs):
+    if _auto_recalc_suspended() or instance.status != "Approved" or not _deleted_on_its_own(sender, origin):
+        return
+    first = _leave_recalc_from(instance)
+    if first:
+        recalculate_leave_balance_for_employee(instance.employee, first)
+
+
 @receiver(post_save, sender=Offboarding)
 def update_status_in_model_a(sender, instance, created, **kwargs):
     if created:  # Only update when a new ModelB instance is created

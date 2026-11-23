@@ -1,4 +1,5 @@
 {% extends 'base2.html' %}
+{% load custom_filters %}
 {% load static %}
 {% block title %}Payroll: {{ run.start_date|date:"d M" }}–{{ run.end_date|date:"d M Y" }}{% endblock %}
 
@@ -256,10 +257,12 @@
                 <i class="ti ti-device-floppy"></i> Save
               </button>
               {% endif %}
+              {% if request.user|can_see_pay %}{# TEMPORARY: slips are Admin / Super Admin only #}
               <a href="{% url 'salary-slip' r.id %}" target="_blank"
                  class="btn btn-sm btn-outline-secondary" title="View Salary Slip">
                 <i class="ti ti-file-invoice"></i> Slip
               </a>
+              {% endif %}
             </td>
           </tr>
           {% empty %}

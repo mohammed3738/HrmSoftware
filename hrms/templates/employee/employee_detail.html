@@ -1014,6 +1014,7 @@
 </div>
 
 
+{% if request.user|can_see_pay %}{# TEMPORARY: salary is Admin / Super Admin only while PAY_ADMIN_ONLY is on #}
 <!-- ================= SALARY DETAILS ================= -->
 <div class="row mt-4">
 
@@ -1188,4 +1189,5 @@
 
 
 <!--/ Content -->
+{% endif %}
 {% endblock %}

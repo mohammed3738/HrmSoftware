@@ -27,14 +27,99 @@
       min-height: 100vh;
       width: 100%;
     }
+    /* Left panel: an HR-themed scene drawn in HTML/CSS (no image file). */
     .hrms-auth-illustration {
-      background: linear-gradient(180deg, rgba(105,108,255,.06), rgba(105,108,255,0) 60%);
+      position: relative;
+      overflow: hidden;
       display: flex;
-      align-items: center;
+      flex-direction: column;
       justify-content: center;
-      padding: 2rem;
+      padding: 3.5rem 4rem;
+      color: #fff;
+      background:
+        radial-gradient(circle at 85% 10%, rgba(255,255,255,.16) 0, rgba(255,255,255,0) 40%),
+        radial-gradient(circle at 10% 95%, rgba(255,255,255,.10) 0, rgba(255,255,255,0) 45%),
+        linear-gradient(135deg, #6f74ff 0%, #5257e8 55%, #3d41c4 100%);
     }
-    .hrms-auth-illustration img { max-width: 30rem; width: 100%; height: auto; }
+    .hrms-auth-illustration::before {          /* soft dot grid */
+      content: "";
+      position: absolute; inset: 0;
+      background-image: radial-gradient(rgba(255,255,255,.14) 1px, transparent 1.5px);
+      background-size: 22px 22px;
+      mask-image: linear-gradient(180deg, #000 0%, transparent 75%);
+      -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 75%);
+      pointer-events: none;
+    }
+    .hrms-hero { position: relative; max-width: 34rem; margin: 0 auto; width: 100%; }
+    .hrms-hero-eyebrow {
+      display: inline-flex; align-items: center; gap: .4rem;
+      font-size: .78rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+      background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22);
+      padding: .3rem .75rem; border-radius: 999px;
+    }
+    .hrms-hero h2 {
+      color: #fff; font-weight: 700; font-size: 2.35rem; line-height: 1.15;
+      margin: 1.1rem 0 .75rem; letter-spacing: -.02em;
+    }
+    .hrms-hero p.lead-text { color: rgba(255,255,255,.82); font-size: 1rem; max-width: 28rem; margin-bottom: 2.5rem; }
+
+    .hrms-cards { position: relative; height: 19rem; }
+    .hrms-card {
+      position: absolute;
+      background: #fff; color: #3b3f5c;
+      border-radius: 1rem;
+      box-shadow: 0 18px 40px -12px rgba(20,22,80,.45);
+      padding: 1.1rem 1.25rem;
+      animation: hrms-float 6s ease-in-out infinite;
+    }
+    .hrms-card .lbl { font-size: .75rem; color: #8a8d9f; font-weight: 500; }
+    .hrms-card .big { font-size: 1.6rem; font-weight: 700; color: #2f3349; line-height: 1.1; }
+    .hrms-ico {
+      width: 2.4rem; height: 2.4rem; border-radius: .7rem;
+      display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem;
+    }
+
+    /* Attendance card */
+    .hrms-card.att { left: 0; top: 0; width: 17rem; }
+    .hrms-week { display: flex; gap: .4rem; margin-top: .9rem; }
+    .hrms-week span { flex: 1; text-align: center; font-size: .7rem; font-weight: 600; color: #8a8d9f; }
+    .hrms-week span i {
+      display: flex; align-items: center; justify-content: center;
+      height: 1.6rem; border-radius: .45rem; margin-top: .25rem; font-size: .9rem; font-style: normal;
+    }
+    .d-ok i  { background: #e7f8ee; color: #28c76f; }
+    .d-lv i  { background: #fff3e3; color: #ff9f43; }
+    .d-now i { background: #666cff; color: #fff; }
+
+    /* Leave balance card */
+    .hrms-card.leave { right: 0; top: 2.5rem; width: 13.5rem; animation-delay: -2s; }
+    .hrms-ring { --p: 62; width: 4.2rem; height: 4.2rem; border-radius: 50%;
+      background: conic-gradient(#666cff calc(var(--p) * 1%), #eceefe 0);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .hrms-ring > div { width: 3.3rem; height: 3.3rem; border-radius: 50%; background: #fff;
+      display: flex; align-items: center; justify-content: center; font-weight: 700; color: #2f3349; }
+
+    /* Team card */
+    .hrms-card.team { left: 4.5rem; bottom: 0; width: 18.5rem; animation-delay: -4s; }
+    .hrms-avatars { display: flex; }
+    .hrms-avatars span {
+      width: 2.2rem; height: 2.2rem; border-radius: 50%; border: 2px solid #fff; margin-left: -.4rem;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: .66rem; font-weight: 700; color: #fff; letter-spacing: -.02em;
+    }
+    .hrms-avatars span:first-child { margin-left: 0; }
+    .hrms-bar { height: .45rem; background: #eceefe; border-radius: 999px; overflow: hidden; margin-top: .75rem; }
+    .hrms-bar > div { height: 100%; width: 88%; background: linear-gradient(90deg, #28c76f, #48da89); border-radius: 999px; }
+
+    .hrms-hero-foot { position: relative; margin-top: 2.75rem; font-size: .8rem; color: rgba(255,255,255,.7); }
+
+    @keyframes hrms-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+    @media (prefers-reduced-motion: reduce) { .hrms-card { animation: none; } }
+    @media (max-width: 1299.98px) {
+      .hrms-auth-illustration { padding: 3rem 2.5rem; }
+      .hrms-hero h2 { font-size: 2rem; }
+      .hrms-card.team { left: 1.5rem; }
+    }
     .hrms-auth-form-side {
       display: flex;
       align-items: center;
@@ -55,8 +140,63 @@
   <div class="hrms-auth-wrapper">
 
     <!-- Illustration side -->
-    <div class="d-none d-lg-flex col-lg-7 hrms-auth-illustration">
-      <img src="{% static 'assets/img/illustrations/auth-login-illustration-light.png' %}" alt="Login illustration">
+    <div class="d-none d-lg-flex col-lg-7 hrms-auth-illustration" aria-hidden="true">
+      <div class="hrms-hero">
+        <span class="hrms-hero-eyebrow"><i class="ri-shield-user-line"></i> Employee self-service</span>
+        <h2>Everything about your<br>workday, in one place.</h2>
+        <p class="lead-text">Mark attendance, apply for leave and keep your details up to date &mdash; quickly, from any device.</p>
+
+        <div class="hrms-cards">
+          <!-- Attendance -->
+          <div class="hrms-card att">
+            <div class="d-flex align-items-center gap-2">
+              <span class="hrms-ico" style="background:#e7f8ee;color:#28c76f"><i class="ri-fingerprint-line"></i></span>
+              <div>
+                <div class="lbl">Attendance</div>
+                <div class="fw-semibold" style="color:#2f3349">Punched in &middot; 09:02 AM</div>
+              </div>
+            </div>
+            <div class="hrms-week">
+              <span class="d-ok">Mon<i class="ri-check-line"></i></span>
+              <span class="d-ok">Tue<i class="ri-check-line"></i></span>
+              <span class="d-lv">Wed<i>L</i></span>
+              <span class="d-ok">Thu<i class="ri-check-line"></i></span>
+              <span class="d-now">Fri<i class="ri-time-line"></i></span>
+            </div>
+          </div>
+
+          <!-- Leave balance -->
+          <div class="hrms-card leave">
+            <div class="lbl mb-2">Leave balance</div>
+            <div class="d-flex align-items-center gap-3">
+              <div class="hrms-ring"><div>4.5</div></div>
+              <div>
+                <div class="big" style="font-size:1.15rem">days</div>
+                <div class="lbl">available</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Team today -->
+          <div class="hrms-card team">
+            <div class="d-flex align-items-center justify-content-between">
+              <div>
+                <div class="lbl">Team today</div>
+                <div class="big">42 <span style="font-size:.95rem;color:#8a8d9f;font-weight:500">/ 48 present</span></div>
+              </div>
+              <div class="hrms-avatars">
+                <span style="background:#666cff">AK</span>
+                <span style="background:#ff9f43">RS</span>
+                <span style="background:#28c76f">NP</span>
+                <span style="background:#00bad1">+39</span>
+              </div>
+            </div>
+            <div class="hrms-bar"><div></div></div>
+          </div>
+        </div>
+
+        <div class="hrms-hero-foot">HRMS &middot; a product of Zaco Information Technology</div>
+      </div>
     </div>
 
     <!-- Form side -->

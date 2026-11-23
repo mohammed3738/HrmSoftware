@@ -666,7 +666,9 @@
                        different permissions, so each item is gated on its
                        own -- gating the whole menu on payroll:view would
                        take Create Salary Structure away from HR. -->
-                  {% if request.user|has_feature:"salary_structure:create" or request.user|has_feature:"salary_structure:view" or request.user|has_feature:"salary_structure:edit" or request.user|has_feature:"attendance_review:edit" or request.user|has_feature:"payroll:view" %}
+                  {% comment %} TEMPORARY: see_pay -- salary structure, salary slips and advances are Admin / Super Admin only while PAY_ADMIN_ONLY is on (website/pay_visibility.py). {% endcomment %}
+                  {% with see_pay=request.user|can_see_pay %}
+                  {% if see_pay and request.user|has_feature:"salary_structure:create" or see_pay and request.user|has_feature:"salary_structure:view" or see_pay and request.user|has_feature:"salary_structure:edit" or request.user|has_feature:"attendance_review:edit" or request.user|has_feature:"payroll:view" %}
                   <li class="menu-item">
                     <a href="javascript:void(0)" class="menu-link menu-toggle">
                       <i class="menu-icon tf-icons ri-bank-card-line"></i>
@@ -675,7 +677,7 @@
 
                     <ul class="menu-sub">
 
-                      {% if request.user|has_feature:"salary_structure:create" or request.user|has_feature:"salary_structure:edit" %}
+                      {% if see_pay and request.user|has_feature:"salary_structure:create" or see_pay and request.user|has_feature:"salary_structure:edit" %}
                       <li class="menu-item">
                         <a href="{% url 'create-salary' %}" class="menu-link">
                           <div>Create Salary Structure</div>
@@ -683,14 +685,14 @@
                       </li>
                       {% endif %}
 
-                      {% if request.user|has_feature:"salary_structure:edit" %}
+                      {% if see_pay and request.user|has_feature:"salary_structure:edit" %}
                       <li class="menu-item">
                         <a href="{% url 'salary_increment' %}" class="menu-link">
                           <div>Salary Increment</div>
                         </a>
                       </li>
                       {% endif %}
-                      {% if request.user|has_feature:"salary_structure:view" %}
+                      {% if see_pay and request.user|has_feature:"salary_structure:view" %}
                       <li class="menu-item">
                         <a href="{% url 'salary_history' %}" class="menu-link">
                           <div>Salary History</div>
@@ -719,7 +721,7 @@
                   {% endif %}
 
                   <!-- Salary slips: self-service for employees, any employee for payroll officers. -->
-                  {% if request.user|has_feature:"payroll:edit" or request.user|has_employee_profile %}
+                  {% if see_pay and request.user|has_feature:"payroll:edit" or see_pay and request.user|has_employee_profile %}
                   <li class="menu-item">
                     <a href="{% url 'salary-slips' %}" class="menu-link">
                       <i class="menu-icon tf-icons ri-file-list-3-line"></i>
@@ -730,7 +732,7 @@
 
 
                   <!-- Advances -->
-                  {% if request.user|has_feature:"advances:view" or request.user|has_employee_profile %}
+                  {% if see_pay and request.user|has_feature:"advances:view" or see_pay and request.user|has_employee_profile %}
                   <li class="menu-item">
                     <a href="javascript:void(0)" class="menu-link menu-toggle">
                       <i class="menu-icon tf-icons ri-exchange-dollar-line"></i>
@@ -756,6 +758,7 @@
                     </ul>
                   </li>
                   {% endif %}
+                  {% endwith %}
 
 <li class="menu-item">
   <a href="{% url 'holiday-calendar' %}" class="menu-link">

@@ -159,6 +159,9 @@ MIDDLEWARE = [
     'website.middleware.ForcePasswordChangeMiddleware',
 
     'django.contrib.messages.middleware.MessageMiddleware',
+
+    # TEMPORARY: pay pages for Admin / Super Admin only (website/pay_visibility.py).
+    'website.middleware.PayAdminOnlyMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
@@ -357,6 +360,12 @@ BIOMETRIC_MSSQL_DATABASE = os.environ.get('BIOMETRIC_MSSQL_DATABASE', 'etimetrac
 BIOMETRIC_MSSQL_USER = os.environ.get('BIOMETRIC_MSSQL_USER', '')
 BIOMETRIC_MSSQL_PASSWORD = os.environ.get('BIOMETRIC_MSSQL_PASSWORD', '')
 BIOMETRIC_MSSQL_DRIVER = os.environ.get('BIOMETRIC_MSSQL_DRIVER', 'ODBC Driver 17 for SQL Server')
+# TEMPORARY: salary structure, salary slips and advances for Admin / Super
+# Admin only -- see website/pay_visibility.py. Set false to undo.
+# Off under the test runner so the normal role-permission tests keep
+# testing the normal rules; test_pay_admin_only turns it on itself.
+PAY_ADMIN_ONLY = env_bool('PAY_ADMIN_ONLY', not (sys.argv[1:2] == ['test'] or 'pytest' in sys.modules))
+
 BIOMETRIC_MSSQL_TRUSTED_CONNECTION = env_bool('BIOMETRIC_MSSQL_TRUSTED_CONNECTION', False)
 
 # Punches live in eTimeTrackLite's monthly DeviceLogs_<month>_<year> tables;

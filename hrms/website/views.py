@@ -3913,7 +3913,10 @@ def employee_detail(request, pk):
     previous_employments_attachment = PreviousEmploymentAttachment.objects.filter(previous_employment__employee=employee)
     # attachments = employee.attachments.all().order_by('-uploaded_at')
     attachments = EmployeeAttachment.objects.filter(employee=employee).order_by('-uploaded_at')
-    salary = SalaryMaster.objects.filter(employee=employee, is_active=True).first()
+    from website.pay_visibility import can_see_pay
+    # TEMPORARY: salary for Admin / Super Admin only while PAY_ADMIN_ONLY is on.
+    salary = (SalaryMaster.objects.filter(employee=employee, is_active=True).first()
+              if can_see_pay(request.user) else None)
     # safe related user (if Employee has a user FK/OneToOne)
     user = getattr(employee, "user", None)
 
@@ -4099,6 +4102,7 @@ def employee_dashboard(request):
         if len(upcoming_holidays) >= 5:
             break
 
+    from website.pay_visibility import can_see_pay as _can_see_pay
     recent_payslips = (
         PayrollRecord.objects.filter(employee=employee, payroll__status=PayrollRun.STATUS_FINALIZED)
         .select_related("payroll")
@@ -4129,7 +4133,8 @@ def employee_dashboard(request):
         "days_half": days_half,
         "leave_balance": leave_balance,
         "upcoming_holidays": upcoming_holidays,
-        "recent_payslips": recent_payslips,
+        # TEMPORARY: payslips for Admin / Super Admin only while PAY_ADMIN_ONLY is on.
+        "recent_payslips": recent_payslips if _can_see_pay(request.user) else [],
         "absent_employees_today": absent_employees_today,
         "today": today,
         **_team_panel_for(employee, today),

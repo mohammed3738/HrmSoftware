@@ -93,3 +93,27 @@ class PrivateCacheControlMiddleware:
         # one user's page to another.
         patch_vary_headers(response, ("Cookie",))
         return response
+
+
+class PayAdminOnlyMiddleware:
+    """TEMPORARY: while PAY_ADMIN_ONLY is on, salary structure, salary slip
+    and advance pages answer 403 to everyone but Admin / Super Admin, so a
+    hidden page can't be reached by typing its address either. See
+    website/pay_visibility.py."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        return self.get_response(request)
+
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        from django.core.exceptions import PermissionDenied
+        from website.pay_visibility import PAY_URL_NAMES, can_see_pay, pay_admin_only
+
+        if not pay_admin_only() or not request.user.is_authenticated:
+            return None
+        match = getattr(request, "resolver_match", None)
+        if match and match.url_name in PAY_URL_NAMES and not can_see_pay(request.user):
+            raise PermissionDenied
+        return None

@@ -257,7 +257,8 @@
             </div>
           </div>
 
-          {% if employees_without_salary %}
+          {% if not request.user|can_see_pay %}{# TEMPORARY: salary structure is Admin / Super Admin only #}
+          {% elif employees_without_salary %}
           <div class="alert alert-warning py-2 px-3 small mb-0">
             <i class="ri-error-warning-line me-1"></i>
             <strong>{{ employees_without_salary }}</strong> active employee{{ employees_without_salary|pluralize }}

@@ -104,3 +104,11 @@ def has_employee_profile(user):
     if not getattr(user, "is_authenticated", False):
         return False
     return getattr(user, "employee_profile", None) is not None
+
+
+@register.filter
+def can_see_pay(user):
+    """TEMPORARY: salary structure, salary slips and advances are for Admin /
+    Super Admin only while PAY_ADMIN_ONLY is on -- website/pay_visibility.py."""
+    from website.pay_visibility import can_see_pay as _can_see_pay
+    return _can_see_pay(user)

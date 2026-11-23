@@ -122,6 +122,16 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SESSION_COOKIE_SECURE = env_bool('DJANGO_SECURE_COOKIES', False)
 CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 
+# Our own cookie names. The default "csrftoken"/"sessionid" are shared with
+# every other Django site on the same parent domain (*.zacoinfotech.com), and a
+# clashing or stale copy in someone's browser makes every form answer
+# "Forbidden" until they clear cookies (incognito works, normal tabs don't).
+SESSION_COOKIE_NAME = 'hrms_sessionid'
+CSRF_COOKIE_NAME = 'hrms_csrftoken'
+# A failed CSRF check sends people back to the page with a "please try again"
+# message instead of Django's bare "Forbidden (403)" page.
+CSRF_FAILURE_VIEW = 'website.views_csrf.csrf_failure'
+
 
 # Application definition
 

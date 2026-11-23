@@ -894,12 +894,12 @@
       loading.classList.add('active');
 
       const formData = new FormData();
-      formData.append('csrfmiddlewaretoken', getCookie('csrftoken'));
+      formData.append('csrfmiddlewaretoken', CSRF_TOKEN);
       if (CURRENT_COMPANY_ID) formData.append('company_id', CURRENT_COMPANY_ID);
 
       fetch('{% url "recalculate_leave_balances" %}', {
         method: 'POST',
-        headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        headers: { 'X-CSRFToken': CSRF_TOKEN },
         body: formData
       })
       .then(r => r.json())

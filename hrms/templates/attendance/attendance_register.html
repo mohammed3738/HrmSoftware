@@ -277,7 +277,7 @@
 </style>
 <script>
 function getCSRFToken() {
-  return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
+  return document.cookie.split('; ').find(r => r.startsWith('hrms_csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
 }
 
 const OVERRIDE_COMPOFF_URL = "{% url 'override-compoff' %}";

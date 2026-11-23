@@ -2792,10 +2792,18 @@ def comp_off_requests(request, pk):
     return render(request, "attendance/comp_off_request_table.html", context)
 
 @login_required(login_url="login")
-@feature_required("admin_dashboard", action="view")
 def admin_dashboard(request):
-    today = date.today()
+    # This is the site's home page ("/"), so employees land here whenever
+    # they type the address or use a bookmark. Send anyone who may not see
+    # it to their own dashboard instead of a bare "403 Forbidden" page.
     user = request.user
+    if not (user.is_superuser or user.is_staff):
+        from website.utils.permissions import has_feature_permission
+        if not has_feature_permission(user, "admin_dashboard", "view"):
+            if hasattr(user, "employee_profile"):
+                return redirect("employee-dashboard")
+            raise PermissionDenied
+    today = date.today()
     user_company = get_user_company(user)
     company_filter = get_company_filter(user)
 

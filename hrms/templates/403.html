@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>No access | HRMS</title>
+  <style>
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+           background: #f5f5f9; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #3b3f5c; }
+    .box { background: #fff; border-radius: 1rem; box-shadow: 0 8px 30px rgba(47,51,73,.08);
+           padding: 2.5rem 2rem; max-width: 26rem; margin: 1rem; text-align: center; }
+    h1 { font-size: 1.35rem; margin: 0 0 .5rem; color: #2f3349; }
+    p { margin: 0 0 1.5rem; color: #6d6f82; line-height: 1.5; }
+    a.btn { display: inline-block; padding: .65rem 1.25rem; border-radius: .5rem; text-decoration: none;
+            background: #666cff; color: #fff; font-weight: 600; margin: .25rem; }
+    a.btn.alt { background: #eceefe; color: #666cff; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>You don't have access to this page</h1>
+    <p>Your account isn't allowed to open this page. If you think you should have access, please contact your administrator.</p>
+    {% if request.user.is_authenticated %}
+      <a class="btn" href="{% url 'admin-dashboard' %}">Go to my dashboard</a>
+      <a class="btn alt" href="{% url 'logout' %}">Log out</a>
+    {% else %}
+      <a class="btn" href="{% url 'login' %}">Log in</a>
+    {% endif %}
+  </div>
+</body>
+</html>

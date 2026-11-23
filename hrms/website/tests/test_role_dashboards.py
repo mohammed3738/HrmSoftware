@@ -453,6 +453,9 @@ class HodTeamPanelTest(TestCase):
         )
 
     def test_hod_still_cannot_reach_the_admin_dashboard(self):
+        # "/" is the admin dashboard; an HOD opening the site's address is
+        # sent to their own dashboard rather than shown a 403 page.
         client = Client()
         client.force_login(self.hod_user, backend="django.contrib.auth.backends.ModelBackend")
-        self.assertEqual(client.get(reverse("admin-dashboard")).status_code, 403)
+        resp = client.get(reverse("admin-dashboard"))
+        self.assertRedirects(resp, reverse("employee-dashboard"), fetch_redirect_response=False)

@@ -73,13 +73,14 @@ class CacheControlOnRealPagesTest(TestCase):
                          "precondition: an Employee may not list employees")
         self.assertNotStored(response, "a 403")
 
-    def test_the_403_on_the_root_url_must_not_be_storable(self):
-        """`/` is the admin dashboard, which an Employee may not see. It is
-        also where a browser goes when someone types the bare domain, so a
-        stored 403 here looks like the whole application is down."""
+    def test_the_root_url_redirect_must_not_be_storable(self):
+        """`/` is the admin dashboard, which an Employee may not see, so it
+        sends them on to their own dashboard. It is also where a browser goes
+        when someone types the bare domain, so that redirect must never be
+        stored: a cached one would outlive a change of role."""
         response = self.client.get("/")
-        self.assertEqual(response.status_code, 403)
-        self.assertNotStored(response, "the 403 on /")
+        self.assertRedirects(response, reverse("employee-dashboard"), fetch_redirect_response=False)
+        self.assertNotStored(response, "the redirect on /")
 
     # -- and the pages that carry employee data --------------------------
 

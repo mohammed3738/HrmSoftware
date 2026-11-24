@@ -1804,6 +1804,32 @@ def is_week_off(employee, day, sunday_only):
     return (day.weekday() == 6) if sunday_only else (day.weekday() >= 5)
 
 
+def attendance_day_in_progress(day, in_time, out_time):
+    """True while an employee who has punched in is still within their
+    working day, so their status is provisionally Present:
+
+    - any punch-in dated today;
+    - a night shift: punched in yesterday at or after
+      BIOMETRIC_NIGHT_IN_FROM, no out-punch yet, and it is still before
+      BIOMETRIC_NIGHT_OUT_UNTIL this morning (when that out-punch is due).
+
+    00:00 in and out is how attendance files mark "no punch", so it never
+    counts as a punch-in.
+    """
+    midnight = datetime.time(0, 0, 0)
+    if not in_time or (in_time == midnight and out_time in (None, midnight)):
+        return False
+    from django.utils import timezone
+    now_local = timezone.localtime()
+    today = now_local.date()
+    if day == today:
+        return True
+    if day == today - datetime.timedelta(days=1) and out_time is None:
+        from website.services.biometric_sync import night_in_from, night_out_until
+        return in_time >= night_in_from() and now_local.time() < night_out_until()
+    return False
+
+
 class Attendance(models.Model):
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
     date = models.DateField(default=now)
@@ -2090,6 +2116,19 @@ class Attendance(models.Model):
             # moment attendance is recalculated, without needing a data
             # migration.
             midnight = datetime.time(0, 0, 0)
+
+            # The working day isn't over yet and the employee has punched
+            # in: show Present. The out-time so far is just the latest punch
+            # (or nothing), so judging hours now would call everyone Absent
+            # or Half Day until they leave. finalize_finished_days() (hourly,
+            # services/biometric_sync.py) recalculates the row from the real
+            # hours once the day is over.
+            if attendance_day_in_progress(self.date, self.in_time, self.out_time):
+                self.status = "Present"
+                self.count = Decimal("1.00")
+                self.late = 0
+                return
+
             if not self.in_time or not self.out_time or (self.in_time == midnight and self.out_time == midnight):
                 self.status = "Absent"
                 self.count = Decimal("0.00")

@@ -752,6 +752,54 @@ def release_unreported_day_start_absences(days_back=3):
     return len(rows)
 
 
+def finalize_finished_days(days_back=3):
+    """Settle the status of days that are over.
+
+    While a day is running, anyone who has punched in shows Present
+    (models.attendance_day_in_progress). Once it is over, the status has to
+    come from the hours actually worked -- Present, Late Present, Half Day
+    or Absent. A row only gets recalculated when something saves it, so
+    this re-runs the rules on every punched-in row of the last few days and
+    saves the ones whose answer changed. Runs hourly, so it also catches a
+    night shift whose out-punch window closes in the morning, and catches
+    up after any downtime. Manual overrides and payroll-locked days are
+    left alone.
+    """
+    from django.utils.timezone import localdate
+
+    from ..models import attendance_day_in_progress, attendance_rule_cache
+    from ..signals import recalculate_leave_balance_for_employee, suspend_leave_balance_auto_recalc
+
+    today = localdate()
+    first = today - datetime.timedelta(days=days_back)
+    rows = (
+        Attendance.objects.filter(
+            date__gte=first, date__lt=today, in_time__isnull=False, status_overridden=False,
+        ).select_related("employee", "employee__company", "employee__branch")
+    )
+
+    changed = {}
+    with transaction.atomic(), suspend_leave_balance_auto_recalc(), attendance_rule_cache():
+        for row in rows:
+            if attendance_day_in_progress(row.date, row.in_time, row.out_time):
+                continue
+            if get_locking_run(row.employee.company, row.date):
+                continue
+            before = (row.status, row.count, row.late)
+            row.calculate_status()
+            if (row.status, row.count, row.late) != before:
+                row.save()
+                if row.employee_id not in changed or row.date < changed[row.employee_id][1]:
+                    changed[row.employee_id] = (row.employee, row.date)
+
+    for employee, day in changed.values():
+        try:
+            recalculate_leave_balance_for_employee(employee, day)
+        except Exception:
+            logger.exception("Finalize day: leave balance recalc failed for %s", employee)
+    return len(changed)
+
+
 def _marked_days_note(counters):
     """One sentence for the sync run's message, or nothing to say."""
     parts = []

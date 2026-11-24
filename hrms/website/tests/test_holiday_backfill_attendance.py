@@ -168,3 +168,31 @@ class HolidayBackfillAttendanceTest(TestCase):
         self.assertEqual(created, 2)
         self.assertTrue(Attendance.objects.filter(employee=emp_main, date=regional_day).exists())
         self.assertTrue(Attendance.objects.filter(employee=emp_other, date=regional_day).exists())
+
+
+class FutureHolidayBackfillTest(HolidayBackfillAttendanceTest):
+    """A holiday added in advance (New Year's Day, in November) must not
+    create attendance dated next year: that made the leave balance report
+    treat "27 Dec - 26 Jan" as the current period. The daily task creates
+    the rows once the date arrives."""
+
+    def test_future_holiday_creates_no_rows_until_the_day(self):
+        from datetime import timedelta
+        from unittest import mock
+        from django.utils.timezone import localdate
+        from website.tasks import backfill_holiday_attendance_task
+
+        self.make_employee("One")
+        new_year = localdate() + timedelta(days=38)
+        holiday = Holiday.objects.create(
+            holiday_date=new_year, name="New Year", holiday_type=self.htype, created_by=self.user,
+        )
+        self.assertEqual(holiday.backfill_attendance(), 0)
+        self.assertFalse(Attendance.objects.filter(date=new_year).exists())
+
+        # On the day itself the daily task fills it in.
+        with mock.patch("django.utils.timezone.localdate", return_value=new_year), \
+                mock.patch("website.tasks.now") as fake_now:
+            fake_now.return_value.date.return_value = new_year
+            self.assertEqual(backfill_holiday_attendance_task(), 1)
+        self.assertTrue(Attendance.objects.filter(date=new_year).exists())

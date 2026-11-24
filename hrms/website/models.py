@@ -1406,7 +1406,16 @@ class Holiday(models.Model):
         record on this date — e.g. because nobody expected to need to
         upload punch data for a holiday, so the day's file was never
         uploaded. Existing rows (real punches, corrections, etc.) are never
-        touched or overwritten. Returns the number of rows created."""
+        touched or overwritten. Returns the number of rows created.
+
+        Holidays in the future get nothing yet: a row dated next month makes
+        that month look like it has started (the leave balance report showed
+        "27 Dec - 26 Jan" in November because New Year's Day had been added
+        in advance). The daily backfill_holiday_attendance_task creates the
+        rows once the date arrives."""
+        from django.utils.timezone import localdate
+        if self.holiday_date > localdate():
+            return 0
         from django.apps import apps
         Employee = apps.get_model('website', 'Employee')
         Attendance = apps.get_model('website', 'Attendance')

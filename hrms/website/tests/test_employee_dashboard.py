@@ -61,6 +61,11 @@ class EmployeeDashboardTest(TestCase):
             employee=self.employee, period_from_date=date(2026, 1, 1), period_to_date=date(2026, 1, 31),
             final_leave_balance=12,
         )
+        # Hidden from the employee until payroll has been run for the period.
+        resp = self.client.get(reverse("employee-dashboard"))
+        self.assertIsNone(resp.context["leave_balance"])
+        PayrollRun.objects.create(company=self.employee.company, month=date(2026, 1, 1),
+                                  start_date=date(2026, 1, 1), end_date=date(2026, 1, 31))
         resp = self.client.get(reverse("employee-dashboard"))
         self.assertEqual(resp.context["leave_balance"].final_leave_balance, 12)
 

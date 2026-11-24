@@ -4095,8 +4095,15 @@ def employee_dashboard(request):
     days_late = period_attendance.filter(status="Late Present").count()
     days_half = period_attendance.filter(status__in=["Half Day", "Present (Half-Day)"]).count()
 
-    leave_balance = (
-        LeaveBalance.objects.filter(employee=employee).order_by("-period_to_date").first()
+    # Same rule as the Leave Balance report: never a period that hasn't
+    # started, and an employee sees a period's balance only once payroll has
+    # been run for it.
+    _runs = _payroll_run_ranges(employee.company)
+    leave_balance = next(
+        (lb for lb in LeaveBalance.objects.filter(employee=employee, period_from_date__lte=today)
+         .order_by("-period_to_date")
+         if _period_has_payroll_run(_runs, lb.period_from_date, lb.period_to_date)),
+        None,
     )
 
     payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
@@ -5586,6 +5593,37 @@ def get_all_payroll_periods_from_attendance(company, payroll_settings):
     return periods
 
 
+def _payroll_run_ranges(company):
+    """(start_date, end_date) of every payroll run, draft or finalized, for
+    the company."""
+    return list(PayrollRun.objects.filter(company=company).values_list("start_date", "end_date"))
+
+
+def _period_has_payroll_run(run_ranges, from_date, to_date):
+    return any(start <= to_date and end >= from_date for start, end in run_ranges)
+
+
+def leave_periods_visible_to(user, company, periods):
+    """Which payroll periods' leave balances the user may see.
+
+    - Nobody sees a period that hasn't started yet. Those only appear when
+      some attendance carries a future date (a wrong date in an upload or on
+      the biometric device), and a "current" period months ahead of today
+      confuses everyone.
+    - Employees (anyone without company-wide access) see a period only once
+      payroll has been run for it: until then its balance is still moving.
+      Admin/HR keep seeing the current period, since they review and
+      override LWP on this page before running payroll.
+    """
+    from django.utils.timezone import localdate
+    today = localdate()
+    periods = [p for p in periods if p["from_date"] <= today]
+    if user.is_superuser or user.is_staff or user_has_global_access(user):
+        return periods
+    runs = _payroll_run_ranges(company)
+    return [p for p in periods if _period_has_payroll_run(runs, p["from_date"], p["to_date"])]
+
+
 def get_merged_payroll_periods_for_active_companies():
     """Union of every active company's payroll periods, deduplicated by
     exact date range (companies sharing a payroll cycle collapse to one
@@ -6141,7 +6179,7 @@ def leave_balance_view(request):
             # Skip companies not on the dominant cycle (includes calendar-month defaults)
             if dominant_cycle and ps_cycle != dominant_cycle:
                 continue
-            for _p in get_all_payroll_periods_from_attendance(_company, _ps):
+            for _p in leave_periods_visible_to(user, _company, get_all_payroll_periods_from_attendance(_company, _ps)):
                 key = str(_p['to_date'])
                 if key not in period_map:
                     period_map[key] = {
@@ -6264,7 +6302,11 @@ def leave_balance_view(request):
         context.update({'leave_balances': [], 'error': 'Payroll settings not configured.', 'available_periods': [], 'available_months': [], 'period_month_str': ''})
         return render(request, 'leave_balance/leave_balance_report.html', context)
 
-    available_periods = get_all_payroll_periods_from_attendance(user_company, payroll_settings)
+    available_periods = leave_periods_visible_to(
+        user, user_company, get_all_payroll_periods_from_attendance(user_company, payroll_settings)
+    )
+    if not available_periods and not is_global:
+        context['info'] = "Your leave balance will appear here once payroll has been run for the current period."
 
     selected_period_str = request.GET.get('period')
     selected_period = None

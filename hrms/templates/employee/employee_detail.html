@@ -46,6 +46,11 @@
                 </ul>
                 <h3 class="mt-4" style="color: #666cff;">{{ employee.company }}</h3>
               </div>
+              {% if employee.user_id and employee.user_id == request.user.id %}
+                <a href="{% url 'my_details_edit' %}" class="btn btn-primary">
+                  <i class="ri-edit-2-line ri-16px me-2"></i>Edit my details
+                </a>
+              {% endif %}
               {% comment %} <a href="javascript:void(0)" class="btn btn-primary">
                 <i class="ri-user-follow-line ri-16px me-2"></i>Connected
               </a> {% endcomment %}

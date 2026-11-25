@@ -68,6 +68,45 @@ class FastSelect(forms.Select):
         return mark_safe("".join(parts))
 
 
+# What an employee may change about themselves from My Details. Everything
+# else (name, date of birth, IDs, bank details, job fields) stays with HR.
+SELF_EDIT_FIELDS = (
+    "personal_email", "personal_mobile", "present_address", "permanent_address",
+    "blood_group", "date_of_marriage",
+    "emergency_contact_name1", "emergency_contact_relation1", "emergency_contact_mobile1",
+    "emergency_contact_name2", "emergency_contact_relation2", "emergency_contact_mobile2",
+    "photo",
+)
+
+
+class EmployeeSelfEditForm(forms.ModelForm):
+    """An employee editing their own personal details. Saving it never
+    changes the record: the view turns it into an EmployeeChangeRequest
+    that an approver accepts or rejects."""
+
+    class Meta:
+        model = Employee
+        fields = SELF_EDIT_FIELDS
+        widgets = {
+            "photo": forms.ClearableFileInput(attrs={"accept": "image/jpeg,image/png,image/webp"}),
+            "date_of_marriage": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "present_address": forms.Textarea(attrs={"rows": 2}),
+            "permanent_address": forms.Textarea(attrs={"rows": 2}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            css = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            field.widget.attrs.setdefault("class", css)
+
+    def clean_photo(self):
+        return EmployeeForm.clean_photo(self)
+
+    PHOTO_MAX_BYTES = 2 * 1024 * 1024
+    PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}
+
+
 class _WeekOffDaysField(forms.MultipleChoiceField):
     """Day checkboxes that also accept the stored "5,6" form, and treat a
     blank entry as "nothing ticked" instead of an invalid choice."""

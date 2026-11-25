@@ -3985,6 +3985,50 @@ def my_profile(request):
 
 
 @login_required
+def my_details_edit(request):
+    """An employee changes their own personal details (EmployeeSelfEditForm:
+    contact, addresses, emergency contacts, photo). Nothing is saved to the
+    record: it becomes an EmployeeChangeRequest that an approver accepts or
+    rejects on the Employee Changes page, like HR's edits after onboarding."""
+    employee = getattr(request.user, "employee_profile", None)
+    if employee is None:
+        messages.error(request, "Your account isn't linked to an employee profile.")
+        return redirect("admin-dashboard")
+
+    pending = pending_request_for(employee)
+    if request.method == "POST":
+        if pending:
+            messages.error(request, "You already have changes waiting for review. "
+                                    "Wait until they are approved or rejected before sending more.")
+            return redirect("my_details_edit")
+        form = EmployeeSelfEditForm(request.POST, request.FILES, instance=employee)
+        if form.is_valid():
+            try:
+                change = build_change_request(
+                    Employee.objects.get(pk=employee.pk), form, None, None, request,
+                )
+            except ChangeRequestError as exc:
+                messages.error(request, str(exc))
+                return redirect("my_details_edit")
+            if change:
+                messages.success(request, "Your changes were sent for review. "
+                                          "They will show on your profile once approved.")
+            else:
+                messages.info(request, "Nothing was changed, so nothing was sent for review.")
+            return redirect("my_details_edit")
+    else:
+        form = EmployeeSelfEditForm(instance=employee)
+
+    return render(request, "employee/my_details_edit.html", {
+        "form": form,
+        "employee": employee,
+        "pending": pending,
+        "recent_requests": employee.change_requests.filter(requested_by=request.user)
+                                                   .select_related("decided_by").order_by("-requested_at")[:5],
+    })
+
+
+@login_required
 def my_attendance(request):
     """Send the signed-in user to their own attendance page. Mirrors
     my_profile: the nav can't know an employee's id, and resolving it

@@ -88,7 +88,9 @@ def build_change_request(original, form, formset, attachment_formset, request):
 
     `original` must be a fresh copy of the employee from the database:
     form.is_valid() has already copied the submitted values onto the
-    form's own instance. Returns None when nothing actually changed."""
+    form's own instance. Returns None when nothing actually changed.
+    The two formsets are optional: an employee editing their own details
+    (EmployeeSelfEditForm) submits personal fields only."""
     cr = EmployeeChangeRequest(employee=original, requested_by=request.user)
     files = []
 
@@ -123,7 +125,7 @@ def build_change_request(original, form, formset, attachment_formset, request):
 
     # Previous employment rows, and documents uploaded against them
     prev = {"create": [], "update": [], "delete": []}
-    for f in formset.forms:
+    for f in (formset.forms if formset is not None else []):
         idx = f.prefix.split("-")[-1]
         cd = getattr(f, "cleaned_data", None) or {}
         pk = f.instance.pk
@@ -162,7 +164,7 @@ def build_change_request(original, form, formset, attachment_formset, request):
         cr.previous_employment = prev
 
     # KYC documents
-    for af in attachment_formset.forms:
+    for af in (attachment_formset.forms if attachment_formset is not None else []):
         cd = getattr(af, "cleaned_data", None) or {}
         pk = af.instance.pk
         if pk and cd.get("DELETE"):

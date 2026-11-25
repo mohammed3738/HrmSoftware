@@ -107,3 +107,24 @@ class EmployeeSelfEditTest(TestCase):
     def test_nothing_changed_sends_nothing(self):
         self.send()
         self.assertFalse(EmployeeChangeRequest.objects.exists())
+
+    # ── bank details ────────────────────────────────────────────────────
+    def test_bank_change_waits_for_review_then_applies(self):
+        self.send(name_as_per_bank="NAZIM M", salary_account_number="1234 5678 9012", ifsc_code="sbin0001234")
+        self.emp.refresh_from_db()
+        self.assertIsNone(self.emp.salary_account_number)          # not until approved
+        cr = EmployeeChangeRequest.objects.get(employee=self.emp)
+        self.assertEqual(cr.field_changes["salary_account_number"]["new"], "123456789012")
+        self.assertEqual(cr.field_changes["ifsc_code"]["new"], "SBIN0001234")
+
+        self.approver().post(reverse("employee_change_request_detail", args=[cr.pk]), {"decision": "approve"})
+        self.emp.refresh_from_db()
+        self.assertEqual((self.emp.name_as_per_bank, self.emp.salary_account_number, self.emp.ifsc_code),
+                         ("NAZIM M", "123456789012", "SBIN0001234"))
+
+    def test_bad_bank_details_are_refused(self):
+        resp = self.send(salary_account_number="12AB", ifsc_code="SBIN1234")
+        self.assertEqual(resp.status_code, 200)
+        self.assertContains(resp, "9 to 18 digits")
+        self.assertContains(resp, "valid IFSC code")
+        self.assertFalse(EmployeeChangeRequest.objects.exists())

@@ -69,12 +69,15 @@ class FastSelect(forms.Select):
 
 
 # What an employee may change about themselves from My Details. Everything
-# else (name, date of birth, IDs, bank details, job fields) stays with HR.
+# else (name, date of birth, IDs, job fields) stays with HR. Bank details
+# are here because people change banks; like every field on this form they
+# only take effect once an approver accepts them.
 SELF_EDIT_FIELDS = (
     "personal_email", "personal_mobile", "present_address", "permanent_address",
     "blood_group", "date_of_marriage",
     "emergency_contact_name1", "emergency_contact_relation1", "emergency_contact_mobile1",
     "emergency_contact_name2", "emergency_contact_relation2", "emergency_contact_mobile2",
+    "name_as_per_bank", "salary_account_number", "ifsc_code",
     "photo",
 )
 
@@ -102,6 +105,19 @@ class EmployeeSelfEditForm(forms.ModelForm):
 
     def clean_photo(self):
         return EmployeeForm.clean_photo(self)
+
+    def clean_salary_account_number(self):
+        value = (self.cleaned_data.get("salary_account_number") or "").replace(" ", "")
+        if value and not (value.isdigit() and 9 <= len(value) <= 18):
+            raise forms.ValidationError("Enter the account number as 9 to 18 digits, no letters or symbols.")
+        return value
+
+    def clean_ifsc_code(self):
+        import re
+        value = (self.cleaned_data.get("ifsc_code") or "").strip().upper()
+        if value and not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", value):
+            raise forms.ValidationError("Enter a valid IFSC code, e.g. SBIN0001234 (11 characters, 5th is zero).")
+        return value
 
     PHOTO_MAX_BYTES = 2 * 1024 * 1024
     PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}

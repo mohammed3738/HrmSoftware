@@ -224,13 +224,25 @@ class Employee(models.Model):
         (0, 'Monday'), (1, 'Tuesday'), (2, 'Wednesday'), (3, 'Thursday'),
         (4, 'Friday'), (5, 'Saturday'), (6, 'Sunday'),
     ]
-    week_off_day = models.IntegerField(
-        null=True, blank=True, choices=WEEKDAY_CHOICES,
-        verbose_name="Weekly Off Day",
-        help_text="Overrides the company's default weekly off (e.g. Saturday for "
-                   "night-shift staff instead of the usual Sunday). Leave blank to "
+    # Comma-separated weekday numbers (Monday 0 ... Sunday 6), e.g. "5,6"
+    # for Saturday + Sunday or "4,5" for Friday + Saturday. Blank = follow
+    # the company's weekend rule. Read it through week_off_weekdays.
+    week_off_days = models.CharField(
+        max_length=20, blank=True, default="",
+        verbose_name="Weekly Off Days",
+        help_text="Overrides the company's default weekly off -- one or more days "
+                   "(e.g. Saturday and Sunday, or Friday and Saturday). Leave blank to "
                    "use the company default.",
     )
+
+    @property
+    def week_off_weekdays(self):
+        """This employee's own weekly off days as a frozenset of weekday
+        numbers, or None to follow the company rule."""
+        return parse_week_off_days(self.week_off_days)
+
+    def get_week_off_days_display(self):
+        return describe_week_off_days(self.week_off_days)
 
     # ── Biometric (eSSL / eTimeTrackLite) attendance sync ─────────────
     # The punch device identifies people by its own user id, which is only
@@ -1726,15 +1738,35 @@ def prime_roster_week_offs(employee_ids, day):
         store.setdefault(("roster-week-off", emp_id, day), found.get(emp_id))
 
 
-def week_off_weekday(employee, day, payroll_settings=None):
-    """Which weekday is this employee's weekly off on `day`, as a
-    Python weekday number (Monday 0 ... Sunday 6), or None to mean "no
-    single day -- use the company's weekend rule".
+WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def parse_week_off_days(value):
+    """"5,6" -> frozenset({5, 6}); blank or unreadable -> None (follow the
+    company's weekend rule)."""
+    days = set()
+    for part in str(value or "").split(","):
+        part = part.strip()
+        if part.isdigit() and 0 <= int(part) <= 6:
+            days.add(int(part))
+    return frozenset(days) or None
+
+
+def describe_week_off_days(value):
+    """"5,6" -> "Saturday, Sunday"; blank -> ""."""
+    days = parse_week_off_days(value)
+    return ", ".join(WEEKDAY_NAMES[d] for d in sorted(days)) if days else ""
+
+
+def week_off_weekdays(employee, day, payroll_settings=None):
+    """Which weekdays are this employee's weekly off on `day`, as a
+    frozenset of Python weekday numbers (Monday 0 ... Sunday 6), or None to
+    mean "nothing specific -- use the company's weekend rule".
 
     Resolved most specific first:
 
-        1. the shift roster entry covering this date
-        2. the employee's own Weekly Off Day
+        1. the shift roster entry covering this date (one day)
+        2. the employee's own Weekly Off Days (one or more)
         3. neither, so the company's weekend setting applies
 
     One function so attendance, payroll day-counting and leave all agree.
@@ -1744,9 +1776,9 @@ def week_off_weekday(employee, day, payroll_settings=None):
     """
     rostered = rostered_week_off_day(employee, day)
     if rostered is not None:
-        return rostered
-    if employee is not None and employee.week_off_day is not None:
-        return employee.week_off_day
+        return frozenset({rostered})
+    if employee is not None:
+        return employee.week_off_weekdays
     return None
 
 
@@ -1759,7 +1791,7 @@ def week_off_dates_in_range(employee, from_date, to_date, sunday_only):
     roster entries once and answers the whole period from memory, which is
     what payroll and leave-day counting need.
 
-    Same precedence as week_off_weekday(): roster entry, then the
+    Same precedence as week_off_weekdays(): roster entry, then the
     employee's own day, then the company rule.
     """
     assignments = list(
@@ -1776,10 +1808,10 @@ def week_off_dates_in_range(employee, from_date, to_date, sunday_only):
     def rostered(day):
         for start, end, off_day in assignments:
             if start <= day <= end:
-                return off_day
+                return frozenset({off_day})
         return None
 
-    own = employee.week_off_day
+    own = employee.week_off_weekdays
     days = set()
     day = from_date
     while day <= to_date:
@@ -1787,7 +1819,7 @@ def week_off_dates_in_range(employee, from_date, to_date, sunday_only):
         if specific is None:
             specific = own
         if specific is not None:
-            if day.weekday() == specific:
+            if day.weekday() in specific:
                 days.add(day)
         elif (day.weekday() == 6) if sunday_only else (day.weekday() >= 5):
             days.add(day)
@@ -1798,9 +1830,9 @@ def week_off_dates_in_range(employee, from_date, to_date, sunday_only):
 def is_week_off(employee, day, sunday_only):
     """Is `day` this employee's weekly off? `sunday_only` is the company's
     setting, used only when nothing more specific applies."""
-    specific = week_off_weekday(employee, day)
+    specific = week_off_weekdays(employee, day)
     if specific is not None:
-        return day.weekday() == specific
+        return day.weekday() in specific
     return (day.weekday() == 6) if sunday_only else (day.weekday() >= 5)
 
 
@@ -2055,10 +2087,10 @@ class Attendance(models.Model):
                 ps = None
 
             # Roster first, then the employee's own day, then the company
-            # rule -- see week_off_weekday().
-            specific_off = week_off_weekday(self.employee, self.date)
+            # rule -- see week_off_weekdays().
+            specific_off = week_off_weekdays(self.employee, self.date)
             if specific_off is not None:
-                is_weekend = (self.date.weekday() == specific_off)
+                is_weekend = (self.date.weekday() in specific_off)
             else:
                 if ps is not None:
                     sunday_only = ps.weekend_days == 'sun'

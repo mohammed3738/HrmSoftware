@@ -188,7 +188,7 @@
             <li class="d-flex align-items-center mb-4">
               <i class="ri-calendar-close-line ri-24px"></i
               ><span class="fw-medium mx-2">Weekly Off:</span>
-              <span>{% if employee.week_off_day is not None %}{{ employee.get_week_off_day_display }}{% else %}Company default{% endif %}</span>
+              <span>{{ employee.get_week_off_days_display|default:"Company default" }}</span>
             </li>
             <li class="d-flex align-items-center mb-4">
               <i class="ri-moon-line ri-24px"></i

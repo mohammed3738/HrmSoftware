@@ -116,7 +116,7 @@ def build_employee_index():
     employees = Employee.objects.filter(status__in=ACTIVE_EMPLOYEE_STATUSES).only(
         "id", "employee_code", "biometric_device_user_id", "is_night_shift",
         "date_of_joining", "company_id", "branch_id", "shift_start_time", "shift_end_time",
-        "first_name", "last_name", "status", "week_off_day", "use_department_defaults",
+        "first_name", "last_name", "status", "week_off_days", "use_department_defaults",
     )
     by_code = []
     for employee in employees:

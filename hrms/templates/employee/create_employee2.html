@@ -596,9 +596,17 @@
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label">Weekly Off Day</label>
-                      {{ form.week_off_day|add_class:"form-select" }}
-                      <div class="form-text">Leave as default to use the company's usual weekly off (e.g. Sunday). Set this only to override it — for example Saturday for a night-shift employee.</div>
+                      <label class="form-label">Weekly Off Days</label>
+                      <div class="week-off-days d-flex flex-wrap gap-1">
+                        {% for opt in form.week_off_days %}
+                          <input type="checkbox" class="btn-check" name="{{ opt.data.name }}" value="{{ opt.data.value }}"
+                                 id="{{ opt.id_for_label }}"{% if opt.data.selected %} checked{% endif %} autocomplete="off">
+                          <label class="btn btn-sm btn-outline-primary" for="{{ opt.id_for_label }}"
+                                 title="{{ opt.choice_label }}">{{ opt.choice_label|slice:":3" }}</label>
+                        {% endfor %}
+                      </div>
+                      {% if form.week_off_days.errors %}<div class="text-danger small mt-1">{{ form.week_off_days.errors|join:" " }}</div>{% endif %}
+                      <div class="form-text">Tick one or more days, e.g. Sat + Sun, or Fri + Sat. Leave all unticked to use the company's usual weekly off.</div>
                     </div>
                   </div>
                   <div class="col-md-4">

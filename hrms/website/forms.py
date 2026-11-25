@@ -68,6 +68,16 @@ class FastSelect(forms.Select):
         return mark_safe("".join(parts))
 
 
+class _WeekOffDaysField(forms.MultipleChoiceField):
+    """Day checkboxes that also accept the stored "5,6" form, and treat a
+    blank entry as "nothing ticked" instead of an invalid choice."""
+
+    def to_python(self, value):
+        if isinstance(value, str):
+            value = value.split(",")
+        return [str(v).strip() for v in (value or []) if str(v).strip()]
+
+
 class EmployeeForm(forms.ModelForm):
     class Meta:
         model = Employee
@@ -78,7 +88,7 @@ class EmployeeForm(forms.ModelForm):
             'date_of_marriage', 'employee_code', 'designation', 'department',
             'use_department_defaults', 'reporting_person', 'manager',
             'date_of_joining', 'date_of_confirmation', 'location', 'shift_start_time', 'shift_end_time',
-            'week_off_day', 'is_night_shift', 'biometric_device_user_id',
+            'week_off_days', 'is_night_shift', 'biometric_device_user_id',
             'pan_no', 'aadhar_no', 'voter_id', 'passport', 'uan_no', 'pf_no', 'esic_no',
             'name_as_per_bank', 'salary_account_number', 'ifsc_code',
             'emergency_contact_name1', 'emergency_contact_relation1', 'emergency_contact_mobile1',
@@ -99,6 +109,21 @@ class EmployeeForm(forms.ModelForm):
         
     PHOTO_MAX_BYTES = 2 * 1024 * 1024
     PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}
+
+    # Stored on the model as "5,6"; picked here as one checkbox per day, so
+    # someone can be off Saturday + Sunday, or Friday + Saturday.
+    week_off_days = _WeekOffDaysField(
+        choices=[(str(n), name) for n, name in Employee.WEEKDAY_CHOICES],
+        required=False,
+        label="Weekly Off Days",
+        widget=forms.CheckboxSelectMultiple,
+    )
+
+    def clean_week_off_days(self):
+        days = sorted({int(d) for d in self.cleaned_data.get("week_off_days") or []})
+        if len(days) == 7:
+            raise forms.ValidationError("At least one day of the week must be a working day.")
+        return ",".join(str(d) for d in days)
 
     def clean_photo(self):
         # ImageField already rejects files Pillow can't open as an image;
@@ -160,6 +185,13 @@ class EmployeeForm(forms.ModelForm):
         self.fields['use_department_defaults'].widget = forms.CheckboxInput(
             attrs={'class': 'form-check-input'}
         )
+
+        # The checkboxes need a list of the stored days, not the "5,6" text.
+        self.fields['week_off_days'].widget.attrs['class'] = 'form-check-input'
+        # Also when bound: "changed" is worked out against this initial value.
+        stored = self.initial.get('week_off_days', self.instance.week_off_days)
+        if isinstance(stored, str):
+            self.initial['week_off_days'] = [d.strip() for d in stored.split(',') if d.strip()]
 
     def clean(self):
         cleaned = super().clean()

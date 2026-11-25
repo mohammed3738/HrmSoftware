@@ -102,10 +102,16 @@ def build_change_request(original, form, formset, attachment_formset, request):
             continue
         if isinstance(new, str) and isinstance(old, str) and _same_text(new, old):
             continue
+        if name == "week_off_days":  # stored "5,6"; approvers read "Saturday, Sunday"
+            from website.models import describe_week_off_days
+            old_shown = describe_week_off_days(old) or "Company default"
+            new_shown = describe_week_off_days(new) or "Company default"
+        else:
+            old_shown, new_shown = _display(old), _display(new)
         cr.field_changes[name] = {
             "label": str(form.fields[name].label or name.replace("_", " ").title()),
-            "old": _display(old),
-            "new": _display(new),
+            "old": old_shown,
+            "new": new_shown,
             "raw": _raw(new),
         }
     if "photo" in form.changed_data:

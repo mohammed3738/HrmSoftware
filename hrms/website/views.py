@@ -3532,10 +3532,13 @@ def _employee_list_with_onboarding(request, show):
     values = list(employees.values(
         "id", "employee_code", "first_name", "last_name", "gender", "status", "photo",
         "company__short_name", "company__name", "branch_id", "branch__branch_name",
-        "is_night_shift", "shift_start_time", "shift_end_time",
+        "shift_start_time", "shift_end_time",
     ))
-    # Today's shift, by the same rule the biometric sync uses: today's Shift
-    # Roster entry when there is one, otherwise the employee's own setting.
+    # Today's shift: today's Shift Roster entry when there is one (night if
+    # ticked night, its timings cross midnight, or its name says night),
+    # otherwise the employee's own shift timings (night if they cross
+    # midnight, e.g. 23:00-06:00). The profile's Night shift tick is not
+    # used -- the timings decide.
     from types import SimpleNamespace
     from .services.biometric_sync import NightShiftResolver
     today = timezone.localdate()
@@ -3557,7 +3560,7 @@ def _employee_list_with_onboarding(request, show):
             "branch_id": e["branch_id"],
             "branch": e["branch__branch_name"] or "",
             "shift": "night" if resolver.is_night(SimpleNamespace(
-                id=e["id"], is_night_shift=e["is_night_shift"],
+                id=e["id"], is_night_shift=False,
                 shift_start_time=e["shift_start_time"], shift_end_time=e["shift_end_time"],
             ), today) else "day",
             "status": e["status"] or "",

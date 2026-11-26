@@ -593,8 +593,40 @@ class LeaveApplication(models.Model):
     status = models.CharField(max_length=10, default="Pending")   # Pending / Approved / Rejected
     applied_on = models.DateTimeField(auto_now_add=True)
 
-    def total_days(self):
+    def calendar_days(self):
         return (self.end_date - self.start_date).days + 1
+
+    def working_dates(self):
+        """The dates this leave actually takes the employee off work: the
+        range minus their weekly offs (their own days, a roster entry, or
+        the company rule -- week_off_dates_in_range) and the holidays that
+        apply to them. The same days the leave balance counts."""
+        if not self.start_date or not self.end_date or self.end_date < self.start_date:
+            return []
+        employee = self.employee
+        ps = PayrollSettings.objects.filter(company=employee.company).first() if employee.company_id else None
+        sunday_only = getattr(ps, "weekend_days", "sat_sun") == "sun"
+        off = week_off_dates_in_range(employee, self.start_date, self.end_date, sunday_only)
+        branch_specific = getattr(ps, "branch_specific_holidays", True) if ps else True
+        holidays = {
+            h.holiday_date
+            for h in Holiday.objects.filter(
+                holiday_date__range=(self.start_date, self.end_date), is_active=True,
+            ).select_related("holiday_calendar__branch").prefetch_related("branches")
+            if (not branch_specific or h.is_applicable_to_branch(employee.branch))
+            and h.is_applicable_to_employee(employee)
+        }
+        out, day = [], self.start_date
+        while day <= self.end_date:
+            if day not in off and day not in holidays:
+                out.append(day)
+            day += timedelta(days=1)
+        return out
+
+    def total_days(self):
+        """Working days only: weekly offs and holidays inside the range are
+        not leave (a Friday-to-Monday leave over a weekend is 2 days)."""
+        return len(self.working_dates())
 
     def __str__(self):
         return f"{self.employee} - {self.leave_type} ({self.start_date} to {self.end_date})"
@@ -1081,9 +1113,18 @@ class SalaryHistory(models.Model):
 
 
 class AdvanceMaster(models.Model):
+    STATUS_AWAITING_APPROVAL = 'awaiting_approval'
     STATUS_ACTIVE = 'active'
     STATUS_COMPLETED = 'completed'
-    STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_COMPLETED, 'Completed')]
+    STATUS_REJECTED = 'rejected'
+    # An advance created by someone without Advances -> Approve waits as
+    # "awaiting approval" and is not deducted from salary until approved.
+    STATUS_CHOICES = [
+        (STATUS_AWAITING_APPROVAL, 'Awaiting approval'),
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_COMPLETED, 'Completed'),
+        (STATUS_REJECTED, 'Rejected'),
+    ]
 
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='advances')
     advance_amount = models.PositiveIntegerField()  # store in rupees (int)

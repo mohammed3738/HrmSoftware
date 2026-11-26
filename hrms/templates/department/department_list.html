@@ -12,7 +12,7 @@
         manager from here unless someone is given a different one individually.
       </p>
     </div>
-    {% if request.user|has_feature:"department_management:edit" %}
+    {% if request.user|has_feature:"department_management:create" %}
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#departmentModal" onclick="openDepartmentModal()">
       <i class="ri-add-line me-1"></i> Add Department
     </button>
@@ -21,8 +21,10 @@
 
   <ul class="nav nav-pills mb-3">
     <li class="nav-item"><a class="nav-link {% if show == 'active' %}active{% endif %}" href="?show=active">Active</a></li>
+    {% if request.user|can_see_archived %}
     <li class="nav-item"><a class="nav-link {% if show == 'archived' %}active{% endif %}" href="?show=archived">Archived</a></li>
     <li class="nav-item"><a class="nav-link {% if show == 'all' %}active{% endif %}" href="?show=all">All</a></li>
+    {% endif %}
   </ul>
 
   <div class="card">
@@ -158,7 +160,7 @@
   })();
 </script>
 
-{% if request.user|has_feature:"department_management:edit" %}
+{% if request.user|has_feature:"department_management:create" %}
 <div class="modal fade" id="departmentModal" tabindex="-1">
   <div class="modal-dialog">
     <form method="post" id="departmentForm">

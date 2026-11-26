@@ -17,7 +17,7 @@
       <small class="text-muted">Your own advances. Contact payroll about anything that looks wrong.</small>
       {% endif %}
     </div>
-    {% if can_manage_advances %}
+    {% if can_create_advances %}
     <a href="{% url 'create-advance' %}" class="btn btn-primary">
       <i class="ti ti-plus me-1"></i> New Advance
     </a>
@@ -88,6 +88,8 @@
            class="btn {% if not status_filter %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
         <a href="?{% if search %}q={{ search }}&{% endif %}status=active"
            class="btn {% if status_filter == 'active' %}btn-warning text-dark{% else %}btn-outline-secondary{% endif %}">Active</a>
+        <a href="?{% if search %}q={{ search }}&{% endif %}status=awaiting_approval"
+           class="btn {% if status_filter == 'awaiting_approval' %}btn-info{% else %}btn-outline-secondary{% endif %}">Awaiting approval</a>
         <a href="?{% if search %}q={{ search }}&{% endif %}status=completed"
            class="btn {% if status_filter == 'completed' %}btn-success{% else %}btn-outline-secondary{% endif %}">Completed</a>
       </div>
@@ -151,6 +153,10 @@
             <td>
               {% if adv.status == 'completed' %}
                 <span class="badge bg-success">Completed</span>
+              {% elif adv.status == 'awaiting_approval' %}
+                <span class="badge bg-label-info">Awaiting approval</span>
+              {% elif adv.status == 'rejected' %}
+                <span class="badge bg-label-danger">Rejected</span>
               {% else %}
                 <span class="badge bg-label-warning text-warning">Active</span>
               {% endif %}

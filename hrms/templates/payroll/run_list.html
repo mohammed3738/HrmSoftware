@@ -14,7 +14,7 @@
         <li class="breadcrumb-item active">Payroll Runs</li>
       </ol>
     </div>
-    {% if can_run_payroll %}
+    {% if can_create_payroll_run %}
     <a href="{% url 'payroll-run-create' %}" class="btn btn-primary">
       <i class="ti ti-plus me-1"></i> New Payroll Run
     </a>

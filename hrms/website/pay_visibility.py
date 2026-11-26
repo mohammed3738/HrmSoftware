@@ -25,7 +25,7 @@ PAY_URL_NAMES = frozenset({
     "salary-slip", "salary-slips", "salary-slip-statement",
     # advances
     "advances-list", "create-advance", "advance-detail", "advance-edit",
-    "advance-delete", "advances-pay", "advances-skip", "revert-skip",
+    "advance-delete", "advances-pay", "advances-skip", "revert-skip", "advance-decide",
 })
 
 

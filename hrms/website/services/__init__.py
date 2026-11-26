@@ -287,6 +287,7 @@ def get_advance_for_employee_month(employee, start_date, end_date):
     same one on a recalculation. Oldest due month first, then by id."""
     emi = AdvanceSchedule.objects.filter(
         advance__employee=employee,
+        advance__status=AdvanceMaster.STATUS_ACTIVE,   # not awaiting approval / rejected
         due_month__range=[start_date, end_date],
         status=AdvanceSchedule.STATUS_PENDING
     ).order_by("due_month", "pk").first()

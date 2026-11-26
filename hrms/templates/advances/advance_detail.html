@@ -16,6 +16,15 @@
       </ol>
     </div>
     <div class="d-flex gap-2 align-items-center">
+      {% if can_approve_advance %}
+      <form method="post" action="{% url 'advance-decide' advance.id %}" class="d-flex gap-2">
+        {% csrf_token %}
+        <button name="decision" value="approve" class="btn btn-success"><i class="ti ti-check me-1"></i> Approve</button>
+        <button name="decision" value="reject" class="btn btn-outline-danger"
+                onclick="return confirm('Reject this advance? It will never be deducted from salary.');">
+          <i class="ti ti-x me-1"></i> Reject</button>
+      </form>
+      {% endif %}
       {% if can_manage_advances and advance.status != 'completed' %}
       <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#payModal">
         <i class="ti ti-cash me-1"></i> Make Payment
@@ -78,6 +87,10 @@
           <small class="text-muted" id="advance-status-badge">
             {% if advance.status == 'completed' %}
               <span class="badge bg-success">Completed</span>
+            {% elif advance.status == 'awaiting_approval' %}
+              <span class="badge bg-label-info">Awaiting approval</span>
+            {% elif advance.status == 'rejected' %}
+              <span class="badge bg-label-danger">Rejected</span>
             {% else %}
               <span class="badge bg-label-warning text-warning">Active</span>
             {% endif %}

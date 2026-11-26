@@ -210,6 +210,7 @@ urlpatterns = [
     path('advances/<int:pk>/edit/', views.advance_edit, name='advance-edit'),
     path('advances/<int:pk>/delete/', views.advance_delete, name='advance-delete'),
     path('advances/<int:pk>/pay/', views.pay_advance, name='advances-pay'),
+    path('advances/<int:pk>/decide/', views.advance_decide, name='advance-decide'),
     path('advances/<int:pk>/skip/', views.skip_advance_month, name='advances-skip'),
     path("advances/<int:pk>/revert-skip/", views.revert_skip_view, name="revert-skip"),
 

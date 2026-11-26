@@ -137,7 +137,9 @@
                           <input type="checkbox" class="form-check-input" name="can_view_{{ row.feature.id }}"
                                  {% if row.permission.can_view %}checked{% endif %}>
                           {% else %}
-                          <span class="text-muted">—</span>
+                          <input type="checkbox" class="form-check-input" name="can_view_{{ row.feature.id }}"
+                                 title="This feature has no separate view function; ticking it opens the feature's pages read-only."
+                                 {% if row.permission.can_view %}checked{% endif %}>
                           {% endif %}
                         </td>
                         <td class="text-center">
@@ -145,7 +147,9 @@
                           <input type="checkbox" class="form-check-input" name="can_create_{{ row.feature.id }}"
                                  {% if row.permission.can_create %}checked{% endif %}>
                           {% else %}
-                          <span class="text-muted">—</span>
+                          <input type="checkbox" class="form-check-input" name="can_create_{{ row.feature.id }}"
+                                 title="This feature has no separate create function; ticking it opens the feature's pages read-only."
+                                 {% if row.permission.can_create %}checked{% endif %}>
                           {% endif %}
                         </td>
                         <td class="text-center">
@@ -153,7 +157,9 @@
                           <input type="checkbox" class="form-check-input" name="can_edit_{{ row.feature.id }}"
                                  {% if row.permission.can_edit %}checked{% endif %}>
                           {% else %}
-                          <span class="text-muted">—</span>
+                          <input type="checkbox" class="form-check-input" name="can_edit_{{ row.feature.id }}"
+                                 title="This feature has no separate edit function; ticking it opens the feature's pages read-only."
+                                 {% if row.permission.can_edit %}checked{% endif %}>
                           {% endif %}
                         </td>
                         <td class="text-center">
@@ -161,7 +167,9 @@
                           <input type="checkbox" class="form-check-input" name="can_approve_{{ row.feature.id }}"
                                  {% if row.permission.can_approve %}checked{% endif %}>
                           {% else %}
-                          <span class="text-muted">—</span>
+                          <input type="checkbox" class="form-check-input" name="can_approve_{{ row.feature.id }}"
+                                 title="This feature has no separate approve function; ticking it opens the feature's pages read-only."
+                                 {% if row.permission.can_approve %}checked{% endif %}>
                           {% endif %}
                         </td>
                       </tr>
@@ -171,7 +179,11 @@
                   </table>
                 </div>
 
-                <div class="d-flex justify-content-end mt-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+                  <div class="small text-muted">
+                    Every box can be ticked. Edit always includes Create. Where a feature has no separate function for an action
+                    (for example Edit on Audit Log), the tick opens that feature's pages read-only.
+                  </div>
                   <button type="button" class="btn btn-primary" id="saveMatrixBtn">
                     <i class="ri-save-line me-1"></i> Save Matrix
                   </button>

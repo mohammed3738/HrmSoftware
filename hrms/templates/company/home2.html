@@ -1,5 +1,5 @@
 {% extends 'base2.html' %} {% block body %} {% load static custom_filters %}
-{% with can_edit_companies=request.user|has_feature:"company_management:edit" %}
+{% with can_edit_companies=request.user|has_feature:"company_management:edit" can_add_companies=request.user|has_feature:"company_management:create" %}
 
 <script>
   function downloadCompanies() {
@@ -57,7 +57,7 @@
             </ul>
           </div>
         </div>
-        {% if can_edit_companies %}
+        {% if can_add_companies %}
         <div class="me-2 mb-2">
           <a
             href="#"
@@ -198,8 +198,8 @@
       <div class="card-body p-0">
         <div class="d-flex gap-2 px-3 pt-3">
           <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
-          <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Archived</a>
-          <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+          {% if request.user|can_see_archived %}<a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Archived</a>{% endif %}
+          {% if request.user|can_see_archived %}<a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>{% endif %}
         </div>
         <div class="custom-datatable-filter table-responsive">
           <table class="table datatable">

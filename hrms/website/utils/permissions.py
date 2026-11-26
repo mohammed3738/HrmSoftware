@@ -39,14 +39,23 @@ def _load_feature_permissions(user):
     granted = set()
     rows = RoleFeaturePermission.objects.filter(role__in=user.groups.all()).values_list(
         "feature__key", "can_view", "can_create", "can_edit", "can_approve",
+        "feature__has_view", "feature__has_create", "feature__has_edit", "feature__has_approve",
     )
-    for feature_key, can_view, can_create, can_edit, can_approve in rows:
-        for action, allowed in (
-            ("view", can_view), ("create", can_create),
-            ("edit", can_edit), ("approve", can_approve),
+    for (feature_key, can_view, can_create, can_edit, can_approve,
+         has_view, has_create, has_edit, has_approve) in rows:
+        for action, allowed, used in (
+            ("view", can_view, has_view), ("create", can_create, has_create),
+            ("edit", can_edit, has_edit), ("approve", can_approve, has_approve),
         ):
-            if allowed:
-                granted.add((feature_key, action))
+            if not allowed:
+                continue
+            granted.add((feature_key, action))
+            # Every box on the matrix can be ticked. A tick on an action
+            # this feature has no separate function for (e.g. Edit on Audit
+            # Log) still means "this role works with this feature", so it
+            # at least opens the feature's pages read-only.
+            if not used and has_view:
+                granted.add((feature_key, "view"))
     return granted
 
 
@@ -74,7 +83,12 @@ def has_feature_permission(user, feature_key, action="view"):
         except AttributeError:
             # AnonymousUser and friends may not accept attributes.
             pass
-    return (feature_key, action) in granted
+    if (feature_key, action) in granted:
+        return True
+    # Edit is the stronger right: whoever may change existing records may
+    # also add new ones. So a page that only adds things checks "create",
+    # and roles holding just "edit" keep reaching it.
+    return action == "create" and (feature_key, "edit") in granted
 
 
 def can_approve_for_employee(user, employee, feature_key):

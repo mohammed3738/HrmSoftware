@@ -89,3 +89,18 @@ class HrLeaveOverviewTest(TestCase):
         resp = self.client_for("Admin").get(reverse("admin-dashboard"))
         self.assertFalse(resp.context["show_leave_overview"])
         self.assertContains(resp, 'id="leaveBulkApproveBtn"')
+
+
+class LeaveViewModalTest(LeaveWorkingDaysTest):
+    def test_view_button_carries_details_and_modal_exists(self):
+        LeaveApplication.objects.create(employee=self.emp, start_date=FRI, end_date=NEXT_MON,
+                                        reason="Family <trip>", status="Pending")
+        c = Client()
+        c.force_login(self.user, backend="django.contrib.auth.backends.ModelBackend")
+        resp = c.get(reverse("leave_apply"))
+        self.assertContains(resp, 'id="leaveViewModal"')
+        self.assertContains(resp, "function openLeaveView(btn)")
+        self.assertContains(resp, 'onclick="openLeaveView(this)"')
+        self.assertContains(resp, 'data-days="3"')
+        self.assertContains(resp, 'data-calendar-days="4"')
+        self.assertContains(resp, 'data-reason="Family &lt;trip&gt;"')   # escaped, not raw HTML

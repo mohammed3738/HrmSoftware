@@ -68,8 +68,17 @@
                         </td>
 
                         <td data-label="">
-                            <button class="btn btn-outline-primary btn-sm"
-                                    onclick="openLeaveView('{{l.id}}')">
+                            <button type="button" class="btn btn-outline-primary btn-sm"
+                                    onclick="openLeaveView(this)"
+                                    data-employee="{{ l.employee.first_name }} {{ l.employee.last_name }}{% if l.employee.employee_code %} ({{ l.employee.employee_code }}){% endif %}"
+                                    data-type="{{ l.get_leave_type_display|default:'—' }}"
+                                    data-start="{{ l.start_date|date:'d M Y (D)' }}"
+                                    data-end="{{ l.end_date|date:'d M Y (D)' }}"
+                                    data-days="{{ l.total_days }}"
+                                    data-calendar-days="{{ l.calendar_days }}"
+                                    data-status="{{ l.status }}"
+                                    data-applied="{{ l.applied_on|date:'d M Y, H:i' }}"
+                                    data-reason="{{ l.reason }}">
                                 View
                             </button>
                         </td>
@@ -129,5 +138,55 @@
         </div>
     </div>
 </div>
+
+<!-- ==================== LEAVE DETAILS MODAL ==================== -->
+<div class="modal fade" id="leaveViewModal" tabindex="-1" aria-labelledby="leaveViewTitle">
+    <div class="modal-dialog modal-md modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-primary d-flex align-items-center justify-content-between px-4 py-3 border-0">
+                <h5 class="modal-title text-white" id="leaveViewTitle"><i class="ri-file-list-3-line text-white"></i> Leave Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <dl class="row mb-0">
+                    <dt class="col-5 text-muted fw-normal">Employee</dt><dd class="col-7 fw-semibold" id="lvEmployee"></dd>
+                    <dt class="col-5 text-muted fw-normal">Leave type</dt><dd class="col-7" id="lvType"></dd>
+                    <dt class="col-5 text-muted fw-normal">From</dt><dd class="col-7" id="lvStart"></dd>
+                    <dt class="col-5 text-muted fw-normal">To</dt><dd class="col-7" id="lvEnd"></dd>
+                    <dt class="col-5 text-muted fw-normal">Working days</dt><dd class="col-7" id="lvDays"></dd>
+                    <dt class="col-5 text-muted fw-normal">Status</dt><dd class="col-7" id="lvStatus"></dd>
+                    <dt class="col-5 text-muted fw-normal">Applied on</dt><dd class="col-7" id="lvApplied"></dd>
+                    <dt class="col-12 text-muted fw-normal mt-2">Reason</dt>
+                    <dd class="col-12"><div class="border rounded p-2 bg-light" id="lvReason" style="white-space:pre-wrap"></div></dd>
+                </dl>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function openLeaveView(btn) {
+    var d = btn.dataset;
+    function set(id, text) { document.getElementById(id).textContent = text || "—"; }
+    set("lvEmployee", d.employee);
+    set("lvType", d.type);
+    set("lvStart", d.start);
+    set("lvEnd", d.end);
+    var off = parseInt(d.calendarDays, 10) - parseInt(d.days, 10);
+    set("lvDays", d.days + (off > 0 ? "  (" + off + " weekly off / holiday day(s) not counted)" : ""));
+    set("lvApplied", d.applied);
+    set("lvReason", d.reason);
+    var cls = d.status === "Approved" ? "bg-success" : d.status === "Rejected" ? "bg-danger" : "bg-warning text-dark";
+    var badge = document.createElement("span");
+    badge.className = "badge " + cls;
+    badge.textContent = d.status;
+    var status = document.getElementById("lvStatus");
+    status.replaceChildren(badge);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("leaveViewModal")).show();
+}
+</script>
 
 {% endblock %}

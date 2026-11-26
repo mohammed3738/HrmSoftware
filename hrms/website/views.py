@@ -47,6 +47,7 @@ from .services.pending_approvals import pending_approvals_for_payroll, pending_a
 from .services.employee_changes import (
     ChangeRequestError, build_change_request, apply_change_request, reject_change_request,
     can_approve_changes, edit_needs_approval, pending_request_for,
+    can_approve_self_changes, can_decide_change_request, decidable_self_requests,
 )
 from .utils.payroll_lock import (
     get_locking_run,
@@ -2911,7 +2912,10 @@ def admin_dashboard(request):
     pending_onboarding.sort(key=lambda e: urgent.index(e.pk))
     pending_change_requests = EmployeeChangeRequest.objects.filter(
         status=EmployeeChangeRequest.STATUS_PENDING, employee__in=base_qs,
-    ).count()
+    )
+    if not can_approve_changes(user):
+        pending_change_requests = decidable_self_requests(user, pending_change_requests)
+    pending_change_requests = pending_change_requests.count()
 
     return render(request, 'd/f.html', {
         'birthdays': birthdays,
@@ -2973,7 +2977,8 @@ def _dashboard_panels_for(user, active_qs, company_filter):
         'show_compoff_approvals': allowed("comp_off", "approve"),
         'show_correction_approvals': allowed("attendance_corrections", "approve"),
         'show_offboarding_panel': allowed("offboarding", "view"),
-        'show_change_approvals': allowed("employee_change_approval", "approve"),
+        'show_change_approvals': (allowed("employee_change_approval", "approve")
+                                  or allowed("employee_self_change_approval", "approve")),
         'show_payroll_panel': can_view_payroll,
         'can_run_payroll': allowed("payroll", "edit"),
     }
@@ -3538,7 +3543,8 @@ def _can_see_change_requests(user):
     (an approver obviously has to see what they approve)."""
     return (user.is_superuser or user.is_staff
             or has_feature_permission(user, "employee_change_approval", "view")
-            or has_feature_permission(user, "employee_change_approval", "approve"))
+            or has_feature_permission(user, "employee_change_approval", "approve")
+            or can_approve_self_changes(user))
 
 
 @login_required
@@ -3553,11 +3559,15 @@ def employee_change_requests(request):
     ).prefetch_related("files")
     if status in dict(EmployeeChangeRequest.STATUS_CHOICES):
         requests_qs = requests_qs.filter(status=status)
+    change_requests = list(requests_qs[:200])
+    for cr in change_requests:
+        cr.can_decide = can_decide_change_request(request.user, cr)
     return render(request, "employee/change_requests.html", {
-        "change_requests": requests_qs[:200],
+        "change_requests": change_requests,
         "status": status,
         "status_choices": EmployeeChangeRequest.STATUS_CHOICES,
-        "can_approve_changes": can_approve_changes(request.user),
+        # Bulk bar: shown when at least one listed request is theirs to decide.
+        "can_approve_changes": any(cr.can_decide for cr in change_requests),
     })
 
 
@@ -3567,7 +3577,7 @@ def employee_change_requests_bulk(request):
     """Approve or reject several pending change requests at once. Each is
     decided on its own (one failing doesn't undo the others), oldest first
     so later requests for the same employee apply on top of earlier ones."""
-    if not can_approve_changes(request.user):
+    if not can_approve_self_changes(request.user):
         raise PermissionDenied
     decision = request.POST.get("decision")
     if decision not in ("approve", "reject"):
@@ -3582,6 +3592,8 @@ def employee_change_requests_bulk(request):
     done, failed = 0, []
     pending = (EmployeeChangeRequest.objects.filter(pk__in=ids, status=EmployeeChangeRequest.STATUS_PENDING)
                .select_related("employee").order_by("requested_at"))
+    if not can_approve_changes(request.user):
+        pending = decidable_self_requests(request.user, pending)
     for cr in pending:
         try:
             if decision == "approve":
@@ -3611,7 +3623,7 @@ def employee_change_request_detail(request, pk):
     cr = get_object_or_404(
         EmployeeChangeRequest.objects.select_related("employee", "requested_by", "decided_by"), pk=pk,
     )
-    can_approve = can_approve_changes(request.user)
+    can_approve = can_decide_change_request(request.user, cr)
 
     if request.method == "POST":
         if not can_approve:
@@ -3985,11 +3997,12 @@ def employee_detail(request, pk):
 
     employee_history = AuditLog.objects.filter(employee=employee).select_related("actor")[:50]
 
+    pending_change = pending_request_for(employee)
     context = {
         'employee': employee,
         'onboarding': onboarding_progress(employee),
-        'pending_change': pending_request_for(employee),
-        'can_approve_changes': can_approve_changes(request.user),
+        'pending_change': pending_change,
+        'can_approve_changes': pending_change is not None and can_decide_change_request(request.user, pending_change),
         'previous_employments': previous_employments,
         'attachments': attachments,
         'previous_employments_attachment': previous_employments_attachment,

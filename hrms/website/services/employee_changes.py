@@ -32,6 +32,34 @@ def can_approve_changes(user):
     return user.is_superuser or user.is_staff or has_feature_permission(user, "employee_change_approval", "approve")
 
 
+def can_approve_self_changes(user):
+    """Holders of "Employees' Own Profile Changes -> Approve" (HR by
+    default) decide the changes employees send from My Details. Their own
+    edits to other employees still go to a full approver."""
+    from ..utils.permissions import has_feature_permission
+    return (can_approve_changes(user)
+            or has_feature_permission(user, "employee_self_change_approval", "approve"))
+
+
+def is_self_request(cr):
+    """Sent by the employee about their own profile (My Details)."""
+    return cr.requested_by_id is not None and cr.requested_by_id == cr.employee.user_id
+
+
+def can_decide_change_request(user, cr):
+    if can_approve_changes(user):
+        return True
+    # Nobody on the self-service route approves their own profile changes.
+    return (is_self_request(cr) and cr.requested_by_id != user.id
+            and can_approve_self_changes(user))
+
+
+def decidable_self_requests(user, qs):
+    """`qs` narrowed to what a self-change-only approver may decide."""
+    from django.db.models import F
+    return qs.filter(requested_by_id=F("employee__user_id")).exclude(requested_by_id=user.id)
+
+
 def edit_needs_approval(user, employee):
     """Whether `user`'s edits to an existing `employee` must go for approval."""
     if can_approve_changes(user):

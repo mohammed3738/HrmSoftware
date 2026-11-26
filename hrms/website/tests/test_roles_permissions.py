@@ -58,6 +58,7 @@ GOLDEN_TABLE = {
     ("employee_delete", "edit"): NOT_HR,
     ("employee_change_approval", "approve"): NOT_HR,
     ("employee_change_approval", "view"): STAFF,
+    ("employee_self_change_approval", "approve"): STAFF,
     ("department_management", "view"): STAFF,
     ("department_management", "edit"): STAFF,
     ("department_management", "create"): STAFF,

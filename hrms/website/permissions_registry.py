@@ -34,6 +34,8 @@ FEATURES = [
      "has_view": False, "has_create": False, "has_edit": True, "has_approve": False, "sort_order": 12},
     {"key": "employee_change_approval", "name": "Approve Employee Changes", "category": "Employee Lifecycle",
      "has_view": True, "has_create": False, "has_edit": False, "has_approve": True, "sort_order": 13},
+    {"key": "employee_self_change_approval", "name": "Employees' Own Profile Changes", "category": "Employee Lifecycle",
+     "has_view": False, "has_create": False, "has_edit": False, "has_approve": True, "sort_order": 14},
     {"key": "department_management", "name": "Departments & Reporting Line", "category": "Employee Lifecycle",
      "has_view": True, "has_create": True, "has_edit": True, "has_approve": False, "sort_order": 15},
     {"key": "offboarding", "name": "Offboarding", "category": "Employee Lifecycle",
@@ -123,6 +125,9 @@ SEED_GRANTS = {
     # incomplete and less than 15 days old, and needs approval after that.
     ("employee_change_approval", "approve"): _NOT_HR,
     ("employee_change_approval", "view"): _ALL_STAFF,  # see the queue
+    # Changes employees send from My Details (personal + bank details).
+    # HR decides these; HR's own edits to employees still need the above.
+    ("employee_self_change_approval", "approve"): _ALL_STAFF,
     ("department_management", "view"): _ALL_STAFF,
     ("department_management", "edit"): _ALL_STAFF,
     ("department_management", "create"): _ALL_STAFF,

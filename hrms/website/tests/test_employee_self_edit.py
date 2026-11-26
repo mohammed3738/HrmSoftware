@@ -128,3 +128,100 @@ class EmployeeSelfEditTest(TestCase):
         self.assertContains(resp, "9 to 18 digits")
         self.assertContains(resp, "valid IFSC code")
         self.assertFalse(EmployeeChangeRequest.objects.exists())
+
+
+class HrDecidesSelfEditsTest(EmployeeSelfEditTest):
+    """HR approves or rejects what employees send from My Details, but not
+    edits made by someone else to an employee (those stay with Admin)."""
+
+    def pending(self):
+        self.send(personal_mobile="2222222222")
+        return EmployeeChangeRequest.objects.get(employee=self.emp)
+
+    def test_hr_sees_and_approves(self):
+        cr = self.pending()
+        hr = self.approver("HR")
+        page = hr.get(reverse("employee_change_requests"))
+        self.assertContains(page, "Review")
+        self.assertContains(page, 'class="form-check-input request-box"')
+        self.assertContains(hr.get(reverse("employee_change_request_detail", args=[cr.pk])), "Approve &amp; apply")
+        hr.post(reverse("employee_change_request_detail", args=[cr.pk]), {"decision": "approve"})
+        self.emp.refresh_from_db()
+        self.assertEqual(self.emp.personal_mobile, "2222222222")
+
+    def test_hr_rejects(self):
+        cr = self.pending()
+        self.approver("HR").post(reverse("employee_change_request_detail", args=[cr.pk]), {"decision": "reject"})
+        cr.refresh_from_db()
+        self.assertEqual(cr.status, EmployeeChangeRequest.STATUS_REJECTED)
+
+    def test_hr_bulk_approves(self):
+        cr = self.pending()
+        self.approver("HR").post(reverse("employee_change_requests_bulk"), {"decision": "approve", "ids": [cr.pk]})
+        cr.refresh_from_db()
+        self.assertEqual(cr.status, EmployeeChangeRequest.STATUS_APPROVED)
+
+    def test_hr_cannot_decide_someone_elses_edit(self):
+        admin_user = User.objects.create_user(username="editor", password="pass12345")
+        cr = EmployeeChangeRequest.objects.create(employee=self.emp, requested_by=admin_user,
+                                                  field_changes={})
+        hr = self.approver("HR")
+        self.assertEqual(hr.post(reverse("employee_change_request_detail", args=[cr.pk]),
+                                 {"decision": "approve"}).status_code, 403)
+        hr.post(reverse("employee_change_requests_bulk"), {"decision": "approve", "ids": [cr.pk]})
+        cr.refresh_from_db()
+        self.assertEqual(cr.status, EmployeeChangeRequest.STATUS_PENDING)
+
+    def test_hr_edits_to_employees_still_need_approval(self):
+        from website.services.employee_changes import can_approve_changes
+        hr_user = User.objects.create_user(username="hr_only", password="pass12345")
+        hr_user.groups.add(Group.objects.get(name="HR"))
+        self.assertFalse(can_approve_changes(hr_user))
+
+
+class SelfEditPhotoTest(EmployeeSelfEditTest):
+    """Employees change or remove their profile photo from My Details; it
+    waits for review like every other change."""
+
+    def setUp(self):
+        import shutil, tempfile
+        from django.test import override_settings
+        self.media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.media, ignore_errors=True)
+        override = override_settings(MEDIA_ROOT=self.media)
+        override.enable()
+        self.addCleanup(override.disable)
+        super().setUp()
+
+    def png(self, name="me.png"):
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+        buf = BytesIO()
+        Image.new("RGB", (40, 40), "red").save(buf, "PNG")
+        return SimpleUploadedFile(name, buf.getvalue(), content_type="image/png")
+
+    def test_page_has_photo_section(self):
+        page = self.client.get(reverse("my_details_edit"))
+        self.assertContains(page, "Profile photo")
+        self.assertContains(page, 'id="photoPreview"')
+
+    def test_new_photo_waits_then_applies_on_approval(self):
+        self.send(photo=self.png())
+        self.emp.refresh_from_db()
+        self.assertFalse(self.emp.photo)                        # not yet
+        cr = EmployeeChangeRequest.objects.get(employee=self.emp)
+        self.assertTrue(cr.photo)
+        self.approver("HR").post(reverse("employee_change_request_detail", args=[cr.pk]), {"decision": "approve"})
+        self.emp.refresh_from_db()
+        self.assertTrue(self.emp.photo)
+
+    def test_remove_photo_request(self):
+        from website.services.employee_changes import apply_change_request
+        self.send(photo=self.png())
+        cr = EmployeeChangeRequest.objects.get(employee=self.emp)
+        apply_change_request(cr, User.objects.create_superuser("ph_su", "p@t.com", "x"), "")
+        self.assertContains(self.client.get(reverse("my_details_edit")), "Remove my current photo")
+        self.send(**{"photo-clear": "on"})
+        cr2 = EmployeeChangeRequest.objects.filter(employee=self.emp, status="pending").get()
+        self.assertTrue(cr2.clear_photo)

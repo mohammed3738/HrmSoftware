@@ -1207,12 +1207,25 @@ def _current_payroll_period(company):
     return get_payroll_period_for_date(payroll_settings, now().date())
 
 
+# How far into the next payroll period a roster may already be planned.
+ROSTER_ADVANCE_DAYS = 7
+
+
+def _roster_last_date(company):
+    """The last date a shift may be rostered for: the end of the current
+    payroll period plus the first week of the next one, so next month's
+    first week can be planned in advance. None without a payroll cycle."""
+    _, period_to = _current_payroll_period(company)
+    return period_to + timedelta(days=ROSTER_ADVANCE_DAYS) if period_to else None
+
+
 def _validate_shift_dates_within_current_period(company, start_date_str, end_date_str):
     """Shift assignments may only be scheduled from today through the end of
-    the current payroll period — not in the past, and not beyond the period
-    that's currently running. Returns an error message, or None if OK (or if
-    the company has no payroll cycle configured, in which case it doesn't block)."""
-    period_from, period_to = _current_payroll_period(company)
+    the current payroll period plus the first week of the next one -- not in
+    the past, and not further ahead than that. Returns an error message, or
+    None if OK (or if the company has no payroll cycle configured, in which
+    case it doesn't block)."""
+    period_to = _roster_last_date(company)
     if not period_to:
         return None
 
@@ -1226,7 +1239,8 @@ def _validate_shift_dates_within_current_period(company, start_date_str, end_dat
     if start < today:
         return f"Start date cannot be before today ({today.strftime('%d %b %Y')})."
     if end > period_to:
-        return f"End date cannot be after the current payroll period ends ({period_to.strftime('%d %b %Y')})."
+        return (f"End date cannot be after {period_to.strftime('%d %b %Y')}: rosters can be planned "
+                f"up to the first week of the next payroll period only.")
     return None
 
 
@@ -1281,7 +1295,7 @@ def shift_roster_list(request):
     # current payroll period. Based on the logged-in user's own company when
     # scoped; for global-access users this is just a UI hint — the actual
     # enforcement in add/edit happens per employee's own company.
-    _, period_to = _current_payroll_period(company_filter or get_user_company(request.user))
+    period_to = _roster_last_date(company_filter or get_user_company(request.user))
 
     return render(request, "attendance/shift_roster.html", {
         "assignments": assignments,
@@ -3515,9 +3529,20 @@ def _employee_list_with_onboarding(request, show):
         employees = employees.filter(status="Archived")
     progress = bulk_onboarding_progress(employees)
 
+    values = list(employees.values(
+        "id", "employee_code", "first_name", "last_name", "gender", "status", "photo",
+        "company__short_name", "company__name", "branch_id", "branch__branch_name",
+        "is_night_shift", "shift_start_time", "shift_end_time",
+    ))
+    # Today's shift, by the same rule the biometric sync uses: today's Shift
+    # Roster entry when there is one, otherwise the employee's own setting.
+    from types import SimpleNamespace
+    from .services.biometric_sync import NightShiftResolver
+    today = timezone.localdate()
+    resolver = NightShiftResolver([e["id"] for e in values], today, today)
+
     rows = []
-    for e in employees.values("id", "employee_code", "first_name", "last_name", "gender", "status", "photo",
-                              "company__short_name", "company__name", "branch_id", "branch__branch_name"):
+    for e in values:
         p = progress[e["id"]]
         if request.GET.get("onboarding") == "pending" and p["complete"]:
             continue
@@ -3531,6 +3556,10 @@ def _employee_list_with_onboarding(request, show):
             "gender": e["gender"] or "",
             "branch_id": e["branch_id"],
             "branch": e["branch__branch_name"] or "",
+            "shift": "night" if resolver.is_night(SimpleNamespace(
+                id=e["id"], is_night_shift=e["is_night_shift"],
+                shift_start_time=e["shift_start_time"], shift_end_time=e["shift_end_time"],
+            ), today) else "day",
             "status": e["status"] or "",
             "percent": p["percent"],
             "complete": p["complete"],

@@ -89,6 +89,12 @@
     {% endfor %}
     <option value="none">No branch</option>
   </select>
+  <select id="shiftFilter" class="form-select form-select-sm" style="width:auto;min-width:150px" aria-label="Filter by shift"
+          title="Today's shift: the Shift Roster for today, otherwise the employee's Night shift setting">
+    <option value="">All shifts</option>
+    <option value="day">Morning shift</option>
+    <option value="night">Night shift</option>
+  </select>
 </div>
 
 <!-- Table -->
@@ -1617,8 +1623,12 @@ document.addEventListener("DOMContentLoaded", function () {
     const branchSelect = document.getElementById("branchFilter");
     const params = new URLSearchParams(window.location.search);
     if (branchSelect && params.get("branch")) branchSelect.value = params.get("branch");
+    const shiftSelect = document.getElementById("shiftFilter");
+    if (shiftSelect && params.get("shift")) shiftSelect.value = params.get("shift");
     $.fn.dataTable.ext.search.push(function (settings, data, index, row) {
-      if (settings.nTable !== document.querySelector(".datatable") || !branchSelect) return true;
+      if (settings.nTable !== document.querySelector(".datatable")) return true;
+      if (shiftSelect && shiftSelect.value && row.shift !== shiftSelect.value) return false;
+      if (!branchSelect) return true;
       const wanted = branchSelect.value;
       if (!wanted) return true;
       if (wanted === "none") return !row.branch_id;
@@ -1633,7 +1643,8 @@ document.addEventListener("DOMContentLoaded", function () {
           { data: "code", render: (v, type, r) => type === "display" ? `<a href="${urlFor(DETAIL_URL, r.id)}">${esc(v)}</a>` : v },
           { data: "company", render: (v, type) => type === "display" ? `<a href="${COMPANY_URL}">${esc(v)}</a>` : v },
           { data: "first", className: "text-nowrap", render: (v, type, r) => type === "display"
-              ? (r.photo ? `<img src="${esc(r.photo)}" alt="" class="rounded-circle me-2" style="width:28px;height:28px;object-fit:cover;">` : "") + esc(v) : v },
+              ? (r.photo ? `<img src="${esc(r.photo)}" alt="" class="rounded-circle me-2" style="width:28px;height:28px;object-fit:cover;">` : "") + esc(v)
+                + (r.shift === "night" ? ` <i class="ri-moon-line text-primary" title="Night shift today"></i>` : "") : v },
           { data: "last", render: (v, type) => type === "display" ? esc(v) : v },
           { data: "gender", render: (v, type) => type === "display" ? esc(v) : v },
           { data: "status", render: (v, type) => type === "display"
@@ -1666,6 +1677,20 @@ document.addEventListener("DOMContentLoaded", function () {
         table.draw();
       });
       if (branchSelect.value) branchSelect.dispatchEvent(new Event("change"));
+    }
+    if (shiftSelect) {
+      shiftSelect.addEventListener("change", function () {
+        const p = new URLSearchParams(window.location.search);
+        if (shiftSelect.value) p.set("shift", shiftSelect.value); else p.delete("shift");
+        history.replaceState(null, "", window.location.pathname + (p.toString() ? "?" + p : ""));
+        document.querySelectorAll('a[href^="?show="]').forEach(function (a) {
+          const q = new URLSearchParams(a.getAttribute("href").slice(1));
+          if (shiftSelect.value) q.set("shift", shiftSelect.value); else q.delete("shift");
+          a.setAttribute("href", "?" + q);
+        });
+        table.draw();
+      });
+      if (shiftSelect.value) shiftSelect.dispatchEvent(new Event("change"));
     }
 });
 </script>

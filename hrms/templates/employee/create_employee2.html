@@ -598,6 +598,39 @@
                         <span class="input-group-text">to</span>
                         {{ form.shift_end_time|add_class:"form-control" }}
                       </div>
+                      <div class="form-text" id="shiftSummary" aria-live="polite"></div>
+                      <script>
+                      (function () {
+                        var start = document.getElementById("{{ form.shift_start_time.id_for_label }}");
+                        var end = document.getElementById("{{ form.shift_end_time.id_for_label }}");
+                        var out = document.getElementById("shiftSummary");
+                        if (!start || !end || !out) return;
+                        function fmt(v) {
+                          var m = /^(\d{1,2}):(\d{2})/.exec(v || "");
+                          if (!m) return "";
+                          var h = +m[1], mm = m[2], ap = h < 12 ? "AM" : "PM";
+                          h = h % 12 || 12;
+                          return h + (mm === "00" ? "" : ":" + mm) + " " + ap;
+                        }
+                        function update() {
+                          var a = fmt(start.value), b = fmt(end.value);
+                          if (!a || !b) { out.textContent = ""; return; }
+                          var overnight = end.value < start.value;
+                          out.innerHTML = "";
+                          var strong = document.createElement("strong");
+                          strong.textContent = a + " to " + b;
+                          out.appendChild(strong);
+                          if (overnight) out.appendChild(document.createTextNode(" (ends next day)"));
+                        }
+                        ["input", "change"].forEach(function (ev) {
+                          start.addEventListener(ev, update);
+                          end.addEventListener(ev, update);
+                        });
+                        var modal = document.getElementById("employeeModal");
+                        if (modal) modal.addEventListener("shown.bs.modal", update);
+                        update();
+                      })();
+                      </script>
                     </div>
                   </div>
                   <div class="col-md-4">

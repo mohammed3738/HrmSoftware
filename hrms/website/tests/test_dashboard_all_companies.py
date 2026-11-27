@@ -46,3 +46,14 @@ class DashboardAllCompaniesTest(TestCase):
         for role in ("Payroll Officer", "HR", "Admin"):
             with self.subTest(role=role):
                 self.assert_sees_other_company(self.login(role).get(reverse("admin-dashboard")))
+
+    def test_absentee_without_a_company_does_not_break_the_page(self):
+        """Live 500: an absent employee with no company made the Company
+        column's |default: argument fail on None."""
+        Employee.objects.create(company=None, first_name="No", last_name="Company", employee_code="NOCO1",
+                                date_of_joining=date(2020, 1, 1), status="Active")
+        resp = self.login("Employee").get(reverse("employee-dashboard"))
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("NOCO1", [a.employee.employee_code for a in resp.context["absent_employees_today"]])
+        resp = self.login("Admin").get(reverse("admin-dashboard"))
+        self.assertEqual(resp.status_code, 200)

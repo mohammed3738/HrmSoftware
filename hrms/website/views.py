@@ -2861,8 +2861,10 @@ def admin_dashboard(request):
     # ── Today's attendance breakdown ─────────────────────────────
     today_attn   = Attendance.objects.filter(employee__in=active_qs, date=today)
     present_today   = today_attn.filter(status__in=['Present', 'Late Present', 'Half Day']).count()
-    absent_employees_today = _absent_today(active_qs, today)
-    absent_today    = len(absent_employees_today)
+    # The KPI counts this company's people; the Absent Today list below
+    # shows everyone across every company in the group, like birthdays.
+    absent_employees_today = _absent_today(Employee.objects.all(), today)
+    absent_today    = len(_absent_today(active_qs, today) if company_filter else absent_employees_today)
     late_today      = today_attn.filter(status='Late Present').count()
     on_leave_today  = today_attn.filter(status='On Leave').count()
     not_marked      = total_active - today_attn.count()
@@ -4210,7 +4212,8 @@ def employee_dashboard(request):
 
     today_attendance = Attendance.objects.filter(employee=employee, date=today).first()
 
-    absent_employees_today = _absent_today(Employee.objects.filter(company=employee.company), today)
+    # Everyone absent today across every company in the group, like birthdays.
+    absent_employees_today = _absent_today(Employee.objects.all(), today)
 
     period_from, period_to = _current_payroll_period(employee.company)
     if not period_from:

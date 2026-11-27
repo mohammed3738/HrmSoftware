@@ -105,7 +105,7 @@ class EmployeeDashboardTest(TestCase):
         resp = self.client.get(reverse("my_profile"))
         self.assertRedirects(resp, reverse("employee_detail", args=[self.employee.pk]))
 
-    def test_absent_employees_today_lists_absentees_in_own_company_only(self):
+    def test_absent_employees_today_lists_absentees_of_every_company(self):
         other_company = Company.objects.create(
             short_name="OTH", name="Other Co", phone="1", email="oth@test.com", address="Addr",
         )
@@ -123,7 +123,7 @@ class EmployeeDashboardTest(TestCase):
         )
         Attendance.objects.create(employee=absent_colleague, date=date.today(), status="Absent", status_overridden=True)
 
-        # An absentee in a different company must never leak into this list.
+        # Absentees of every company in the group are listed, not only this one.
         other_branch = Branch.objects.create(branch_name="Other Branch")
         other_company_employee = Employee.objects.create(
             company=other_company, branch=other_branch,
@@ -142,4 +142,4 @@ class EmployeeDashboardTest(TestCase):
         resp = self.client.get(reverse("employee-dashboard"))
         codes = [a.employee.employee_code for a in resp.context["absent_employees_today"]]
         self.assertIn("EDT002", codes)
-        self.assertNotIn("OTH001", codes)
+        self.assertIn("OTH001", codes)

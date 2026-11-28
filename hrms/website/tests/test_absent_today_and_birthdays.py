@@ -16,7 +16,7 @@ from django.contrib.auth.models import Group, User
 from django.test import Client, TestCase
 from django.urls import reverse
 
-from website.models import Attendance, Company, Employee, LeaveApplication, PayrollSettings
+from website.models import Attendance, BiometricPunch, Company, Employee, LeaveApplication, PayrollSettings
 from website.views import _absent_today
 
 WEDNESDAY = date(2026, 11, 18)
@@ -55,6 +55,27 @@ class AbsentTodayTest(TestCase):
     def test_working_day(self):
         self.assertEqual(self._codes(WEDNESDAY), {"NOROW": "No punch", "MARKED": "No punch", "LEAVE": "On leave"})
 
+    def test_midnight_placeholder_and_real_midnight_shift(self):
+        Attendance.objects.filter(employee=self.marked_absent).update(in_time=time.min, out_time=time.min, status="Present")
+        Attendance.objects.filter(employee=self.punched).update(in_time=time.min, out_time=time(8))
+        codes = self._codes(WEDNESDAY)
+        self.assertEqual(codes["MARKED"], "No punch")
+        self.assertNotIn("PUNCHED", codes)
+
+    def test_device_check_in_precedes_attendance_rollup(self):
+        BiometricPunch.objects.create(employee=self.no_row, device_user_id="42", punch_date=WEDNESDAY,
+                                      punch_time=time(9), direction="IN")
+        self.assertNotIn("NOROW", self._codes(WEDNESDAY))
+
+    def test_team_roster_list_and_count_use_same_workday(self):
+        from website.views import _team_panel_for
+        Employee.objects.exclude(pk=self.punched.pk).update(manager=self.punched)
+        panel = _team_panel_for(self.punched, WEDNESDAY)
+        self.assertEqual(panel["team_absent_today"], 2)
+        self.assertEqual({r["employee"].employee_code: r["status"] for r in panel["team_today"]},
+                         {"MARKED": "No punch", "NOROW": "No punch", "LEAVE": "On leave"})
+        self.assertEqual(len(panel["absent_employees_today"]), 3)
+
     def test_weekend_lists_nobody(self):
         self.assertEqual(self._codes(SUNDAY), {})
 
@@ -72,9 +93,7 @@ class AbsentTodayTest(TestCase):
         admin.groups.add(Group.objects.get(name="Admin"))
         client = Client()
         client.force_login(admin, backend="django.contrib.auth.backends.ModelBackend")
-        with mock.patch("website.views.date") as d, mock.patch("website.views.now") as n:
-            d.today.return_value = WEDNESDAY
-            d.side_effect = lambda *a, **k: date(*a, **k)
+        with mock.patch("website.views.timezone.localdate", return_value=WEDNESDAY), mock.patch("website.views.now") as n:
             n.return_value.date.return_value = WEDNESDAY
             resp = client.get(reverse("admin-dashboard"))
         self.assertEqual(resp.status_code, 200)

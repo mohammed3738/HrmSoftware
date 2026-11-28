@@ -1,101 +1,49 @@
-{% extends 'base2.html' %} {% block body %} {% load static %} {% load custom_filters %}
+{% extends 'base2.html' %} {% block title %}{{ display.full_name }}{% endblock %} {% block body %} {% load static %} {% load custom_filters %}
 
 <!-- Content -->
 
-<div class="container-xxl flex-grow-1 container-p-y">
-  <!-- Header -->
-  <div class="row">
-    <div class="col-12">
-      <div class="card mb-6">
-        {% comment %} <div class="user-profile-header-banner">
-          <img src="{% static "assets/img/pages/profile-banner.png" %}"
-          alt="Banner image" class="rounded-top" />
-        </div> {% endcomment %}
-        <div
-          class="user-profile-header d-flex flex-column flex-sm-row text-sm-start text-center mb-5"
-        >
-          <div class="flex-shrink-0 mt-n2 mx-sm-0 mx-auto">
-            <img
-              src="{% if display.photo_url %}{{ display.photo_url }}{% else %}{% static "assets/img/avatars/1.png" %}{% endif %}"
-              alt="{{ display.full_name }}"
-              class="d-block ms-0 ms-sm-5 rounded-4 user-profile-img"
-              style="width:120px;height:120px;object-fit:cover;"
-            />
-          </div>
-          <div class="flex-grow-1 mt-4 mt-sm-12">
-            <div
-              class="d-flex align-items-md-end align-items-sm-start align-items-center justify-content-md-between justify-content-start mx-5 flex-md-row flex-column gap-6"
-            >
-              <div class="user-profile-info">
-                <h4 class="mb-2">{{ display.full_name }}</h4>
-                <ul
-                  class="list-inline mb-0 d-flex align-items-center flex-wrap justify-content-sm-start justify-content-center gap-4"
-                >
-                  <li class="list-inline-item">
-                    <i class="ri-user-3-line me-2 ri-24px"></i
-                    ><span class="fw-medium">{{ employee.designation }}</span>
-                  </li>
-                  <li class="list-inline-item">
-                    <i class="ri-building-2-line me-2 ri-24px"></i
-                    ><span class="fw-medium">{{employee.department}}</span>
-                  </li>
-                  <li class="list-inline-item">
-                    <i class="ri-calendar-line me-2 ri-24px"></i
-                    ><span class="fw-medium">{{ employee.date_of_joining }}</span>
-                  </li>
-                </ul>
-                <h3 class="mt-4" style="color: #666cff;">{{ employee.company }}</h3>
-              </div>
-              {% comment %} <a href="javascript:void(0)" class="btn btn-primary">
-                <i class="ri-user-follow-line ri-16px me-2"></i>Connected
-              </a> {% endcomment %}
-            </div>
-          </div>
-        </div>
-      </div>
+<div class="container-xxl flex-grow-1 container-p-y profile-workspace">
+  {% if request.user|has_feature:"employee_records:view" %}
+  <a class="atlas-back-link" href="{% url 'employee_list' %}"><i class="ri-arrow-left-line" aria-hidden="true"></i> Employee directory</a>
+  {% endif %}
+  <header class="atlas-person-heading">
+    {% if display.photo_url %}<img src="{{ display.photo_url }}" alt="" class="atlas-profile-photo rounded-circle">
+    {% else %}<span class="atlas-initials" aria-hidden="true">{{ employee.first_name|slice:":1" }}{{ employee.last_name|slice:":1" }}</span>{% endif %}
+    <div>
+      <h1>{{ display.full_name }}</h1>
+      <p>{% if employee.designation %}{{ employee.designation }}{% endif %}{% if employee.department %} · {{ employee.department }}{% endif %}{% if employee.company %} · {{ employee.company }}{% endif %}</p>
+      <span class="text-muted small">{{ employee.employee_code }}{% if employee.date_of_joining %} · Joined {{ employee.date_of_joining|date:"j M Y" }}{% endif %}</span>
     </div>
-  </div>
-  <!--/ Header -->
-
-  <!-- Navbar pills -->
-  <div class="row">
-    <div class="col-md-12">
-      <div class="nav-align-top">
-        <ul class="nav nav-pills flex-column flex-sm-row mb-6 row-gap-2">
-          <li class="nav-item">
-            <a class="nav-link active" href="javascript:void(0);"
-              ><i class="ri-user-3-line me-2"></i>Profile</a
-            >
-          </li>
-          {% comment %} <li class="nav-item">
-            <a class="nav-link" href="pages-profile-teams.html"
-              ><i class="ri-team-line me-2"></i>Teams</a
-            >
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="pages-profile-projects.html"
-              ><i class="ri-computer-line me-2"></i>Projects</a
-            >
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="pages-profile-connections.html"
-              ><i class="ri-link-m me-2"></i>Connections</a
-            >
-          </li> {% endcomment %}
-        </ul>
-      </div>
+    <div class="atlas-actions">{% if employee.status == "Active" or employee.pk == request.user.employee_profile.pk %}<a class="personal-pill" href="{% url 'org-chart' %}?employee={{ employee.pk }}">View org chart</a>{% endif %}
+    {% if request.user|has_feature:"employee_records:edit" %}
+    <a class="btn btn-outline-primary" href="{% url 'employee_edit' employee.id %}">Edit employee</a>
+    {% endif %}
     </div>
-  </div>
-  <!--/ Navbar pills -->
+  </header>
 
+  <nav class="profile-sections" aria-label="Profile sections">
+    <a href="#profile-overview">Overview</a><a href="#profile-personal">Personal details</a>
+    <a href="#profile-documents">Documents &amp; history</a><a href="#profile-pay">Salary</a>
+  </nav>
+  <div class="profile-grid" id="profile-overview">
+    <section class="personal-card"><header><h2>Employment</h2><small>{{ employee.status }}</small></header>
+      <dl class="profile-facts">
+        <div><dt>Branch</dt><dd>{{ employee.branch|default:"—" }}</dd></div>
+        <div><dt>Location</dt><dd>{{ employee.location|default:"—" }}</dd></div>
+        <div><dt>Date of confirmation</dt><dd>{{ employee.date_of_confirmation|date:"j M Y"|default:"—" }}</dd></div>
+        <div><dt>Weekly off</dt><dd>{% if employee.week_off_day is not None %}{{ employee.get_week_off_day_display }}{% else %}Company default{% endif %}</dd></div>
+        <div><dt>Shift</dt><dd>{% if employee.is_night_shift %}Night shift (crosses midnight){% else %}Day shift{% endif %}{% if employee.shift_start_time or employee.shift_end_time %} · {{ employee.shift_start_time|time:"H:i"|default:"—" }} – {{ employee.shift_end_time|time:"H:i"|default:"—" }}{% endif %}</dd></div>
+        {% if employee.biometric_device_user_id %}<div><dt>Device ID</dt><dd>{{ employee.biometric_device_user_id }}</dd></div>{% endif %}
+      </dl>
+    </section>
   <!-- Onboarding -->
-  <div class="card mb-6">
+  <div class="card">
     <div class="card-body">
       {% include "employee/_onboarding_bar.html" with progress=onboarding %}
       {% if not onboarding.complete %}
-      <div class="row g-3 mt-1">
+      <details class="profile-checklist"><summary>Onboarding checklist</summary><div class="row g-3 mt-1">
         {% for sec in onboarding.sections %}
-        <div class="col-sm-6 col-lg-4">
+        <div class="col-sm-6">
           <div class="d-flex align-items-start gap-2">
             {% if sec.done == sec.count %}
             <i class="ri-checkbox-circle-fill text-success fs-5"></i>
@@ -113,7 +61,7 @@
           </div>
         </div>
         {% endfor %}
-      </div>
+      </div></details>
       {% endif %}
       {% if pending_change %}
       <div class="alert alert-warning py-2 small mt-3 mb-0">
@@ -125,316 +73,57 @@
     </div>
   </div>
 
+  </div>
   <!-- Reporting line -->
-  <div class="mb-6">
+  <div class="profile-reporting">
     {% include "employee/_reporting_line.html" with subject=employee heading="Reporting Line" %}
   </div>
 
-  <!-- User Profile Content -->
-  <div class="row">
-    <div class="col-xl-4 col-lg-5 col-md-5">
-      <!-- About User -->
-      <div class="card mb-6">
-        <div class="card-body">
-          <small class="card-text text-uppercase text-muted small">
-            <i class="ri-building-4-line ri-24px"></i>
-          About</small> 
-            {% comment %} <div class="card-header align-items-center">
-          <h5 class="card-action-title mb-0">
-            <i class="ri-profile-line ri-24px text-body me-4"></i>Personal Info
-          </h5>
-        </div> {% endcomment %}
-          <ul class="list-unstyled my-3 py-1">
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-id-card-line ri-24px"></i
-              ><span class="fw-medium mx-2">Employee Code:</span>
-              <span>{{ employee.employee_code }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-building-line ri-24px"></i
-              ><span class="fw-medium mx-2">Branch :</span>
-              <span>{{ employee.branch }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-briefcase-4-line ri-24px"></i
-              ><span class="fw-medium mx-2">Designation:</span>
-              <span>{{ employee.designation }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-building-2-line ri-24px"></i
-              ><span class="fw-medium mx-2">Department</span>
-              <span>{{ employee.department }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-calendar-check-line ri-24px"></i
-              ><span class="fw-medium mx-2">Date of Joining:</span>
-              <span>{{ employee.date_of_joining }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-calendar-todo-line ri-24px"></i
-              ><span class="fw-medium mx-2">Date of Confirmation:</span>
-              <span>{{ employee.date_of_confirmation }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-map-pin-line ri-24px"></i
-              ><span class="fw-medium mx-2">Location:</span>
-              <span>{{ employee.location }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-time-line ri-24px"></i
-              ><span class="fw-medium mx-2">Shift:</span>
-              <span>{{ employee.shift_start_time }} - {{ employee.shift_end_time }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-calendar-close-line ri-24px"></i
-              ><span class="fw-medium mx-2">Weekly Off:</span>
-              <span>{% if employee.week_off_day is not None %}{{ employee.get_week_off_day_display }}{% else %}Company default{% endif %}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-moon-line ri-24px"></i
-              ><span class="fw-medium mx-2">Shift Pattern:</span>
-              <span>{% if employee.is_night_shift %}Night shift (crosses midnight){% else %}Day shift{% endif %}{% if employee.biometric_device_user_id %} &middot; device ID {{ employee.biometric_device_user_id }}{% endif %}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              <i class="ri-check-line ri-24px"></i
-              ><span class="fw-medium mx-2">Status:</span>
-              <span>{{ employee.status }}</span>
-            </li>
-          </ul>
-          <small class="card-text text-uppercase text-muted small"
-            >
-            <i class="ri-shield-user-line ri-24px"></i>
-            Statutory Details</small
-          >
-          <ul class="list-unstyled my-3 py-1">
-            <li class="d-flex align-items-center mb-4">
-              {% comment %} <i class="ri-building-4-line ri-24px"></i> {% endcomment %}
-              <span class="fw-medium mx-2">PAN No:</span>
-              <span>{{ employee.pan_no }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
-              <span class="fw-medium mx-2">Aadhar No:</span>
-              <span>{{ employee.aadhar_no }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
-              <span class="fw-medium mx-2">Voter ID:</span>
-              <span>{{ employee.voter_id }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
-              <span class="fw-medium mx-2">Passport No:</span>
-              <span>{{ employee.passport }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
-              <span class="fw-medium mx-2">UAN No:</span>
-              <span>{{ employee.uan_no }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
-              <span class="fw-medium mx-2">PF No:</span>
-              <span>{{ employee.pf_no }}</span>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              {% comment %} <i class="ri-phone-line ri-24px"></i> {% endcomment %}
-              <span class="fw-medium mx-2">ESIC No:</span>
-              <span>{{ employee.esic_no }}</span>
-            </li>
-          </ul>
-          <small class="card-text text-uppercase text-muted small">
-            <i class="ri-bank-line ri-24px"></i>
-            Bank Details</small>
-          <ul class="list-unstyled mb-0 mt-3 pt-1">
-            <li class="d-flex align-items-center mb-4">
-              {% comment %} <i class="ri-github-line ri-24px text-body me-2"></i> {% endcomment %}
-              <div class="d-flex flex-wrap">
-                <span class="fw-medium me-2">Bank Name:</span
-                ><span>{{employee.name_as_per_bank}}</span>
-              </div>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              {% comment %} <i class="ri-github-line ri-24px text-body me-2"></i> {% endcomment %}
-              <div class="d-flex flex-wrap">
-                <span class="fw-medium me-2">Account Number:</span
-                ><span>{{employee.salary_account_number}}</span>
-              </div>
-            </li>
-            <li class="d-flex align-items-center mb-4">
-              {% comment %} <i class="ri-github-line ri-24px text-body me-2"></i> {% endcomment %}
-              <div class="d-flex flex-wrap">
-                <span class="fw-medium me-2">IFSC Code:</span
-                ><span>{{employee.ifsc_code}}</span>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </div>
-      <!--/ About User -->
-      <!-- Profile Overview -->
-      <!--/ Profile Overview -->
-    </div>
-    <div class="col-xl-8 col-lg-7 col-md-7">
-      <!-- Activity Timeline -->
-      <div class="card card-action mb-6">
-        <div class="card-header align-items-center">
-          <h5 class="card-action-title mb-0">
-            <i class="ri-profile-line ri-24px text-body me-4"></i>Personal Info
-          </h5>
-        </div>
-        <div class="card-body pt-0">
-         <div class="row">
-          <!-- LEFT COLUMN -->
-          <div class="col-md-6">
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-account-circle-line ri-24px"></i>
-              <span class="fw-medium mx-2">Full Name:</span>
-              <span>{{ display.full_name }}</span>
-            </div>
-
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-user-line ri-24px"></i>
-              <span class="fw-medium mx-2">Gender:</span>
-              <span>{{ employee.gender }}</span>
-            </div>
-
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-heart-pulse-line ri-24px"></i>
-              <span class="fw-medium mx-2">Blood Group:</span>
-              <span>{{ employee.blood_group }}</span>
-            </div>
-          </div>
-
-          <!-- RIGHT COLUMN -->
-          <div class="col-md-6">
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-user-2-line ri-24px"></i>
-              <span class="fw-medium mx-2">Father Name:</span>
-              <span>{{ employee.father_name }}</span>
-            </div>
-
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-briefcase-4-line ri-24px"></i>
-              <span class="fw-medium mx-2">Role:</span>
-              <span>{{ employee.designation }}</span>
-            </div>
-
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-cake-2-line ri-24px"></i>
-              <span class="fw-medium mx-2">Date of Birth:</span>
-              <span>{{ employee.date_of_birth }}</span>
-            </div>
-          </div>
-
-          <!-- Now back to 2-column layout for the rest -->
-
-          <div class="col-md-6">
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-mail-open-line ri-24px"></i>
-              <span class="fw-medium mx-2">Personal Email:</span>
-              <span>{{ employee.personal_email }}</span>
-            </div>
-          </div>
-
-          <div class="col-md-6">
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-smartphone-line ri-24px"></i>
-              <span class="fw-medium mx-2">Personal Mobile:</span>
-              <span>{{ employee.personal_mobile }}</span>
-            </div>
-          </div>
-
-          <!-- FULL WIDTH ROW: Present Address -->
-          <div class="col-12">
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-map-pin-line ri-24px"></i>
-              <span class="fw-medium mx-2">Present Address:</span>
-              <span>{{ employee.present_address }}</span>
-            </div>
-          </div>
-
-          <!-- FULL WIDTH ROW: Permanent Address -->
-          <div class="col-12">
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-home-4-line ri-24px"></i>
-              <span class="fw-medium mx-2">Permanent Address:</span>
-              <span>{{ employee.permanent_address }}</span>
-            </div>
-          </div>
-
-          <div class="col-md-6">
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-calendar-event-line ri-24px"></i>
-              <span class="fw-medium mx-2">Date of Marriage:</span>
-              <span>{{ employee.date_of_marriage }}</span>
-            </div>
-          </div>
-
-        <div class="card-header align-items-center">
-          <h5 class="card-action-title mb-0">
-            <i class="ri-contacts-book-line ri-24px text-body me-4"></i>Emergency Contact Details
-          </h5>
-        </div>
-        <div class="card-body pt-0">
-         <div class="row">
-          <!-- LEFT COLUMN -->
-          <div class="col-md-6">
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-account-circle-line ri-24px"></i>
-              <span class="fw-medium mx-2">Contact Name:</span>
-              <span>{{ employee.emergency_contact_name1 }}</span>
-            </div>
-
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-user-line ri-24px"></i>
-              <span class="fw-medium mx-2">Relation:</span>
-              <span>{{ employee.emergency_contact_relation1 }}</span>
-            </div>
-
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-phone-line ri-24px"></i>
-              <span class="fw-medium mx-2">Mobile No:</span>
-              <span>{{ employee.emergency_contact_mobile1 }}</span>
-            </div>
-          </div>
-
-          <!-- RIGHT COLUMN -->
-          <div class="col-md-6">
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-account-circle-line ri-24px"></i>
-              <span class="fw-medium mx-2">Contact Name:</span>
-              <span>{{ employee.emergency_contact_name2 }}</span>
-            </div>
-
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-user-line ri-24px"></i>
-              <span class="fw-medium mx-2">Relation:</span>
-              <span>{{ employee.emergency_contact_relation2 }}</span>
-            </div>
-
-            <div class="mb-4 d-flex align-items-center">
-              <i class="ri-phone-line ri-24px"></i>
-              <span class="fw-medium mx-2">Mobile No:</span>
-              <span>{{ employee.emergency_contact_mobile2 }}</span>
-            </div>
-          </div>
-</div>
-
-        </div>
-      </div>
-      <!--/ Activity Timeline -->
-
-      
-      
+  <div class="profile-grid" id="profile-personal">
+    <section class="personal-card"><header><h2>Personal details</h2></header>
+      <dl class="profile-facts">
+        <div><dt>Full name</dt><dd>{{ display.full_name }}</dd></div>
+        <div><dt>Gender</dt><dd>{{ employee.gender|default:"—" }}</dd></div>
+        <div><dt>Date of birth</dt><dd>{{ employee.date_of_birth|default:"—" }}</dd></div>
+        <div><dt>Blood group</dt><dd>{{ employee.blood_group|default:"—" }}</dd></div>
+        <div><dt>Father’s name</dt><dd>{{ employee.father_name|default:"—" }}</dd></div>
+        <div><dt>Date of marriage</dt><dd>{{ employee.date_of_marriage|default:"—" }}</dd></div>
+        <div><dt>Personal email</dt><dd>{{ employee.personal_email|default:"—" }}</dd></div>
+        <div><dt>Mobile</dt><dd>{{ employee.personal_mobile|default:"—" }}</dd></div>
+        <div><dt>Present address</dt><dd>{{ employee.present_address|default:"—" }}</dd></div>
+        <div><dt>Permanent address</dt><dd>{{ employee.permanent_address|default:"—" }}</dd></div>
+      </dl>
+    </section>
+    <div class="personal-stack">
+    <section class="personal-card"><header><h2>Emergency contacts</h2></header>
+      {% if employee.emergency_contact_name1 or employee.emergency_contact_relation1 or employee.emergency_contact_mobile1 %}
+      <div class="personal-line"><div><b>{{ employee.emergency_contact_name1|default:"Contact 1" }}</b><small>{{ employee.emergency_contact_relation1 }}</small></div><span>{{ employee.emergency_contact_mobile1|default:"—" }}</span></div>{% endif %}
+      {% if employee.emergency_contact_name2 or employee.emergency_contact_relation2 or employee.emergency_contact_mobile2 %}
+      <div class="personal-line"><div><b>{{ employee.emergency_contact_name2|default:"Contact 2" }}</b><small>{{ employee.emergency_contact_relation2 }}</small></div><span>{{ employee.emergency_contact_mobile2|default:"—" }}</span></div>{% endif %}
+      {% if not employee.emergency_contact_name1 and not employee.emergency_contact_relation1 and not employee.emergency_contact_mobile1 and not employee.emergency_contact_name2 and not employee.emergency_contact_relation2 and not employee.emergency_contact_mobile2 %}<p>No emergency contacts recorded.</p>{% endif %}
+    </section>
+    <section class="personal-card"><header><h2>Bank details</h2></header>
+      <dl class="profile-facts">
+        <div><dt>Account holder</dt><dd>{{ employee.name_as_per_bank|default:"—" }}</dd></div>
+        <div><dt>Account number</dt><dd>{{ employee.salary_account_number|default:"—" }}</dd></div>
+        <div><dt>IFSC</dt><dd>{{ employee.ifsc_code|default:"—" }}</dd></div>
+      </dl>
+    </section>
+    <section class="personal-card"><header><h2>Statutory details</h2></header>
+      <dl class="profile-facts">
+        <div><dt>PAN</dt><dd>{{ employee.pan_no|default:"—" }}</dd></div>
+        <div><dt>Aadhaar</dt><dd>{{ employee.aadhar_no|default:"—" }}</dd></div>
+        <div><dt>Voter ID</dt><dd>{{ employee.voter_id|default:"—" }}</dd></div>
+        <div><dt>Passport</dt><dd>{{ employee.passport|default:"—" }}</dd></div>
+        <div><dt>UAN</dt><dd>{{ employee.uan_no|default:"—" }}</dd></div>
+        <div><dt>PF number</dt><dd>{{ employee.pf_no|default:"—" }}</dd></div>
+        <div><dt>ESIC number</dt><dd>{{ employee.esic_no|default:"—" }}</dd></div>
+      </dl>
+    </section>
     </div>
   </div>
-  <!--/ User Profile Content -->
-<div class="row" style="padding: 14px">
-
-  <div class="card mb-4">
-    <div class="card-body">
-
+  <section id="profile-documents" class="personal-card">
+    <header><h2>Documents &amp; history</h2></header>
       <!-- ================= TABS HEADER ================= -->
       <ul class="nav nav-tabs mb-3" role="tablist">
         <li class="nav-item" role="presentation">
@@ -661,362 +350,10 @@
 
         </div>
         {% endif %}
-
       </div>
-
-    </div>
-  </div>
-
-</div>
-          <!--/ Projects table -->
-
-
-
-          
-        <!-- Connections -->
-        {% comment %} <div class="col-lg-12 col-xl-6">
-          <div class="card card-action mb-6">
-            <div class="card-header align-items-center">
-              <h5 class="card-action-title mb-0">Teams</h5>
-              <div class="card-action-element">
-                <div class="dropdown">
-                  <button
-                    type="button"
-                    class="btn dropdown-toggle hide-arrow p-0"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
-                  >
-                    <i class="ri-more-2-line ri-24px text-muted"></i>
-                  </button>
-                  <ul class="dropdown-menu dropdown-menu-end">
-                    <li>
-                      <a class="dropdown-item" href="javascript:void(0);"
-                        >Share teams</a
-                      >
-                    </li>
-                    <li>
-                      <a class="dropdown-item" href="javascript:void(0);"
-                        >Suggest edits</a
-                      >
-                    </li>
-                    <li>
-                      <hr class="dropdown-divider" />
-                    </li>
-                    <li>
-                      <a class="dropdown-item" href="javascript:void(0);"
-                        >Report bug</a
-                      >
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <div class="card-body">
-              <ul class="list-unstyled mb-0">
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/icons/brands/react-label.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">React Developers</h6>
-                        <small>72 Members</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <a href="javascript:;"
-                        ><span class="badge bg-label-danger rounded-pill"
-                          >Developer</span
-                        ></a
-                      >
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/icons/brands/support-label.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">Support Team</h6>
-                        <small>122 Members</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <a href="javascript:;"
-                        ><span class="badge bg-label-primary rounded-pill"
-                          >Support</span
-                        ></a
-                      >
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/icons/brands/figma-label.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">UI Designers</h6>
-                        <small>7 Members</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <a href="javascript:;"
-                        ><span class="badge bg-label-info rounded-pill"
-                          >Designer</span
-                        ></a
-                      >
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/icons/brands/vue-label.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">Vue.js Developers</h6>
-                        <small>289 Members</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <a href="javascript:;"
-                        ><span class="badge bg-label-danger rounded-pill"
-                          >Developer</span
-                        ></a
-                      >
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-5">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/icons/brands/twitter-label.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-w">
-                        <h6 class="mb-1">Digital Marketing</h6>
-                        <small>24 Members</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <a href="javascript:;"
-                        ><span class="badge bg-label-secondary rounded-pill"
-                          >Marketing</span
-                        ></a
-                      >
-                    </div>
-                  </div>
-                </li>
-                <li class="text-center">
-                  <a href="javascript:;">View all teams</a>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div> {% endcomment %}
-        <!--/ Connections -->
-        <!-- Teams -->
-        {% comment %} <div class="col-lg-12 col-xl-6">
-          <div class="card card-action mb-6">
-            <div class="card-header align-items-center">
-              <h5 class="card-action-title mb-0">Teams</h5>
-              <div class="card-action-element">
-                <div class="dropdown">
-                  <button
-                    type="button"
-                    class="btn dropdown-toggle hide-arrow p-0"
-                    data-bs-toggle="dropdown"
-                    aria-expanded="false"
-                  >
-                    <i class="ri-more-2-line ri-24px text-muted"></i>
-                  </button>
-                  <ul class="dropdown-menu dropdown-menu-end">
-                    <li>
-                      <a class="dropdown-item" href="javascript:void(0);"
-                        >Share teams</a
-                      >
-                    </li>
-                    <li>
-                      <a class="dropdown-item" href="javascript:void(0);"
-                        >Suggest edits</a
-                      >
-                    </li>
-                    <li>
-                      <hr class="dropdown-divider" />
-                    </li>
-                    <li>
-                      <a class="dropdown-item" href="javascript:void(0);"
-                        >Report bug</a
-                      >
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <div class="card-body">
-              <ul class="list-unstyled mb-0">
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/icons/brands/react-label.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">React Developers</h6>
-                        <small>72 Members</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <a href="javascript:;"
-                        ><span class="badge bg-label-danger rounded-pill"
-                          >Developer</span
-                        ></a
-                      >
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/icons/brands/support-label.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">Support Team</h6>
-                        <small>122 Members</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <a href="javascript:;"
-                        ><span class="badge bg-label-primary rounded-pill"
-                          >Support</span
-                        ></a
-                      >
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/icons/brands/figma-label.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">UI Designers</h6>
-                        <small>7 Members</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <a href="javascript:;"
-                        ><span class="badge bg-label-info rounded-pill"
-                          >Designer</span
-                        ></a
-                      >
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-4">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/icons/brands/vue-label.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-2">
-                        <h6 class="mb-1">Vue.js Developers</h6>
-                        <small>289 Members</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <a href="javascript:;"
-                        ><span class="badge bg-label-danger rounded-pill"
-                          >Developer</span
-                        ></a
-                      >
-                    </div>
-                  </div>
-                </li>
-                <li class="mb-5">
-                  <div class="d-flex align-items-center">
-                    <div class="d-flex align-items-center">
-                      <div class="avatar me-2">
-                        <img
-                          src="../../assets/img/icons/brands/twitter-label.png"
-                          alt="Avatar"
-                          class="rounded-circle"
-                        />
-                      </div>
-                      <div class="me-w">
-                        <h6 class="mb-1">Digital Marketing</h6>
-                        <small>24 Members</small>
-                      </div>
-                    </div>
-                    <div class="ms-auto">
-                      <a href="javascript:;"
-                        ><span class="badge bg-label-secondary rounded-pill"
-                          >Marketing</span
-                        ></a
-                      >
-                    </div>
-                  </div>
-                </li>
-                <li class="text-center">
-                  <a href="javascript:;">View all teams</a>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div> {% endcomment %}
-        <!--/ Teams -->
-      </div>
-
-</div>
-
-
-<!-- ================= SALARY DETAILS ================= -->
-<div class="row mt-4">
-
+  </section>
+  <section id="profile-pay" class="profile-pay"><h2>Salary</h2>
+  {% if salary %}<div class="row g-3">
   <!-- LEFT : SALARY SUMMARY -->
   <div class="col-md-4">
     <div class="card h-100">
@@ -1187,5 +524,8 @@
 
 
 
+{% else %}<p class="personal-card">No active salary structure recorded.</p>{% endif %}
+  </section>
+</div>
 <!--/ Content -->
 {% endblock %}

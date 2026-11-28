@@ -4,13 +4,15 @@
   <div class="row g-3">
     <!-- Branch Name -->
     <div class="col-md-12">
-      <label class="form-label">Branch Name</label>
+      <label class="form-label" for="{{ form.branch_name.id_for_label }}">Branch Name</label>
       {{ form.branch_name }}
+      {{ form.branch_name.errors }}
     </div>
     <!-- Branch Address -->
     <div class="col-12">
-      <label class="form-label">Branch Address</label>
+      <label class="form-label" for="{{ form.branch_address.id_for_label }}">Branch Address</label>
       {{ form.branch_address }}
+      {{ form.branch_address.errors }}
     </div>
   </div>
 

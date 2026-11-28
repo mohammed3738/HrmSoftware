@@ -1,0 +1,7 @@
+{% if page.has_other_pages %}
+<nav class="atlas-pagination p-3" aria-label="Report pages">
+  <span>{{ page.start_index }}–{{ page.end_index }} of {{ page.paginator.count }}</span>
+  {% if page.has_previous %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.previous_page_number %}">Previous</a>{% endif %}
+  {% if page.has_next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring page=page.next_page_number %}">Next</a>{% endif %}
+</nav>
+{% endif %}

@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,34 +11,25 @@
 
   body {
     font-family: Calibri, Carlito, Helvetica, Arial, sans-serif;
-    font-size: 10pt; color: #000; background-color: #eeeeee; margin: 0; padding: 20px;
+    font-size: 10pt; color: #303c4b; background-color: #eeeeee; margin: 0; padding: 20px;
   }
   body.pdf-mode { background-color: #ffffff; padding: 0; }
-
-  .action-bar { max-width: 1100px; margin: 0 auto 12px auto; text-align: right; }
-  .btn {
-    display: inline-block; padding: 7px 16px; margin-left: 6px; font-size: 13px;
-    color: #fff; text-decoration: none; border: none; border-radius: 4px; cursor: pointer;
-  }
-  .btn-success { background-color: #1a7f3c; }
-  .btn-primary { background-color: #003d99; }
-  .btn-secondary { background-color: #555555; }
 
   .slip { max-width: 1100px; margin: 0 auto; background-color: #ffffff; }
 
   table { width: 100%; border-collapse: collapse; }
   td, th { padding: 2px 4px; vertical-align: top; }
 
-  .bl { border-left: 1px solid #000; }
-  .br { border-right: 1px solid #000; }
-  .bt { border-top: 1px solid #000; }
-  .bb { border-bottom: 1px solid #000; }
+  .bl { border-left: 1px solid #bac5d1; }
+  .br { border-right: 1px solid #bac5d1; }
+  .bt { border-top: 1px solid #bac5d1; }
+  .bb { border-bottom: 1px solid #bac5d1; }
 
   .company { font-size: 16pt; font-weight: bold; text-align: center; padding-top: 8px; }
   .address { text-align: center; padding-top: 4px; padding-bottom: 12px; }
   .logo { text-align: center; padding-top: 10px; }
   .logo img { height: 55px; width: auto; }
-  .title { font-weight: bold; text-align: center; padding: 4px; }
+  .title { color: #194d83; background-color: #edf3fa; font-weight: bold; text-align: center; padding: 4px; }
 
   .lbl { font-weight: bold; }
   .spacer { height: 12px; }
@@ -47,7 +39,7 @@
   .r { text-align: right; }
   .b { font-weight: bold; }
 
-  .net-amount { border-top: 1px solid #000; border-bottom: 1px solid #000; }
+  .net-amount { background-color: #edf3fa; color: #194d83; border-top: 1px solid #bac5d1; border-bottom: 1px solid #bac5d1; }
   .underline2 { font-size: 1pt; line-height: 1pt; padding: 0 4px 0 0; }
   .words { padding: 10px 4px 0 4px; text-align: right; }
   .note { text-align: center; padding-top: 30px; padding-bottom: 10px; }
@@ -62,18 +54,22 @@
 
   @media print {
     body { background-color: #fff; padding: 0; }
-    .action-bar { display: none; }
+    .atlas-document-actions { display: none; }
   }
 </style>
+{% if not is_pdf %}
+<link rel="stylesheet" href="{% static 'css/atlas-tokens.css' %}">
+<link rel="stylesheet" href="{% static 'css/atlas-components.css' %}">
+{% endif %}
 </head>
-<body{% if is_pdf %} class="pdf-mode"{% endif %}>
+<body class="{% if is_pdf %}pdf-mode{% else %}atlas-pay-document{% endif %}">
 
 {% if not is_pdf %}
-<div class="action-bar">
-  <a href="?{{ pdf_query }}" class="btn btn-success">Download PDF</a>
-  <button class="btn btn-primary" onclick="window.print()">Print</button>
-  <a href="javascript:history.back()" class="btn btn-secondary">Back</a>
-</div>
+<nav class="atlas-document-actions" aria-label="Document actions">
+  <a href="{% url 'salary-slips' %}?employee={{ employee.pk }}">Salary slips</a>
+  <button type="button" onclick="window.print()">Print</button>
+  <a class="atlas-download" href="?{{ pdf_query }}">Download PDF</a>
+</nav>
 {% endif %}
 
 <div class="slip">
@@ -133,25 +129,37 @@
 </table>
 
 {% if not is_pdf %}<div class="months-scroll">{% endif %}
-<table class="months">
+{% for group in row_groups %}
+{% if not forloop.first %}
+<pdf:nextpage />
+<p><b>Salary statement</b> &middot; {{ latest.employee_name }} ({{ latest.employee_code }}) &middot; {{ period_label }}</p>
+{% endif %}
+<table class="months" repeat="1">
+  <thead>
   <tr>
     {% for col in columns %}
     <th class="{% if forloop.first %}bl {% endif %}br bt bb" style="width:{{ col.width }}%">{{ col.label }}</th>
     {% endfor %}
   </tr>
-  {% for cells in rows %}
+  </thead>
+  <tbody>
+  {% for cells in group %}
   <tr>
     {% for cell in cells %}
     <td class="{% if forloop.first %}bl {% endif %}br{% if cell.num %} r{% endif %}{% if cell.bold %} b{% endif %}">{{ cell.value|default:"&nbsp;" }}</td>
     {% endfor %}
   </tr>
   {% endfor %}
+  {% if forloop.last %}
   <tr>
     {% for cell in total_cells %}
     <td class="{% if forloop.first %}bl {% endif %}br bt bb{% if cell.num %} r{% endif %} b">{{ cell.value|default:"&nbsp;" }}</td>
     {% endfor %}
   </tr>
+  {% endif %}
+  </tbody>
 </table>
+{% endfor %}
 {% if not is_pdf %}</div>{% endif %}
 
 <table>
@@ -178,7 +186,7 @@
 </table>
 
 <table>
-  <tr><td class="bl br bb note">This is computer generated Salary statement doesn&#8217;t require signature</td></tr>
+  <tr><td class="bl br bb note">This computer-generated salary statement requires no signature.</td></tr>
 </table>
 
 </div>

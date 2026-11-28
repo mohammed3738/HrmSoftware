@@ -27,11 +27,12 @@ from django.core.paginator import Paginator
 from dateutil.relativedelta import relativedelta
 from django.template.loader import render_to_string
 from django.utils import timezone    
+from django.utils.formats import date_format
 from django.views.decorators.csrf import csrf_exempt
 from django.db.models import Sum
 # from .signals import recalculate_leave_balance_for_employee
 from django.db.models import Q
-from django.db.models import Case, IntegerField, When
+from django.db.models import Case, Exists, F, IntegerField, OuterRef, When
 import io
 import os
 from django.http import FileResponse, Http404
@@ -1988,12 +1989,54 @@ def employee_attendance_detail(request, employee_id):
         calendar_start = today.replace(day=1)
         calendar_end = (calendar_start + relativedelta(months=1)) - timedelta(days=1)
 
-    calendar_attendance = {
-        a.date.isoformat(): a.status
-        for a in Attendance.objects.filter(
-            employee=employee, date__gte=calendar_start, date__lte=calendar_end
-        ).only("date", "status")
-    }
+    period_links = {}
+    if uses_custom_period:
+        earlier = [period["to_date"] for period in payroll_periods if period["to_date"] < calendar_end]
+        later = [period["to_date"] for period in payroll_periods if period["to_date"] > calendar_end]
+        if earlier:
+            period_links["previous"] = "?period=" + max(earlier).isoformat()
+        if later:
+            period_links["next"] = "?period=" + min(later).isoformat()
+    else:
+        for label, offset in (("previous", -1), ("next", 1)):
+            if 1 < calendar_end.year < 9999:
+                month = calendar_end + relativedelta(months=offset)
+                period_links[label] = f"?year={month.year}&month={month.month}"
+
+    calendar_records = Attendance.objects.filter(
+        employee=employee, date__range=(calendar_start, calendar_end)
+    ).only("date", "status", "in_time", "out_time")
+    calendar_attendance = {}
+    day_details = {}
+    for record in calendar_records:
+        key = record.date.isoformat()
+        calendar_attendance[key] = record.status
+        day_details[key] = {
+            "id": record.pk,
+            "start": record.in_time.strftime("%H:%M") if record.in_time else "",
+            "end": record.out_time.strftime("%H:%M") if record.out_time else "",
+            "worked": record.get_worked_duration_display(),
+        }
+    punches = employee.biometric_punches.filter(punch_date__range=(calendar_start, calendar_end))
+    for row in punches.values("punch_date").annotate(first=Min("punch_time"), last=Max("punch_time")).order_by("punch_date"):
+        detail = day_details.setdefault(row["punch_date"].isoformat(), {})
+        endpoints = [[row["first"].strftime("%H:%M"), "First punch"]]
+        if row["last"] != row["first"]:
+            endpoints.append([row["last"].strftime("%H:%M"), "Last punch"])
+        detail["punches"] = endpoints
+
+    today_local = timezone.localdate()
+    next_monday = today_local + timedelta(days=7 - today_local.weekday())
+    next_sunday = next_monday + timedelta(days=6)
+    shifts = list(employee.shift_assignments.filter(is_active=True, start_date__lte=next_sunday,
+        end_date__gte=next_monday).order_by("-start_date", "-pk"))
+    weekend_policy = PayrollSettings.objects.filter(company=employee.company).values_list("weekend_days", flat=True).first()
+    days_off = week_off_dates_in_range(employee, next_monday, next_sunday, weekend_policy == "sun")
+    next_roster = []
+    for offset in range(7):
+        day = next_monday + timedelta(days=offset)
+        shift = next((item for item in shifts if item.start_date <= day <= item.end_date), None)
+        next_roster.append({"day": day, "shift": shift, "off": day in days_off})
 
     context = {
         "employee": employee,
@@ -2017,6 +2060,10 @@ def employee_attendance_detail(request, employee_id):
         "calendar_start": calendar_start,
         "calendar_end": calendar_end,
         "calendar_attendance_json": json_for_script(calendar_attendance),
+        "period_links": period_links,
+        "day_details": day_details,
+        "next_roster": next_roster,
+        "today_local": today_local,
         "page_size": page_size,
         "page_size_choices": PAGE_SIZE_CHOICES,
         "from_date": date_from.isoformat() if date_from else "",
@@ -2081,9 +2128,11 @@ def employee_search(request):
 
     employees = apply_employee_search(Employee.objects.all(), q, prefix="")
 
-    company_filter = get_company_filter(request.user)
-    if company_filter:
-        employees = employees.filter(company=company_filter)
+    if not user_has_global_access(request.user):
+        company = get_user_company(request.user)
+        if company is None:
+            return JsonResponse([], safe=False)
+        employees = employees.filter(company=company)
 
     # Someone who has left is still worth finding -- their old attendance
     # and payroll are still being looked at -- but the living come first.
@@ -2437,17 +2486,27 @@ def attendance_correction_requests_list(request):
         except ValueError:
             pass
 
-    # Final ordering
-    qs = qs.order_by("-created_at")
-
-    # Build rows (your same structure)
+    search = request.GET.get("q", "").strip()
+    for word in search.split():
+        qs = qs.filter(Q(attendance__employee__first_name__icontains=word)
+                       | Q(attendance__employee__last_name__icontains=word)
+                       | Q(attendance__employee__employee_code__icontains=word)
+                       | Q(reason__icontains=word))
+    counts = dict(qs.values_list("status").annotate(total=Count("pk")).order_by())
+    status = request.GET.get("status", "")
+    if status in ("Pending", "Approved", "Rejected"):
+        qs = qs.filter(status=status)
+    else:
+        status = ""
+    page = Paginator(qs.order_by("-created_at", "-pk"), 15).get_page(request.GET.get("page"))
     rows = []
-    for req in qs:
+    for req in page:
         att = req.attendance
         emp = att.employee
 
         rows.append({
-            "id": req.id,
+            "id": req.id, "reason": req.reason, "rejection_reason": req.rejection_reason,
+            "submitted": req.created_at,
             "emp_name": f"{emp.first_name} {emp.last_name}".strip(),
             "emp_code": emp.employee_code,
             "shift_date": att.date,
@@ -2468,7 +2527,9 @@ def attendance_correction_requests_list(request):
 
     # Render
     return render(request, "attendance/attendance_request_status.html", {
-        "can_see_all_requests": can_see_all,
+        "can_see_all_requests": can_see_all, "page": page, "search": search, "status": status,
+        "status_counts": [(label, counts.get(label, 0)) for label in ("Pending", "Approved", "Rejected")],
+        "total_requests": sum(counts.values()),
         "years": years,
         "months": months_qs,
         "selected_year": selected_year,
@@ -2541,7 +2602,7 @@ def attendance_correction_detail(request, pk):
 #             # print(row) 
 #         return render(request, "attendance/comp_off_request.html", { "attendance_requests": rows }) 
 from django.db.models import Count
-from django.db.models.functions import ExtractMonth, ExtractYear
+from django.db.models.functions import ExtractMonth, ExtractYear, Trim
 import calendar        
 
 # def comp_off_requests_list(request):
@@ -2713,6 +2774,8 @@ def comp_off_requests_list(request):
         "attendance/comp_off_request.html",
         {
             "comp_off_requests": rows,
+            "approved_total": sum(row["count"] for row in rows),
+            "pending_total": sum(row["pending"] for row in rows),
             "selected_year": selected_year,
             "selected_month": selected_month,
             "years": years,
@@ -2794,12 +2857,21 @@ def comp_off_requests(request, pk):
 @login_required(login_url="login")
 @feature_required("admin_dashboard", action="view")
 def admin_dashboard(request):
-    today = date.today()
+    today = timezone.localdate()
     user = request.user
     user_company = get_user_company(user)
     company_filter = get_company_filter(user)
 
-    base_qs = Employee.objects.filter(company=company_filter) if company_filter else Employee.objects.all()
+    global_scope = user_has_global_access(user)
+    company_choices = Company.objects.order_by("name") if global_scope else Company.objects.none()
+    selected_company = request.GET.get("company", "")
+    if selected_company and global_scope:
+        if not selected_company.isascii() or not selected_company.isdecimal() or len(selected_company) > 19:
+            raise Http404("Unknown company")
+        company_filter = get_object_or_404(company_choices, pk=int(selected_company))
+    base_qs = Employee.objects.all() if global_scope else Employee.objects.none()
+    if company_filter:
+        base_qs = Employee.objects.filter(company=company_filter)
     active_qs = base_qs.filter(status='Active')
 
     # ── KPI numbers ──────────────────────────────────────────────
@@ -2809,6 +2881,7 @@ def admin_dashboard(request):
     new_joiners_month = active_qs.filter(
         date_of_joining__year=today.year,
         date_of_joining__month=today.month,
+        date_of_joining__lte=today,
     ).count()
 
     pending_leaves      = LeaveApplication.objects.filter(employee__in=active_qs, status='Pending').count()
@@ -2819,27 +2892,36 @@ def admin_dashboard(request):
     total_pending       = pending_leaves + pending_compoffs + pending_corrections
 
     # ── Today's attendance breakdown ─────────────────────────────
-    today_attn   = Attendance.objects.filter(employee__in=active_qs, date=today)
-    present_today   = today_attn.filter(status__in=['Present', 'Late Present', 'Half Day']).count()
-    absent_employees_today = _absent_today(active_qs, today)
-    absent_today    = len(absent_employees_today)
-    late_today      = today_attn.filter(status='Late Present').count()
-    on_leave_today  = today_attn.filter(status='On Leave').count()
-    not_marked      = total_active - today_attn.count()
-
-    # ── Department distribution ───────────────────────────────────
-    dept_data = list(
-        active_qs.exclude(department__isnull=True).exclude(department='')
-        .values('department').annotate(count=Count('id')).order_by('-count')[:8]
+    from collections import Counter
+    attendance_today = _dashboard_attendance(active_qs, today)
+    totals = Counter(row.category for row in attendance_today)
+    absent_employees_today = [row for row in attendance_today if row.remark]
+    attendance_colors = (
+        ("Present", "success"), ("Absent", "danger"), ("Late Present", "warning"),
+        ("On Leave", "accent"), ("Checked in", "success"), ("Field duty", "accent"),
+        ("Weekend", "muted"), ("Holiday", "muted"),
     )
 
+    # ── Department distribution ───────────────────────────────────
+    department_counts = active_qs.annotate(name=Trim("department")).values("name").annotate(
+        count=Count("pk")).order_by("-count", "name")
+    dept_data = []
+    unassigned_count = 0
+    for row in department_counts:
+        if row["name"]:
+            dept_data.append({"department": row["name"], "count": row["count"]})
+        else:
+            unassigned_count += row["count"]
+
+
     # ── Detail lists ──────────────────────────────────────────────
-    recent_joiners = active_qs.filter(date_of_joining__isnull=False).order_by('-date_of_joining')[:6]
+    recent_joiners = active_qs.filter(date_of_joining__lte=today).order_by('-date_of_joining')[:6]
 
     anniversary_employees = active_qs.filter(
         date_of_joining__month=today.month,
         date_of_joining__isnull=False,
-    ).exclude(date_of_joining__year=today.year).order_by('date_of_joining__day')[:5]
+        date_of_joining__lt=date(today.year, 1, 1),
+    ).order_by('date_of_joining__day', 'pk')
 
     # Capped at 50 (rather than showing every pending row) so the dashboard
     # stays fast, while still being generous enough that "select all" in the
@@ -2858,12 +2940,11 @@ def admin_dashboard(request):
     )
     upcoming_offboarding = (
         Offboarding.objects.select_related('employee')
-        .filter(date_of_relieving__gte=today, date_of_relieving__lte=today + timedelta(days=30))
+        .filter(employee__in=base_qs, is_active=True, date_of_relieving__gte=today, date_of_relieving__lte=today + timedelta(days=30))
         .order_by('date_of_relieving')[:5]
     )
 
-    # Birthdays are for everybody, across every company in the group.
-    birthdays = _upcoming_birthdays(Employee.objects.filter(status="Active"), today)
+    birthdays = _upcoming_birthdays(active_qs if selected_company and global_scope else Employee.objects.filter(status="Active"), today)
 
     # Onboarding still short of 100% (Active and Pending staff); each drops
     # off this list the moment its checklist is complete.
@@ -2894,6 +2975,9 @@ def admin_dashboard(request):
         'pending_onboarding_total': pending_onboarding_total,
         'pending_change_requests': pending_change_requests,
         'onboarding_edit_days': ONBOARDING_EDIT_DAYS,
+        'dashboard_company': company_filter,
+        'dashboard_companies': company_choices,
+        'can_filter_company': global_scope,
         'user': user,
         'today': today,
         'user_company': user_company,
@@ -2902,11 +2986,13 @@ def admin_dashboard(request):
         'total_left': total_left,
         'new_joiners_month': new_joiners_month,
         'total_pending': total_pending,
-        'present_today': present_today,
-        'absent_today': absent_today,
-        'late_today': late_today,
-        'on_leave_today': on_leave_today,
-        'not_marked': not_marked,
+        'attendance_headcount': len(attendance_today),
+        'attendance_breakdown': [(label, totals[label], tone) for label, tone in attendance_colors],
+        'present_today': totals["Present"],
+        'absent_today': totals["Absent"],
+        'late_today': totals["Late Present"],
+        'on_leave_today': totals["On Leave"],
+        'not_marked': 0,  # Eligible working-day employees without a punch are counted as absent.
         # Pending counts
         'pending_leaves': pending_leaves,
         'pending_compoffs': pending_compoffs,
@@ -2919,9 +3005,14 @@ def admin_dashboard(request):
         'correction_requests': correction_requests,
         'upcoming_offboarding': upcoming_offboarding,
         'dept_data': dept_data,
+        'unassigned_department_count': unassigned_count,
         'absent_employees_today': absent_employees_today,
         **_dashboard_panels_for(user, active_qs, company_filter),
     })
+
+
+def _without_salary_structure(employees):
+    return employees.exclude(pk__in=SalaryMaster.objects.filter(is_active=True).values("employee_id"))
 
 
 def _dashboard_panels_for(user, active_qs, company_filter):
@@ -2950,6 +3041,7 @@ def _dashboard_panels_for(user, active_qs, company_filter):
         'show_offboarding_panel': allowed("offboarding", "view"),
         'show_change_approvals': allowed("employee_change_approval", "approve"),
         'show_payroll_panel': can_view_payroll,
+        'can_create_salary': allowed('salary_structure', 'create'),
         'can_run_payroll': allowed("payroll", "edit"),
     }
     panels['show_any_approvals'] = any((
@@ -2958,6 +3050,25 @@ def _dashboard_panels_for(user, active_qs, company_filter):
         panels['show_correction_approvals'],
     ))
 
+    if allowed("audit_log", "view"):
+        audit = AuditLog.objects.select_related("actor").order_by("-created_at")
+        audit_company = get_user_company(user)
+        if audit_company:
+            audit = audit.filter(company=audit_company)
+        elif not user_has_global_access(user):
+            audit = audit.none()
+        if company_filter:
+            audit = audit.filter(company=company_filter)
+        panels["dashboard_audit"] = audit[:5]
+    if not company_filter and user_has_global_access(user) and allowed("attendance_data", "edit"):
+        panels["latest_sync"] = BiometricSyncRun.objects.order_by("-started_at").first()
+    if allowed("employee_records", "view"):
+        panels["hr_summary"] = {
+            "company_count": active_qs.exclude(company_id=None).values("company_id").distinct().count(),
+            "branch_count": active_qs.exclude(branch_id=None).values("branch_id").distinct().count(),
+            "department_count": active_qs.exclude(department__isnull=True).exclude(department="").values("department").distinct().count(),
+        }
+
     if not can_view_payroll:
         return panels
 
@@ -2965,13 +3076,13 @@ def _dashboard_panels_for(user, active_qs, company_filter):
     runs = PayrollRun.objects.all()
     if company_filter:
         runs = runs.filter(company=company_filter)
-    recent_runs = list(runs.select_related("company").order_by("-month")[:5])
+    elif not user_has_global_access(user):
+        runs = runs.none()
+    recent_runs = list(runs.select_related("company").order_by("-month", "-pk")[:5])
 
     # An employee with no active salary structure can't be paid, so this is
     # the first thing that blocks a payroll run.
-    employees_without_salary = active_qs.exclude(
-        id__in=SalaryMaster.objects.filter(is_active=True).values("employee_id")
-    ).count()
+    employees_without_salary = _without_salary_structure(active_qs).count()
 
     panels.update({
         'recent_payroll_runs': recent_runs,
@@ -3471,11 +3582,18 @@ def _employee_list_with_onboarding(request, show):
         employees = employees.exclude(status="Archived")
     elif show == "archived":
         employees = employees.filter(status="Archived")
+    if request.GET.get("onboarding") == "pending" and show == "active":
+        employees = employees.filter(status__in=["Active", "Pending"])
+    company_id = request.GET.get("company")
+    if company_id:
+        if not company_id.isascii() or not company_id.isdecimal() or len(company_id) > 18:
+            raise Http404
+        employees = employees.filter(company_id=int(company_id))
     progress = bulk_onboarding_progress(employees)
 
     rows = []
     for e in employees.values("id", "employee_code", "first_name", "last_name", "gender", "status", "photo",
-                              "company__short_name", "company__name", "branch_id", "branch__branch_name"):
+                              "company__short_name", "company__name", "branch_id", "branch__branch_name", "department", "designation", "location"):
         p = progress[e["id"]]
         if request.GET.get("onboarding") == "pending" and p["complete"]:
             continue
@@ -3489,6 +3607,9 @@ def _employee_list_with_onboarding(request, show):
             "gender": e["gender"] or "",
             "branch_id": e["branch_id"],
             "branch": e["branch__branch_name"] or "",
+            "department": e["department"] or "",
+            "designation": e["designation"] or "",
+            "location": e["location"] or "",
             "status": e["status"] or "",
             "percent": p["percent"],
             "complete": p["complete"],
@@ -3507,8 +3628,14 @@ def employee_change_requests(request):
     ).prefetch_related("files")
     if status in dict(EmployeeChangeRequest.STATUS_CHOICES):
         requests_qs = requests_qs.filter(status=status)
+    query = request.GET.get("q", "").strip()
+    requests_qs = apply_employee_search(requests_qs, query)
+    page = Paginator(requests_qs.order_by("-requested_at", "-pk"), 50).get_page(request.GET.get("page"))
     return render(request, "employee/change_requests.html", {
-        "change_requests": requests_qs[:200],
+        "change_requests": page.object_list,
+        "page": page,
+        "query": query,
+        "onboarding_edit_days": ONBOARDING_EDIT_DAYS,
         "status": status,
         "status_choices": EmployeeChangeRequest.STATUS_CHOICES,
         "can_approve_changes": can_approve_changes(request.user),
@@ -3983,19 +4110,21 @@ def my_attendance(request):
     return redirect('employee_attendance_detail', employee_id=request.user.employee_profile.pk)
 
 
-def _absent_today(employees, today):
-    """Everyone in `employees` who should be at work today but has no
-    punch-in -- including people with no attendance row at all yet (no
-    biometric punch, nothing uploaded), who the old list (rows marked
-    Absent only) never showed.
+def _placeholder_punches(row):
+    """Spreadsheet imports use a pair of midnight times for an employee with no punches."""
+    return row is not None and row.in_time == row.out_time == dt.time.min
 
-    Left out: anyone who punched in or is marked present, whose day is a
-    weekend or a holiday for them (the same rules Attendance uses, so a
-    rostered week-off or a branch holiday counts), who hasn't joined yet,
-    or who is out on field duty today. People on approved leave stay in,
-    marked "On leave". Returns objects with .employee and .remark, by name."""
+
+def _dashboard_recorded_status(row):
+    if _placeholder_punches(row) and not row.status_overridden and row.status in {"Present", "Late Present", "Half Day"}:
+        return "Absent"
+    return row.status
+
+
+def _dashboard_attendance(employees, today):
+    """Classify each eligible person once for the attendance cards, roster and absence lists."""
     from types import SimpleNamespace
-    from website.models import attendance_rule_cache, prime_roster_week_offs
+    from website.models import BiometricPunch, attendance_rule_cache, prime_roster_week_offs
 
     employees = (
         employees.filter(status="Active")
@@ -4009,30 +4138,45 @@ def _absent_today(employees, today):
         employee__in=employees, status="Approved", start_date__lte=today, end_date__gte=today,
     ).values_list("employee_id", flat=True))
 
-    not_working_day = {"Weekend", "Holiday"}
-    present = {"Present", "Late Present", "Half Day", "Present (Half-Day)"}
+    device_ins = set(BiometricPunch.objects.filter(
+        employee__in=employees, punch_date=today, direction__iexact="in",
+    ).values_list("employee_id", flat=True))
     employees = list(employees)
-    absent = []
+    snapshot = []
     with attendance_rule_cache():
         prime_roster_week_offs([e.pk for e in employees if e.pk not in rows], today)
         for emp in employees:
-            if emp.pk in on_duty:
-                continue
             row = rows.get(emp.pk)
-            if row is not None:
-                if row.in_time or row.status in present or row.status in not_working_day:
-                    continue
-                status = row.status
-            else:
-                # No row yet: work the day out exactly as saving one would.
+            if row is None:
                 probe = Attendance(employee=emp, date=today)
                 probe.calculate_status()
-                if probe.status in not_working_day or probe.status == "Present (Half-Day)":
-                    continue
                 status = probe.status
-            on_leave_today = emp.pk in on_leave or status == "On Leave"
-            absent.append(SimpleNamespace(employee=emp, remark="On leave" if on_leave_today else "No punch"))
-    return absent
+            else:
+                status = _dashboard_recorded_status(row)
+            punched = emp.pk in device_ins or (row and row.in_time is not None and not _placeholder_punches(row))
+            if status == "Late Present":
+                category = status
+            elif status in {"Present", "Half Day", "Present (Half-Day)"}:
+                category = "Present"
+            elif punched:
+                category = "Checked in"
+            elif emp.pk in on_duty:
+                category = "Field duty"
+            elif status in {"Weekend", "Holiday"}:
+                category = status
+            elif emp.pk in on_leave or status == "On Leave":
+                category = "On Leave"
+            else:
+                category = "Absent"
+            remark = {"Absent": "No punch", "On Leave": "On leave"}.get(category, "")
+            snapshot.append(SimpleNamespace(employee=emp, attendance=row, category=category,
+                                            status=remark or (status if category == "Present" else category),
+                                            remark=remark))
+    return snapshot
+
+
+def _absent_today(employees, today):
+    return [row for row in _dashboard_attendance(employees, today) if row.remark]
 
 
 def _upcoming_birthdays(employees, today, days=7):
@@ -4057,6 +4201,153 @@ def _upcoming_birthdays(employees, today, days=7):
 
 
 @login_required
+@feature_required("executive_dashboard", action="view")
+def executive_dashboard(request):
+    from .dashboard_reports import dashboard_report
+    return dashboard_report(request, "executive")
+
+
+@login_required
+@feature_required("admin_dashboard", action="view")
+def workforce_analytics(request):
+    from .dashboard_reports import dashboard_report
+    return dashboard_report(request, "operations")
+
+
+@login_required
+def team_analytics(request):
+    from .dashboard_reports import dashboard_report
+    return dashboard_report(request, "team")
+
+
+def _latest_employee_leave_balance(employee):
+    return (LeaveBalance.objects.filter(employee=employee)
+            .order_by(F("period_to_date").desc(nulls_last=True), "-pk").first())
+
+
+def _upcoming_employee_holidays(employee, today):
+    payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
+    branch_specific = getattr(payroll_settings, "branch_specific_holidays", True) if payroll_settings else True
+    upcoming_holidays = []
+    for holiday in (Holiday.objects.filter(holiday_date__gte=today, is_active=True)
+                    .order_by("holiday_date", "pk").select_related("holiday_calendar__branch").prefetch_related("branches")):
+        if not branch_specific or holiday.is_applicable_to_branch(employee.branch):
+            if holiday.is_applicable_to_employee(employee):
+                upcoming_holidays.append(holiday)
+        if len(upcoming_holidays) >= 5:
+            break
+
+    return upcoming_holidays
+
+
+def _anniversary_employees(employee, today):
+    return Employee.objects.filter(company=employee.company, status="Active",
+        date_of_joining__month=today.month, date_of_joining__lt=date(today.year, 1, 1),
+    ).order_by("date_of_joining__day", "first_name")
+
+
+def _celebration_rows(birthdays, anniversaries, today):
+    from calendar import monthrange
+
+    for birthday in birthdays:
+        yield {"person": birthday["employee"], "date": birthday["date"], "occasion": "birthday", "label": "Birthday"}
+    for person in anniversaries:
+        joined = person.date_of_joining
+        day = min(joined.day, monthrange(today.year, joined.month)[1])
+        years = today.year - joined.year
+        yield {"person": person, "date": date(today.year, joined.month, day), "occasion": "anniversary",
+               "label": f"{years}-year work anniversary"}
+
+
+@login_required
+@require_http_methods(["POST"])
+def send_celebration_wish(request, recipient_id, occasion):
+    sender = get_object_or_404(Employee, user=request.user, status="Active")
+    recipients = Employee.objects.filter(pk=recipient_id, status="Active").exclude(pk=sender.pk)
+    today = timezone.localdate()
+    birthdays = _upcoming_birthdays(recipients, today) if occasion == "birthday" else []
+    anniversaries = _anniversary_employees(sender, today).filter(pk__in=recipients) if occasion == "anniversary" else []
+    for event in _celebration_rows(birthdays, anniversaries, today):
+        if event["date"].isoformat() == request.POST.get("event_date"):
+            CelebrationWish.objects.get_or_create(sender=sender, recipient=event["person"],
+                                                  occasion=occasion, event_date=event["date"])
+            return redirect(reverse("employee-dashboard") + "#celebrations")
+    raise Http404("This celebration is no longer available.")
+
+
+def _employee_request_groups(employees):
+    return {
+        "leave": ("Leave", LeaveApplication.objects.filter(employee__in=employees).select_related("employee"), "start_date"),
+        "correction": ("Attendance correction", AttendanceCorrectionRequest.objects.filter(
+            attendance__employee__in=employees).select_related("attendance__employee"), "attendance__date"),
+        "comp-off": ("Comp-off", CompOffRequest.objects.filter(employee__in=employees).select_related("employee"), "from_date"),
+        "profile": ("Profile change", EmployeeChangeRequest.objects.filter(employee__in=employees).select_related("employee"), "requested_at"),
+    }
+
+
+@login_required
+def employee_request_history(request, kind, pk=None):
+    from calendar import monthrange
+    employee = getattr(request.user, "employee_profile", None)
+    reports = Employee.objects.none()
+    own = Employee.objects.filter(user=request.user)
+    if employee:
+        reports = Employee.objects.filter(Q(manager=employee) | Q(reporting_person=employee)).exclude(pk=employee.pk)
+    scope = request.GET.get("scope", "self")
+    if scope not in {"self", "team"}:
+        raise Http404("Unknown request scope.")
+    groups = _employee_request_groups(reports if scope == "team" else own)
+    if kind not in groups:
+        raise Http404("Unknown request type.")
+    label, records, day_field = groups[kind]
+    status = request.GET.get("status", "").lower()
+    if status and status not in {"pending", "approved", "rejected"}:
+        raise Http404("Unknown request status.")
+    if status:
+        records = records.filter(status__iexact=status)
+    month = request.GET.get("month", "")
+    if month:
+        try:
+            first = date.fromisoformat(month + "-01")
+            if first.strftime("%Y-%m") != month:
+                raise ValueError
+        except ValueError:
+            raise Http404("Invalid month.")
+        last = first.replace(day=monthrange(first.year, first.month)[1])
+        if kind == "leave":
+            records = records.filter(start_date__lte=last, end_date__gte=first)
+        elif kind == "comp-off":
+            records = records.filter(from_date__lte=last).filter(
+                Q(to_date__gte=first) | Q(to_date__isnull=True, from_date__gte=first))
+        else:
+            field = "requested_at__date" if kind == "profile" else day_field
+            records = records.filter(**{field + "__range": (first, last)})
+    if kind == "profile" and scope == "self":
+        records = records.prefetch_related("files")
+    if pk is not None:
+        records = [get_object_or_404(records, pk=pk)]
+    else:
+        records = records.order_by("-" + day_field, "-pk")
+    page = Paginator(records, 20).get_page(request.GET.get("page"))
+    if kind != "profile":
+        visible = {record.pk: record for record in page}
+        for record in visible.values():
+            record.decisions = []
+        if visible:
+            events = AuditLog.objects.filter(
+                target_type=groups[kind][1].model.__name__, target_id__in=visible,
+            ).select_related("actor").order_by("created_at", "pk")
+            for event in events:
+                visible[event.target_id].decisions.append(event)
+    return render(request, "employee/request_history.html", {
+        "kind": kind, "label": label, "focused": pk is not None,
+        "scope": scope, "has_reports": reports.exists(), "status": status, "month": month,
+        "types": [(key, group[0]) for key, group in groups.items()],
+        "page": page,
+    })
+
+
+@login_required
 def employee_dashboard(request):
     """Self-service landing page for an Employee-role login: only ever
     queries request.user.employee_profile's own records, never a URL
@@ -4068,11 +4359,10 @@ def employee_dashboard(request):
         return redirect('login')
 
     employee = request.user.employee_profile
-    today = now().date()
+    local_now = timezone.localtime(now())
+    today = local_now.date()
 
     today_attendance = Attendance.objects.filter(employee=employee, date=today).first()
-
-    absent_employees_today = _absent_today(Employee.objects.filter(company=employee.company), today)
 
     period_from, period_to = _current_payroll_period(employee.company)
     if not period_from:
@@ -4080,24 +4370,16 @@ def employee_dashboard(request):
         period_to = today
 
     period_attendance = Attendance.objects.filter(employee=employee, date__range=[period_from, period_to])
-    days_present = period_attendance.filter(status__in=["Present", "Late Present"]).count()
-    days_late = period_attendance.filter(status="Late Present").count()
-    days_half = period_attendance.filter(status__in=["Half Day", "Present (Half-Day)"]).count()
-
-    leave_balance = (
-        LeaveBalance.objects.filter(employee=employee).order_by("-period_to_date").first()
+    attendance_counts = period_attendance.aggregate(
+        present=Count("pk", filter=Q(status__in=["Present", "Late Present"])),
+        late=Count("pk", filter=Q(status="Late Present")),
+        half=Count("pk", filter=Q(status__in=["Half Day", "Present (Half-Day)"])),
+        absent=Count("pk", filter=Q(status="Absent")),
     )
 
-    payroll_settings = PayrollSettings.objects.filter(company=employee.company).first()
-    branch_specific = getattr(payroll_settings, "branch_specific_holidays", True) if payroll_settings else True
-    upcoming_holidays = []
-    for holiday in (Holiday.objects.filter(holiday_date__gte=today, is_active=True)
-                    .select_related("holiday_calendar__branch").prefetch_related("branches")):
-        if not branch_specific or holiday.is_applicable_to_branch(employee.branch):
-            if holiday.is_applicable_to_employee(employee):
-                upcoming_holidays.append(holiday)
-        if len(upcoming_holidays) >= 5:
-            break
+    leave_balance = _latest_employee_leave_balance(employee)
+
+    upcoming_holidays = _upcoming_employee_holidays(employee, today)
 
     recent_payslips = (
         PayrollRecord.objects.filter(employee=employee, payroll__status=PayrollRun.STATUS_FINALIZED)
@@ -4107,6 +4389,11 @@ def employee_dashboard(request):
 
     # Everybody's birthdays, across every company in the group.
     birthdays = _upcoming_birthdays(Employee.objects.filter(status="Active"), today)
+    celebrations = list(_celebration_rows(birthdays, _anniversary_employees(employee, today), today))
+    sent = set(employee.wishes_sent.filter(event_date__in={e["date"] for e in celebrations})
+               .values_list("recipient_id", "occasion", "event_date"))
+    for event in celebrations:
+        event["sent"] = (event["person"].pk, event["occasion"], event["date"]) in sent
     my_birthday_today = any(b["is_today"] and b["employee"].pk == employee.pk for b in birthdays)
 
     # The dashboard's Field Duty button says Start or End depending on
@@ -4116,21 +4403,108 @@ def employee_dashboard(request):
         employee=employee, ended_at__isnull=True,
     ).first()
 
+    shift = employee.shift_assignments.filter(is_active=True, start_date__lte=today, end_date__gte=today).order_by("-start_date", "-pk").first()
+    elapsed = None
+    elapsed_minutes = None
+    shift_minutes = None
+    shift_duration = None
+    if shift and shift.shift_start_time and shift.shift_end_time:
+        duration = datetime.combine(today, shift.shift_end_time) - datetime.combine(today, shift.shift_start_time)
+        shift_minutes = duration.seconds // 60
+        hours, minutes = divmod(shift_minutes, 60)
+        shift_duration = f"{hours}h {minutes:02d}m" if minutes else f"{hours}h"
+    punches = employee.biometric_punches.filter(punch_date=today)
+    placeholder = _placeholder_punches(today_attendance)
+    check_in = today_attendance.in_time if today_attendance and not placeholder else None
+    check_out = today_attendance.out_time if today_attendance and not placeholder else None
+    if check_in is None:
+        check_in = punches.filter(direction__iexact="in").aggregate(first=Min("punch_time"))["first"]
+    today_status = _dashboard_recorded_status(today_attendance) if today_attendance else "No attendance record yet"
+    if check_in is not None:
+        if not today_attendance or today_status == "Absent":
+            today_status = "Checked in"
+        start = datetime.combine(today, check_in)
+        finish = datetime.combine(today, check_out or local_now.time())
+        if check_out and finish < start:
+            finish += timedelta(days=1)
+        if finish >= start:
+            elapsed_minutes = int((finish - start).total_seconds() // 60)
+            hours, minutes = divmod(elapsed_minutes, 60)
+            elapsed = f"{hours}h {minutes:02d}m"
+    leave_apps = LeaveApplication.objects.filter(employee=employee)
+    recent_requests = []
+    pending_count = 0
+    for kind, (label, records, day_field) in _employee_request_groups([employee]).items():
+        pending_count += records.filter(status__iexact="pending").count()
+        for pk, day, status in records.order_by("-" + day_field, "-pk").values_list("pk", day_field, "status")[:4]:
+            if kind == "profile":
+                day = timezone.localtime(day).date()
+            recent_requests.append({"label": label, "day": day, "status": status.title(),
+                                    "kind": kind, "pk": pk})
+    recent_requests.sort(key=lambda row: row["day"] or date.min, reverse=True)
+    notices = _current_announcements(request.user, local_now)
+    team_peers = Employee.objects.filter(company=employee.company, status="Active").exclude(pk=employee.pk)
+    team_filter = Q(manager=employee) | Q(reporting_person=employee)
+    if employee.manager_id:
+        team_filter |= Q(manager_id=employee.manager_id)
+    if employee.reporting_person_id:
+        team_filter |= Q(reporting_person_id=employee.reporting_person_id)
+    recent_punches = list(punches.order_by("-punch_time", "-pk")[:3])
+    recent_punches.reverse()
+    from website.daily_quotes import daily_work_quote
+    from website.utils.permissions import department_member_ids
+    company_today = _dashboard_attendance(Employee.objects.filter(company_id=employee.company_id), today) if employee.company_id else []
+    present_categories = {"Present", "Late Present", "Checked in", "Field duty"}
+    present_ids = {row.employee.pk for row in company_today if row.category in present_categories}
+    team_leave = (team_peers.exclude(pk__in=present_ids).filter(team_filter, leaveapplication__status="Approved",
+                                   leaveapplication__start_date__lte=today, leaveapplication__end_date__gte=today)
+                  .annotate(leave_through=Max("leaveapplication__end_date"))
+                  .only("first_name", "last_name", "photo")
+                  .order_by("first_name", "last_name", "pk"))
+    department_ids = set(department_member_ids(employee).values_list("pk", flat=True))
+    department_today = [row for row in company_today if row.employee.pk in department_ids]
+    for row in department_today:
+        row.status = "Present" if row.employee.pk in present_ids else "Absent"
     return render(request, "employee/employee_dashboard.html", {
+        "daily_quote": daily_work_quote(today),
+        "department_today": department_today,
+        "company_absent": [row.employee for row in company_today if row.category == "Absent"],
+        "greeting": "Good morning" if local_now.hour < 12 else "Good afternoon" if local_now.hour < 18 else "Good evening",
+        "local_now": local_now,
+        "shift": shift,
+        "elapsed": elapsed,
+        "elapsed_minutes": elapsed_minutes,
+        "shift_minutes": shift_minutes,
+        "shift_duration": shift_duration,
+        "today_punches": recent_punches,
+        "check_in": check_in,
+        "check_out": check_out,
+        "today_status": today_status,
+        "last_punch_received": punches.aggregate(latest=Max("received_at"))["latest"] if recent_punches else None,
+        "my_requests": recent_requests[:4],
+        "my_pending_count": pending_count,
+        "dashboard_notices": notices[:5],
+        "team_leave_today": team_leave,
+        "profile_progress": onboarding_progress(employee),
+        "advance_balance": employee.advances.aggregate(balance=Sum("outstanding_amount"))["balance"] or 0,
+        "approved_upcoming": leave_apps.filter(status="Approved", start_date__gt=today).order_by("start_date")[:3],
         "birthdays": birthdays,
+        "celebrations": celebrations,
+        "received_wishes": employee.wishes_received.filter(sent_at__gte=local_now - timedelta(days=30))
+            .select_related("sender").order_by("-sent_at"),
         "my_birthday_today": my_birthday_today,
         "employee": employee,
         "open_field_duty": open_field_duty,
         "today_attendance": today_attendance,
         "period_from": period_from,
         "period_to": period_to,
-        "days_present": days_present,
-        "days_late": days_late,
-        "days_half": days_half,
+        "days_present": attendance_counts["present"],
+        "days_late": attendance_counts["late"],
+        "days_half": attendance_counts["half"],
+        "days_absent": attendance_counts["absent"],
         "leave_balance": leave_balance,
         "upcoming_holidays": upcoming_holidays,
         "recent_payslips": recent_payslips,
-        "absent_employees_today": absent_employees_today,
         "today": today,
         **_team_panel_for(employee, today),
     })
@@ -4149,7 +4523,7 @@ def _team_panel_for(approver, today):
     ).exclude(pk=approver.pk).filter(status="Active")
 
     if not reportees.exists():
-        return {"has_team": False}
+        return {"has_team": False, "absent_employees_today": []}
 
     pending_leave = (
         LeaveApplication.objects.select_related("employee")
@@ -4164,27 +4538,20 @@ def _team_panel_for(approver, today):
         .filter(attendance__employee__in=reportees, status="Pending").order_by("-id")
     )
 
-    team_attendance = {
-        a.employee_id: a
-        for a in Attendance.objects.filter(employee__in=reportees, date=today)
-    }
-    team_today = [
-        {"employee": member, "attendance": team_attendance.get(member.id)}
-        for member in reportees.order_by("first_name", "last_name")
-    ]
+    snapshot = _dashboard_attendance(reportees, today)
+    team_today = [vars(row) for row in snapshot]
+    absent_today = [row for row in snapshot if row.remark]
 
     return {
         "has_team": True,
-        "team_size": reportees.count(),
+        "team_size": len(team_today),
         "team_pending_leave": pending_leave.count(),
         "team_pending_compoff": pending_compoff.count(),
         "team_pending_corrections": pending_corrections.count(),
         "team_pending_total": pending_leave.count() + pending_compoff.count() + pending_corrections.count(),
         "team_today": team_today,
-        "team_absent_today": sum(
-            1 for row in team_today
-            if row["attendance"] and row["attendance"].status == "Absent"
-        ),
+        "team_absent_today": sum(row.category == "Absent" for row in absent_today),
+        "absent_employees_today": absent_today,
         # The queues themselves, so approving happens on the dashboard
         # rather than only behind a link to My Approvals. Same names the
         # shared approvals/_pending_queues.html partial reads.
@@ -4640,25 +5007,26 @@ def offboarding_delete(request, pk):
 @login_required
 @feature_required("branch_management", action="edit")
 def create_branchs(request):
-    if request.method == "POST":
-        branch_name = request.POST.get("branch_name")
-        branch_address = request.POST.get("branch_address")
-       
-        # Save company to database
-        branch = Branch.objects.create(
-            branch_name=branch_name,
-            branch_address=branch_address,          
-        )
+    form = BranchForm(request.POST if request.method == "POST" else None, auto_id="new_%s")
+    if request.method == "POST" and form.is_valid():
+        form.save()
         messages.success(request, "Branch added successfully!")
-        return redirect("create-branch")  # Redirect to company list page
+        return redirect("create-branch")
 
+    return _render_branch_directory(request, form)
+
+
+def _render_branch_directory(request, form, edit_form=None):
     show = request.GET.get("show", "active")
     branches = Branch.objects.all()
     if show == "active":
         branches = branches.filter(is_active=True)
     elif show == "archived":
         branches = branches.filter(is_active=False)
-    return render(request, "branch/create-branch.html", {"branches": branches, "show": show})
+    return render(request, "branch/create-branch.html", {
+        "branches": branches, "show": show, "branch_form": form,
+        "edit_form": edit_form,
+    })
 
 
 @login_required
@@ -4746,6 +5114,10 @@ def department_list(request):
     elif show == "archived":
         departments = departments.filter(is_active=False)
 
+    query = request.GET.get("q", "").strip()
+    if query:
+        departments = departments.filter(name__icontains=query)
+
     # Who currently sits in each department (listed when the count is
     # clicked), so it's obvious who a change to the reporting person will
     # affect. Employee.department is free text, matched case-insensitively.
@@ -4763,6 +5135,7 @@ def department_list(request):
         dept.employee_count = len(dept.members)
 
     return render(request, "department/department_list.html", {
+        "query": query,
         "departments": departments,
         "show": show,
         "employees": Employee.objects.filter(status="Active").order_by("first_name", "last_name"),
@@ -4921,6 +5294,7 @@ def edit_branch(request, branch_id):
             form.save()
             messages.success(request, "Branch Updated successfully!")
             return redirect("create-branch")
+        return _render_branch_directory(request, BranchForm(auto_id="new_%s"), edit_form=form)
     else:
         form = BranchForm(instance=branch)
 
@@ -4981,60 +5355,31 @@ def create_company(request):
     """The company list, which also handles adding one. Viewing is open to
     anyone with company_management:view (Admin reads companies); actually
     creating one needs :edit, which only Super Admin holds."""
+    form = CompanyForm(auto_id="new_company_%s")
     if request.method == "POST":
-        if not has_feature_permission(request.user, "company_management", "edit")                 and not (request.user.is_superuser or request.user.is_staff):
+        if not (request.user.is_superuser or request.user.is_staff
+                or has_feature_permission(request.user, "company_management", "edit")):
             raise PermissionDenied
-        short_name = request.POST.get("short_name")
-        name = request.POST.get("name")
-        phone = request.POST.get("phone")
-        email = request.POST.get("email")
-        address = request.POST.get("address")
-        tan_number = request.POST.get("tan_number")
-        pan_number = request.POST.get("pan_number")
-        employer_pf = request.POST.get("employer_pf")
-        ptrc_number = request.POST.get("ptrc_number")
-        ptec_number = request.POST.get("ptec_number")
-        esic_number = request.POST.get("esic_number")
-        status = request.POST.get("status")
+        form = CompanyForm(request.POST, request.FILES, auto_id="new_company_%s")
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Company added successfully!")
+            return redirect("create-company")
 
-        if not short_name or not name or not address:
-            messages.error(request, "Short Name, Company Name, and Address are required.")
-            return redirect("create-company")  # Redirect back if validation fails
+    return _render_company_directory(request, form)
 
-        logo = request.FILES.get("logo")
-        if logo:
-            try:
-                validate_company_logo(logo)
-            except ValidationError as exc:
-                messages.error(request, exc.messages[0])
-                return redirect("create-company")
 
-        # Save company to database
-        company = Company.objects.create(
-            short_name=short_name,
-            name=name,
-            phone=phone,
-            email=email,
-            address=address,
-            tan_number=tan_number,
-            pan_number=pan_number,
-            employer_pf=employer_pf,
-            ptrc_number=ptrc_number,
-            ptec_number=ptec_number,
-            esic_number=esic_number,
-            status=status,
-            logo=logo,
-        )
-        messages.success(request, "Company added successfully!")
-        return redirect("create-company")  # Redirect to company list page
-
+def _render_company_directory(request, form, edit_form=None):
     show = request.GET.get("show", "active")
     companies = Company.objects.all()
     if show == "active":
         companies = companies.filter(status="active")
     elif show == "archived":
         companies = companies.filter(status="inactive")
-    return render(request, "company/home2.html", {"companies": companies, "show": show})
+    return render(request, "company/home2.html", {
+        "companies": companies, "show": show, "company_form": form,
+        "edit_form": edit_form,
+    })
 
 
 @login_required
@@ -5172,8 +5517,7 @@ def edit_company(request, company_id):
             form.save()
             messages.success(request, "Company updated successfully.")
             return redirect("create-company")   # your listing page
-        else:
-            messages.error(request, "Please correct the errors below.")
+        return _render_company_directory(request, CompanyForm(auto_id="new_company_%s"), edit_form=form)
     else:
         form = CompanyForm(instance=company)   # ← IMPORTANT
 
@@ -5433,6 +5777,10 @@ def role_based_dashboard_url(user):
     Employee link) falls back to admin-dashboard, which they can always
     reach via the superuser/staff bypass. Shared by login_view and
     change_password so the "route by role" logic can't drift apart."""
+    if has_feature_permission(user, "executive_dashboard", "view") and not (
+        user.is_staff or user.is_superuser or has_feature_permission(user, "admin_dashboard", "view")
+    ):
+        return "executive-dashboard"
     if user.groups.filter(name__in=GLOBAL_ACCESS_ROLES).exists():
         return "admin-dashboard"
     if user.groups.filter(name__in=SELF_SERVICE_ROLES).exists() or hasattr(user, "employee_profile"):
@@ -7156,13 +7504,14 @@ def leave_apply_view(request):
     own_employee = getattr(request.user, "employee_profile", None)
 
     leaves = LeaveApplication.objects.select_related("employee").order_by("-id")
-    if not (for_others or _can_see_all_leave_applications(request.user)):
+    show_applicants = for_others or _can_see_all_leave_applications(request.user)
+    if not show_applicants:
         # Your own applications only -- this list used to show everyone's.
         leaves = leaves.filter(employee=own_employee) if own_employee else leaves.none()
 
     # ================== Filters ==================
     status = request.GET.get("status")
-    search = request.GET.get("search")
+    search = request.GET.get("search", "").strip()
 
     if status and status != "All":
         leaves = leaves.filter(status=status)
@@ -7172,16 +7521,17 @@ def leave_apply_view(request):
         # or a leave type. A multi-word term is a name, so each word has to
         # land somewhere in it -- "john doe" used to find nobody.
         words = search.split()
+        type_codes = [code for code, label in LeaveApplication.LEAVE_TYPES if search.casefold() in label.casefold()]
         if len(words) == 1:
             leaves = leaves.filter(
                 Q(employee__first_name__icontains=search) |
                 Q(employee__middle_name__icontains=search) |
                 Q(employee__last_name__icontains=search) |
                 Q(employee__employee_code__icontains=search) |
-                Q(leave_type__icontains=search)
+                Q(leave_type__icontains=search) | Q(leave_type__in=type_codes)
             )
         else:
-            leaves = apply_employee_search(leaves, search)
+            leaves = apply_employee_search(leaves, search) | leaves.filter(leave_type__in=type_codes)
 
     # Pagination
     paginator = Paginator(leaves, 8)  # 8 rows per page
@@ -7209,24 +7559,41 @@ def leave_apply_view(request):
                 leave_obj.employee.company, leave_obj.start_date, leave_obj.end_date
             )
             if locking_run:
-                messages.error(
-                    request,
+                form.add_error(
+                    None,
                     f"Cannot apply for leave: {leave_obj.start_date:%d %b %Y}–{leave_obj.end_date:%d %b %Y} "
                     f"overlaps the finalized payroll run "
                     f"({locking_run.start_date:%d %b %Y}–{locking_run.end_date:%d %b %Y}).",
                 )
+            else:
+                leave_obj.save()
+                messages.success(request,"Leave Applied Successfully!")
                 return redirect("leave_apply")
-            leave_obj.save()
-            messages.success(request,"Leave Applied Successfully!")
-            return redirect("leave_apply")
-        messages.error(request,"Please fix the errors.")
     else:
         form = _leave_form()
 
+    balance_periods = []
+    holidays = []
+    if own_employee:
+        today = timezone.localdate()
+        next_month = today.replace(day=1) + relativedelta(months=1)
+        balance_periods = list(
+            LeaveBalance.objects.filter(
+                Q(period_to_date__lt=next_month)
+                | Q(period_to_date__isnull=True, period_from_date__lt=next_month)
+                | Q(period_to_date__isnull=True, period_from_date__isnull=True),
+                employee=own_employee,
+            ).order_by(F("period_to_date").desc(nulls_last=True), "-pk")
+        )
+        holidays = _upcoming_employee_holidays(own_employee, today)
+
     return render(request,"leave_balance/leave_apply.html",{
+        "balance": next(iter(balance_periods), None), "balance_periods": balance_periods,
+        "holidays": holidays, "show_applicants": show_applicants,
         "form":form,
         "leaves":leaves,
         "status":status,
+        "status_choices": ("Pending", "Approved", "Rejected"),
         "search":search,
         "applying_for_self": not for_others,
         "own_employee": own_employee,
@@ -7304,7 +7671,8 @@ def reject_leave(request, leave_id):
         if not can_approve_for_employee(request.user, leave.employee, "leave_management"):
             return JsonResponse({"message": "You aren't authorised to reject this employee's request."}, status=403)
         leave.status = "Rejected"
-        leave.save()
+        leave.rejection_reason = reason
+        leave.save(update_fields=["status", "rejection_reason"])
 
         log_audit(request.user, AuditLog.Action.LEAVE_REJECTED, leave,
                    summary=f"Rejected leave for {leave.employee} ({leave.start_date} - {leave.end_date})")
@@ -7911,9 +8279,20 @@ def create_salary(request):
     salary_id = request.GET.get("edit")
     salary_obj = SalaryMaster.objects.filter(pk=salary_id).first() if salary_id else None
 
+    missing_only = request.GET.get("missing") == "1" and salary_obj is None
+    if missing_only:
+        employees = _without_salary_structure(employees.filter(status="Active"))
+        company_id = request.GET.get("company")
+        if company_id:
+            if not company_id.isascii() or not company_id.isdecimal() or len(company_id) > 19:
+                raise Http404("Unknown company")
+            employees = employees.filter(company_id=int(company_id))
+        employees = employees.order_by("first_name", "last_name", "pk")
+
     return render(request, "salary/create_salary4.html", {
         "employees": employees,
         "salary": salaries,
+        "missing_only": missing_only,
         "salary_obj": salary_obj,
         "is_edit": bool(salary_obj),
         # HR drafts new structures but cannot change an existing one, so the
@@ -8216,17 +8595,25 @@ def create_salary_increment(request):
             messages.error(request, "Failed to create increment.")
 
     show = request.GET.get("show", "active")
-    increments = SalaryIncrement.objects.all()
-    if show == "active":
-        increments = increments.filter(is_active=True)
-    elif show == "archived":
-        increments = increments.filter(is_active=False)
+    status = request.GET.get("status", "all")
+    increments = _increment_queryset(show, status)
 
     return render(request, "salary_increment/create_increment.html", {
         "employees": Employee.objects.all(),
         "increments": increments,
+        "active_tab": status if status in ("pending", "applied") else "all",
+        "processing_statuses": (("all", "All"), ("pending", "Pending"), ("applied", "Applied")),
         "show": show,
     })
+
+
+def _increment_queryset(show, status):
+    qs = SalaryIncrement.objects.select_related("employee").order_by("-effective_date", "-pk")
+    if show in ("active", "archived"):
+        qs = qs.filter(is_active=show == "active")
+    if status in ("pending", "applied"):
+        qs = qs.filter(is_processed=status == "applied")
+    return qs
 
 
 @login_required
@@ -8238,11 +8625,8 @@ def salary_increment_export_excel(request):
     (active/archived/all) as the page itself, so exporting matches whatever
     tab is currently open."""
     show = request.GET.get("show", "active")
-    increments = SalaryIncrement.objects.select_related("employee").order_by("-effective_date")
-    if show == "active":
-        increments = increments.filter(is_active=True)
-    elif show == "archived":
-        increments = increments.filter(is_active=False)
+    increments = _increment_queryset(show, request.GET.get("status"))
+    words = request.GET.get("q", "").casefold().split()
 
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -8259,6 +8643,14 @@ def salary_increment_export_excel(request):
 
     for inc in increments:
         emp = inc.employee
+        if words:
+            text = " ".join(filter(None, (
+                emp.first_name, emp.middle_name, emp.last_name, emp.employee_code,
+                inc.effective_date.isoformat(), date_format(inc.effective_date, "DATE_FORMAT"),
+                (inc.change_set or {}).get("reason"),
+            ))).casefold()
+            if not all(word in text for word in words):
+                continue
         monthly = (inc.change_set or {}).get("monthly", {})
         annual = (inc.change_set or {}).get("annual", {})
         flags = (inc.change_set or {}).get("flags", {})
@@ -8509,25 +8901,34 @@ def _can_see_salary_history_of(user, employee):
     return can_access_employee_record(user, employee, "salary_history", "view")
 
 
+def _filter_salary_history(qs, params):
+    for name in ("q", "employee_code", "employee"):
+        term = params.get(name, "").strip()
+        if term:
+            qs = apply_employee_search(qs, term)
+
+    # Report dates select overlapping periods. Older list URLs used from/to
+    # for fully contained periods, so retain their original comparisons.
+    for key, lookup in (("date_from", "end_date__gte"), ("date_to", "start_date__lte"),
+                        ("from", "start_date__gte"), ("to", "end_date__lte")):
+        raw = params.get(key)
+        if raw:
+            try:
+                boundary = datetime.strptime(raw, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            qs = qs.filter(**{lookup: boundary})
+    return qs
+
+
 @login_required
 @feature_required("salary_structure", action="view")
 def salary_history(request):
     qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
     qs, can_see_all = _salary_history_scope(request, qs)
 
-    # filters
-    emp = request.GET.get("employee", "")
-    date_from = request.GET.get("from", "")
-    date_to = request.GET.get("to", "")
-
-    if emp:
-        qs = apply_employee_search(qs, emp)
-
-    if date_from:
-        qs = qs.filter(start_date__gte=date_from)
-
-    if date_to:
-        qs = qs.filter(end_date__lte=date_to)
+    qs = _filter_salary_history(qs, request.GET)
+    page = Paginator(qs.order_by("-end_date", "-pk"), 50).get_page(request.GET.get("page"))
 
     employees = Employee.objects.all().order_by("employee_code")
     if not can_see_all:
@@ -8535,7 +8936,8 @@ def salary_history(request):
         employees = employees.filter(pk=own.pk) if own else employees.none()
 
     return render(request, "salary_increment/salary_history_list.html", {
-        "history": qs,
+        "history": page.object_list,
+        "page": page,
         "employees": employees,
         "get": request.GET,
         "can_see_all_history": can_see_all,
@@ -8562,31 +8964,7 @@ def salary_history_detail(request, pk):
 def salary_history_export_excel(request):
     qs = SalaryHistory.objects.select_related("employee").order_by("-end_date")
     qs, _ = _salary_history_scope(request, qs)
-    # apply same filters as list (to keep export consistent)
-    q = request.GET.get("q", "").strip()
-    emp_code = request.GET.get("employee_code", "").strip()
-    date_from = request.GET.get("date_from", "").strip()
-    date_to = request.GET.get("date_to", "").strip()
-
-    if q:
-        qs = apply_employee_search(qs, q)
-
-    if emp_code:
-        qs = apply_employee_search(qs, emp_code)
-
-    if date_from:
-        try:
-            d1 = datetime.strptime(date_from, "%Y-%m-%d").date()
-            qs = qs.filter(end_date__gte=d1)
-        except ValueError:
-            pass
-
-    if date_to:
-        try:
-            d2 = datetime.strptime(date_to, "%Y-%m-%d").date()
-            qs = qs.filter(start_date__lte=d2)
-        except ValueError:
-            pass
+    qs = _filter_salary_history(qs, request.GET)
 
     # Create workbook
     wb = openpyxl.Workbook()
@@ -9244,6 +9622,32 @@ def _visible_announcements_for_user(user):
     return qs.none()
 
 
+def _current_announcements(user, current):
+    receipts = AnnouncementRead.objects.filter(user=user, announcement_id=OuterRef("pk"))
+    return (_visible_announcements_for_user(user)
+            .filter(starts_at__lte=current)
+            .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=current))
+            .annotate(was_read=Exists(receipts))
+            .order_by("-starts_at", "-pk"))
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def announcement_feed(request):
+    notices = _current_announcements(request.user, timezone.now())
+    if request.method == "POST":
+        notice = get_object_or_404(notices, pk=request.POST.get("announcement_id"))
+        AnnouncementRead.objects.get_or_create(announcement=notice, user=request.user)
+        return redirect(request.get_full_path())
+
+    unread_only = request.GET.get("show") == "unread"
+    unread = notices.filter(was_read=False)
+    page = Paginator(unread if unread_only else notices, 12).get_page(request.GET.get("page"))
+    return render(request, "announcements/feed.html", {
+        "page": page, "unread_count": unread.count(), "unread_only": unread_only,
+    })
+
+
 @login_required
 @feature_required("announcements", action="view")
 def announcements_hub(request):
@@ -9259,10 +9663,12 @@ def announcements_hub(request):
     if selected_company:
         qs = qs.filter(Q(company=selected_company) | Q(company__isnull=True))
 
+    page = Paginator(qs.order_by("-created_at", "-pk"), 20).get_page(request.GET.get("page"))
     return render(request, "announcements/hub.html", {
         "companies": companies,
         "selected_company": selected_company,
-        "announcements": qs,
+        "page": page,
+        "current_time": timezone.now(),
         "priority_choices": Announcement.PRIORITY_CHOICES,
     })
 
@@ -9554,7 +9960,9 @@ def advance_list(request):
     status_filter = request.GET.get('status', '').strip()
     search = request.GET.get('q', '').strip()
 
-    qs = AdvanceMaster.objects.select_related('employee').prefetch_related('schedules').order_by('-created_at')
+    qs = AdvanceMaster.objects.select_related('employee').annotate(
+        schedules_paid=Count('schedules', filter=Q(schedules__status='paid'))
+    ).order_by('-created_at', '-pk')
     if not can_see_all:
         qs = qs.filter(employee=own_employee)
 
@@ -9565,23 +9973,21 @@ def advance_list(request):
         qs = apply_employee_search(qs, search)
 
     all_qs = AdvanceMaster.objects.all() if can_see_all else AdvanceMaster.objects.filter(employee=own_employee)
-    active_qs = all_qs.filter(status='active')
-    stats = {
-        'total': all_qs.count(),
-        'active': active_qs.count(),
-        'completed': all_qs.filter(status='completed').count(),
-        'outstanding': sum(a.outstanding_amount for a in active_qs),
-    }
-
-    advances = list(qs)
+    stats = all_qs.aggregate(
+        total=Count("pk"), active=Count("pk", filter=Q(status="active")),
+        completed=Count("pk", filter=Q(status="completed")),
+        outstanding=Sum("outstanding_amount", filter=Q(status="active"), default=0),
+    )
+    page = Paginator(qs, 25).get_page(request.GET.get("page"))
+    advances = page.object_list
     for adv in advances:
         paid = adv.advance_amount - adv.outstanding_amount
         adv.paid_amount = paid
         adv.progress = round((paid / adv.advance_amount) * 100) if adv.advance_amount else 0
-        adv.schedules_paid = adv.schedules.filter(status='paid').count()
 
     return render(request, 'advances/advance_list.html', {
         'advances': advances,
+        'page': page,
         'stats': stats,
         'status_filter': status_filter,
         'search': search,
@@ -9765,6 +10171,7 @@ def advance_detail(request, pk):
     adv.schedules_total = schedules.count()
     return render(request, 'advances/advance_detail.html', {
         'advance': adv,
+        'next_instalment': schedules.filter(status='pending').first(),
         'schedules': schedules,
         'payments': payments,
         'payment_form': payment_form,
@@ -9902,28 +10309,28 @@ def payroll_run_list(request):
     company_id = request.GET.get("company")
     status_filter = request.GET.get("status")
 
-    runs = PayrollRun.objects.select_related("company").prefetch_related("records").order_by("-month")
+    runs = PayrollRun.objects.select_related("company").order_by("-month", "-pk")
 
     if company_id:
-        runs = runs.filter(company_id=company_id)
+        try:
+            runs = runs.filter(company_id=int(company_id))
+        except ValueError:
+            runs = runs.none()
+    counts = runs.values("status").annotate(total=Count("pk")).order_by()
+    totals = {row["status"]: row["total"] for row in counts}
     if status_filter:
         runs = runs.filter(status=status_filter)
-
-    draft_count = runs.filter(status=PayrollRun.STATUS_DRAFT).count()
-    finalized_count = runs.filter(status=PayrollRun.STATUS_FINALIZED).count()
-
-    selected_company = None
-    if company_id:
-        selected_company = companies.filter(id=company_id).first()
+    page = Paginator(runs.annotate(employee_count=Count("records")), 25).get_page(request.GET.get("page"))
 
     return render(request, "payroll/run_list.html", {
-        "runs": runs,
+        "runs": page.object_list,
+        "page": page,
+        "total_runs": sum(totals.values()),
         "companies": companies,
         "selected_company_id": company_id or "",
-        "selected_company": selected_company,
         "status_filter": status_filter or "",
-        "draft_count": draft_count,
-        "finalized_count": finalized_count,
+        "draft_count": totals.get(PayrollRun.STATUS_DRAFT, 0),
+        "finalized_count": totals.get(PayrollRun.STATUS_FINALIZED, 0),
         # Admin can read a payroll run but not create, recalculate or
         # finalize one, so the pages have to render read-only rather than
         # offering controls that 403.
@@ -10092,6 +10499,41 @@ def payroll_run_detail(request, run_id):
             or has_feature_permission(request.user, "payroll", "edit")
         ),
     })
+
+@login_required
+@feature_required("payroll", action="edit")
+@require_POST
+def record_payment_date(request, record_id):
+    records = PayrollRecord.objects.select_related("payroll", "employee")
+    if not user_has_global_access(request.user):
+        company = get_user_company(request.user)
+        if company is None:
+            raise PermissionDenied
+        records = records.filter(payroll__company=company)
+    record = get_object_or_404(records, pk=record_id)
+    run = record.payroll
+    if run.status != PayrollRun.STATUS_FINALIZED or record.net_salary <= 0:
+        return HttpResponseBadRequest("Payment dates require a finalized payslip with positive net pay.")
+    try:
+        paid_on = date.fromisoformat(request.POST.get("payment_date", ""))
+    except ValueError:
+        return HttpResponseBadRequest("Enter a valid payment date.")
+    if paid_on > timezone.localdate():
+        return HttpResponseBadRequest("Enter today or an earlier payment date.")
+    previous = record.payment_date.isoformat() if record.payment_date else ""
+    if paid_on != record.payment_date:
+        if request.POST.get("previous") != previous:
+            return HttpResponse("The payment date changed. Reload the payroll run to review it.", status=409)
+        with transaction.atomic():
+            updated = records.filter(pk=record.pk, payment_date=record.payment_date).update(payment_date=paid_on)
+            if not updated:
+                return HttpResponse("The payment date changed. Reload the payroll run to review it.", status=409)
+            log_audit(request.user, AuditLog.Action.PAYROLL_PAYMENT_RECORDED, record, company=run.company,
+                      summary=f"Recorded salary payment date for {run.month:%B %Y}",
+                      changes={"payment_date": {"old": previous or None, "new": paid_on.isoformat()}})
+    messages.success(request, "Salary payment date recorded.")
+    return redirect("payroll-run-detail", run_id=run.pk)
+
 
 @login_required
 @feature_required("payroll", action="edit")
@@ -10393,22 +10835,7 @@ def _pdf_response(template_name, context, filename):
     return resp
 
 
-@login_required
-def salary_slip_view(request, record_id):
-    record = get_object_or_404(
-        PayrollRecord.objects.select_related('payroll', 'payroll__company', 'employee'),
-        id=record_id,
-    )
-    employee = record.employee
-    if not can_access_employee_record(request.user, employee, "payroll", "edit"):
-        raise PermissionDenied
-    # A draft run's numbers can still change, so employees only ever see
-    # slips from finalized runs (matching what their dashboard lists).
-    if record.payroll.status != PayrollRun.STATUS_FINALIZED and not _can_view_all_salary_slips(request.user):
-        raise Http404
-    company  = record.payroll.company
-
-    # Only components with a value appear on the slip.
+def _slip_components(record):
     earnings = [
         ("Basic Salary", record.basic_pm, record.basic_processed),
         ("H.R.A", record.hra_pm, record.hra_processed),
@@ -10427,6 +10854,27 @@ def salary_slip_view(request, record_id):
         ("Other Deductions", record.other_deductions),
     ]
     deductions = [d for d in deductions if _slip_amount(d[1]) != "-"]
+
+    return earnings, deductions
+
+
+@login_required
+def salary_slip_view(request, record_id):
+    record = get_object_or_404(
+        PayrollRecord.objects.select_related('payroll', 'payroll__company', 'employee'),
+        id=record_id,
+    )
+    employee = record.employee
+    if not can_access_employee_record(request.user, employee, "payroll", "edit"):
+        raise PermissionDenied
+    # A draft run's numbers can still change, so employees only ever see
+    # slips from finalized runs (matching what their dashboard lists).
+    if record.payroll.status != PayrollRun.STATUS_FINALIZED and not _can_view_all_salary_slips(request.user):
+        raise Http404
+    company  = record.payroll.company
+
+    # Only components with a value appear on the slip.
+    earnings, deductions = _slip_components(record)
 
     # Pad to a fixed body height so the slip keeps the same shape whatever
     # the employee's component mix.
@@ -10515,7 +10963,27 @@ def salary_slips_list(request):
         for r in records:
             r.days_paid_display = _slip_days(_slip_days_paid(r))
 
+    selected_id = request.GET.get("slip")
+    selected = next((r for r in records if str(r.pk) == selected_id), records[0] if records else None)
+    overview = {}
+    if selected:
+        earnings, deductions = _slip_components(selected)
+        account = (employee.salary_account_number or "").strip()
+        overview = {
+            "account_suffix": account[-4:] if len(account) > 4 and account[-4:].isdigit() else "",
+            "earnings": [(label, _slip_amount(amount)) for label, _, amount in earnings if _slip_amount(amount) != "-"],
+            "deductions": [(label, _slip_amount(amount)) for label, amount in deductions],
+            "gross": _slip_amount(selected.gross_processed) if selected.gross_processed else "0",
+            "net": _slip_amount(selected.net_salary) if selected.net_salary else "0",
+            "deducted": _slip_amount(selected.total_deductions) if selected.total_deductions else "0",
+        }
+        if (selected.gross_processed > 0 and selected.net_salary >= 0 and selected.total_deductions >= 0
+                and selected.net_salary + selected.total_deductions == selected.gross_processed):
+            overview["take_home_pct"] = round(100 * selected.net_salary / selected.gross_processed)
+            overview["deduction_pct"] = 100 - overview["take_home_pct"]
+
     return render(request, "payroll/salary_slips_list.html", {
+        "selected": selected, "overview": overview,
         "employee": employee,
         "employee_choices": employee_choices,
         "can_view_all": can_view_all,
@@ -10622,6 +11090,9 @@ def salary_slip_statement(request):
         "columns": columns,
         "rows": rows,
         "total_cells": total_cells,
+        # Bound the landscape PDF table height so long statements retain legible type.
+        "row_groups": [rows[i:i + 16] for i in range(0, len(rows), 16)]
+                      if request.GET.get("format") == "pdf" else [rows],
         "net_total": _slip_amount(totals["net_salary"]),
         "net_total_words": _amount_in_words(totals["net_salary"]),
         "month_count": len(records),
@@ -10819,6 +11290,47 @@ from .forms import HolidayForm, MonthlyEarnedLeavesForm
 # ============================================================================
 
 @login_required
+@require_POST
+def calendar_entry_update(request):
+    from website.models import CalendarEntry
+    from urllib.parse import urlencode
+    action = request.POST.get("action")
+    text = request.POST.get("text", "").strip()
+    if action in {"add", "edit"} and not 1 <= len(text) <= 240:
+        return HttpResponseBadRequest("Enter 1 to 240 characters.")
+    if action == "add":
+        try:
+            day = date.fromisoformat(request.POST.get("day", ""))
+        except ValueError:
+            return HttpResponseBadRequest("Choose a valid day.")
+        kind = request.POST.get("kind")
+        if kind not in {"note", "task"} or not 2 <= day.year <= 9998:
+            return HttpResponseBadRequest("Invalid calendar entry.")
+        CalendarEntry.objects.create(owner=request.user, day=day, text=text, kind=kind)
+    else:
+        key = request.POST.get("entry", "")
+        if not key.isascii() or not key.isdigit() or len(key) > 18:
+            raise Http404
+        entry = get_object_or_404(CalendarEntry, pk=int(key), owner=request.user)
+        day = entry.day
+        if action == "edit":
+            entry.text = text
+            entry.save(update_fields=["text"])
+        elif action in {"complete", "reopen"} and entry.kind == "task":
+            entry.completed = action == "complete"
+            entry.save(update_fields=["completed"])
+        elif action == "remove":
+            entry.delete()
+        else:
+            return HttpResponseBadRequest("Invalid calendar action.")
+    query = {"year": day.year, "month": day.month, "day": day.day}
+    company = request.POST.get("company_id")
+    if company and company.isascii() and company.isdigit() and len(company) <= 18:
+        query["company_id"] = company
+    return redirect(reverse("holiday-calendar") + "?" + urlencode(query) + "#day-planner")
+
+
+@login_required
 @require_http_methods(["GET"])
 def holiday_calendar_dashboard(request):
     """
@@ -10828,12 +11340,19 @@ def holiday_calendar_dashboard(request):
     # ----------------------------------------------------
     # 1️⃣ Year & Month handling
     # ----------------------------------------------------
-    year = int(request.GET.get('year', timezone.now().year))
-    month = int(request.GET.get('month', timezone.now().month))
-
-    if not 1 <= month <= 12:
-        month = timezone.now().month
-
+    from website.calendar_observances import month_observances
+    from website.models import CalendarEntry
+    today = timezone.localdate()
+    try:
+        year = int(request.GET.get("year", today.year))
+        month = int(request.GET.get("month", today.month))
+        if not 2 <= year <= 9998 or not 1 <= month <= 12:
+            raise ValueError
+        default_day = today.day if (year, month) == (today.year, today.month) else 1
+        selected_day = date(year, month, int(request.GET.get("day", default_day)))
+    except ValueError:
+        raise Http404("Invalid calendar date.")
+    entries = CalendarEntry.objects.filter(owner=request.user, day__year=year, day__month=month)
     month_name = calendar.month_name[month]
 
     # ----------------------------------------------------
@@ -10989,6 +11508,9 @@ def holiday_calendar_dashboard(request):
     context = {
         'year': year,
         'month': month,
+        "selected_day": selected_day,
+        "planner_entries": entries,
+        "observances": month_observances(year, month),
         'month_name': month_name,
         'show': show,
         'settings_companies': settings_companies,

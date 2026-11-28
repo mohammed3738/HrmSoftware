@@ -1,30 +1,35 @@
-<div class="container mt-4">
-  <h4>Create Login Account</h4>
+{% extends "base2.html" %}
+{% block title %}Create login account{% endblock %}
+{% block body %}
+<div class="container-xxl container-p-y atlas-personal">
+  <header class="personal-heading"><h1>Create login account</h1></header>
 
-  <form method="POST">
+  <form method="POST" class="personal-card">
     {% csrf_token %}
 
     <div class="mb-3">
-      <label>Employee</label>
-      <select name="employee_id" class="form-select" required>
+      <label for="account-employee" class="form-label">Employee</label>
+      <select id="account-employee" name="employee_id" class="form-select" required>
         <option value="">-- Select Employee --</option>
         {% for emp in employees %}
           <option value="{{ emp.id }}">
-            {{ emp.first_name }} ({{ emp.employee_code }})
+            {{ emp.first_name }} {{ emp.last_name }} ({{ emp.employee_code }})
           </option>
         {% endfor %}
       </select>
     </div>
 
     <div class="mb-3">
-      <label>Role</label>
-      <select name="role" class="form-select" required>
+      <label for="account-role" class="form-label">Role</label>
+      <select id="account-role" name="role" class="form-select" required>
+        <option value="">Select a role</option>
         {% for role in roles %}
         <option value="{{ role.name }}">{{ role.name }}</option>
         {% endfor %}
       </select>
     </div>
 
-    <button class="btn btn-success">Create User</button>
+    <button class="btn btn-primary align-self-start">Create User</button>
   </form>
 </div>
+{% endblock %}

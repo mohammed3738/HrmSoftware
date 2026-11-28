@@ -10,16 +10,18 @@ the permission matrix also gets a coherent page instead of buttons that
 
 Run with: python manage.py test website.tests.test_role_dashboards
 """
-from datetime import date
+from datetime import date, timedelta
+from unittest.mock import patch
 
 from django.contrib.auth.models import User, Group
 from django.test import TestCase, Client
 from django.urls import reverse
+from django.utils import timezone
 
 from website.models import (
     Attendance, Company, CompOffRequest, Department, Employee, Feature,
     LeaveApplication, PayrollRun, PayrollSettings, RoleFeaturePermission,
-    SalaryMaster,
+    Offboarding, SalaryMaster,
 )
 
 
@@ -73,7 +75,7 @@ class AdminDashboardPanelsTest(TestCase):
         and Salary History, which HR needs. What HR must not see is the
         payroll run itself: the nav item, the dashboard panel, the pages."""
         resp = self._dash(self.hr)
-        self.assertNotContains(resp, "<div>Payroll Run</div>", html=False)
+        self.assertNotContains(resp, ">Payroll Run</a>", html=False)
         self.assertNotContains(resp, "Payroll Runs")
         self.assertNotContains(resp, "New Payroll Run")
 
@@ -87,7 +89,7 @@ class AdminDashboardPanelsTest(TestCase):
         attendance_review:edit -- HR reads attendance but doesn't correct
         it, so the nav item goes and the page refuses."""
         resp = self._dash(self.hr)
-        self.assertNotContains(resp, "<div>Late Attendance Review</div>", html=False)
+        self.assertNotContains(resp, ">Late Attendance Review</a>", html=False)
 
         client = Client()
         client.force_login(self.hr, backend="django.contrib.auth.backends.ModelBackend")
@@ -95,7 +97,7 @@ class AdminDashboardPanelsTest(TestCase):
 
     def test_late_attendance_review_stays_for_roles_that_correct_attendance(self):
         resp = self._dash(self.admin)
-        self.assertContains(resp, "<div>Late Attendance Review</div>", html=False)
+        self.assertContains(resp, ">Late Attendance Review</a>", html=False)
 
         client = Client()
         client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
@@ -109,18 +111,18 @@ class AdminDashboardPanelsTest(TestCase):
         self.assertEqual(client.get(reverse("attendance-register")).status_code, 403)
         self.assertEqual(client.get(reverse("attendance-register-export")).status_code, 403)
         menu = client.get(reverse("admin-dashboard"))
-        self.assertNotContains(menu, "<div>Attendance Register</div>")
-        self.assertContains(menu, "<div>Attendance List</div>")
+        self.assertNotContains(menu, ">Attendance Register</a>")
+        self.assertContains(menu, ">Attendance List</a>")
 
     def test_hr_keeps_salary_structure_in_the_payroll_menu(self):
         """Gating the whole Payroll menu on payroll:view would take Create
         Salary Structure away from HR, who needs it."""
         resp = self._dash(self.hr)
-        self.assertContains(resp, "<div>Payroll</div>", html=False)
-        self.assertContains(resp, "<div>Create Salary Structure</div>", html=False)
-        self.assertContains(resp, "<div>Salary History</div>", html=False)
+        self.assertContains(resp, "<summary>Payroll</summary>", html=False)
+        self.assertContains(resp, ">Create Salary Structure</a>", html=False)
+        self.assertContains(resp, ">Salary History</a>", html=False)
         # Salary Increment edits an existing structure -- that is edit-only.
-        self.assertNotContains(resp, "<div>Salary Increment</div>", html=False)
+        self.assertNotContains(resp, ">Salary Increment</a>", html=False)
 
     def test_payroll_pages_render_read_only_for_a_view_only_role(self):
         """Admin reads payroll runs but cannot change them, so the page must
@@ -174,7 +176,7 @@ class AdminDashboardPanelsTest(TestCase):
     def test_nav_only_offers_menus_the_role_can_open(self):
         """A menu that 403s when clicked is worse than no menu."""
         admin_nav = self._dash(self.admin)
-        self.assertContains(admin_nav, "<div>Payroll</div>", html=False)
+        self.assertContains(admin_nav, "<summary>Payroll</summary>", html=False)
 
         role = Group.objects.create(name="Dashboard Nav Only")
         RoleFeaturePermission.objects.create(
@@ -183,7 +185,7 @@ class AdminDashboardPanelsTest(TestCase):
         user = User.objects.create_user(username="rdb_nav", password="pass12345")
         user.groups.add(role)
         resp = self._dash(user)
-        for menu in ("<div>Payroll</div>", "<div>Employees</div>", "<div>Company</div>"):
+        for menu in ("<summary>Payroll</summary>", "<summary>People</summary>", "<summary>Administration</summary>"):
             self.assertNotContains(resp, menu, html=False)
 
     def test_self_service_menus_stay_open_to_everyone(self):
@@ -198,8 +200,8 @@ class AdminDashboardPanelsTest(TestCase):
         user.groups.add(role)
 
         resp = self._dash(user)
-        self.assertContains(resp, "<div>Leaves &amp; Comp-Off</div>".replace("&amp;", "&"), html=False)
-        self.assertContains(resp, "<div>Leave Apply</div>", html=False)
+        self.assertContains(resp, "<summary>Leave</summary>", html=False)
+        self.assertContains(resp, ">Apply for leave</a>", html=False)
 
     def test_payroll_panel_counts_runs_and_flags_missing_salary_structures(self):
         paid = make_employee(self.company, "RDB001")
@@ -221,6 +223,59 @@ class AdminDashboardPanelsTest(TestCase):
         self.assertEqual(resp.context["finalized_run_count"], 1)
         self.assertEqual(resp.context["employees_without_salary"], 1)
         self.assertEqual(len(resp.context["recent_payroll_runs"]), 2)
+
+    def test_readiness_setup_limits_employee_choices_to_company_and_missing_structure(self):
+        paid = make_employee(self.company, "READY")
+        SalaryMaster.objects.create(employee=paid, is_active=True)
+        missing = make_employee(self.company, "MISSING")
+        other = Company.objects.create(name="Other company", short_name="Other")
+        make_employee(other, "OTHER")
+        self.client.force_login(self.super_admin, backend="django.contrib.auth.backends.ModelBackend")
+        query = {"company": self.company.pk}
+        dashboard = self.client.get(reverse("admin-dashboard"), query)
+        link = reverse("create-salary") + f"?missing=1&company={self.company.pk}"
+        self.assertContains(dashboard, link.replace("&", "&amp;"))
+        response = self.client.get(link)
+        self.assertEqual(list(response.context["employees"]), [missing])
+        self.assertContains(response, "Employees missing a salary structure")
+
+    def test_department_distribution_accounts_for_all_active_employees_in_company(self):
+        departments = ["Team " + str(i) for i in range(9)] + [" Team 0 ", " ", None]
+        for index, department in enumerate(departments):
+            make_employee(self.company, f"DEPT{index}", department=department)
+        other = Company.objects.create(name="Elsewhere", short_name="EXT")
+        make_employee(other, "OUTSIDE", department="External")
+        self.client.force_login(self.admin, backend="django.contrib.auth.backends.ModelBackend")
+        response = self.client.get(reverse("admin-dashboard"), {"company": self.company.pk})
+        rows = response.context["dept_data"]
+        self.assertEqual(len(rows), 9)
+        self.assertEqual(rows[0], {"department": "Team 0", "count": 2})
+        self.assertEqual(response.context["unassigned_department_count"], 2)
+        self.assertEqual(sum(row["count"] for row in rows) + 2, response.context["total_active"])
+        self.assertContains(response, "More departments (1)")
+
+    def test_upcoming_offboarding_respects_company_and_archive_status(self):
+        today = timezone.localdate()
+        other = Company.objects.create(name="Other company", short_name="Other")
+        for code, company, active in (("DUE", self.company, True), ("OLD", self.company, False),
+                                      ("OTHER", other, True)):
+            employee = make_employee(company, code)
+            Offboarding.objects.create(employee=employee, date_of_resignation=today,
+                                       date_of_relieving=today + timedelta(days=7), is_active=active)
+        with patch("website.views.get_company_filter", return_value=self.company):
+            response = self._dash(self.admin)
+        self.assertEqual([row.employee.employee_code for row in response.context["upcoming_offboarding"]], ["DUE"])
+
+    def test_future_joiner_is_excluded_until_their_start_date(self):
+        today = date(2026, 11, 3)
+        joined = make_employee(self.company, "JOINED")
+        future = make_employee(self.company, "FUTURE")
+        Employee.objects.filter(pk=joined.pk).update(date_of_joining=today)
+        Employee.objects.filter(pk=future.pk).update(date_of_joining=today + timedelta(days=2))
+        with patch("website.views.timezone.localdate", return_value=today):
+            response = self._dash(self.admin)
+        self.assertEqual(response.context["new_joiners_month"], 1)
+        self.assertEqual(list(response.context["recent_joiners"]), [joined])
 
     def test_payroll_data_is_not_computed_for_users_who_cannot_see_it(self):
         """A custom role without payroll:view shouldn't pay for the panel's
@@ -258,6 +313,21 @@ class AdminDashboardPanelsTest(TestCase):
         self.assertNotContains(resp, 'id="openUploadModal"')
         # ...but the read-only attendance breakdown is still there.
         self.assertContains(resp, "View Full Attendance")
+
+    def test_leave_only_reviewer_sees_just_their_approval_queue(self):
+        role = Group.objects.create(name="Dashboard leave approver")
+        for key in ("admin_dashboard", "leave_management"):
+            RoleFeaturePermission.objects.create(
+                role=role, feature=Feature.objects.get(key=key), can_view=True,
+                can_approve=key == "leave_management",
+            )
+        user = User.objects.create_user(username="rdb_leave_only")
+        user.groups.add(role)
+        response = self._dash(user)
+        self.assertContains(response, 'id="leave-queue"')
+        self.assertContains(response, 'href="#leave-queue"')
+        self.assertNotContains(response, 'id="compoff-queue"')
+        self.assertNotContains(response, 'href="#correction-queue"')
 
     def test_approval_panels_hidden_when_no_approval_rights(self):
         role = Group.objects.create(name="Dashboard Only")
@@ -390,6 +460,18 @@ class HodTeamPanelTest(TestCase):
 
         # ...and it drops off the dashboard queue.
         self.assertEqual(list(self._dash(self.hod_user).context["leave_requests"]), [])
+
+    def test_leave_rejection_remains_visible_in_team_history(self):
+        leave = LeaveApplication.objects.create(employee=self.reportee, start_date=date(2026, 7, 1),
+                                               end_date=date(2026, 7, 2), reason="Travel")
+        self.client.force_login(self.hod_user, backend="django.contrib.auth.backends.ModelBackend")
+        result = self.client.post(reverse("reject_leave", args=[leave.pk]), {"reason": "Coverage needed"},
+                                  content_type="application/json")
+        self.assertEqual(result.status_code, 200)
+        history = self.client.get(reverse("employee-request-history", args=["leave"]),
+                                  {"scope": "team", "month": "2026-07", "status": "rejected"})
+        self.assertContains(history, "Coverage needed")
+        self.assertContains(history, "Leave rejected")
 
     def test_hod_can_reject_a_compoff_straight_from_the_dashboard(self):
         compoff = CompOffRequest.objects.create(

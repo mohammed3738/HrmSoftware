@@ -10,7 +10,7 @@ buttons are a convenience, not the authorisation.
 Expects: leave_requests, compoff_requests, correction_requests.
 {% endcomment %}
   <!-- Leave -->
-  <div class="card mb-4">
+  <div class="card mb-4 approval-queue" data-queue="leave">
     <div class="card-header pb-1">
       <h6 class="mb-0"><i class="ri-calendar-event-line me-1 text-primary"></i> Pending Leave Requests</h6>
     </div>
@@ -22,12 +22,12 @@ Expects: leave_requests, compoff_requests, correction_requests.
         <tbody>
           {% for l in leave_requests %}
           <tr data-row-id="leave-{{ l.id }}">
-            <td class="fw-medium">{{ l.employee.first_name }} {{ l.employee.last_name }}</td>
-            <td>{% if l.leave_type %}<span class="badge bg-label-primary">{{ l.get_leave_type_display }}</span>{% else %}—{% endif %}</td>
-            <td class="text-muted">{{ l.start_date|date:"d M" }} – {{ l.end_date|date:"d M Y" }}</td>
-            <td>{{ l.total_days }}</td>
-            <td class="text-muted small">{{ l.reason|default:"—"|truncatechars:60 }}</td>
-            <td class="text-end text-nowrap">
+            <td data-label="Employee" class="fw-medium">{{ l.employee.first_name }} {{ l.employee.last_name }}</td>
+            <td data-label="Type">{% if l.leave_type %}<span class="badge bg-label-primary">{{ l.get_leave_type_display }}</span>{% else %}—{% endif %}</td>
+            <td data-label="Dates" class="text-muted">{{ l.start_date|date:"d M" }} – {{ l.end_date|date:"d M Y" }}</td>
+            <td data-label="Days">{{ l.total_days }}</td>
+            <td data-label="Reason" class="text-muted small">{{ l.reason|default:"—" }}</td>
+            <td data-label="Action" class="text-end text-nowrap">
               <button class="btn btn-sm btn-success" onclick="actOn('leave', {{ l.id }}, 'approve')">Approve</button>
               <button class="btn btn-sm btn-outline-danger" onclick="actOn('leave', {{ l.id }}, 'reject')">Reject</button>
             </td>
@@ -41,7 +41,7 @@ Expects: leave_requests, compoff_requests, correction_requests.
   </div>
 
   <!-- Comp-off -->
-  <div class="card mb-4">
+  <div class="card mb-4 approval-queue" data-queue="compoff">
     <div class="card-header pb-1">
       <h6 class="mb-0"><i class="ri-time-line me-1 text-info"></i> Pending Comp-Off Requests</h6>
     </div>
@@ -53,11 +53,11 @@ Expects: leave_requests, compoff_requests, correction_requests.
         <tbody>
           {% for c in compoff_requests %}
           <tr data-row-id="compoff-{{ c.id }}">
-            <td class="fw-medium">{{ c.employee.first_name }} {{ c.employee.last_name }}</td>
-            <td class="text-muted">{{ c.from_date|date:"d M Y" }}</td>
-            <td class="text-muted">{{ c.to_date|date:"d M Y" }}</td>
-            <td class="text-muted small">{{ c.reason|default:"—"|truncatechars:60 }}</td>
-            <td>
+            <td data-label="Employee" class="fw-medium">{{ c.employee.first_name }} {{ c.employee.last_name }}</td>
+            <td data-label="From" class="text-muted">{{ c.from_date|date:"d M Y" }}</td>
+            <td data-label="To" class="text-muted">{{ c.to_date|date:"d M Y" }}</td>
+            <td data-label="Reason" class="text-muted small">{{ c.reason|default:"—" }}</td>
+            <td data-label="Grant as">
               {% if c.from_date == c.to_date %}
               <select class="form-select form-select-sm compoff-half-day" style="width:auto;">
                 <option value="false" {% if not c.is_half_day %}selected{% endif %}>Full Day</option>
@@ -67,7 +67,7 @@ Expects: leave_requests, compoff_requests, correction_requests.
               <span class="text-muted small">Full Day ({{ c.count }}d)</span>
               {% endif %}
             </td>
-            <td class="text-end text-nowrap">
+            <td data-label="Action" class="text-end text-nowrap">
               <button class="btn btn-sm btn-success" onclick="actOn('compoff', {{ c.id }}, 'approve', this)">Approve</button>
               <button class="btn btn-sm btn-outline-danger" onclick="actOn('compoff', {{ c.id }}, 'reject')">Reject</button>
             </td>
@@ -81,7 +81,7 @@ Expects: leave_requests, compoff_requests, correction_requests.
   </div>
 
   <!-- Attendance corrections -->
-  <div class="card mb-4">
+  <div class="card mb-4 approval-queue" data-queue="correction">
     <div class="card-header pb-1">
       <h6 class="mb-0"><i class="ri-edit-box-line me-1 text-danger"></i> Pending Attendance Corrections</h6>
     </div>
@@ -93,15 +93,15 @@ Expects: leave_requests, compoff_requests, correction_requests.
         <tbody>
           {% for req in correction_requests %}
           <tr data-row-id="correction-{{ req.id }}">
-            <td class="fw-medium">{{ req.attendance.employee.first_name }} {{ req.attendance.employee.last_name }}</td>
-            <td class="text-muted">{{ req.attendance.date|date:"d M Y" }}</td>
-            <td class="text-muted small">{{ req.old_in_time|default:"–" }} / {{ req.old_out_time|default:"–" }}</td>
-            <td class="text-muted small">
+            <td data-label="Employee" class="fw-medium">{{ req.attendance.employee.first_name }} {{ req.attendance.employee.last_name }}</td>
+            <td data-label="Date" class="text-muted">{{ req.attendance.date|date:"d M Y" }}</td>
+            <td data-label="Old in/out" class="text-muted small">{{ req.old_in_time|default:"–" }} / {{ req.old_out_time|default:"–" }}</td>
+            <td data-label="New in/out" class="text-muted small">
               {{ req.new_in_time|default:"–" }} / {{ req.new_out_time|default:"–" }}
               {% if req.times_unchanged %}<span class="badge bg-label-warning ms-1">no change</span>{% endif %}
             </td>
-            <td class="text-muted small">{{ req.reason|default:"—"|truncatechars:50 }}</td>
-            <td>
+            <td data-label="Reason" class="text-muted small">{{ req.reason|default:"—" }}</td>
+            <td data-label="Mark as">
               <select class="form-select form-select-sm correction-status" style="min-width:130px;">
                 <option value="">Auto</option>
                 <option value="Present">Full Day</option>
@@ -110,7 +110,7 @@ Expects: leave_requests, compoff_requests, correction_requests.
                 <option value="Absent">Absent</option>
               </select>
             </td>
-            <td class="text-end text-nowrap">
+            <td data-label="Action" class="text-end text-nowrap">
               <button class="btn btn-sm btn-success" onclick="actOn('correction', {{ req.id }}, 'approve', this)">Approve</button>
               <button class="btn btn-sm btn-outline-danger" onclick="actOn('correction', {{ req.id }}, 'reject')">Reject</button>
             </td>
@@ -162,6 +162,9 @@ function actOn(kind, id, action, btn) {
     }
   }
 
+  const controls = document.querySelectorAll(`[data-row-id="${kind}-${id}"] button`);
+  if (Array.from(controls).some(button => button.disabled)) return;
+  controls.forEach(button => { button.disabled = true; });
   fetch(url, { method: 'POST', headers: headers, body: body })
     .then(res => res.json().then(data => ({ ok: res.ok, data })))
     .then(({ ok, data }) => {
@@ -170,8 +173,19 @@ function actOn(kind, id, action, btn) {
         return;
       }
       const row = document.querySelector(`[data-row-id="${kind}-${id}"]`);
-      if (row) row.remove();
+      if (row) {
+        const queue = row.closest("[data-queue]");
+        row.remove();
+        if (!queue.querySelector("[data-row-id]")) {
+          const empty = queue.querySelector("tbody").insertRow().insertCell();
+          empty.colSpan = queue.querySelectorAll("thead th").length;
+          empty.className = "text-center text-muted py-3";
+          empty.textContent = "Nothing pending";
+        }
+        queue.dispatchEvent(new CustomEvent("approval-decided", {bubbles: true, detail: action}));
+      }
     })
-    .catch(() => alert('Something went wrong. Please try again.'));
+    .catch(() => alert('Something went wrong. Please try again.'))
+    .finally(() => controls.forEach(button => { button.disabled = false; }));
 }
 </script>

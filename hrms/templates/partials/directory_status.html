@@ -1,0 +1,5 @@
+<nav class="atlas-status-filter" aria-label="Record status">
+  <a href="{% querystring show='active' %}" {% if show == 'active' or not show %}aria-current="page"{% endif %}>Active</a>
+  <a href="{% querystring show='archived' %}" {% if show == 'archived' %}aria-current="page"{% endif %}>Archived</a>
+  <a href="{% querystring show='all' %}" {% if show == 'all' %}aria-current="page"{% endif %}>All</a>
+</nav>

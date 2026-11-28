@@ -561,6 +561,9 @@
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       var button = form.querySelector("button[type=submit]");
+      var status = form.querySelector("[data-report-status]");
+      status.classList.remove("text-danger");
+      status.textContent = "Uploading report...";
       if (button) {
         button.disabled = true;
       }
@@ -576,7 +579,8 @@
             if (button) {
               button.disabled = false;
             }
-            window.alert(payload.error || "The upload failed.");
+            status.classList.add("text-danger");
+            status.textContent = payload.error || "The upload failed.";
             return;
           }
           sessionStorage.setItem("fieldDutyFlash", payload.message || "");
@@ -586,7 +590,8 @@
           if (button) {
             button.disabled = false;
           }
-          window.alert("Could not reach the server. Check your signal and try again.");
+          status.classList.add("text-danger");
+          status.textContent = "Could not reach the server. Check your signal and try again.";
         });
     });
   });

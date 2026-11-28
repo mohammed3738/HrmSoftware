@@ -3,7 +3,7 @@
 <html lang="en" class="light-style" dir="ltr" data-theme="theme-default" data-assets-path="{% static 'assets/' %}" data-style="light">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Login | HRMS</title>
 
   <link rel="icon" type="image/svg+xml" href="{% static 'assets/img/branding/hrms-icon.svg' %}" />
@@ -52,7 +52,7 @@
   </head>
 
 <body>
-  <div class="hrms-auth-wrapper">
+  <main id="app-content" class="hrms-auth-wrapper">
 
     <!-- Illustration side -->
     <div class="d-none d-lg-flex col-lg-7 hrms-auth-illustration">
@@ -74,7 +74,7 @@
                style="height:100px; width:auto;">
         </div>
 
-        <h4 class="mb-1">Welcome back! 👋</h4>
+        <h1 class="h4 mb-1">Welcome back</h1>
         <p class="text-muted mb-4">Please sign in to your account to continue</p>
 
         {% if messages %}
@@ -101,9 +101,9 @@
             </div>
             <div class="input-group input-group-merge mt-1">
               <input type="password" id="password" name="password" class="form-control" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;" required>
-              <span class="input-group-text password-toggle" id="togglePassword">
-                <i class="ri-eye-off-line" id="toggleIcon"></i>
-              </span>
+              <button type="button" class="input-group-text password-toggle" id="togglePassword" data-password-toggle="password" aria-label="Show password" aria-pressed="false">
+                <i class="ri-eye-off-line" id="toggleIcon" aria-hidden="true"></i>
+              </button>
             </div>
           </div>
 
@@ -112,19 +112,7 @@
 
       </div>
     </div>
-  </div>
-
-  <script>
-    const toggle = document.getElementById("togglePassword");
-    const pwd = document.getElementById("password");
-    const icon = document.getElementById("toggleIcon");
-    if (toggle) {
-      toggle.addEventListener("click", () => {
-        const isHidden = pwd.type === "password";
-        pwd.type = isHidden ? "text" : "password";
-        icon.className = isHidden ? "ri-eye-line" : "ri-eye-off-line";
-      });
-    }
-  </script>
+  </main>
+  <script src="{% static 'js/password-rules.js' %}"></script>
 </body>
 </html>

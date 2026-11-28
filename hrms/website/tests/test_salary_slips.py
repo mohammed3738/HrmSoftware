@@ -5,6 +5,9 @@ Run with: python manage.py test website.tests.test_salary_slips
 """
 from datetime import date
 from decimal import Decimal
+from io import BytesIO
+
+from pypdf import PdfReader
 
 from django.contrib.auth.models import User, Group
 from django.test import TestCase, Client
@@ -75,6 +78,15 @@ class SalarySlipsTest(TestCase):
         resp = self._client(self.self_user).get(reverse("salary-slips"), {"employee": self.other.id})
         self.assertEqual(resp.context["employee"], self.me)
 
+    def test_month_detail_uses_only_visible_records(self):
+        client = self._client(self.self_user)
+        response = client.get(reverse("salary-slips"), {"slip": self.jan.pk})
+        self.assertEqual(response.context["selected"], self.jan)
+        self.assertEqual(response.context["overview"]["net"], "20,000")
+        for excluded in (self.other_jan, self.apr_draft):
+            response = client.get(reverse("salary-slips"), {"slip": excluded.pk})
+            self.assertEqual(response.context["selected"], self.mar)
+
     def test_year_filter(self):
         resp = self._client(self.self_user).get(reverse("salary-slips"), {"year": "2025"})
         self.assertEqual(list(resp.context["records"]), [])
@@ -108,6 +120,33 @@ class SalarySlipsTest(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp["Content-Type"], "application/pdf")
         self.assertTrue(resp.content.startswith(b"%PDF"))
+
+    def test_printed_draft_slip_identifies_its_status(self):
+        response = self._client(self.officer).get(
+            reverse("salary-slip", args=[self.apr_draft.pk]), {"format": "pdf"},
+        )
+        pages = PdfReader(BytesIO(response.content)).pages
+        self.assertEqual(len(pages), 1)
+        self.assertIn("SALARY SLIP (Draft)", pages[0].extract_text())
+        self.assertIn("23,000", pages[0].extract_text())
+
+    def test_long_statement_repeats_column_headings_on_continuation_pages(self):
+        records = [
+            self._record(self.me, date(2018 + i // 12, i % 12 + 1, 1), net=20000)
+            for i in range(60)
+        ]
+        response = self._statement(self.self_user, records, format="pdf")
+        pages = PdfReader(BytesIO(response.content)).pages
+        self.assertGreater(len(pages), 1)
+        text_pages = [page.extract_text() for page in pages]
+        for text in text_pages:
+            if "20,000" in text:
+                self.assertIn("Net Pay", text)
+                self.assertIn("Month", text)
+        text = "".join(text_pages)
+        for record in records:
+            self.assertIn(record.payroll.month.strftime("%b-%y"), text)
+        self.assertIn("1200000", text_pages[-1].replace(",", ""))
 
     def test_employee_cannot_include_draft_month(self):
         resp = self._statement(self.self_user, [self.jan, self.apr_draft])

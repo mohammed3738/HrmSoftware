@@ -1,133 +1,108 @@
 {% extends 'base2.html' %}
+{% block title %}Leave{% endblock %}
 {% block body %}
-
-<div class="container-fluid p-4">
-
-    <h3 class="fw-bold mb-1">Leave Applications</h3>
-    <small class="text-muted">Dashboard / Leave Management / Leave Apply</small>
-
-    <!-- 🔹 Top Filter + Button -->
-   <!-- 🔹 Top Filter + Button -->
-<div class="d-flex justify-content-between align-items-center mt-4 gap-2 flex-wrap">
-
-    <form method="get" class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
-
-    
-
-        <select name="status" class="form-select form-select-sm w-auto" onchange="this.form.submit()">
-            <option value="">Status</option>
-            <option value="Pending"  {% if status == 'Pending' %} selected {% endif %}>Pending</option>
-            <option value="Approved" {% if status == 'Approved' %} selected {% endif %}>Approved</option>
-            <option value="Rejected" {% if status == 'Rejected' %} selected {% endif %}>Rejected</option>
+<div class="container-xxl container-p-y atlas-personal leave-workspace">
+  <header class="personal-heading"><div><h1>Leave</h1></div><div class="atlas-actions"><a class="personal-pill" href="{% url 'holiday-calendar' %}">Calendar</a><a class="personal-pill" href="{% url 'leave_balance' %}">Balance report</a></div></header>
+  {% if own_employee %}
+  <div class="leave-balances">
+    <section class="personal-card leave-balance"><strong class="leave-ring">{{ balance.final_leave_balance|floatformat:"-2"|default:"—" }}</strong>
+      <div><h2>My leave balance</h2>{% if balance %}<p>{{ balance.leave_taken|floatformat:"-2" }} days used this period</p>{% else %}<p>No balance published yet</p>{% endif %}</div>
+    </section>
+    <section class="personal-card leave-balance"><strong class="leave-ring comp">{{ balance.compoff|floatformat:"-2"|default:"—" }}</strong>
+      <div><h2>My comp-off credit</h2><p>{% if balance.period_to_date %}Period ending {{ balance.period_to_date|date:"j M Y" }}{% else %}No period published yet{% endif %}</p></div>
+    </section>
+  </div>
+  {% if balance_periods %}
+  <section class="personal-card balance-details" aria-labelledby="balance-heading">
+    <header><h2 id="balance-heading">My balance breakdown</h2>
+      <label>Payroll month
+        <select id="balance-period" class="form-select form-select-sm">
+          {% for row in balance_periods %}
+          <option value="{{ row.pk }}">{{ row.period_to_date|date:"F Y"|default:"Undated period" }}{% if row.period_from_date and row.period_to_date %} · {{ row.period_from_date|date:"j M" }} – {{ row.period_to_date|date:"j M" }}{% endif %}</option>
+          {% endfor %}
         </select>
-
-    </form>
-
-    <button class="btn btn-primary btn-sm align-self-start d-flex align-items-center gap-1"
-            data-bs-toggle="modal" data-bs-target="#applyLeaveModal">
-        <i class="ri-add-line"></i> Apply Leave
-    </button>
-
-</div>
-
-
-
-    <!-- 🔹 Table Card -->
-    <div class="card shadow-sm mt-3">
-        <div class="card-body p-0">
-
-            <table class="table table-hover text-center align-middle mb-0 table-stack">
-                <thead class="table-light">
-                    <tr>
-                        <th>Employee</th>
-                        <th>Leave Type</th>
-                        <th>Start</th>
-                        <th>End</th>
-                        <th>Total Days</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-
-                <tbody>
-                    {% for l in leaves %}
-                    <tr>
-                        <td class="fw-semibold" data-label="Employee">{{ l.employee.first_name }}</td>
-                        <td data-label="Leave Type">{{ l.get_leave_type_display|default:"—" }}</td>
-                        <td data-label="Start">{{ l.start_date }}</td>
-                        <td data-label="End">{{ l.end_date }}</td>
-                        <td data-label="Total Days">{{ l.total_days }}</td>
-
-                        <td data-label="Status">
-                            <span class="badge 
-                                  {% if l.status == 'Approved' %} bg-success
-                                  {% elif l.status == 'Rejected' %} bg-danger
-                                  {% else %} bg-warning text-dark {% endif %}">
-                                {{ l.status }}
-                            </span>
-                        </td>
-
-                        <td data-label="">
-                            <button class="btn btn-outline-primary btn-sm"
-                                    onclick="openLeaveView('{{l.id}}')">
-                                View
-                            </button>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="7" class="text-muted p-3">No leave records found</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <!-- 🔹 Pagination -->
-        <div class="card-footer d-flex justify-content-end p-2">
-            <nav>
-                <ul class="pagination pagination-sm mb-0">
-                    {% if leaves.has_previous %}
-                    <li class="page-item"><a class="page-link" href="?page={{ leaves.previous_page_number }}">Prev</a></li>
-                    {% endif %}
-
-                    <li class="page-item active"><span class="page-link">{{ leaves.number }}</span></li>
-
-                    {% if leaves.has_next %}
-                    <li class="page-item"><a class="page-link" href="?page={{ leaves.next_page_number }}">Next</a></li>
-                    {% endif %}
-                </ul>
-            </nav>
-        </div>
+      </label>
+    </header>
+    <div class="table-responsive" tabindex="0" role="region" aria-label="Monthly leave balance">
+      <table class="table text-end text-nowrap mb-0" aria-labelledby="balance-heading">
+        <thead><tr><th scope="col">Opening</th><th scope="col">Leave Taken</th><th scope="col">Late</th><th scope="col">Comp Off</th><th scope="col"><abbr title="Leave without pay">LWP</abbr></th><th scope="col">Days Present</th><th scope="col">Total Days</th><th scope="col">Balance</th><th scope="col">Closing</th><th scope="col">Final Balance</th></tr></thead>
+        <tbody>{% for row in balance_periods %}
+          <tr data-balance-period="{{ row.pk }}"{% if not forloop.first %} hidden{% endif %}>
+            <td>{{ row.opening_balance|floatformat:"-2" }}</td><td>{{ row.leave_taken|floatformat:"-2" }}</td><td>{{ row.late }}</td><td>{{ row.compoff|floatformat:"-2" }}</td><td>{{ row.leave_without_pay|floatformat:"-2" }}</td>
+            <td>{{ row.number_of_days_present|floatformat:"-2" }}</td><td>{{ row.total_period_days }}</td><td>{{ row.leave_balance|floatformat:"-2" }}</td><td>{{ row.closing_balance|floatformat:"-2" }}</td><td><strong>{{ row.final_leave_balance|floatformat:"-2" }}</strong></td>
+          </tr>
+        {% endfor %}</tbody>
+      </table>
     </div>
-</div>
-
-
-<!-- ==================== APPLY LEAVE MODAL ==================== -->
-<div class="modal fade" id="applyLeaveModal" tabindex="-1">
-    <div class="modal-dialog modal-md modal-dialog-centered">
-        <div class="modal-content">
-
-            <div class="modal-header bg-primary  d-flex align-items-center justify-content-between px-4 py-3 border-0">
-                <h5 class="modal-title text-white"><i class="ri-calendar-2-line text-white"></i> Apply for Leave</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-
-            <form method="POST">
-                <div class="modal-body">
-                    {% csrf_token %}
-                    {% if applying_for_self %}
-                    <p class="mb-3"><span class="text-muted">Applying for:</span>
-                      <b>{% if own_employee %}{{ own_employee.first_name }} {{ own_employee.last_name }} ({{ own_employee.employee_code }}){% else %}— your login has no employee record{% endif %}</b></p>
-                    {% endif %}
-                    {{ form.as_p }}
-                </div>
-
-                <div class="modal-footer">
-                    <button class="btn btn-success w-100">Submit</button>
-                </div>
-            </form>
-
-        </div>
+  </section>{% endif %}
+  {% endif %}
+  <div class="leave-layout">
+    <section class="personal-card"><header><h2>Apply for leave</h2></header>
+      {% if applying_for_self and not own_employee %}<p>Your account needs a linked employee record before you can apply for leave.</p>
+      {% else %}
+      <form method="post" id="leave-application" class="leave-form">
+        {% csrf_token %}
+        {% if applying_for_self %}<p>Applying for: <strong>{{ own_employee.first_name }} {{ own_employee.last_name }} ({{ own_employee.employee_code }})</strong></p>{% endif %}
+        {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+        <div class="row g-3">{% for field in form %}
+          <div class="{% if field.name == 'start_date' or field.name == 'end_date' %}col-sm-6{% else %}col-12{% endif %}">
+            <label for="{{ field.id_for_label }}" class="form-label">{{ field.label }}</label>{{ field }}{{ field.errors }}
+          </div>
+        {% endfor %}</div>
+        <div class="personal-line"><span>Requested duration</span><output id="leave-duration" for="id_start_date id_end_date">Select dates</output></div>
+        <button class="btn btn-primary w-100">Submit request</button>
+      </form>
+      {% endif %}
+    </section>
+    <div class="personal-stack">
+      <section class="personal-card"><header><h2>Application history</h2>
+        <details class="leave-filter"><summary>Filter</summary>
+          <form method="get"><label>Status<select name="status" class="form-select"><option value="">All statuses</option>{% for choice in status_choices %}<option {% if status == choice %}selected{% endif %}>{{ choice }}</option>{% endfor %}</select></label>
+            <label>Search<input type="search" name="search" value="{{ search }}" placeholder="Employee or leave type" class="form-control"></label>
+            <button class="btn btn-primary btn-sm">Apply filters</button>
+          </form>
+        </details></header>
+        {% if search or status %}<p>{{ status }} {{ search }} &middot; <a href="{% url 'leave_apply' %}">Clear filters</a></p>{% endif %}
+        {% for leave in leaves %}
+        <details class="leave-history-row"><summary><span><b>{% if show_applicants %}{{ leave.employee.first_name }} {{ leave.employee.last_name }} &middot; {{ leave.employee.employee_code }}{% else %}{{ leave.get_leave_type_display|default:"Leave request" }}{% endif %}</b>
+          <small>{{ leave.start_date|date:"j M Y" }}{% if leave.end_date != leave.start_date %} – {{ leave.end_date|date:"j M Y" }}{% endif %} &middot; {{ leave.total_days }} day{{ leave.total_days|pluralize }}</small></span>
+          <span class="badge bg-label-{% if leave.status == 'Approved' %}success{% elif leave.status == 'Rejected' %}danger{% else %}warning{% endif %}">{{ leave.status }}</span></summary>
+          <p>Applied {{ leave.applied_on|date:"j M Y" }}{% if leave.leave_type %} &middot; {{ leave.get_leave_type_display }}{% endif %}</p><p>{{ leave.reason|linebreaksbr }}</p>
+        </details>
+        {% empty %}<p>No leave records found{% if search or status %} for these filters{% endif %}.</p>{% endfor %}
+        {% if leaves.has_other_pages %}<nav class="atlas-pagination" aria-label="Leave application pages"><span>Page {{ leaves.number }} of {{ leaves.paginator.num_pages }}</span>
+          {% if leaves.has_previous %}<a href="{% querystring page=leaves.previous_page_number %}">Previous</a>{% endif %}
+          {% if leaves.has_next %}<a href="{% querystring page=leaves.next_page_number %}">Next</a>{% endif %}</nav>{% endif %}
+      </section>
+      {% if applying_for_self and own_employee %}
+      <section class="personal-card"><header><h2>Upcoming holidays</h2></header>{% for holiday in holidays %}
+        <div class="leave-holiday"><time datetime="{{ holiday.holiday_date|date:'Y-m-d' }}"><small>{{ holiday.holiday_date|date:"M" }}</small>{{ holiday.holiday_date|date:"j" }}</time>
+        <div><b>{{ holiday.name }}</b><small>{{ holiday.holiday_date|date:"l" }}</small></div></div>
+      {% empty %}<p>No upcoming holidays on your calendar.</p>{% endfor %}</section>{% endif %}
     </div>
+  </div>
 </div>
-
+<script>
+(() => {
+  const period = document.getElementById("balance-period");
+  if (period) {
+    const rows = document.querySelectorAll("[data-balance-period]");
+    function showPeriod() {
+      for (const row of rows) row.hidden = row.dataset.balancePeriod !== period.value;
+    }
+    period.addEventListener("change", showPeriod);
+    showPeriod();
+  }
+  const form = document.getElementById("leave-application");
+  if (!form) return;
+  const { start_date: start, end_date: end } = form.elements;
+  const output = document.getElementById("leave-duration");
+  function update() {
+    const days = (end.valueAsNumber - start.valueAsNumber) / 86400000 + 1;
+    output.value = Number.isNaN(days) ? "Select dates" : days < 1 ? "Check date range" : days + (days === 1 ? " calendar day" : " calendar days");
+  }
+  form.addEventListener("input", update);
+  update();
+})();
+</script>
 {% endblock %}

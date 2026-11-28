@@ -28,6 +28,8 @@ user.
 """
 
 FEATURES = [
+    {"key": "executive_dashboard", "name": "Executive workforce and payroll summaries", "category": "Administration",
+     "has_view": True, "has_create": False, "has_edit": False, "has_approve": False, "sort_order": 31},
     {"key": "employee_records", "name": "Employee Records", "category": "Employee Lifecycle",
      "has_view": True, "has_create": True, "has_edit": True, "has_approve": False, "sort_order": 10},
     {"key": "employee_delete", "name": "Delete Employees", "category": "Employee Lifecycle",
@@ -110,6 +112,7 @@ _NOT_HR = ("Super Admin", "Admin", "Payroll Officer")
 
 # {(feature_key, action): (role names granted access,)}
 SEED_GRANTS = {
+    ("executive_dashboard", "view"): ("Director", "Super Admin"),
     # ── Employee Lifecycle ────────────────────────────────────────────
     # HR onboards, offboards and edits employee details. Deleting
     # (archiving) an employee is a separate permission HR doesn't hold, and

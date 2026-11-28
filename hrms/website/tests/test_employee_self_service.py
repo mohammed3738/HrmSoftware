@@ -27,7 +27,7 @@ WORK_DAY = date(2026, 6, 1)  # a Monday
 # Nav items an employee must never be offered: every one of these points at
 # a staff-gated page.
 STAFF_ONLY_NAV = [
-    "Add Employee",
+    "Employee directory",
     "Download Employee List",
     "Employee Offboarding",
     "Attendance List",
@@ -42,19 +42,19 @@ STAFF_ONLY_NAV = [
     "Salary Increment",
     "Late Attendance Review",
     "Payroll Run",
-    "Entity",
-    "Branch",
+    "Companies",
+    "Branches",
     "Departments",
 ]
 
 # ...and the ones they must be offered.
 SELF_SERVICE_NAV = [
     "My Attendance",
-    "Leave Apply",
+    "Apply for leave",
     "Leave Balance",
-    "Attendance Correction Request Status",
-    "Comp-Off Request Status",
-    "All Advances",
+    "Correction requests",
+    "Comp-off requests",
+    "Salary advances",
 ]
 
 
@@ -114,6 +114,13 @@ class EmployeeSelfServiceTest(TestCase):
         self.assertFalse(resp.context["can_see_all_requests"])
         codes = {row["emp_code"] for row in resp.context["attendance_requests"]}
         self.assertEqual(codes, {"SLF001"})
+
+    def test_correction_search_and_status_count_stay_scoped(self):
+        endpoint = reverse("attendance_correction_requests_list")
+        response = self.client.get(endpoint, {"q": "mine", "status": "Rejected"})
+        self.assertEqual(response.context["attendance_requests"], [])
+        self.assertEqual(dict(response.context["status_counts"])["Pending"], 1)
+        self.assertEqual(self.client.get(endpoint, {"q": "theirs"}).context["total_requests"], 0)
 
     def test_employee_sees_only_their_own_compoffs(self):
         resp = self.client.get(reverse("comp_off_requests_list"))
@@ -196,13 +203,21 @@ class EmployeeSelfServiceTest(TestCase):
     def test_nav_offers_the_self_service_pages(self):
         resp = self.client.get(reverse("employee-dashboard"))
         for item in SELF_SERVICE_NAV:
-            self.assertContains(resp, "<div>%s</div>" % item, html=False, msg_prefix=item)
+            self.assertContains(resp, ">%s</a>" % item, html=False, msg_prefix=item)
+
+    def test_single_page_module_keeps_its_overview(self):
+        url = reverse("navigation-section", args=["people"])
+        overview = self.client.get(url)
+        self.assertContains(overview, f'<a href="{url}">People overview</a>', html=True)
+        self.assertTemplateUsed(overview, "navigation/directory.html")
+        self.assertContains(overview, 'class="launcher-tile"', count=1)
+        self.assertContains(overview, reverse("org-chart"))
 
     def test_nav_hides_every_staff_only_page(self):
         """A menu item that 403s on click is worse than no menu item."""
         resp = self.client.get(reverse("employee-dashboard"))
         offered = [item for item in STAFF_ONLY_NAV
-                   if "<div>%s</div>" % item in resp.content.decode("utf-8", "ignore")]
+                   if ">%s</a>" % item in resp.content.decode("utf-8", "ignore")]
         self.assertEqual(offered, [], "employee was offered: %s" % offered)
 
     def test_the_hidden_pages_really_do_refuse_an_employee(self):

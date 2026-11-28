@@ -1,16 +1,14 @@
 {% extends 'base2.html' %}
-{% load static %}
+{% load static custom_filters %}
+{% block title %}Attendance history{% endblock %}
 {% block body %}
 
-<div class="container-fluid py-3">
-    <div class="card shadow-sm rounded-3 p-3">
-        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-            <h4 class="mb-0 text-primary">
-                <i class="ri-calendar-check-line me-2"></i>Attendance History – {{ employee.first_name }}
-            </h4>
+<div class="container-xxl container-p-y attendance-workspace">
+    <header class="atlas-page-heading">
+            <h1>Attendance <small class="atlas-heading-context">{{ employee.first_name }} {{ employee.last_name }}</small></h1>
             <div class="d-flex align-items-center gap-2">
                 {% if can_switch_employee %}
-                <div class="position-relative" style="width: 260px;">
+                <div class="position-relative" style="width:min(16.25rem, 100%);">
                     <input
                         type="text"
                         id="employeeSearch"
@@ -25,18 +23,16 @@
                     ></ul>
                 </div>
                 {% endif %}
-                <a href="" class="btn btn-sm btn-outline-secondary">
-                    <i class="ri-arrow-left-line me-1"></i> Back
-                </a>
+                {% if request.user|has_feature:"attendance_review:view" %}<a href="{% url 'attendance' %}" class="btn btn-sm btn-outline-secondary">Attendance records</a>{% endif %}
             </div>
-        </div>
-
-        <!-- Filter Section -->
+    </header>
+    <div class="attendance-content">
+        <details class="personal-card attendance-filters" {% if from_date or to_date %}open{% endif %}><summary>Filters and downloads</summary>
         <form method="GET" class="row g-2 align-items-end mb-3">
             {% if uses_custom_period %}
             <div class="col-md-5">
-                <label class="form-label fw-semibold">Payroll Period</label>
-                <select name="period" class="form-select form-select-sm">
+                <label for="filter_period" class="form-label fw-semibold">Payroll Period</label>
+                <select id="filter_period" name="period" class="form-select form-select-sm">
                     <option value="all" {% if selected_period == "all" %}selected{% endif %}>All Periods</option>
                     {% for period in payroll_periods %}
                     <option value="{{ period.to_date|date:'Y-m-d' }}" {% if selected_period == period.to_date|date:'Y-m-d' %}selected{% endif %}>
@@ -47,8 +43,8 @@
             </div>
             {% else %}
             <div class="col-md-3">
-                <label class="form-label fw-semibold">Year</label>
-                <select name="year" class="form-select form-select-sm">
+                <label for="filter_year" class="form-label fw-semibold">Year</label>
+                <select id="filter_year" name="year" class="form-select form-select-sm">
                     <option value="" {% if not selected_year %}selected{% endif %}>All Years</option>
                     {% for year in years %}
                     <option value="{{ year.year }}" {% if selected_year == year.year|stringformat:"s" %}selected{% endif %}>
@@ -59,8 +55,8 @@
             </div>
 
             <div class="col-md-3">
-                <label class="form-label fw-semibold">Month</label>
-                <select name="month" class="form-select form-select-sm">
+                <label for="filter_month" class="form-label fw-semibold">Month</label>
+                <select id="filter_month" name="month" class="form-select form-select-sm">
                     <option value="" {% if not selected_month %}selected{% endif %}>All Months</option>
                     {% for month in months %}
                     <option value="{{ month.month }}" {% if selected_month == month.month|stringformat:"s" %}selected{% endif %}>
@@ -73,12 +69,12 @@
 
             <!-- Custom range: when either date is filled it takes over from the pickers on the left -->
             <div class="col-6 col-md-2">
-                <label class="form-label fw-semibold">From</label>
-                <input type="date" name="from_date" value="{{ from_date }}" class="form-control form-control-sm">
+                <label for="filter_from_date" class="form-label fw-semibold">From</label>
+                <input id="filter_from_date" type="date" name="from_date" value="{{ from_date }}" class="form-control form-control-sm">
             </div>
             <div class="col-6 col-md-2">
-                <label class="form-label fw-semibold">To</label>
-                <input type="date" name="to_date" value="{{ to_date }}" class="form-control form-control-sm">
+                <label for="filter_to_date" class="form-label fw-semibold">To</label>
+                <input id="filter_to_date" type="date" name="to_date" value="{{ to_date }}" class="form-control form-control-sm">
             </div>
 
             <div class="col-md-3 d-flex gap-2">
@@ -97,42 +93,14 @@
             {% if page_size %}<input type="hidden" name="per_page" value="{{ page_size }}">{% endif %}
         </form>
 
-        <!-- Summary Stats (scoped to the selected period/year/month above) -->
-        <div class="row g-3 mb-3">
-            <div class="col-6 col-md-3">
-                <div class="card border-success h-100">
-                    <div class="card-body text-center py-2">
-                        <div class="fs-4 fw-bold text-success">{{ days_present_count }}</div>
-                        <div class="text-muted small">Days Present</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-warning h-100">
-                    <div class="card-body text-center py-2">
-                        <div class="fs-4 fw-bold text-warning">{{ late_remarks_count }}</div>
-                        <div class="text-muted small">Late Remarks</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-info h-100">
-                    <div class="card-body text-center py-2">
-                        <div class="fs-4 fw-bold text-info">{{ half_days_count }}</div>
-                        <div class="text-muted small">Half Days</div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-6 col-md-3">
-                <div class="card border-danger h-100">
-                    <div class="card-body text-center py-2">
-                        <div class="fs-4 fw-bold text-danger">{{ leaves_taken }}</div>
-                        <div class="text-muted small">Leaves Taken</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
+        </details>
+        <section class="personal-card attendance-summary" aria-label="Filtered attendance summary">
+            <div><strong>{{ days_present_count }}</strong><small>Days Present</small></div>
+            <div><strong>{{ late_remarks_count }}</strong><small>Late Remarks</small></div>
+            <div><strong>{{ half_days_count }}</strong><small>Half Days</small></div>
+            <div><strong>{{ leaves_taken }}</strong><small>Leaves Taken</small></div>
+            <small>{% if export_from and export_to %}{{ export_from }} &ndash; {{ export_to }}{% else %}Selected records{% endif %}</small>
+        </section>
         <!-- Tabs -->
         <ul class="nav nav-tabs" id="attTabs" role="tablist">
             <li class="nav-item" role="presentation">
@@ -153,27 +121,25 @@
 
             <!-- ===== CALENDAR TAB ===== -->
             <div class="tab-pane fade show active" id="att-calendar" role="tabpanel">
-                <div class="card border">
-                    <div class="card-header d-flex justify-content-between align-items-center bg-light">
-                        {# Named after the month the period ends in, like the Payroll Period dropdown ("October 2026" = 27 Sep - 26 Oct). #}
-                        <h6 class="mb-0 fw-semibold">{{ calendar_end|date:"F Y" }}</h6>
-                        <small class="text-muted">{{ calendar_start|date:"d M" }} – {{ calendar_end|date:"d M Y" }}</small>
+                <div class="attendance-split">
+                  <section class="personal-card"><header><h2>{{ calendar_end|date:"F Y" }}</h2><div class="d-flex align-items-center gap-2"><small>{{ calendar_start|date:"j M" }} &ndash; {{ calendar_end|date:"j M Y" }}</small>
+                      {% if period_links.previous %}<a href="{{ period_links.previous }}" class="personal-pill" aria-label="Previous period">&#8249;</a>{% endif %}
+                      {% if period_links.next %}<a href="{{ period_links.next }}" class="personal-pill" aria-label="Next period">&#8250;</a>{% endif %}</div></header>
+                    <div class="att-calendar-grid" id="attCalendarGrid"></div>
+                  </section>
+                  <section class="personal-card" aria-live="polite"><header><h2 id="att-selected-day"></h2></header>
+                    <p id="att-selected-status"></p><div id="att-punch-list"></div>
+                    <div class="personal-line">Worked duration <b id="att-day-duration"></b></div>
+                    <div class="d-flex flex-wrap gap-2 mt-3">{% if can_raise_correction %}<button type="button" id="att-regularize" class="btn btn-primary align-self-start" hidden>Request regularization</button>{% endif %}
+                      {% if can_raise_compoff %}<button type="button" id="att-compoff" class="btn btn-outline-primary" hidden>Request comp-off</button>{% endif %}
                     </div>
-                    <div class="card-body">
-                        <div class="att-calendar-grid" id="attCalendarGrid">
-                            <!-- Generated by JavaScript -->
-                        </div>
-                        <div class="d-flex flex-wrap gap-3 mt-3 small">
-                            <span><span class="att-legend-dot" style="background:#71dd37;"></span> Present</span>
-                            <span><span class="att-legend-dot" style="background:#ffab00;"></span> Late Present</span>
-                            <span><span class="att-legend-dot" style="background:#03c3ec;"></span> Half Day</span>
-                            <span><span class="att-legend-dot" style="background:#ff3e1d;"></span> Absent</span>
-                            <span><span class="att-legend-dot" style="background:#696cff;"></span> Holiday</span>
-                            <span><span class="att-legend-dot" style="background:#a8aaae;"></span> Weekend</span>
-                            <span><span class="att-legend-dot" style="background:#e7e7e9;border:1px solid #d9d9d9;"></span> No record</span>
-                        </div>
-                    </div>
+                  </section>
                 </div>
+                <section class="personal-card mt-3"><header><h2>Roster &middot; next week</h2></header>
+                  <div class="attendance-roster">{% for entry in next_roster %}<div><small>{{ entry.day|date:"D j M" }}</small>
+                    <b>{% if entry.off %}Weekly off{% elif entry.shift %}{{ entry.shift.shift_name }}{% else %}Unassigned{% endif %}</b>
+                    {% if entry.shift.shift_start_time and entry.shift.shift_end_time and not entry.off %}<small>{{ entry.shift.shift_start_time|time:"H:i" }} &ndash; {{ entry.shift.shift_end_time|time:"H:i" }}</small>{% endif %}</div>{% endfor %}</div>
+                </section>
             </div>
 
             <!-- ===== LIST TAB ===== -->
@@ -235,14 +201,14 @@
                                     {% endif %}
                                 </td>
                                  <td>{% if can_raise_correction %}<button class="btn btn-warning btn-sm"
-    onclick="openCorrectionModal('{{ record.id }}', '{{ record.in_time }}', '{{ record.out_time }}', '{{ record.date }}')">
+    onclick="openCorrectionModal('{{ record.id }}', '{{ record.date|date:"Y-m-d" }}', '{{ record.in_time|time:"H:i" }}', '{{ record.out_time|time:"H:i" }}')">
     Raise Attendance
 </button>{% else %}<span class="text-muted">&mdash;</span>{% endif %}
 </td>
 <td>
  {% if can_raise_compoff %}<button
                         class="btn btn-info btn-sm"
-                        onclick="openCompOffModal('{{ record.employee.id }}', '{{ record.date }}')"
+                        onclick="openCompOffModal('{{ record.employee.id }}', '{{ record.date|date:"Y-m-d" }}')"
                       >
                         Raise Comp-Off
                       </button>{% else %}<span class="text-muted">&mdash;</span>{% endif %}
@@ -293,16 +259,6 @@
       <div class="form-group">
         <label>Date</label>
         <input type="text" id="date" name="date" readonly />
-      </div>
-
-      <div class="form-group">
-        <label>Current In Time</label>
-        <input type="text" id="old_in_time" name="old_in_time" readonly />
-      </div>
-
-      <div class="form-group">
-        <label>Current Out Time</label>
-        <input type="text" id="old_out_time" name="old_out_time" readonly />
       </div>
 
       <div class="form-group">
@@ -544,79 +500,13 @@
     animation: slideIn 0.4s ease;
   }
 
-  /* Attendance calendar tab */
-  .att-calendar-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
-  }
-  .att-day-header {
-    text-align: center;
-    font-weight: 600;
-    font-size: 0.72rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #6c757d;
-    padding: 4px 0;
-  }
-  .att-day-cell {
-    min-height: 62px;
-    border-radius: 6px;
-    padding: 6px;
-    background: #e7e7e9;
-    border: 1px solid #d9d9d9;
-  }
-  .att-day-cell.att-empty {
-    background: transparent;
-    border: none;
-  }
-  .att-day-number {
-    font-weight: 600;
-    font-size: 0.8rem;
-  }
-  .att-day-label {
-    font-size: 0.68rem;
-    margin-top: 2px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .att-status-present   { background: rgba(113, 221, 55, 0.18); border-color: #71dd37; }
-  .att-status-late      { background: rgba(255, 171, 0, 0.18); border-color: #ffab00; }
-  .att-status-half      { background: rgba(3, 195, 236, 0.18); border-color: #03c3ec; }
-  .att-status-absent    { background: rgba(255, 62, 29, 0.18); border-color: #ff3e1d; }
-  .att-status-holiday   { background: rgba(105, 108, 255, 0.18); border-color: #696cff; }
-  .att-status-weekend   { background: rgba(168, 170, 174, 0.25); border-color: #a8aaae; }
-  .att-legend-dot {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    margin-right: 4px;
-    vertical-align: middle;
-  }
 </style>
 <script>
-  function openCorrectionModal(attendanceId, inTime, outTime, date) {
-
-    // Convert for input type=time (24 hour format)
-    let newIn = convertTo24Hour(inTime);
-    let newOut = convertTo24Hour(outTime);
-
-    // Convert for display with AM/PM
-    let dispIn = formatTimeForDisplay(newIn);
-    let dispOut = formatTimeForDisplay(newOut);
-
+  function openCorrectionModal(attendanceId, date, start, end) {
     document.getElementById("attendance_id").value = attendanceId;
     document.getElementById("date").value = date;
-
-    // Display values (readonly)
-    document.getElementById("old_in_time").value = dispIn || "";
-    document.getElementById("old_out_time").value = dispOut || "";
-
-    // Editable time fields (24HR format)
-    document.getElementById("new_in_time").value = newIn || "";
-    document.getElementById("new_out_time").value = newOut || "";
+    document.getElementById("new_in_time").value = start || "";
+    document.getElementById("new_out_time").value = end || "";
 
     // Reopening the modal starts a fresh request, so clear any MoM state
     // left over from the previous one.
@@ -634,95 +524,9 @@
   }
 </script>
 
-<!-- 🔹 JavaScript for Date Navigation -->
-<script>
-  document.addEventListener("DOMContentLoaded", function () {
-    const dateInput = document.getElementById("datePicker");
-    const prevBtn = document.getElementById("prevDay");
-    const nextBtn = document.getElementById("nextDay");
 
-    prevBtn.addEventListener("click", function () {
-      let currentDate = new Date(dateInput.value);
-      currentDate.setDate(currentDate.getDate() - 1);
-      dateInput.value = currentDate.toISOString().split("T")[0];
-      dateInput.form.submit();
-    });
-
-    nextBtn.addEventListener("click", function () {
-      let currentDate = new Date(dateInput.value);
-      currentDate.setDate(currentDate.getDate() + 1);
-      dateInput.value = currentDate.toISOString().split("T")[0];
-      dateInput.form.submit();
-    });
-  });
-</script>
 
 <script>
-function formatTimeForDisplay(time) {
-    if (!time) return "";
-    let [h, m] = time.split(":");
-    h = parseInt(h);
-
-    let ampm = h >= 12 ? "PM" : "AM";
-    if (h === 0) h = 12;
-    if (h > 12) h -= 12;
-
-    return `${String(h).padStart(2, "0")}:${m} ${ampm}`;
-}
-
-
-function convertTo24Hour(time) {
-    if (!time || time === "—" || time === "null" || time === "None") return "";
-
-    time = time.trim();
-
-    // Format like "09:30" or "09"
-    if (/^\d{1,2}(:\d{2})?$/.test(time)) {
-        let [h, m] = time.split(":");
-        if (!m) m = "00";
-        return `${h.padStart(2, "0")}:${m}`;
-    }
-
-    // Format like "09:30 AM"
-    let [t, modifier] = time.split(" ");
-    if (!t) return "";
-
-    let [hours, minutes] = t.split(":");
-    if (!minutes) minutes = "00";
-
-    modifier = modifier?.toUpperCase();
-
-    if (modifier === "PM" && hours !== "12") hours = String(Number(hours) + 12);
-    if (modifier === "AM" && hours === "12") hours = "00";
-
-    return `${hours.padStart(2, "0")}:${minutes}`;
-}
-
-
-//   function openCorrectionModal(attendanceId, inTime, outTime, date) {
-//       // Convert for input type=time
-//     let newIn = convertTo24Hour(inTime);
-//     let newOut = convertTo24Hour(outTime);
-
-//     // Convert for display with AM/PM
-//     let dispIn = formatTimeForDisplay(newIn);
-//     let dispOut = formatTimeForDisplay(newOut);
-//     document.getElementById("attendance_id").value = attendanceId;
-//     document.getElementById("date").value = date;
-//     // Current Time (readonly with AM/PM)
-//     document.getElementById("old_in_time").value = dispIn || "";
-//     document.getElementById("old_out_time").value = dispOut || "";
-
-//     // Prefill new values editable (24HR format)
-//     document.getElementById("new_in_time").value = newIn || "";
-//     document.getElementById("new_out_time").value = newOut || "";
-//     document.getElementById("correctionModal").style.display = "block";
-//   }
-
-  function closeCorrectionModal() {
-    document.getElementById("correctionModal").style.display = "none";
-  }
-
   function openCompOffModal(employeeId, date) {
     document.getElementById("comp_off_employee_id").value = employeeId;
     document.getElementById("comp_off_from_date").value = date;
@@ -820,6 +624,7 @@ function convertTo24Hour(time) {
     });
 </script>
 
+{{ day_details|json_script:"attendance-day-data" }}
 <!-- Calendar tab rendering -->
 <script>
 (function () {
@@ -828,55 +633,78 @@ function convertTo24Hour(time) {
   // the grid walks day by day from start to end rather than drawing one month.
   const CAL_START = new Date({{ calendar_start|date:"Y" }}, {{ calendar_start|date:"n" }} - 1, {{ calendar_start|date:"j" }});
   const CAL_END   = new Date({{ calendar_end|date:"Y" }}, {{ calendar_end|date:"n" }} - 1, {{ calendar_end|date:"j" }});
-  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const records = JSON.parse(document.getElementById("attendance-day-data").textContent);
+  const today = "{{ today_local|date:'Y-m-d' }}";
+  const grid = document.getElementById("attCalendarGrid");
+  const action = document.getElementById("att-regularize");
 
-  function statusClass(status) {
-    switch (status) {
-      case "Present":            return "att-status-present";
-      case "Late Present":       return "att-status-late";
-      case "Half Day":
-      case "Present (Half-Day)": return "att-status-half";
-      case "Absent":             return "att-status-absent";
-      case "Holiday":            return "att-status-holiday";
-      case "Weekend":            return "att-status-weekend";
-      default:                   return "att-no-record";
+  function punchState(data, key) {
+    if (data.end && !data.start) return "Check-in missing";
+    if (data.start && !data.end) return key === today ? "Checked in" : "No checkout recorded";
+    return "";
+  }
+
+  function selectDay(cell) {
+    grid.querySelector('[aria-pressed="true"]')?.setAttribute("aria-pressed", "false");
+    cell.setAttribute("aria-pressed", "true");
+    const key = cell.dataset.date;
+    const data = records[key] || {};
+    document.getElementById("att-selected-day").textContent = cell.dataset.heading;
+    document.getElementById("att-selected-status").textContent = [CAL_DATA[key] || "No attendance record",
+      punchState(data, key)].filter(Boolean).join(" · ");
+    document.getElementById("att-day-duration").textContent = data.worked || "—";
+    const list = document.getElementById("att-punch-list");
+    list.replaceChildren();
+    const entries = data.punches || [[data.start, "Check-in"], [data.end, "Check-out"]].filter(row => row[0]);
+    for (const [time, label] of entries) {
+      const line = document.createElement("div");
+      line.className = "personal-line";
+      const value = document.createElement("b");
+      value.textContent = time;
+      line.append(label, value);
+      list.append(line);
+    }
+    const compOff = document.getElementById("att-compoff");
+    if (compOff) {
+      compOff.hidden = false;
+      compOff.onclick = () => openCompOffModal("{{ employee.pk }}", key);
+    }
+    if (action) {
+      action.hidden = !data.id;
+      action.onclick = () => openCorrectionModal(data.id, key, data.start, data.end);
     }
   }
 
   function renderCalendar() {
-    const grid = document.getElementById("attCalendarGrid");
-    if (!grid) return;
-    grid.innerHTML = "";
-
-    ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].forEach(d => {
-      const h = document.createElement("div");
-      h.className = "att-day-header";
-      h.textContent = d;
-      grid.appendChild(h);
-    });
-
-    for (let i = 0; i < CAL_START.getDay(); i++) {  // 0 = Sunday
-      const blank = document.createElement("div");
-      blank.className = "att-day-cell att-empty";
-      grid.appendChild(blank);
+    for (const name of ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]) {
+      const label = document.createElement("small");
+      label.textContent = name;
+      grid.append(label);
     }
-
+    for (let n = 0; n < (CAL_START.getDay() + 6) % 7; n++) grid.append(document.createElement("span"));
+    let initial;
     for (const d = new Date(CAL_START); d <= CAL_END; d.setDate(d.getDate() + 1)) {
-      const day = d.getDate();
-      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const status = CAL_DATA[dateStr];
-      // Month name on the first cell and wherever a new month begins.
-      const label = (d.getTime() === CAL_START.getTime() || day === 1) ? `${day} ${MONTHS[d.getMonth()]}` : day;
-
-      const cell = document.createElement("div");
-      cell.className = "att-day-cell " + statusClass(status);
-      cell.title = `${day} ${MONTHS[d.getMonth()]} – ${status || "No record"}`;
-      cell.innerHTML = `<div class="att-day-number">${label}</div>` +
-        (status ? `<div class="att-day-label">${status}</div>` : "");
-      grid.appendChild(cell);
+      const key = [d.getFullYear(), String(d.getMonth()+1).padStart(2,"0"), String(d.getDate()).padStart(2,"0")].join("-");
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.dataset.date = key;
+      cell.dataset.heading = d.toLocaleDateString("en-GB", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
+      cell.setAttribute("aria-pressed", "false");
+      const status = CAL_DATA[key] || "No record";
+      const data = records[key] || {};
+      const detail = document.createElement("small");
+      detail.textContent = punchState(data, key) || data.worked || status;
+      cell.dataset.status = status;
+      cell.title = cell.dataset.heading + " · " + status;
+      cell.setAttribute("aria-label", cell.title + " · " + detail.textContent);
+      if (key === today) cell.setAttribute("aria-current","date");
+      cell.append(String(d.getDate()), detail);
+      cell.addEventListener("click", () => selectDay(cell));
+      grid.append(cell);
+      if (!initial || key === today || (initial.dataset.date !== today && data.id)) initial = cell;
     }
+    if (initial) selectDay(initial);
   }
-
   document.addEventListener("DOMContentLoaded", renderCalendar);
 })();
 </script>

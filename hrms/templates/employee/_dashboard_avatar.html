@@ -1,0 +1,4 @@
+<span class="reporting-avatar dashboard-avatar" aria-hidden="true">
+  <span>{{ person.first_name|first|upper }}{{ person.last_name|first|upper }}</span>
+  {% if person.photo %}<img src="{{ person.photo.url }}" alt="" loading="lazy" decoding="async">{% endif %}
+</span>

@@ -1,43 +1,41 @@
 {% extends "base2.html" %}
+{% block title %}Leave credit policy{% endblock %}
 {% block body %}
 
 <div class="container-xxl flex-grow-1 container-p-y">
-  <div class="card shadow">
-    <div class="card-header bg-primary text-white">
-      <h5 class="mb-0">Leave Credit Policy – {{ company.name }}</h5>
-    </div>
-
-    <div class="card-body">
+  <header class="atlas-page-heading"><h1>Leave credit policy</h1><span>{{ company.name }}</span></header>
+  <div class="card"><div class="card-body">
       <form method="POST">
         {% csrf_token %}
+        {{ form.non_field_errors }}
 
         <div class="row g-3">
 
           <div class="col-md-6">
-            <label class="form-label"><strong>1st Threshold (Days Present)</strong></label>
-            {{ form.credit_1_limit }}
+            <label class="form-label" for="{{ form.credit_1_limit.id_for_label }}"><strong>1st Threshold (Days Present)</strong></label>
+            {{ form.credit_1_limit }}{{ form.credit_1_limit.errors }}
             <small class="text-muted">Employees up to this number of present days receive low credit</small>
           </div>
 
           <div class="col-md-6">
-            <label class="form-label"><strong>2nd Threshold (Days Present)</strong></label>
-            {{ form.credit_2_limit }}
+            <label class="form-label" for="{{ form.credit_2_limit.id_for_label }}"><strong>2nd Threshold (Days Present)</strong></label>
+            {{ form.credit_2_limit }}{{ form.credit_2_limit.errors }}
             <small class="text-muted">Employees up to this number receive medium credit</small>
           </div>
 
           <div class="col-md-4">
-            <label class="form-label"><strong>Low Credit</strong></label>
-            {{ form.credit_low }}
+            <label class="form-label" for="{{ form.credit_low.id_for_label }}"><strong>Low Credit</strong></label>
+            {{ form.credit_low }}{{ form.credit_low.errors }}
           </div>
 
           <div class="col-md-4">
-            <label class="form-label"><strong>Medium Credit</strong></label>
-            {{ form.credit_mid }}
+            <label class="form-label" for="{{ form.credit_mid.id_for_label }}"><strong>Medium Credit</strong></label>
+            {{ form.credit_mid }}{{ form.credit_mid.errors }}
           </div>
 
           <div class="col-md-4">
-            <label class="form-label"><strong>High Credit</strong></label>
-            {{ form.credit_high }}
+            <label class="form-label" for="{{ form.credit_high.id_for_label }}"><strong>High Credit</strong></label>
+            {{ form.credit_high }}{{ form.credit_high.errors }}
           </div>
 
         </div>

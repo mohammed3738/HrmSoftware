@@ -137,6 +137,18 @@ class SalaryIncrementExportTest(TestCase):
         rows = list(ws.iter_rows(min_row=2, values_only=True))
         self.assertEqual(len(rows), 2)
 
+    def test_status_filter_and_export_search_compose(self):
+        filters = {"show": "all", "status": "pending"}
+        listing = self.client.get(reverse("salary_increment"), filters)
+        self.assertEqual(list(listing.context["increments"]), [self.archived_inc])
+        for query, expected in (("old draft", 1), ("annual", 0)):
+            with self.subTest(query=query):
+                response = self.client.get(
+                    reverse("salary-increment-export-excel"), {**filters, "q": query}
+                )
+                sheet = openpyxl.load_workbook(io.BytesIO(response.content)).active
+                self.assertEqual(sheet.max_row - 1, expected)
+
     def test_the_page_links_to_the_dedicated_export_endpoint_not_a_missing_function(self):
         resp = self.client.get(reverse("salary_increment"))
         self.assertContains(resp, "function exportIncrements")

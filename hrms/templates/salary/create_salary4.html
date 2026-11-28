@@ -1,65 +1,25 @@
-{% extends 'base2.html' %} {% block body %}
-
-<script>
-  function downloadSalaryMaster() {
-    window.location.href = "{% url 'salary-master-export-excel' %}";
-  }
-</script>
-
+{% extends 'base2.html' %}{% load custom_filters %}
+{% block title %}Salary structures{% endblock %}
+{% block body %}
 <div class="container-xxl flex-grow-1 container-p-y">
-  <!-- DataTable with Buttons -->
-  <div class="card">
-    <!-- Card Header with Title -->
-    <div class="card-body">
-      <!-- Upper Control Row: Two Buttons on the Right -->
-      <div class="row mb-3">
-        <div class="col">
-          <!-- Empty left side or you can add text here if needed -->
-          <h5 class="card-header">Salary Master</h5>
-        </div>
-        <div class="col-auto d-flex align-items-center gap-2">
-          <button type="button" class="btn btn-secondary buttons-collection dropdown-toggle btn-label-primary waves-effect waves-light" onclick="downloadSalaryMaster()">Export</button>
-          <a href="{% url 'salary-import-template' %}" class="btn btn-outline-success waves-effect waves-light">
-            Download Template
-          </a>
-          <button
-            type="button"
-            class="btn btn-success waves-effect waves-light"
-            data-bs-toggle="modal"
-            data-bs-target="#importSalaryModal">
-            Import Excel
-          </button>
-          <button class="btn btn-secondary create-new btn-primary waves-effect waves-light" data-bs-toggle="modal" data-bs-target="#salaryModal">
-            Salary Calculator
-          </button>
-        </div>
-      </div>
-      <hr>
-      <!-- Lower Control Row: Entries Info on Left and Search Bar on Right -->
-      <div class="row mb-3">
-        <div class="col-md-6 d-flex align-items-center">
-          <!-- Example entries info; you can update this as needed -->
-          <div>Showing 1 to 10 of 50 entries</div>
-        </div>
-        <div class="col-md-6 d-flex justify-content-end align-items-center gap-2">
-          <!-- Search Input -->
-          <input
-            type="text"
-            id="searchInput"
-            class="form-control form-control-sm"
-            placeholder="Search..."
-            style="max-width: 200px"
-          />
-        
-          <!-- Status Filter -->
-          <select id="statusFilter" class="form-select form-select-sm" style="max-width: 150px">
-            <option value="all">All</option>
-            <option value="Active">Active</option>
-            <option value="Pending">Pending</option>
-          </select>
-        </div>
-        
-      </div>
+  <header class="atlas-page-heading">
+    <h1>Salary Master</h1>
+    <div class="atlas-actions">
+      {% if request.user|has_feature:"salary_structure:view" %}
+      <a id="downloadSalaryMaster" class="btn btn-outline-secondary" href="{% url 'salary-master-export-excel' %}">Export Excel</a>
+      <a class="btn btn-outline-secondary" href="{% url 'salary-import-template' %}">Download Template</a>
+      {% endif %}
+      {% if can_edit_salary %}
+      <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#importSalaryModal">Import Excel</button>
+      {% endif %}
+      <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#salaryModal">Salary Calculator</button>
+    </div>
+  </header>
+  <div class="card"><div class="card-body">
+    <label for="salaryStatus" class="form-label">Employee status</label>
+    <select id="salaryStatus" class="form-select w-auto mb-3">
+      <option value="">All</option><option>Active</option><option>Pending</option><option>Left</option><option>Archived</option>
+    </select>
       <!-- Table -->
 <div class="table-responsive text-nowrap">
   <table class="datatable table table-bordered align-middle text-center">
@@ -125,7 +85,7 @@
         <td>
           {% if employee.employee.status == "Active" %}
           <span class="badge bg-success">{{ employee.employee.status }}</span>
-          {% elif employee.status == "Pending" %}
+          {% elif employee.employee.status == "Pending" %}
           <span class="badge bg-warning text-dark">{{ employee.employee.status }}</span>
           {% else %}
           <span class="badge bg-secondary">{{ employee.employee.status }}</span>
@@ -134,7 +94,7 @@
 
         <td>
           <div class="dropdown">
-            <button class="btn p-0 " data-bs-toggle="dropdown">
+            <button class="btn" aria-label="Actions for {{ employee.employee.employee_code }}" data-bs-toggle="dropdown">
               <i class="ri-more-2-line"></i>
             </button>
             <div class="dropdown-menu">
@@ -144,10 +104,10 @@
   Edit
 </a>
 {% endif %}
-              <a class="dropdown-item"
+              <button type="button" class="dropdown-item"
                 onclick="viewSalaryDetails({{ employee.id }})">
                 <i class="ri-eye-line"></i> View
-             </a>
+             </button>
 
             </div>
           </div>
@@ -220,7 +180,7 @@
                   <h6 class="fw-bold text-primary mb-3">Enter Values</h6>
 
                   <div class="mb-3">
-                    <label class="form-label">Select Employee</label>
+                    <label class="form-label" for="employeeSelect">{% if missing_only %}Employees missing a salary structure{% else %}Select Employee{% endif %}</label>
                     <!-- Type-ahead over the list below: see static/js/employee_autocomplete.js -->
                     <div class="position-relative mb-2">
                       <input type="text" id="salaryEmployeePicker" class="form-control" autocomplete="off"
@@ -228,7 +188,7 @@
                       <ul id="salaryEmployeePickerDropdown" class="list-group position-absolute w-100 shadow"
                           style="z-index:1000; display:none; max-height:260px; overflow-y:auto;"></ul>
                     </div>
-                    <select class="form-select" id="employeeSelect" name="employee">
+                    <select class="form-select" id="employeeSelect" name="employee" required>
                       <option value="">-- Select Employee --</option>
                       {% for employee in employees %}
                         <option value="{{ employee.id }}"
@@ -401,7 +361,7 @@
 
 
 
-{% if salary_obj %}
+{% if salary_obj or missing_only %}
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   const modalEl = document.getElementById("salaryModal");
@@ -420,6 +380,7 @@ document.addEventListener("DOMContentLoaded", function () {
   if (!modalEl) return;
 
   modalEl.addEventListener("hidden.bs.modal", function () {
+    {% if missing_only %}window.location.replace(window.location.pathname); return;{% endif %}
     // Remove ?edit= from URL
     const cleanUrl = window.location.pathname;
     window.history.replaceState({}, "", cleanUrl);
@@ -769,6 +730,10 @@ document.addEventListener("DOMContentLoaded", function () {
         dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
     });
  
+    document.getElementById("salaryStatus").addEventListener("change", function () {
+      table.column(4).search(this.value, {exact: true}).draw();
+    });
+
     // Convert DataTables elements into Bootstrap style
     $('.dataTables_filter input').addClass('form-control');
     $('.dataTables_length select').addClass('form-select');

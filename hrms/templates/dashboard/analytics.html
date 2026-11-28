@@ -1,0 +1,17 @@
+{% extends "base2.html" %}
+{% block title %}{{ report_title }}{% endblock %}
+{% block body %}
+<div class="container-xxl container-p-y atlas-personal">
+  <header class="personal-heading"><div><time>{{ month }}</time><h1>{{ report_title }}</h1></div><div class="atlas-actions"><a class="personal-pill" href="{% querystring export='xlsx' %}">Export Excel</a><button class="personal-pill btn" onclick="window.print()">Print / Save PDF</button></div></header>
+  <form class="personal-card report-toolbar" method="get">
+    <label>Reporting month<input class="form-control" type="month" name="month" value="{{ month }}"></label>
+    <label>Company<select name="company" class="form-select"><option value="">All available companies</option>{% for c in companies %}<option value="{{ c.pk }}" {% if c.pk|stringformat:"s" == company_id %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select></label>
+    <label>Branch<select name="branch" class="form-select"><option value="">All available branches</option>{% for id,name in branches %}<option value="{{ id }}" {% if id|stringformat:"s" == branch %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
+    <label>Department<select name="department" class="form-select"><option value="">All available departments</option>{% for d in departments %}<option {% if d == department %}selected{% endif %}>{{ d }}</option>{% endfor %}</select></label>
+    <button class="personal-pill primary btn">Apply filters</button>
+  </form>
+  <div class="report-metrics">{% for label,value in metrics %}<article class="personal-card"><small>{{ label }}</small><strong class="personal-number">{{ value }}</strong></article>{% endfor %}</div>
+  <details class="report-options" data-dashboard-key="dashboard.{{ request.user.pk }}.{{ audience }}"><summary>Customize sections</summary><div>{% for title,rows in sections %}<label><input type="checkbox" checked data-widget="{{ title|slugify }}"> {{ title }}</label>{% endfor %}</div></details>
+  <div class="personal-grid">{% for title,rows in sections %}<section class="personal-card" id="widget-{{ title|slugify }}"><header><h2>{{ title }}</h2></header>{% for label,value in rows %}<div class="personal-line">{{ label }}{% if title|slice:":8" == "New hires" %}<progress aria-label="{{ label }} hires" max="{{ hires_peak }}" value="{{ value }}"></progress>{% endif %}<b>{{ value }}</b></div>{% empty %}<p>No records for this selection.</p>{% endfor %}</section>{% endfor %}</div>
+</div>
+{% endblock %}

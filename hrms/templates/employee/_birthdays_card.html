@@ -10,15 +10,10 @@
       {% for b in birthdays %}
       {% with emp=b.employee %}
       <li class="d-flex align-items-center gap-3 mb-3 {% if b.is_today %}p-2 rounded bg-label-danger{% endif %}">
-        {% if emp.photo %}
-          <img src="{{ emp.photo.url }}" alt="" class="rounded-circle flex-shrink-0" style="width:40px;height:40px;object-fit:cover;">
-        {% else %}
-          <div class="rounded-circle bg-label-danger d-flex align-items-center justify-content-center fw-semibold flex-shrink-0"
-               style="width:40px;height:40px;">{{ emp.first_name|first|upper }}{{ emp.last_name|first|upper }}</div>
-        {% endif %}
+        {% include "employee/_dashboard_avatar.html" with person=emp only %}
         <div class="flex-grow-1">
-          <div class="fw-semibold">{{ emp.first_name }} {{ emp.last_name }}{% if b.is_today %} 🎂{% endif %}</div>
-          <div class="text-muted small">{{ emp.designation|default:"" }}{% if emp.department %} · {{ emp.department }}{% endif %}</div>
+          <div class="fw-semibold">{{ emp.first_name }} {{ emp.last_name }}</div>
+          <div class="text-muted small">{{ emp.designation|default:"" }}{% if emp.department %} &middot; {{ emp.department }}{% endif %}</div>
         </div>
         <div class="text-end">
           {% if b.is_today %}

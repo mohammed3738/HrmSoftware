@@ -38,8 +38,10 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.paginator import Paginator
 from django.core.files.images import get_image_dimensions
 from django.db import IntegrityError, transaction
+from django.db.models import Count, Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -426,14 +428,12 @@ def log_scope(user):
 
 
 def _reportee_filter(viewer, exclude_self=False):
-    from django.db.models import Q
-
     from .models import Employee
 
-    reportees = Employee.objects.filter(
-        Q(reporting_person_id=viewer.id) | Q(manager_id=viewer.id)
-    )
-    return reportees.exclude(pk=viewer.pk) if exclude_self else reportees
+    reports_to_viewer = Q(reporting_person_id=viewer.pk) | Q(manager_id=viewer.pk)
+    if exclude_self:
+        return Employee.objects.filter(reports_to_viewer).exclude(pk=viewer.pk)
+    return Employee.objects.filter(reports_to_viewer | Q(pk=viewer.pk))
 
 
 def _can_see_employees_duty(user, employee):
@@ -457,8 +457,6 @@ def field_duty_log(request):
     neither -- an ordinary employee reads their own duties on the Field
     Duty page, which needs no grant at all.
     """
-    from django.db.models import Q
-
     scope, viewer = log_scope(request.user)
     if scope is None:
         raise PermissionDenied
@@ -467,11 +465,7 @@ def field_duty_log(request):
     if scope == SCOPE_TEAM:
         # Their own duties belong on their team's list too -- a team leader
         # goes out to meetings like everyone else.
-        duties = duties.filter(
-            Q(employee__reporting_person_id=viewer.id)
-            | Q(employee__manager_id=viewer.id)
-            | Q(employee_id=viewer.id)
-        )
+        duties = duties.filter(employee__in=_reportee_filter(viewer))
 
     month_start, month_end, month_value = month_range(request.GET.get("month"))
     duties = duties.filter(duty_date__gte=month_start, duty_date__lte=month_end)
@@ -493,16 +487,20 @@ def field_duty_log(request):
         duties = duties.filter(employee__company_id=int(company_id))
 
     search = (request.GET.get("q") or "").strip()
-    if search:
-        from django.db.models import Q
+    for term in search.split(maxsplit=7):
         duties = duties.filter(
-            Q(employee__first_name__icontains=search)
-            | Q(employee__last_name__icontains=search)
-            | Q(employee__employee_code__icontains=search)
-            | Q(purpose__icontains=search)
+            Q(employee__first_name__icontains=term)
+            | Q(employee__last_name__icontains=term)
+            | Q(employee__employee_code__icontains=term)
+            | Q(purpose__icontains=term)
         )
 
-    duties = list(duties[:500])
+    counts = duties.aggregate(
+        total=Count("pk"),
+        open=Count("pk", filter=Q(status=FieldDuty.Status.IN_PROGRESS)),
+        pending=Count("pk", filter=Q(status=FieldDuty.Status.PENDING_REPORT)),
+    )
+    page = Paginator(duties.order_by("-started_at", "-pk"), 50).get_page(request.GET.get("page"))
 
     # The employee dropdown lists exactly who this reader may see, so it
     # cannot be used to probe for people outside their scope.
@@ -513,7 +511,8 @@ def field_duty_log(request):
         people = Employee.objects.filter(status="Active").order_by("first_name", "last_name")
 
     return render(request, "field_duty/log.html", {
-        "duties": duties,
+        "duties": page.object_list,
+        "page": page,
         "scope": scope,
         "is_team_scope": scope == SCOPE_TEAM,
         "month_value": month_value,
@@ -527,11 +526,7 @@ def field_duty_log(request):
         "statuses": FieldDuty.Status.choices,
         "activities": FieldDuty.Activity.choices,
         "companies": Company.objects.all().order_by("name"),
-        "counts": {
-            "total": len(duties),
-            "open": sum(1 for d in duties if d.status == FieldDuty.Status.IN_PROGRESS),
-            "pending": sum(1 for d in duties if d.status == FieldDuty.Status.PENDING_REPORT),
-        },
+        "counts": counts,
     })
 
 

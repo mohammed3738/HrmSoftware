@@ -1,30 +1,17 @@
 {% extends 'base2.html' %}
 {% load static %}
 
+{% block title %}Leave balance report{% endblock %}
 {% block body %}
-<div class="container-xxl flex-grow-1 container-p-y">
+<div class="container-xxl flex-grow-1 container-p-y atlas-personal balance-workspace">
 
     <style>
-      :root {
-        --bs-primary: #696cff;
-        --bs-primary-rgb: 105, 108, 255;
-        --bs-success: #71dd37;
-        --bs-warning: #ffab00;
-        --bs-danger: #ff3e1d;
-        --bs-info: #03c3ec;
-
-        --body-bg: #f5f5f9;
-        --card-bg: #fff;
-        --card-shadow: 0 2px 6px 0 rgba(67, 89, 113, 0.12);
-        --card-shadow-hover: 0 4px 16px 0 rgba(67, 89, 113, 0.2);
-        --border-color: #d9dee3;
-        --border-radius: 0.5rem;
-        --border-radius-lg: 0.75rem;
-
-        --text-heading: #32475c;
-        --text-primary: #566a7f;
-        --text-muted: #8592a3;
-        --text-light: #a1acb8;
+      .balance-workspace {
+        --body-bg: var(--atlas-canvas); --card-bg: var(--atlas-panel);
+        --card-shadow: 0 3px 12px #18223d09; --card-shadow-hover: var(--card-shadow);
+        --border-color: var(--atlas-line); --border-radius: .75rem; --border-radius-lg: 1.25rem;
+        --text-heading: var(--atlas-text); --text-primary: var(--atlas-text);
+        --text-muted: var(--atlas-muted); --text-light: var(--atlas-muted);
       }
 
       /* ===================== Page Header ===================== */
@@ -452,33 +439,17 @@
     </style>
 
     <!-- Page Header -->
-    <div class="lb-page-header">
-      <div class="lb-page-header-text">
+    <section class="atlas-overview">
+      <header class="personal-heading">
+      <div>
         <h1>Leave Balance Report</h1>
-        <p>
-          <span class="lb-header-meta">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-            </svg>
-            {{ display_month }}
-          </span>
-          {% if user_company_id %}
-          <span class="lb-header-meta">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
-            </svg>
-            {{ user_company_name|default:"Your Company" }}
-          </span>
-          {% endif %}
-        </p>
+        <p class="mb-0">{{ display_month }}{% if user_company_id %} &middot; {{ user_company_name|default:"Your Company" }}{% endif %}</p>
       </div>
-
+      <a class="personal-pill primary" href="{% url 'leave_apply' %}">Apply for leave</a>
       {% if is_global and all_companies %}
       <div style="min-width:220px;">
-        <label class="form-label mb-1 text-muted" style="font-size:0.8rem;">View Company</label>
-        <select class="form-select form-select-sm" onchange="switchCompany(this.value)">
+        <label for="leave-report-company" class="form-label mb-1 text-muted" style="font-size:0.8rem;">View Company</label>
+        <select id="leave-report-company" class="form-select form-select-sm" onchange="switchCompany(this.value)">
           <option value="" {% if not selected_company_id %}selected{% endif %}>— All Companies —</option>
           {% for c in all_companies %}
           <option value="{{ c.id }}" {% if c.id == selected_company_id %}selected{% endif %}>{{ c.name }}</option>
@@ -486,7 +457,16 @@
         </select>
       </div>
       {% endif %}
-    </div>
+      </header>
+      {% if total_employees and user_company_id or total_employees and is_global %}
+      <dl class="atlas-metrics">
+        <div><dt>Total Employees</dt><dd>{{ total_employees }}</dd></div>
+        <div><dt>Average Balance</dt><dd>{{ avg_balance|floatformat:1 }}</dd></div>
+        <div><dt>Total LWP</dt><dd>{{ total_lwp|floatformat:1 }}</dd></div>
+        <div><dt>Leaves Taken</dt><dd>{{ total_leaves_taken|floatformat:1 }}</dd></div>
+      </dl>
+      {% endif %}
+    </section>
 
     <!-- Alerts -->
     {% if not user_company_id %}
@@ -582,7 +562,7 @@
                 <ul id="search-inputDropdown" class="list-group position-absolute w-100 shadow"
                      style="z-index:1000; display:none; max-height:260px; overflow-y:auto;"></ul>
               </div>
-              <button type="submit" style="padding:0.5rem 0.875rem;background:var(--bs-primary);color:#fff;border:none;border-radius:var(--border-radius);font-size:0.875rem;cursor:pointer;">Search</button>
+              <button class="btn btn-primary" type="submit">Search</button>
               {% if search_query or company_filter_q %}
               <a href="?{% if selected_company_id %}company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}"
                  style="padding:0.5rem 0.75rem;color:var(--text-muted);font-size:0.875rem;text-decoration:none;">✕ Clear</a>
@@ -604,41 +584,6 @@
         {% endif %}
       </div>
     </form>
-
-    <!-- Stats -->
-    {% if total_employees %}
-    <div class="lb-stats-grid">
-      <div class="lb-stat-card">
-        <div class="lb-stat-icon primary">👥</div>
-        <div class="lb-stat-info">
-          <div class="lb-stat-label">Total Employees</div>
-          <div class="lb-stat-value">{{ total_employees }}</div>
-        </div>
-      </div>
-      <div class="lb-stat-card">
-        <div class="lb-stat-icon success">📊</div>
-        <div class="lb-stat-info">
-          <div class="lb-stat-label">Average Balance</div>
-          <div class="lb-stat-value">{{ avg_balance|floatformat:1 }}</div>
-        </div>
-      </div>
-      <div class="lb-stat-card">
-        <div class="lb-stat-icon warning">⚠️</div>
-        <div class="lb-stat-info">
-          <div class="lb-stat-label">Total LWP</div>
-          <div class="lb-stat-value">{{ total_lwp|floatformat:1 }}</div>
-        </div>
-      </div>
-      <div class="lb-stat-card">
-        <div class="lb-stat-icon danger">📅</div>
-        <div class="lb-stat-info">
-          <div class="lb-stat-label">Leaves Taken</div>
-          <div class="lb-stat-value">{{ total_leaves_taken|floatformat:1 }}</div>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
     {% endif %}
 
     <!-- Loading -->
@@ -746,7 +691,7 @@
         </div>
         <div style="display:flex;gap:4px;align-items:center;">
           {% if page_obj.has_previous %}
-          <a href="?page={{ page_obj.previous_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if period_month_str %}&period_month={{ period_month_str }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if company_filter_q %}&company_filter={{ company_filter_q }}{% endif %}"
+          <a href="{% querystring page=page_obj.previous_page_number %}"
              style="padding:0.375rem 0.75rem;border:1px solid var(--border-color);border-radius:var(--border-radius);font-size:0.875rem;color:var(--text-primary);text-decoration:none;background:#fff;">‹ Prev</a>
           {% endif %}
 
@@ -754,7 +699,7 @@
             {% if num == page_obj.number %}
               <span style="padding:0.375rem 0.75rem;background:var(--bs-primary);color:#fff;border-radius:var(--border-radius);font-size:0.875rem;">{{ num }}</span>
             {% elif num == 1 or num == paginator.num_pages or num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}
-              <a href="?page={{ num }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if period_month_str %}&period_month={{ period_month_str }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if company_filter_q %}&company_filter={{ company_filter_q }}{% endif %}"
+              <a href="{% querystring page=num %}"
                  style="padding:0.375rem 0.75rem;border:1px solid var(--border-color);border-radius:var(--border-radius);font-size:0.875rem;color:var(--text-primary);text-decoration:none;background:#fff;">{{ num }}</a>
             {% elif num == page_obj.number|add:"-3" or num == page_obj.number|add:"3" %}
               <span style="padding:0.375rem 0.25rem;color:var(--text-muted);font-size:0.875rem;">…</span>
@@ -762,7 +707,7 @@
           {% endfor %}
 
           {% if page_obj.has_next %}
-          <a href="?page={{ page_obj.next_page_number }}{% if selected_company_id %}&company_id={{ selected_company_id }}{% endif %}{% if selected_period %}&period={{ selected_period }}{% endif %}{% if period_month_str %}&period_month={{ period_month_str }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}{% if company_filter_q %}&company_filter={{ company_filter_q }}{% endif %}"
+          <a href="{% querystring page=page_obj.next_page_number %}"
              style="padding:0.375rem 0.75rem;border:1px solid var(--border-color);border-radius:var(--border-radius);font-size:0.875rem;color:var(--text-primary);text-decoration:none;background:#fff;">Next ›</a>
           {% endif %}
         </div>

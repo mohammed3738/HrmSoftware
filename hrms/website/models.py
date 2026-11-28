@@ -579,6 +579,7 @@ class LeaveApplication(models.Model):
     end_date = models.DateField()
     reason = models.TextField()
     status = models.CharField(max_length=10, default="Pending")   # Pending / Approved / Rejected
+    rejection_reason = models.TextField(blank=True, default="")
     applied_on = models.DateTimeField(auto_now_add=True)
 
     def total_days(self):
@@ -1149,6 +1150,7 @@ class PayrollRun(models.Model):
 
 
 class PayrollRecord(models.Model):
+    payment_date = models.DateField(null=True, blank=True, verbose_name="Confirmed salary payment date")
     payroll = models.ForeignKey("PayrollRun", on_delete=models.CASCADE, related_name="records")
     employee = models.ForeignKey("Employee", on_delete=models.CASCADE)
 
@@ -2728,6 +2730,7 @@ class AuditLog(models.Model):
         ROLE_ASSIGNED = "role_assigned", "Role assigned to employee"
         SALARY_CREATED = "salary_created", "Salary structure created"
         SALARY_UPDATED = "salary_updated", "Salary structure updated"
+        PAYROLL_PAYMENT_RECORDED = "payroll_payment_recorded", "Salary payment date recorded"
         PAYROLL_FINALIZED = "payroll_finalized", "Payroll run finalized"
         EMPLOYEE_CREATED = "employee_created", "Employee record created"
         EMPLOYEE_UPDATED = "employee_updated", "Employee record updated"
@@ -3004,3 +3007,28 @@ class FieldDuty(models.Model):
             self.duty_date = timezone.localtime(self.started_at).date()
         self.status = self.resolved_status()
         super().save(*args, **kwargs)
+
+
+class CelebrationWish(models.Model):
+    sender = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="wishes_sent")
+    recipient = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name="wishes_received")
+    occasion = models.CharField(max_length=12, choices=[("birthday", "Birthday"), ("anniversary", "Work anniversary")])
+    event_date = models.DateField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=["sender", "recipient", "occasion", "event_date"], name="unique_employee_celebration_wish",
+        )]
+
+
+class CalendarEntry(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    day = models.DateField()
+    kind = models.CharField(max_length=4, choices=[("note", "Note"), ("task", "To-do")])
+    text = models.CharField(max_length=240)
+    completed = models.BooleanField(default=False)
+
+    class Meta:
+        indexes = [models.Index(fields=["owner", "day"])]
+        ordering = ["day", "pk"]

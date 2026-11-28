@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from django.contrib.auth.models import Group, User
 from django.test import Client, TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from website.models import Company, Employee
 from website.views import _upcoming_birthdays
@@ -71,6 +72,28 @@ class UpcomingBirthdaysTest(TestCase):
         # Everyone's birthday, across every company -- but never someone who has left.
         self.assertEqual(sorted(codes), ["MATE", "ME", "STRANGER"])
         self.assertNotContains(resp, str(me.date_of_birth.year))  # never reveal birth year / age
+
+    def test_wishes_are_delivered_once_for_each_visible_occasion(self):
+        today = timezone.localdate()
+        sender = self._emp("SENDER", None, user=User.objects.create_user("sender"))
+        recipient = self._emp("MATE", born_on(today), user=User.objects.create_user("recipient"))
+        recipient.date_of_joining = born_on(today, 5)
+        recipient.save(update_fields=["date_of_joining"])
+        self.client.force_login(sender.user, backend="django.contrib.auth.backends.ModelBackend")
+        payload = {"event_date": today.isoformat()}
+        for occasion in ("birthday", "anniversary"):
+            url = reverse("send-celebration-wish", args=[recipient.pk, occasion])
+            for _ in range(2):
+                self.assertEqual(self.client.post(url, payload).status_code, 302)
+        self.assertEqual(recipient.wishes_received.count(), 2)
+        self.assertContains(self.client.get(reverse("employee-dashboard")), "Wish sent", count=2)
+        self.client.force_login(recipient.user, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertContains(self.client.get(reverse("employee-dashboard")), "SENDER X wished you a happy birthday")
+        self.assertEqual(self.client.post(url, payload).status_code, 404)
+        other = self._emp("OTHER", None, company=self.other_company)
+        Employee.objects.filter(pk=other.pk).update(date_of_joining=born_on(today, 5))
+        url = reverse("send-celebration-wish", args=[other.pk, "anniversary"])
+        self.assertEqual(self.client.post(url, payload).status_code, 404)
 
     def test_admin_dashboard_shows_birthdays(self):
         today = date.today()

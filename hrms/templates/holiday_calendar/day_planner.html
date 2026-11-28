@@ -1,0 +1,24 @@
+<section class="personal-card planner-panel" id="day-planner">
+  <header><div><small>My private planner</small><h2 id="planner-heading" tabindex="-1">{{ selected_day|date:"D, j F" }}</h2></div></header>
+  <p id="planner-events"></p>
+  <p id="planner-empty">No personal items for this day.</p>
+  {% for entry in planner_entries %}
+  <article class="planner-entry" data-entry-date="{{ entry.day|date:'Y-m-d' }}" {% if entry.day != selected_day %}hidden{% endif %}>
+    <small>{% if entry.kind == 'note' %}Note{% elif entry.completed %}Completed{% else %}To-do{% endif %}</small>
+    <p>{% if entry.completed %}<s>{{ entry.text }}</s>{% else %}{{ entry.text }}{% endif %}</p>
+    <form method="post" action="{% url 'calendar-entry-update' %}">
+      {% csrf_token %}<input type="hidden" name="entry" value="{{ entry.pk }}"><input type="hidden" name="company_id" value="{{ request.GET.company_id }}">
+      {% if entry.kind == 'task' %}<button class="personal-pill" name="action" value="{% if entry.completed %}reopen{% else %}complete{% endif %}">{% if entry.completed %}Reopen{% else %}Mark done{% endif %}</button>{% endif %}
+      <details><summary>Edit item</summary><label>Text<input class="form-control" name="text" maxlength="240" value="{{ entry.text }}" required></label>
+        <button class="personal-pill" name="action" value="edit">Save changes</button>
+        <button class="personal-pill" name="action" value="remove" formnovalidate>Delete item</button></details>
+    </form>
+  </article>
+  {% endfor %}
+  <form class="planner-add" method="post" action="{% url 'calendar-entry-update' %}">
+    {% csrf_token %}<input type="hidden" id="planner-date" name="day" value="{{ selected_day|date:'Y-m-d' }}"><input type="hidden" name="company_id" value="{{ request.GET.company_id }}">
+    <label>Item type<select name="kind" class="form-select"><option value="note">Note</option><option value="task">To-do</option></select></label>
+    <label>New item<input class="form-control" name="text" maxlength="240" required placeholder="What would you like to remember?"></label>
+    <button class="btn btn-primary" name="action" value="add">Add to day</button>
+  </form>
+</section>

@@ -1,18 +1,18 @@
-{% extends 'base2.html' %} {% block body %}
+{% extends 'base2.html' %} {% block title %}Change request · {{ cr.employee.employee_code }}{% endblock %} {% block body %}
 <div class="container-xxl flex-grow-1 container-p-y">
   <div class="mb-3">
-    <a href="{% url 'employee_change_requests' %}" class="small"><i class="ri-arrow-left-line"></i> All change requests</a>
+    <a href="{% url 'employee_change_requests' %}" class="atlas-back-link"><i class="ri-arrow-left-line"></i> All change requests</a>
   </div>
 
   <div class="card mb-4">
-    <div class="card-body d-flex flex-wrap justify-content-between gap-3">
+    <header class="card-body atlas-page-heading mb-0">
       <div>
-        <h5 class="mb-1">
+        <h1 class="mb-1">
           Changes to <a href="{% url 'employee_detail' cr.employee.pk %}">{{ cr.employee.first_name }} {{ cr.employee.last_name }}</a>
           <small class="text-muted">({{ cr.employee.employee_code }})</small>
-        </h5>
+        </h1>
         <div class="text-muted small">
-          Requested by {{ cr.requested_by.get_full_name|default:cr.requested_by.username|default:"—" }}
+          Requested by {% firstof cr.requested_by.get_full_name cr.requested_by.username "Unavailable" %}
           on {{ cr.requested_at|date:"d M Y H:i" }}
         </div>
       </div>
@@ -22,12 +22,12 @@
         {% else %}<span class="badge bg-label-danger fs-6">Rejected</span>{% endif %}
         {% if cr.decided_at %}
         <div class="text-muted small mt-1">
-          by {{ cr.decided_by.get_full_name|default:cr.decided_by.username|default:"—" }} on {{ cr.decided_at|date:"d M Y H:i" }}
+          by {% firstof cr.decided_by.get_full_name cr.decided_by.username "Unavailable" %} on {{ cr.decided_at|date:"d M Y H:i" }}
         </div>
         {% if cr.decision_note %}<div class="small mt-1">“{{ cr.decision_note }}”</div>{% endif %}
         {% endif %}
       </div>
-    </div>
+    </header>
   </div>
 
   {% if cr.field_changes %}

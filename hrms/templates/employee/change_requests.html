@@ -1,21 +1,27 @@
-{% extends 'base2.html' %} {% block body %}
+{% extends 'base2.html' %} {% block title %}Employee change approvals{% endblock %} {% block body %}
 <div class="container-xxl flex-grow-1 container-p-y">
+  <header class="atlas-page-heading">
+    <div>
+      <h1>Employee change approvals</h1>
+      <p class="atlas-page-note">Review edits submitted after onboarding is complete or the {{ onboarding_edit_days }}-day editing window has closed.</p>
+    </div>
+  </header>
   <div class="card">
     <div class="card-body">
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <h5 class="mb-0">Employee Change Approvals</h5>
-        <div class="d-flex gap-2 flex-wrap">
+      <div class="atlas-directory-tools px-0 pt-0">
+        <nav class="atlas-status-filter" aria-label="Approval status">
           {% for value, label in status_choices %}
-          <a href="?status={{ value }}" class="btn btn-sm {% if status == value %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ label }}</a>
+          <a href="{% querystring status=value page=None %}" {% if status == value %}aria-current="page"{% endif %}>{{ label }}</a>
           {% endfor %}
-          <a href="?status=all" class="btn btn-sm {% if status == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
-        </div>
+          <a href="{% querystring status='all' page=None %}" {% if status == 'all' %}aria-current="page"{% endif %}>All</a>
+        </nav>
+        <form method="get" class="atlas-actions" role="search">
+          <input type="hidden" name="status" value="{{ status }}">
+          <input type="search" name="q" value="{{ query }}" class="form-control" placeholder="Employee name or code" aria-label="Search change requests by employee">
+          <button class="btn btn-outline-secondary">Search</button>
+          {% if query %}<a href="?status={{ status|urlencode }}" class="btn btn-link">Clear</a>{% endif %}
+        </form>
       </div>
-      <p class="text-muted small">
-        Edits to an employee whose onboarding is complete, or whose 15-day onboarding window has passed,
-        are held here until an approver accepts or rejects them.
-      </p>
-
       {% with bulk=can_approve_changes %}
       {% if bulk and status == "pending" and change_requests %}
       <form method="post" action="{% url 'employee_change_requests_bulk' %}" id="bulkDecisionForm">
@@ -23,7 +29,7 @@
         <input type="hidden" name="decision" id="bulkDecision">
         <div class="d-flex flex-wrap align-items-center gap-2 mb-3 p-2 rounded border" id="bulkBar">
           <span class="small fw-semibold" id="bulkSelected">0 selected</span>
-          <input type="text" name="note" class="form-control form-control-sm" style="max-width:280px"
+          <input type="text" aria-label="Decision note for selected requests" name="note" class="form-control form-control-sm" style="max-width:280px"
                  placeholder="Note (optional, saved with each request)">
           <button type="button" class="btn btn-sm btn-success" data-decision="approve" disabled>
             <i class="ri-check-double-line me-1"></i> Approve selected
@@ -67,7 +73,7 @@
                 {% if cr.previous_employment %} &middot; previous employment{% endif %}
                 {% if cr.files.all or cr.documents_to_delete %} &middot; documents{% endif %}
               </td>
-              <td data-label="Requested by">{{ cr.requested_by.get_full_name|default:cr.requested_by.username|default:"—" }}</td>
+              <td data-label="Requested by">{% firstof cr.requested_by.get_full_name cr.requested_by.username "Unavailable" %}</td>
               <td data-label="Requested">{{ cr.requested_at|date:"d M Y H:i" }}</td>
               <td data-label="Status">
                 {% if cr.status == "pending" %}<span class="badge bg-label-warning">Pending</span>
@@ -88,6 +94,13 @@
       </div>
       {% if bulk and status == "pending" and change_requests %}</form>{% endif %}
       {% endwith %}
+      {% if page.has_other_pages %}
+      <nav class="atlas-pagination" aria-label="Change request pages">
+        <span>Page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+        {% if page.has_previous %}<a class="btn btn-outline-secondary btn-sm" href="{% querystring page=page.previous_page_number %}">Previous</a>{% endif %}
+        {% if page.has_next %}<a class="btn btn-outline-secondary btn-sm" href="{% querystring page=page.next_page_number %}">Next</a>{% endif %}
+      </nav>
+      {% endif %}
     </div>
   </div>
 </div>

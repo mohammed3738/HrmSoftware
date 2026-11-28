@@ -1,41 +1,26 @@
 {% extends "base2.html" %}
 
+{% block title %}Salary history{% endblock %}
 {% block body %}
-<div class="container-xxl mt-3">
-
-    <h4>Salary History</h4>
-
-    <!-- Filters -->
-    <div class="row mb-3">
-        <div class="col-md-3">
-            <label>Employee</label>
-            <select id="employee" class="form-select">
-                <option value="">All</option>
-                {% for e in employees %}
-                <option value="{{ e.employee_code }}"
-                    {% if request.GET.employee == e.employee_code %}selected{% endif %}>
-                    {{ e.employee_code }} - {{ e.first_name }}
-                </option>
-                {% endfor %}
-            </select>
-        </div>
-
-        <div class="col-md-3">
-            <label>From</label>
-            <input type="date" id="from" value="{{ request.GET.date_from }}" class="form-control">
-        </div>
-
-        <div class="col-md-3">
-            <label>To</label>
-            <input type="date" id="to" value="{{ request.GET.date_to }}" class="form-control">
-        </div>
-
-        <div class="col-md-3 d-grid">
-            <label>&nbsp;</label>
-            <button class="btn btn-primary" onclick="applyFilters()">Filter</button>
-        </div>
-    </div>
-
+<div class="container-xxl container-p-y">
+  <header class="atlas-page-heading"><h1>Salary History</h1></header>
+  <div class="card">
+    <form method="get" class="atlas-directory-tools" role="search">
+      <div class="atlas-actions">
+        <label for="employee">Employee</label>
+        <select id="employee" name="employee" class="form-select w-auto">
+          <option value="">All</option>
+          {% for e in employees %}<option value="{{ e.employee_code }}" {% if request.GET.employee == e.employee_code %}selected{% endif %}>{{ e.employee_code }} · {{ e.first_name }} {{ e.last_name }}</option>{% endfor %}
+        </select>
+        <label for="historyFrom">From</label><input type="date" id="historyFrom" name="date_from" class="form-control" value="{% firstof request.GET.date_from request.GET.from %}">
+        <label for="historyTo">To</label><input type="date" id="historyTo" name="date_to" class="form-control" value="{% firstof request.GET.date_to request.GET.to %}">
+      </div>
+      <div class="atlas-actions">
+        <button class="btn btn-primary">Filter</button>
+        <button class="btn btn-outline-secondary" formaction="{% url 'salary_history_export_excel' %}">Export Excel</button>
+        {% if request.GET %}<a class="btn btn-link" href="{% url 'salary_history' %}">Clear</a>{% endif %}
+      </div>
+    </form>
     <!-- Table -->
     <div class="table-responsive">
         <table class="datatable table table-bordered">
@@ -67,38 +52,26 @@
                             View
                         </button>
 
+                        {% if h.employee_id %}
                         <button class="btn btn-sm btn-outline-warning"
                                 onclick="openCompareModal({{ h.id }}, {{ h.employee.id }})">
                             Compare
                         </button>
+                        {% endif %}
                     </td>
                 </tr>
                 {% endwith %}
                
-                {% comment %} <tr><td colspan="7" class="text-center">No data</td></tr>  {% endcomment %}
-                {% comment %} <tr>
-                <td class="text-center" colspan="1">No data</td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                <td></td>
-                </tr> {% endcomment %}
-
+                {% empty %}
+                <tr><td colspan="7" class="py-4 text-center text-muted">No salary history matches these filters.</td></tr>
                 {% endfor %}
             </tbody>
 
         </table>
-        <style>
-        .no-data-row {
-            display: none !important;
-        }
-        </style>
-
     </div>
+    {% include 'partials/report_pagination.html' %}
+  </div>
 </div>
-
 
 <!-- DETAIL MODAL -->
 <div class="modal fade" id="detailModal">
@@ -118,15 +91,6 @@
 
 <script>
 /* -------------------- FILTER -------------------- */
-function applyFilters() {
-    let params = new URLSearchParams({
-        employee: document.getElementById("employee").value,
-        date_from: document.getElementById("from").value,
-        date_to: document.getElementById("to").value
-    });
-    window.location.search = params.toString();
-}
-
 /* -------------------- DETAIL MODAL -------------------- */
 function openDetail(id) {
     fetch(`/salary-history/detail/${id}/`)
@@ -156,20 +120,5 @@ function openCompareModal(historyId, empId) {
 </script>
 
 
-
-<script>
-document.addEventListener("DOMContentLoaded", function () {
-    let table = $('.datatable').DataTable({
-        pageLength: 10,
-        responsive: true,
-        dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
-        
-    });
- 
-    // Convert DataTables elements into Bootstrap style
-    $('.dataTables_filter input').addClass('form-control');
-    $('.dataTables_length select').addClass('form-select');
-});
-</script>
 
 {% endblock %}

@@ -365,6 +365,7 @@ class CompanyForm(forms.ModelForm):
         model = Company
         fields = "__all__"
         widgets = {
+            "logo": forms.ClearableFileInput(attrs={"class": "form-control", "accept": "image/png,image/jpeg"}),
             "short_name": forms.TextInput(attrs={"class": "form-control"}),
             "name": forms.TextInput(attrs={"class": "form-control"}),
          "phone": forms.TextInput(attrs={"class": "form-control"}),
@@ -506,6 +507,13 @@ class LeaveCreditPolicyForm(forms.ModelForm):
 
 
 class LeaveApplicationForm(forms.ModelForm):
+    def clean(self):
+        cleaned = super().clean()
+        start, end = cleaned.get("start_date"), cleaned.get("end_date")
+        if start and end and end < start:
+            self.add_error("end_date", "End date must be on or after the start date.")
+        return cleaned
+
     class Meta:
         model = LeaveApplication
         fields = ['employee', 'start_date', 'end_date', 'reason']
@@ -521,6 +529,9 @@ class LeaveApplicationForm(forms.ModelForm):
 
 
 class AdvanceCreateForm(forms.ModelForm):
+    advance_amount = forms.IntegerField(min_value=1)
+    default_months = forms.IntegerField(min_value=1, max_value=60)
+
     class Meta:
         model = AdvanceMaster
         fields = ['employee', 'advance_amount', 'default_months', 'start_date']
@@ -534,6 +545,9 @@ class AdvanceEditForm(forms.ModelForm):
     isn't editable here (that's a different advance, not a correction to
     this one). See advance_edit in views.py for how a change is actually
     applied to the schedule once already-paid EMIs exist."""
+    advance_amount = forms.IntegerField(min_value=1)
+    default_months = forms.IntegerField(min_value=1, max_value=60)
+
     class Meta:
         model = AdvanceMaster
         fields = ['advance_amount', 'default_months', 'start_date']

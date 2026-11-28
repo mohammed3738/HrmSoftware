@@ -1,0 +1,30 @@
+{% extends 'base2.html' %}
+{% block title %}Announcements{% endblock %}
+{% block body %}
+<div class="container-xxl container-p-y atlas-personal announcement-feed">
+  <header class="personal-heading">
+    <div><a href="{% url 'employee-dashboard' %}">My dashboard</a><h1>Announcements</h1></div>
+    <nav class="atlas-actions" aria-label="Filter announcements">
+      <a class="personal-pill {% if not unread_only %}primary{% endif %}" {% if not unread_only %}aria-current="page"{% endif %} href="{% url 'announcement-feed' %}">All notices</a>
+      <a class="personal-pill {% if unread_only %}primary{% endif %}" {% if unread_only %}aria-current="page"{% endif %} href="?show=unread">Unread ({{ unread_count }})</a>
+    </nav>
+  </header>
+  {% for notice in page %}
+    <article class="personal-card mb-3">
+      <header><h2>{{ notice.title }}</h2><small>{{ notice.get_priority_display }}</small></header>
+      <small>{{ notice.company.name|default:"All companies" }} &middot; <time datetime="{{ notice.starts_at|date:'c' }}">{{ notice.starts_at|date:"j M Y" }}</time></small>
+      <div class="announcement-message">{{ notice.body|linebreaks }}</div>
+      {% if notice.was_read %}<small>Read</small>{% else %}
+        <form method="post">{% csrf_token %}
+          <button class="personal-pill" name="announcement_id" value="{{ notice.pk }}">Mark as read</button>
+        </form>
+      {% endif %}
+    </article>
+  {% empty %}
+    <section class="personal-card"><h2>{% if unread_only %}You're all caught up{% else %}No current announcements{% endif %}</h2>
+      {% if unread_only %}<a href="{% url 'announcement-feed' %}">View all notices</a>{% endif %}
+    </section>
+  {% endfor %}
+  {% include 'partials/report_pagination.html' %}
+</div>
+{% endblock %}

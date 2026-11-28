@@ -1,5 +1,6 @@
 {% extends 'base2.html' %}
 {% load static %}
+{% block title %}Field duty{% endblock %}
 {% block body %}
 {% comment %}
   The employee's own Field Duty page. Phone-first: this is read standing in
@@ -14,9 +15,9 @@
 {% endcomment %}
 <div class="container-xxl flex-grow-1 container-p-y">
 
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+  <header class="atlas-page-heading">
     <div>
-      <h4 class="mb-0 fw-bold">Field Duty</h4>
+      <h1>Field Duty</h1>
       <p class="mb-0 text-muted small">
         Punch when you leave and when you are done. Each punch records the
         time, your location and a selfie.
@@ -25,9 +26,11 @@
     <a href="{% url 'my_attendance' %}" class="btn btn-sm btn-outline-secondary">
       <i class="ri-calendar-check-line me-1"></i> My Attendance
     </a>
-  </div>
+  </header>
 
   {% comment %} ── The one action ───────────────────────────────────── {% endcomment %}
+  <div class="atlas-duty-workspace">
+  <section class="atlas-duty-entry">
   {% if open_duty %}
     <div class="card border-warning shadow-sm rounded-4 mb-4">
       <div class="card-body">
@@ -90,10 +93,10 @@
   {% if awaiting_report %}
     <div class="card shadow-sm rounded-4 mb-4">
       <div class="card-body">
-        <h6 class="fw-bold mb-3">
+        <h2 class="h6 fw-bold mb-3">
           <i class="ri-file-warning-line me-1 text-warning"></i>
           Waiting for your report ({{ awaiting_report|length }})
-        </h6>
+        </h2>
         {% for duty in awaiting_report %}
           <div class="border rounded-3 p-3 {% if not forloop.last %}mb-2{% endif %}">
             <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
@@ -130,6 +133,7 @@
                   <i class="ri-upload-2-line me-1"></i> Upload
                 </button>
               </div>
+              <div class="col-12 small" role="status" data-report-status></div>
             </form>
           </div>
         {% endfor %}
@@ -138,10 +142,11 @@
   {% endif %}
 
   {% comment %} ── Today, and the recent log ────────────────────────── {% endcomment %}
+  </section>
   <div class="card shadow-sm rounded-4">
     <div class="card-body">
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-        <h6 class="fw-bold mb-0">My field duty</h6>
+        <h2 class="h6 fw-bold mb-0">My field duty</h2>
         {% if today_attendance %}
           <span class="text-muted small">
             Today ({{ today|date:"d M" }}):
@@ -245,6 +250,7 @@
       {% endif %}
     </div>
   </div>
+</div>
 </div>
 
 {% include "field_duty/_capture_modal.html" %}

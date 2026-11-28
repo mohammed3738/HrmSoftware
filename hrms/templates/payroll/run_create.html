@@ -16,19 +16,14 @@
 {% endif %}
 
   <!-- Header -->
-  <div class="d-flex justify-content-between align-items-center mb-4">
+  <header class="atlas-page-heading">
     <div>
-      <h4 class="fw-bold mb-1">Process New Payroll</h4>
-      <ol class="breadcrumb mb-0">
-        <li class="breadcrumb-item"><a href="#"><i class="ti ti-smart-home"></i></a></li>
-        <li class="breadcrumb-item"><a href="{% url 'payroll-run-list' %}">Payroll Runs</a></li>
-        <li class="breadcrumb-item active">New</li>
-      </ol>
+      <h1>Process New Payroll</h1>
     </div>
     <a href="{% url 'payroll-run-list' %}" class="btn btn-outline-secondary">
       <i class="ti ti-arrow-left me-1"></i> Back
     </a>
-  </div>
+  </header>
 
 
   <div class="row justify-content-center">
@@ -43,7 +38,7 @@
 
             <!-- Company -->
             <div class="mb-4">
-              <label class="form-label fw-semibold">Company <span class="text-danger">*</span></label>
+              <label class="form-label fw-semibold" for="companySelect">Company <span class="text-danger">*</span></label>
               <select class="form-select" name="company" id="companySelect" required>
                 <option value="">— Select Company —</option>
                 <option value="all">— All Companies —</option>
@@ -56,7 +51,7 @@
 
             <!-- Month -->
             <div class="mb-4">
-              <label class="form-label fw-semibold">Payroll Month <span class="text-danger">*</span></label>
+              <label class="form-label fw-semibold" for="monthPicker">Payroll Month <span class="text-danger">*</span></label>
               <input type="month" class="form-control" name="month" id="monthPicker" required>
               <div class="form-text text-muted">Select the month this payroll represents.</div>
             </div>

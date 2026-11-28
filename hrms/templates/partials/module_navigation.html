@@ -1,0 +1,16 @@
+<nav class="atlas-nav" id="atlas-nav" aria-label="HRMS modules" data-route="{{ request.resolver_match.url_name }}">
+  <ul>
+    <li><a href="{{ tree.home }}">Home</a></li>
+    {% for group in tree.sections %}
+      {% if group.key != "workspace" %}
+        <li>
+          <details {% if tree.section.key == group.key %}class="current-module"{% endif %}><summary>{{ group.label }}</summary><ul>
+            <li><a href="{{ group.url }}">{{ group.label }} overview</a></li>
+            {% for page in group.pages %}<li><a href="{{ page.url }}" data-routes="{{ page.children|join:' ' }}">{{ page.label }}</a></li>{% endfor %}
+          </ul></details>
+        </li>
+      {% endif %}
+    {% endfor %}
+    <li><a href="{% url 'navigation-index' %}">All pages</a></li>
+  </ul>
+</nav>

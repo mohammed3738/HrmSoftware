@@ -1,0 +1,37 @@
+{% extends "base2.html" %}
+{% block title %}Org chart{% endblock %}
+{% block body %}
+<div class="container-xxl container-p-y atlas-personal">
+  <header class="personal-heading"><div><h1>Org chart</h1>
+    {% if subject %}<p>Reporting line for {{ subject.first_name }} {{ subject.last_name }}{% if subject.department %} · {{ subject.department }}{% endif %}</p>{% endif %}
+  </div>
+  {% if browse and subject %}<form method="get" class="atlas-actions"><label class="visually-hidden" for="org-focus">Employee</label>
+    <select id="org-focus" class="form-select w-auto" name="employee">{% for person in choices %}<option value="{{ person.pk }}" {% if person.pk == subject.pk %}selected{% endif %}>{{ person.first_name }} {{ person.last_name }} · {{ person.employee_code }}</option>{% endfor %}</select>
+    <button class="personal-pill btn">Show line</button></form>{% endif %}</header>
+  <section class="personal-card">
+  {% if events %}
+    {% if cycle %}<p>A circular reporting assignment limits the hierarchy shown.</p>{% endif %}
+    <div class="org-viewport" tabindex="0" aria-label="Reporting hierarchy"><ul class="org-tree">
+    {% for kind,node in events %}
+      {% if kind == 'node' %}<li><div class="org-node {% if node.on_path %}on-path{% endif %} {% if node.person.pk == subject.pk %}is-focus{% endif %}">
+        {% include "employee/_dashboard_avatar.html" with person=node.person only %}
+        {% if node.person.pk == subject.reporting_person_id %}<small>Reporting person{% if node.person.pk == subject.manager_id %} and manager{% endif %}</small>{% elif node.person.pk == subject.manager_id %}<small>Manager</small>{% endif %}
+        {% if browse and node.person.pk != subject.pk %}<a href="?employee={{ node.person.pk }}">{{ node.person.first_name }} {{ node.person.last_name }}</a>{% else %}<strong>{{ node.person.first_name }} {{ node.person.last_name }}</strong>{% endif %}
+        <small>{{ node.person.designation }}{% if node.count %} · {{ node.count }} direct report{{ node.count|pluralize }}{% endif %}</small>
+      </div>{% elif kind == 'children' %}<ul>{% elif kind == 'end_children' %}</ul>{% else %}</li>{% endif %}
+    {% endfor %}</ul></div>
+    {% if additional_manager %}<footer>Assigned manager · {{ additional_manager.first_name }} {{ additional_manager.last_name }}</footer>{% endif %}
+    {% if remaining_team %}<section class="mt-3"><h2>Department teammates</h2>
+      <ul>{% for person in remaining_team %}<li>{{ person.first_name }} {{ person.last_name }}{% if person.designation %} &middot; {{ person.designation }}{% endif %}</li>{% endfor %}</ul>
+    </section>{% endif %}
+  {% else %}<p>No active employees to display.</p>{% endif %}
+  </section>
+</div>
+<script>
+const orgViewport = document.querySelector(".org-viewport");
+if (orgViewport) {
+  const focus = orgViewport.querySelector(".is-focus").getBoundingClientRect();
+  orgViewport.scrollLeft = focus.left - orgViewport.getBoundingClientRect().left + (focus.width - orgViewport.clientWidth) / 2;
+}
+</script>
+{% endblock %}

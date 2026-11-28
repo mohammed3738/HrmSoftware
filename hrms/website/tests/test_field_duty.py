@@ -385,7 +385,8 @@ class AttendanceFillTest(FieldDutyTestBase):
     def test_a_duty_that_ran_past_midnight_leaves_the_out_time_alone(self):
         """Writing the next day's clock time onto the start date would read as
         an out-time before the in-time. Overnight shifts are the roster's."""
-        started = timezone.now() - timedelta(hours=30)
+        yesterday = timezone.localdate() - timedelta(days=1)
+        started = timezone.make_aware(datetime.datetime.combine(yesterday, datetime.time(18)))
         duty = FieldDuty.objects.create(
             employee=self.employee, activity=FieldDuty.Activity.DELIVERY,
             started_at=started, start_selfie=selfie(),
@@ -671,6 +672,24 @@ class MonthFilterTest(FieldDutyTestBase):
             reverse("field-duty-log"), {"month": self.month_of(self.last_month)})
         self.assertContains(previous, "Lastmonth Client")
         self.assertNotContains(previous, "Thismonth Client")
+
+    def test_pagination_reaches_older_matches_and_keeps_filtered_totals(self):
+        moment = self.this_month.started_at
+        FieldDuty.objects.bulk_create([
+            FieldDuty(
+                employee=self.employee, purpose=f"Warehouse visit {n}", started_at=moment,
+                ended_at=moment, duty_date=self.this_month.duty_date, status=FieldDuty.Status.COMPLETED,
+            )
+            for n in range(501)
+        ])
+        reviewer = User.objects.create_user(username="field_log_reviewer", is_staff=True)
+        self.client.force_login(reviewer, backend="django.contrib.auth.backends.ModelBackend")
+        filters = {"month": self.month_of(self.this_month), "q": self.employee.employee_code + " warehouse"}
+        first = self.client.get(reverse("field-duty-log"), filters)
+        self.assertEqual(first.context["counts"], {"total": 501, "open": 0, "pending": 0})
+        self.assertEqual(len(first.context["duties"]), 50)
+        last = self.client.get(reverse("field-duty-log"), {**filters, "page": 11})
+        self.assertEqual([d.purpose for d in last.context["duties"]], ["Warehouse visit 0"])
 
     def test_the_log_can_be_narrowed_to_one_employee(self):
         colleague = self.make_employee("FDYMON2", first_name="Isha")

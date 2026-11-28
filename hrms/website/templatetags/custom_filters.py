@@ -104,3 +104,15 @@ def has_employee_profile(user):
     if not getattr(user, "is_authenticated", False):
         return False
     return getattr(user, "employee_profile", None) is not None
+
+
+@register.simple_tag
+def dashboard_home(user):
+    from website.views import role_based_dashboard_url
+    from django.urls import reverse
+    return reverse(role_based_dashboard_url(user))
+
+@register.simple_tag(takes_context=True)
+def hrms_navigation(context):
+    from website.navigation import navigation
+    return navigation(context["request"])

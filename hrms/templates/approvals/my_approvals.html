@@ -1,44 +1,41 @@
 {% extends 'base2.html' %}
 {% block title %}My Approvals{% endblock %}
 {% block body %}
-<div class="container-xxl flex-grow-1 container-p-y">
-
-  <div class="mb-3">
-    <h2 class="mb-1">My Approvals</h2>
-    <p class="text-muted mb-0 small">
-      Requests from the people who report to you. Approving here is the same as approving
-      from the admin dashboard — HR and Admin can still act on these too.
-    </p>
-  </div>
-
-  {% if not has_reportees %}
-  <div class="card">
-    <div class="card-body text-center text-muted py-5">
-      <i class="ri-user-follow-line ri-3x d-block mb-2 opacity-50"></i>
-      Nobody reports to you right now, so there's nothing to approve here.
-      <div class="small mt-1">Reporting lines are set per department, or per employee.</div>
-    </div>
-  </div>
+<div class="container-xxl flex-grow-1 container-p-y atlas-personal" id="approval-inbox">
+  <header class="personal-heading"><div><h1>My Approvals</h1>
+    {% if has_reportees %}<p><span data-count="all">{{ pending_total }}</span> pending · {{ reportees|length }} direct report{{ reportees|length|pluralize }}</p>{% endif %}
+  </div>{% if has_reportees %}<a class="personal-pill" href="{% url 'employee-request-history' 'leave' %}?scope=team">Team request history</a>{% endif %}</header>
+  {% if has_reportees %}
+    <nav class="approval-types" aria-label="Request type">
+      <button type="button" data-type="all" aria-pressed="true">All requests <b data-count="all">{{ pending_total }}</b></button>
+      <button type="button" data-type="leave" aria-pressed="false">Leave <b data-count="leave">{{ leave_requests|length }}</b></button>
+      <button type="button" data-type="compoff" aria-pressed="false">Comp-off <b data-count="compoff">{{ compoff_requests|length }}</b></button>
+      <button type="button" data-type="correction" aria-pressed="false">Attendance corrections <b data-count="correction">{{ correction_requests|length }}</b></button>
+    </nav>
+    <p id="approval-feedback" role="status"></p>
+    {% include 'approvals/_pending_queues.html' %}
   {% else %}
-
-  <div class="row g-3 mb-4">
-    <div class="col-md-3">
-      <div class="card h-100"><div class="card-body">
-        <div class="text-muted small">Pending in total</div>
-        <div class="fw-bold fs-4">{{ pending_total }}</div>
-      </div></div>
-    </div>
-    <div class="col-md-3">
-      <div class="card h-100"><div class="card-body">
-        <div class="text-muted small">People reporting to you</div>
-        <div class="fw-bold fs-4">{{ reportees|length }}</div>
-      </div></div>
-    </div>
-  </div>
-
-  {% include 'approvals/_pending_queues.html' %}
-
+    <section class="personal-card"><h2>No team approvals</h2><p>Nobody reports to you right now, so there's nothing to approve here.</p></section>
   {% endif %}
 </div>
-
+<script>
+(() => {
+  const inbox = document.getElementById("approval-inbox");
+  const buttons = inbox.querySelectorAll("[data-type]");
+  const queues = inbox.querySelectorAll("[data-queue]");
+  buttons.forEach(button => button.addEventListener("click", () => {
+    buttons.forEach(item => item.setAttribute("aria-pressed", String(item === button)));
+    queues.forEach(queue => { queue.hidden = button.dataset.type !== "all" && button.dataset.type !== queue.dataset.queue; });
+  }));
+  inbox.addEventListener("approval-decided", event => {
+    const counts = {all: 0};
+    queues.forEach(queue => {
+      counts[queue.dataset.queue] = queue.querySelectorAll("[data-row-id]").length;
+      counts.all += counts[queue.dataset.queue];
+    });
+    inbox.querySelectorAll("[data-count]").forEach(item => { item.textContent = counts[item.dataset.count]; });
+    document.getElementById("approval-feedback").textContent = event.detail === "approve" ? "Request approved." : "Request rejected.";
+  });
+})();
+</script>
 {% endblock %}

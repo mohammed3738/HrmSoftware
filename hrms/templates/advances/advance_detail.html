@@ -3,19 +3,14 @@
 {% block title %}Advance #{{ advance.id }}{% endblock %}
 
 {% block body %}
-<div class="container-xxl flex-grow-1 container-p-y">
+<div class="container-xxl flex-grow-1 container-p-y atlas-personal">
 
   <!-- Header -->
-  <div class="d-flex justify-content-between align-items-center mb-4">
+  <header class="personal-heading">
     <div>
-      <h4 class="fw-bold mb-1">Advance #{{ advance.id }}</h4>
-      <ol class="breadcrumb mb-0">
-        <li class="breadcrumb-item"><a href="#"><i class="ti ti-smart-home"></i></a></li>
-        <li class="breadcrumb-item"><a href="{% url 'advances-list' %}">Advances</a></li>
-        <li class="breadcrumb-item active">{{ advance.employee.first_name }} {{ advance.employee.last_name }}</li>
-      </ol>
+      <h1>Advance #{{ advance.id }}</h1><p>{{ advance.employee.first_name }} {{ advance.employee.last_name }} · {{ advance.employee.employee_code }}</p>
     </div>
-    <div class="d-flex gap-2 align-items-center">
+    <div class="atlas-actions">
       {% if can_manage_advances and advance.status != 'completed' %}
       <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#payModal">
         <i class="ti ti-cash me-1"></i> Make Payment
@@ -37,70 +32,23 @@
         <i class="ti ti-arrow-left me-1"></i> Back
       </a>
     </div>
-  </div>
+  </header>
 
-  <!-- Stats Cards -->
-  <div class="row g-3 mb-4">
-    <div class="col-6 col-md-3">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body">
-          <div class="text-muted small mb-1">Employee</div>
-          <div class="fw-bold">{{ advance.employee.first_name }} {{ advance.employee.last_name }}</div>
-          <small class="text-muted">{{ advance.employee.employee_code }}</small>
-        </div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body">
-          <div class="text-muted small mb-1">Total Amount</div>
-          <div class="fw-bold fs-5 text-primary">₹{{ advance.advance_amount }}</div>
-          <small class="text-muted">{{ advance.default_months }} EMIs from {{ advance.start_date|date:"d M Y" }}</small>
-        </div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body">
-          <div class="text-muted small mb-1">Paid</div>
-          <div class="fw-bold fs-5 text-success">₹{{ advance.paid_amount }}</div>
-          <small class="text-muted">{{ advance.schedules_paid }}/{{ advance.schedules_total }} EMIs paid</small>
-        </div>
-      </div>
-    </div>
-    <div class="col-6 col-md-3">
-      <div class="card border-0 shadow-sm h-100">
-        <div class="card-body">
-          <div class="text-muted small mb-1">Outstanding</div>
-          <div class="fw-bold fs-5 {% if advance.outstanding_amount > 0 %}text-danger{% else %}text-success{% endif %}" id="outstanding-val">
-            ₹{{ advance.outstanding_amount }}
-          </div>
-          <small class="text-muted" id="advance-status-badge">
-            {% if advance.status == 'completed' %}
-              <span class="badge bg-success">Completed</span>
-            {% else %}
-              <span class="badge bg-label-warning text-warning">Active</span>
-            {% endif %}
-          </small>
-        </div>
-      </div>
-    </div>
+  <div class="advance-overview">
+    <section class="personal-card"><header><h2>Outstanding balance</h2><small id="advance-status-badge">{{ advance.get_status_display }}</small></header>
+      <strong class="personal-number" id="outstanding-val">&#8377;{{ advance.outstanding_amount }}</strong>
+      <p><span id="advance-paid">&#8377;{{ advance.paid_amount }}</span> paid of &#8377;{{ advance.advance_amount }}</p>
+      <div class="personal-line"><span>Repayment progress</span><b id="progress-pct">{{ advance.progress }}%</b></div>
+      <progress id="progress-bar" value="{{ advance.progress }}" max="100" aria-label="Repayment progress"></progress>
+    </section>
+    <section class="personal-card"><header><h2>Repayment schedule</h2></header>
+      <div class="personal-line"><span>Start date</span><b>{{ advance.start_date|date:"j M Y" }}</b></div>
+      <div class="personal-line"><span>Original term</span><b>{{ advance.default_months }} months</b></div>
+      <div class="personal-line"><span>Instalments paid</span><b id="advance-instalments">{{ advance.schedules_paid }} / {{ advance.schedules_total }}</b></div>
+      <div class="personal-line"><span>Earliest pending instalment</span><b id="advance-next">{{ next_instalment.due_month|date:"M Y"|default:"None" }}</b></div>
+    </section>
   </div>
-
-  <!-- Progress Bar -->
-  <div class="card border-0 shadow-sm mb-4">
-    <div class="card-body py-3">
-      <div class="d-flex justify-content-between mb-1">
-        <span class="small fw-semibold">Repayment Progress</span>
-        <span class="small fw-semibold" id="progress-pct">{{ advance.progress }}%</span>
-      </div>
-      <div class="progress" style="height:10px;">
-        <div class="progress-bar {% if advance.status == 'completed' %}bg-success{% else %}bg-primary{% endif %}"
-             id="progress-bar" style="width:{{ advance.progress }}%;"></div>
-      </div>
-    </div>
-  </div>
-
+  <div class="advance-history">
   <!-- EMI Schedule -->
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-transparent fw-semibold d-flex align-items-center gap-2 border-bottom">
@@ -195,6 +143,7 @@
 </div>
 
 
+</div>
 <!-- PAYMENT MODAL -->
 {% if can_manage_advances %}
 <div class="modal fade" id="payModal" tabindex="-1" aria-labelledby="payModalLabel" aria-hidden="true">
@@ -258,8 +207,9 @@ function showToast(msg, type = "success") {
   const t = document.createElement("div");
   t.className = `toast align-items-center text-white bg-${type} border-0 position-fixed top-0 end-0 m-3`;
   t.style.zIndex = 9999;
-  t.innerHTML = `<div class="d-flex"><div class="toast-body">${msg}</div>
+  t.innerHTML = `<div class="d-flex"><div class="toast-body"></div>
     <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div>`;
+  t.querySelector(".toast-body").textContent = msg;
   document.body.appendChild(t);
   const bsToast = new bootstrap.Toast(t, { delay: 3000 });
   bsToast.show();
@@ -276,14 +226,14 @@ function updateStats(json) {
   document.getElementById("outstanding-val").textContent = "₹" + outstanding;
   const modalOutstanding = document.getElementById("modal-outstanding");
   if (modalOutstanding) modalOutstanding.textContent = "₹" + outstanding;
-  document.getElementById("progress-bar").style.width = pct + "%";
+  document.getElementById("progress-bar").value = pct;
+  document.getElementById("advance-paid").textContent = "\u20b9" + paid;
   document.getElementById("progress-pct").textContent = pct + "%";
 
   const payInput = document.getElementById("pay-amount");
   if (payInput) payInput.max = outstanding;
 
   if (json.advance_status === "completed") {
-    document.getElementById("progress-bar").classList.replace("bg-primary", "bg-success");
     document.getElementById("advance-status-badge").innerHTML = '<span class="badge bg-success">Completed</span>';
     const payBtn = document.querySelector('[data-bs-target="#payModal"]');
     if (payBtn) payBtn.remove();
@@ -294,6 +244,9 @@ function updateStats(json) {
 function updateSchedule(json) {
   const tbody = document.getElementById("scheduleBody");
   tbody.innerHTML = "";
+  document.getElementById("advance-instalments").textContent = json.schedules.filter(s => s.status === "paid").length + " / " + json.schedules.length;
+  const next = json.schedules.find(s => s.status === "pending");
+  document.getElementById("advance-next").textContent = next ? next.due_month : "None";
 
   json.schedules.forEach((s, i) => {
     let badge, action;
@@ -396,10 +349,11 @@ function addPaymentRow(amount, note) {
       </div>
       <div>
         <div class="fw-semibold text-success">₹${amount}</div>
-        ${note ? `<small class="text-muted">${note}</small>` : ""}
+        <small class="text-muted payment-note"></small>
       </div>
     </div>
     <small class="text-muted"><i class="ti ti-clock me-1"></i>${fmt}</small>`;
+  li.querySelector(".payment-note").textContent = note || "";
   ul.insertBefore(li, ul.firstChild);
 }
 

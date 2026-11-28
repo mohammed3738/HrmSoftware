@@ -99,6 +99,11 @@ class EmployeeSearchEndpointTest(TestCase):
         self.assertEqual(codes, ["101"],
                          "the other company's Asha must not be suggested")
 
+    def test_account_without_a_company_or_global_access_gets_no_suggestions(self):
+        user = User.objects.create_user("unassigned-search")
+        self.client.force_login(user, backend="django.contrib.auth.backends.ModelBackend")
+        self.assertEqual(self.search("Asha"), [])
+
     def test_an_admin_sees_every_company(self):
         self.assertEqual([r["code"] for r in self.search("Asha")], ["101", "901"])
 

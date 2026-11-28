@@ -16,17 +16,12 @@
 {% endif %}
 
   <!-- HEADER -->
-  <div class="d-flex justify-content-between align-items-center mb-3">
+  <header class="atlas-page-heading">
     <div>
-      <h4 class="fw-bold mb-1">
+      <h1>
         {{ run.company.name }}
         <span class="text-muted fw-normal fs-5">— {{ run.start_date|date:"d M Y" }} to {{ run.end_date|date:"d M Y" }}</span>
-      </h4>
-      <ol class="breadcrumb mb-0">
-        <li class="breadcrumb-item"><a href="#"><i class="ti ti-smart-home"></i></a></li>
-        <li class="breadcrumb-item"><a href="{% url 'payroll-run-list' %}">Payroll Runs</a></li>
-        <li class="breadcrumb-item active">{{ run.month|date:"F Y" }}</li>
-      </ol>
+      </h1>
     </div>
     <div class="d-flex gap-2 align-items-center flex-wrap">
       {% if run.status == "finalized" %}
@@ -60,7 +55,7 @@
         <i class="ti ti-arrow-left me-1"></i> Back
       </a>
     </div>
-  </div>
+  </header>
 
   <!-- SUMMARY CARDS -->
   <div class="row g-3 mb-4">
@@ -190,7 +185,17 @@
           >
             <td>{{ forloop.counter }}</td>
             <td class="text-nowrap fw-semibold">{{ r.employee_code }}</td>
-            <td class="fw-semibold text-nowrap">{{ r.employee_name }}</td>
+            <td class="fw-semibold">{{ r.employee_name|default:r.employee }}
+              {% if run.status == "finalized" and r.net_salary > 0 %}
+                <small class="d-block text-muted">{% if r.payment_date %}Paid {{ r.payment_date|date:"j M Y" }}{% else %}Payment date unconfirmed{% endif %}</small>
+                {% if can_run_payroll %}<details><summary class="text-primary small">Record payment date</summary>
+                  <form method="post" action="{% url 'payroll-payment-date' r.pk %}" class="mt-2">
+                    {% csrf_token %}<input type="hidden" name="previous" value="{{ r.payment_date|date:'Y-m-d' }}">
+                    <label>Actual payment date<input class="form-control form-control-sm" type="date" name="payment_date" max="{% now 'Y-m-d' %}" value="{{ r.payment_date|date:'Y-m-d' }}" required></label>
+                    <button class="btn btn-sm btn-primary" type="submit">Save date</button>
+                  </form></details>{% endif %}
+              {% endif %}
+            </td>
             <td>{{ r.designation }}</td>
             <td>{{ r.branch_name }}</td>
             <td class="text-nowrap">{{ r.date_of_joining|date:"d M Y" }}</td>

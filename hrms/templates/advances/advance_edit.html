@@ -6,20 +6,14 @@
 <div class="container-xxl flex-grow-1 container-p-y">
 
   <!-- Header -->
-  <div class="d-flex justify-content-between align-items-center mb-4">
+  <header class="atlas-page-heading">
     <div>
-      <h4 class="fw-bold mb-1">Edit Advance #{{ advance.id }}</h4>
-      <ol class="breadcrumb mb-0">
-        <li class="breadcrumb-item"><a href="#"><i class="ti ti-smart-home"></i></a></li>
-        <li class="breadcrumb-item"><a href="{% url 'advances-list' %}">Advances</a></li>
-        <li class="breadcrumb-item"><a href="{% url 'advance-detail' advance.id %}">{{ advance.employee.first_name }} {{ advance.employee.last_name }}</a></li>
-        <li class="breadcrumb-item active">Edit</li>
-      </ol>
+      <h1>Edit Advance #{{ advance.id }}</h1>
     </div>
     <a href="{% url 'advance-detail' advance.id %}" class="btn btn-outline-secondary">
       <i class="ti ti-arrow-left me-1"></i> Back
     </a>
-  </div>
+  </header>
 
   <div class="row justify-content-center">
     <div class="col-lg-7 col-xl-6">
@@ -42,7 +36,7 @@
 
             <!-- Advance Amount -->
             <div class="mb-4">
-              <label class="form-label fw-semibold">
+              <label class="form-label fw-semibold" for="id_advance_amount">
                 Advance Amount (₹) <span class="text-danger">*</span>
               </label>
               {{ form.advance_amount.errors }}
@@ -60,7 +54,7 @@
 
             <!-- Number of EMIs -->
             <div class="mb-4">
-              <label class="form-label fw-semibold">
+              <label class="form-label fw-semibold" for="id_default_months">
                 Number of EMIs <span class="text-danger">*</span>
               </label>
               {{ form.default_months.errors }}
@@ -72,11 +66,11 @@
 
             <!-- Start Date -->
             <div class="mb-4">
-              <label class="form-label fw-semibold">Start Month</label>
+              <label class="form-label fw-semibold" for="id_start_date">Start Month</label>
               {{ form.start_date.errors }}
               <input type="date" name="start_date" id="id_start_date"
                      class="form-control{% if form.start_date.errors %} is-invalid{% endif %}"
-                     value="{{ form.start_date.value|default:'' }}"
+                     value="{% if form.is_bound %}{{ form.start_date.value|default:'' }}{% else %}{{ form.start_date.value|date:'Y-m-d' }}{% endif %}"
                      {% if has_payments %}disabled{% endif %}>
             </div>
 

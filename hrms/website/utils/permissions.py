@@ -136,3 +136,15 @@ def can_access_employee_record(user, employee, feature_key, action="view"):
     if hasattr(user, "employee_profile") and user.employee_profile.id == employee.id:
         return True
     return has_feature_permission(user, feature_key, action)
+
+
+def department_member_ids(employee):
+    """Active coworkers in the same company and named department."""
+    from django.db.models.functions import Trim
+    from website.models import Employee
+
+    department = (employee.department or "").strip()
+    if not employee.company_id or not department:
+        return Employee.objects.none().values("pk")
+    return (Employee.objects.filter(company_id=employee.company_id, status="Active")
+            .annotate(team_name=Trim("department")).filter(team_name__iexact=department).values("pk"))

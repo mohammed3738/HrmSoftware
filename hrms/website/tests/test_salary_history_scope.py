@@ -70,3 +70,13 @@ class SalaryHistoryScopeTest(TestCase):
         url = reverse("employee_details_ajax") + f"?employee_id={self.colleague.pk}"
         self.assertEqual(self.hr.get(url).status_code, 403)
         self.assertEqual(self.admin.get(url).status_code, 200)
+
+    def test_period_filters_match_workbook_and_list(self):
+        params = {"employee": "SALCO", "date_from": "2025-06-01", "date_to": "2025-06-30"}
+        listing = self.admin.get(reverse("salary_history"), params)
+        self.assertEqual(list(listing.context["history"]), [self.theirs])
+        response = self.admin.get(reverse("salary_history_export_excel"), params)
+        sheet = openpyxl.load_workbook(io.BytesIO(response.content)).active
+        self.assertEqual([row[0] for row in sheet.iter_rows(min_row=2, values_only=True)], ["SALCO"])
+        params["date_from"] = "2026-01-01"
+        self.assertFalse(self.admin.get(reverse("salary_history"), params).context["history"].exists())

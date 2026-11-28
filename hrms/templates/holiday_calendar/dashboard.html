@@ -1,56 +1,17 @@
-{% extends 'base2.html' %} {% block body %} {% load static %} {% load custom_filters %}
+{% extends 'base2.html' %} {% block title %}Calendar{% endblock %}{% block body %}<div class="holiday-workspace"> {% load static %} {% load custom_filters %}
     <style>
-        :root {
-            /* Materialize Admin Theme Variables */
-            --bs-primary: #696cff;
-            --bs-primary-rgb: 105, 108, 255;
-            --bs-success: #71dd37;
-            --bs-success-rgb: 113, 221, 55;
-            --bs-warning: #ffab00;
-            --bs-warning-rgb: 255, 171, 0;
-            --bs-danger: #ff3e1d;
-            --bs-danger-rgb: 255, 62, 29;
-            --bs-info: #03c3ec;
-
-            --body-bg: #f5f5f9;
-            --card-bg: #fff;
-            --card-border: #d9dee3;
-            --card-shadow: 0 2px 6px 0 rgba(67, 89, 113, 0.12);
-            --card-shadow-hover: 0 4px 16px 0 rgba(67, 89, 113, 0.2);
-
-            --text-primary: #566a7f;
-            --text-heading: #32475c;
-            --text-muted: #8592a3;
-            --text-light: #a1acb8;
-
-            --border-color: #d9dee3;
-            --border-radius: 0.5rem;
-            --border-radius-lg: 0.75rem;
-            --border-radius-xl: 1rem;
-
-            --input-bg: #fff;
-            --input-border: #d9dee3;
-            --input-focus-border: var(--bs-primary);
-            --input-focus-shadow: 0 0 0 0.2rem rgba(105, 108, 255, 0.2);
-
-            --table-striped-bg: rgba(67, 89, 113, 0.03);
-            --table-hover-bg: rgba(67, 89, 113, 0.04);
+        @scope (.holiday-workspace) {
+        :scope {
+            --body-bg: var(--atlas-canvas); --card-bg: var(--atlas-panel);
+            --card-border: var(--atlas-line); --border-color: var(--atlas-line);
+            --card-shadow: 0 3px 12px #18223d09; --card-shadow-hover: var(--card-shadow);
+            --text-primary: var(--atlas-text); --text-heading: var(--atlas-text);
+            --text-muted: var(--atlas-muted); --text-light: var(--atlas-muted);
+            --border-radius: .7rem; --border-radius-lg: 1rem; --border-radius-xl: 1.25rem;
+            --input-bg: var(--atlas-panel); --input-border: var(--atlas-line);
+            --input-focus-border: var(--atlas-accent); --input-focus-shadow: 0 0 0 2px var(--atlas-highlight);
+            --table-striped-bg: var(--atlas-canvas); --table-hover-bg: var(--atlas-highlight);
         }
-
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--body-bg);
-            color: var(--text-primary);
-            line-height: 1.5;
-            font-size: 0.9375rem;
-        }
-
         .container {
             max-width: 1400px;
             margin: 0 auto;
@@ -872,57 +833,29 @@
                 width: 95%;
             }
         }
-    </style>
-    <div class="container-xxl flex-grow-1 container-p-y mt-10     ">
+    }</style>
+    <div class="container-xxl flex-grow-1 container-p-y">
         <!-- Messages -->
 
-        <!-- Page Header -->
-        <div class="page-header">
-            <h1>🗓️ Holiday Calendar</h1>
-            <p>Manage company holidays and branch-specific closures &mdash; {{ year }}</p>
-        </div>
-
-        <!-- Stats Grid -->
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon primary">📅</div>
-                <div class="stat-info">
-                    <div class="stat-label">Total Holidays</div>
-                    <div class="stat-value">{{ total_holidays }}</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon success">🌍</div>
-                <div class="stat-info">
-                    <div class="stat-label">National Holidays</div>
-                    <div class="stat-value">{{ national_holidays }}</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon warning">📍</div>
-                <div class="stat-info">
-                    <div class="stat-label">Regional Holidays</div>
-                    <div class="stat-value">{{ regional_holidays }}</div>
-                </div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon danger">🚨</div>
-                <div class="stat-info">
-                    <div class="stat-label">Emergency Closures</div>
-                    <div class="stat-value">{{ emergency_closures }}</div>
-                </div>
-            </div>
-        </div>
+        <section class="atlas-overview">
+          <header class="personal-heading"><div><h1>Calendar</h1></div><a class="personal-pill" href="{% url 'leave_apply' %}">Apply for leave</a></header>
+          <dl class="atlas-metrics">
+            <div><dt>Total Holidays</dt><dd>{{ total_holidays }}</dd></div>
+            <div><dt>National Holidays</dt><dd>{{ national_holidays }}</dd></div>
+            <div><dt>Regional Holidays</dt><dd>{{ regional_holidays }}</dd></div>
+            <div><dt>Emergency Closures</dt><dd>{{ emergency_closures }}</dd></div>
+          </dl>
+        </section>
 
         <!-- Tabs Navigation -->
         <div class="nav-tabs-wrapper" id="tabNav">
-            <button class="tab-btn" data-tab="calendar">📅 Calendar View</button>
+            <button class="tab-btn" data-tab="calendar">Calendar View</button>
             {% if not request.user|is_employee_role %}
-            <button class="tab-btn" data-tab="holidays">🎉 Holidays List</button>
-            <button class="tab-btn" data-tab="holiday-types">🏷️ Holiday Types</button>
-            <button class="tab-btn" data-tab="earned">⭐ Earned Leaves</button>
-            <button class="tab-btn" data-tab="halfday">🌓 Half-Day Scenarios</button>
-            <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+            <button class="tab-btn" data-tab="holidays">Holidays List</button>
+            <button class="tab-btn" data-tab="holiday-types">Holiday Types</button>
+            <button class="tab-btn" data-tab="earned">Earned Leaves</button>
+            <button class="tab-btn" data-tab="halfday">Half-Day Scenarios</button>
+            <button class="tab-btn" data-tab="settings">Settings</button>
             {% endif %}
         </div>
 
@@ -940,14 +873,22 @@
                         </div>
                     </div>
                     <div class="card-body">
+                        <div class="calendar-key"><span class="holiday-key">Company holiday</span><span class="observance-key">Festival or observance</span></div>
                         <div class="calendar-grid" id="calendarGrid">
                             <!-- Generated by JavaScript -->
                         </div>
                     </div>
+                    <details class="observance-agenda"><summary>Festivals and observances this month</summary>
+                      {% for key, events in observances.items %}
+                      <div class="observance-row"><time datetime="{{ key }}">{{ key|slice:"8:" }} {{ month_name }}</time>
+                        <ul>{% for event in events %}<li>{{ event.name }} <small>{{ event.scope }}</small></li>{% endfor %}</ul>
+                      </div>{% empty %}<p>No observances available for this month.</p>{% endfor %}
+                    </details>
                 </div>
 
                 <!-- Sidebar -->
                 <div class="sidebar">
+                    {% include "holiday_calendar/day_planner.html" %}
                     <!-- Quick Filters -->
                     <div class="card">
                         <div class="card-header"><h2>🔍 Filters</h2></div>
@@ -1844,12 +1785,14 @@
         </div>
     </div>
 
+    {{ observances|json_script:"month-observances" }}
     <script>
     (function () {
         const WEEKEND_DAYS = {{ calendar_weekend_days|default:"[0, 6]"|safe }};  // from the Weekend Days setting
         /* ===================================================
            DATA FROM SERVER
         =================================================== */
+        const observances = JSON.parse(document.getElementById("month-observances").textContent);
         const holidaysData  = {{ holidays_json|safe }};
         const halfDayData   = {{ half_day_json|safe }};
         const CSRF          = document.querySelector('[name=csrfmiddlewaretoken]').value;
@@ -1952,50 +1895,72 @@
         }
 
         function makeDayCell(day, cls, dateStr, holiday, halfDay) {
-            const cell = document.createElement('div');
-            cell.className = 'day-cell ' + (cls || '');
-
-            function shortLabel(text) {
-                const words = text.split(' ');
-                return words.slice(0, 2).join(' ') + (words.length > 2 ? '…' : '');
-            }
-
-            let label = '';
-            let titleText = dateStr || '';
-
-            if (holiday) {
-                label = shortLabel(holiday.name);
-                titleText = holiday.name;
-                if (halfDay) {
-                    label += ' · 🌓';
-                    titleText += ' | Half-day: ' + halfDay.description;
-                }
-            } else if (halfDay) {
-                label = '🌓 ' + shortLabel(halfDay.description);
-                titleText = 'Half-day (' + halfDay.branch + '): ' + halfDay.description;
-            }
-
-            cell.innerHTML = `<div class="day-number">${day}</div><div class="day-label">${label}</div>`;
+            const cell = document.createElement(dateStr ? "button" : "span");
+            cell.className = "day-cell " + (cls || "");
+            const number = document.createElement("span");
+            number.className = "day-number";
+            number.textContent = day;
+            cell.append(number);
             if (dateStr) {
-                cell.title = titleText;
+                cell.type = "button";
+                cell.dataset.date = dateStr;
+                const names = (observances[dateStr] || []).map(event => event.name);
+                const labels = [...new Set([holiday?.name, halfDay?.description, ...names].filter(Boolean))];
+                if (holiday) cell.classList.add("company-holiday");
+                if (names.length) cell.classList.add("has-observance");
+                const count = entryCounts.get(dateStr) || 0;
+                if (count) {
+                    cell.classList.add("has-entry");
+                    labels.push(count + (count === 1 ? " item" : " items"));
+                }
+                const detail = document.createElement("span");
+                detail.className = "day-label";
+                detail.textContent = labels.join(" · ");
+                cell.append(detail);
+                cell.title = [dateStr, ...labels].join(" · ");
+                cell.setAttribute("aria-label",cell.title);
+                cell.setAttribute("aria-pressed", String(dateStr === selectedDate));
+                if (cls === "today") cell.setAttribute("aria-current","date");
+                cell.addEventListener("click", () => {
+                    selectPlannerDay(dateStr);
+                    if (matchMedia("(max-width: 800px)").matches) document.getElementById("planner-heading").focus();
+                });
             }
             return cell;
         }
 
-        function previousMonth() {
-            currentDate.setMonth(currentDate.getMonth() - 1);
-            generateCalendar();
+        const plannerRows = [...document.querySelectorAll("[data-entry-date]")];
+        const entryCounts = new Map();
+        for (const row of plannerRows) {
+            const key = row.dataset.entryDate;
+            entryCounts.set(key, (entryCounts.get(key) || 0) + 1);
         }
-
-        function nextMonth() {
-            currentDate.setMonth(currentDate.getMonth() + 1);
-            generateCalendar();
+        let selectedDate = "{{ selected_day|date:'Y-m-d' }}";
+        function selectPlannerDay(key) {
+            selectedDate = key;
+            document.getElementById("planner-date").value = key;
+            document.getElementById("planner-heading").textContent = new Date(key+"T12:00:00").toLocaleDateString(undefined, {weekday:"short",month:"long",day:"numeric"});
+            const events = [
+                ...holidaysData.filter(h => h.holiday_date === key).map(h => "Company holiday: " + h.name),
+                ...halfDayData.filter(h => h.scenario_date === key).map(h => "Half day: " + h.description),
+                ...(observances[key] || []).map(e => e.name + " (" + e.scope + ")"),
+            ];
+            document.getElementById("planner-events").textContent = events.join("\n");
+            document.getElementById("planner-empty").hidden = entryCounts.has(key);
+            for (const row of plannerRows) row.hidden = row.dataset.entryDate !== key;
+            for (const cell of document.querySelectorAll("#calendarGrid [data-date]")) cell.setAttribute("aria-pressed", String(cell.dataset.date === key));
         }
-
-        function todayMonth() {
-            currentDate = new Date();
-            generateCalendar();
+        function navigateMonth(d) {
+            const url = new URL(location.href);
+            url.searchParams.set("year", d.getFullYear());
+            url.searchParams.set("month", d.getMonth()+1);
+            url.searchParams.set("day", d.getDate());
+            url.hash = "calendar";
+            window.location.assign(url);
         }
+        function previousMonth() { navigateMonth(new Date(SERVER_YEAR, SERVER_MONTH-2, 1)); }
+        function nextMonth() { navigateMonth(new Date(SERVER_YEAR, SERVER_MONTH, 1)); }
+        function todayMonth() { navigateMonth(new Date()); }
 
         /* ===================================================
            FILTERS — sync dropdowns → URL reload
@@ -2212,6 +2177,7 @@
            INIT
         =================================================== */
         generateCalendar();
+        selectPlannerDay(selectedDate);
 
         // Expose functions needed by inline HTML handlers
         Object.assign(window, {
@@ -2227,4 +2193,5 @@
         });
     })();
     </script>
+</div>
 {% endblock %}

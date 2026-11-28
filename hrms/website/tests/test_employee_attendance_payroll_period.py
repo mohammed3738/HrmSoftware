@@ -57,6 +57,25 @@ class EmployeeAttendancePayrollPeriodTest(TestCase):
         self.client = Client()
         self.client.force_login(self.user, backend="django.contrib.auth.backends.ModelBackend")
 
+    def test_selected_day_includes_worked_duration_and_scoped_punches(self):
+        from website.models import BiometricPunch
+        for day in (self.mid_period.date, self.period_start.date, self.after_period.date):
+            BiometricPunch.objects.create(employee=self.employee, punch_date=day, punch_time=time(9),
+                                          device_user_id="fixture", direction="In")
+        for hour in (13, 18):
+            BiometricPunch.objects.create(employee=self.employee, punch_date=self.mid_period.date, punch_time=time(hour),
+                                          device_user_id="fixture")
+        response = self.client.get(reverse("employee_attendance_detail", args=[self.employee.pk]),
+                                   {"period": "2026-06-26"})
+        details = response.context["day_details"]
+        selected = details[self.mid_period.date.isoformat()]
+        self.assertEqual(selected["worked"], "9h 0m")
+        self.assertEqual(selected["punches"], [["09:00", "First punch"], ["18:00", "Last punch"]])
+        self.assertEqual(details[self.period_start.date.isoformat()]["punches"], [["09:00", "First punch"]])
+        self.assertNotIn(self.after_period.date.isoformat(), details)
+        self.assertEqual(len(response.context["next_roster"]), 7)
+        self.assertEqual(response.context["period_links"]["previous"], "?period=2026-05-26")
+
     def test_period_filter_uses_27_to_26_cycle_not_calendar_month(self):
         resp = self.client.get(reverse("employee_attendance_detail", args=[self.employee.id]))
         self.assertTrue(resp.context["uses_custom_period"])

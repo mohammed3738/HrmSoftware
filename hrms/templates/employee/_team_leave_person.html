@@ -1,0 +1,6 @@
+<div class="team-leave-person">
+  {% include "employee/_dashboard_avatar.html" with person=person only %}
+  <div><b>{{ person.first_name }} {{ person.last_name }}</b>
+    <small>{% if person.leave_through == today %}Through today{% else %}Through <time datetime="{{ person.leave_through|date:'Y-m-d' }}">{{ person.leave_through|date:"D, j M" }}</time>{% endif %}</small>
+  </div>
+</div>

@@ -1,0 +1,37 @@
+{% extends "base2.html" %}
+{% block title %}{% if section %}{{ section.label }}{% else %}All pages{% endif %}{% endblock %}
+{% block body %}
+<div class="container-xxl container-p-y directory-launcher">
+  <header class="launcher-heading" data-module="{{ section.key|default:'workspace' }}">
+    <span class="launcher-icon" aria-hidden="true"><i class="ri-{{ section.icon|default:'apps' }}-line"></i></span>
+    <h1>{% if section %}{{ section.label }}{% else %}All pages{% endif %}</h1>
+  </header>
+  {% if section %}
+    <ul class="page-directory launcher-pages" data-module="{{ section.key }}">
+      {% for page in section.pages %}
+        <li class="launcher-tile">
+          <a class="launcher-destination" href="{{ page.url }}">
+            <span class="launcher-icon" aria-hidden="true"><i class="ri-{{ page.icon }}-line"></i></span>
+            <strong>{{ page.label }}</strong>
+          </a>
+          {% if page.action %}<a class="launcher-action" href="{{ page.action.url }}"><i class="ri-add-line" aria-hidden="true"></i>{{ page.action.label }}</a>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="page-directory launcher-sections">
+      {% for group in tree.sections %}
+      <section class="launcher-folder" data-module="{{ group.key }}">
+        <h2><a href="{{ group.url }}">
+          <span class="launcher-icon" aria-hidden="true"><i class="ri-{{ group.icon }}-line"></i></span>
+          <span>{{ group.label }}</span><i class="ri-arrow-right-s-line launcher-chevron" aria-hidden="true"></i>
+        </a></h2>
+        <details><summary>{{ group.pages|length }} page{{ group.pages|length|pluralize }}<span class="visually-hidden"> in {{ group.label }}</span></summary>
+          <ul>{% for page in group.pages %}<li><a href="{{ page.url }}"><i class="ri-{{ page.icon }}-line" aria-hidden="true"></i>{{ page.label }}</a></li>{% endfor %}</ul>
+        </details>
+      </section>
+      {% endfor %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

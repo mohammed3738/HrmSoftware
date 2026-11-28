@@ -4,16 +4,26 @@ from django.urls import path
 from website import views
 from website import views_biometric
 from website import views_field_duty
+from website import navigation, views_org
 from website import views_password_reset
 
 urlpatterns = [    
     # path('',views.test,name="test"),
+    path("pages/", navigation.page_directory, name="navigation-index"),
+    path("pages/<slug:section>/", navigation.page_directory, name="navigation-section"),
+    path("dashboard/executive/", views.executive_dashboard, name="executive-dashboard"),
+    path("dashboard/analytics/", views.workforce_analytics, name="workforce-analytics"),
+    path("dashboard/team/", views.team_analytics, name="team-analytics"),
     path("", views.admin_dashboard, name="admin-dashboard"),
 
     path('home',views.home,name="home"),
+    path("org-chart/", views_org.org_chart, name="org-chart"),
     path('employees/', views.employee_list, name='employee_list'),
     path('my-profile/', views.my_profile, name='my_profile'),
     path('my-attendance/', views.my_attendance, name='my_attendance'),
+    path('my-dashboard/wish/<int:recipient_id>/<str:occasion>/', views.send_celebration_wish, name='send-celebration-wish'),
+    path('my-dashboard/requests/<slug:kind>/', views.employee_request_history, name='employee-request-history'),
+    path('my-dashboard/requests/<slug:kind>/<int:pk>/', views.employee_request_history, name='employee-request-record'),
     path('my-dashboard/', views.employee_dashboard, name='employee-dashboard'),
     path('employees/bulk-action/', views.bulk_employee_action, name='bulk-employee-action'),
     path('employee/', views.create_or_edit_employee, name='employee_create'),
@@ -176,6 +186,7 @@ urlpatterns = [
     path('announcements/', views.announcements_hub, name='announcements-hub'),
     path('announcements/save/', views.save_announcement, name='save-announcement'),
     path('announcements/<int:pk>/delete/', views.delete_announcement, name='delete-announcement'),
+    path('announcements/feed/', views.announcement_feed, name='announcement-feed'),
     path('announcements/api/', views.announcements_api, name='announcements-api'),
     path('announcements/mark-read/', views.mark_announcement_read, name='mark-announcement-read'),
 
@@ -223,6 +234,7 @@ urlpatterns = [
     path("salary-slips/", views.salary_slips_list, name="salary-slips"),
     path("salary-slips/statement/", views.salary_slip_statement, name="salary-slip-statement"),
     path("payroll/run/<int:run_id>/recalculate/", views.payroll_run_recalculate, name="payroll-run-recalculate"),
+    path("payroll/record/<int:record_id>/payment-date/", views.record_payment_date, name="payroll-payment-date"),
     path("payroll/run/<int:run_id>/finalize/", views.payroll_run_finalize, name="payroll-run-finalize"),
 
 
@@ -260,6 +272,7 @@ urlpatterns = [
 
 
     # Holiday Calendar URLs (NO namespace, just simple URLs)
+    path("holiday/planner/entry/", views.calendar_entry_update, name="calendar-entry-update"),
     path('holiday/dashboard/', views.holiday_calendar_dashboard, name='holiday-calendar'),
     path('holiday/', views.holiday_calendar_dashboard, name='holiday-dashboard'),
     path('holiday/add/', views.add_holiday, name='add-holiday'),

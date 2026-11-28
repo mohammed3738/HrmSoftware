@@ -1,93 +1,54 @@
 {% extends "base2.html" %}
 {% load custom_filters %}
-{% load static %}
-
+{% block title %}Announcement management{% endblock %}
 {% block body %}
-<div class="container-xxl py-4">
-
-  <!-- Header -->
-  <div class="mb-4">
-    <h4 class="mb-0">Announcements</h4>
-    <small class="text-muted">Post company-wide notices — they'll appear in the notification bell and, if urgent, as a dashboard banner</small>
-  </div>
-
-  <div class="row g-4">
-
-    <!-- Left: Company filter + list -->
-    <div class="col-md-4">
-      <div class="card mb-3">
-        <div class="card-header py-2">
-          <h6 class="mb-0 fw-semibold small text-uppercase text-muted">Filter by Company</h6>
-        </div>
-        <div class="list-group list-group-flush">
-          <a href="?" class="list-group-item list-group-item-action {% if not selected_company %}active{% endif %}">
-            All Companies
-          </a>
-          {% for company in companies %}
-          <a href="?company_id={{ company.pk }}"
-             class="list-group-item list-group-item-action {% if selected_company.pk == company.pk %}active{% endif %}">
-            {{ company.name }}
-          </a>
-          {% endfor %}
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header py-3 d-flex justify-content-between align-items-center">
-          <h6 class="mb-0 fw-semibold">Announcements</h6>
-          <button type="button" class="btn btn-sm btn-primary" id="newAnnouncementBtn">
-            <i class="ri-add-line me-1"></i>New
-          </button>
-        </div>
-        <div class="list-group list-group-flush" id="announcementList">
-          {% for a in announcements %}
-          <a href="#" class="list-group-item list-group-item-action announcement-row" data-id="{{ a.id }}"
-             data-title="{{ a.title }}" data-body="{{ a.body }}" data-priority="{{ a.priority }}"
-             data-company-id="{{ a.company_id|default:'' }}" data-is-active="{{ a.is_active|yesno:'1,0' }}"
-             data-expires-at="{{ a.expires_at|date:'Y-m-d\TH:i' }}">
-            <div class="d-flex justify-content-between align-items-start gap-2">
-              <div class="lh-sm">
-                <div class="fw-semibold small">
-                  {{ a.title }}
-                  {% if not a.is_active %}<span class="badge bg-label-secondary ms-1">Inactive</span>{% endif %}
-                </div>
-                <div class="text-muted" style="font-size:.72rem;">
-                  {{ a.company.name|default:"All Companies" }} · {{ a.created_at|date:"d M Y" }}
-                </div>
-              </div>
-              <span class="badge {% if a.priority == 'urgent' %}bg-danger{% elif a.priority == 'important' %}bg-warning text-dark{% else %}bg-label-primary{% endif %}" style="font-size:.65rem;">
-                {{ a.get_priority_display }}
-              </span>
-            </div>
-          </a>
-          {% empty %}
-          <div class="list-group-item text-muted small text-center py-4">No announcements yet.</div>
-          {% endfor %}
-        </div>
-      </div>
+{% with can_edit=request.user|has_feature:"announcements:edit" %}
+<div class="container-xxl container-p-y atlas-personal announcement-workspace">
+  <header class="personal-heading">
+    <div><h1>Announcement management</h1></div>
+    <div class="atlas-actions">
+      <a class="personal-pill" href="{% url 'announcement-feed' %}">Employee feed</a>
+      {% if can_edit %}<button class="personal-pill primary" type="button" id="newAnnouncementBtn">+ New announcement</button>{% endif %}
     </div>
-
-    <!-- Right: Create/Edit form -->
-    <div class="col-md-8">
-      <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center">
-          <h6 class="mb-0 fw-semibold" id="formHeading">New Announcement</h6>
-          <button type="button" class="btn btn-sm btn-outline-danger d-none" id="deleteAnnouncementBtn">
-            <i class="ri-archive-line me-1"></i>Archive
-          </button>
-        </div>
-        <div class="card-body">
+  </header>
+  <div class="announcement-columns">
+    <section class="personal-card">
+      <header><h2>Notices</h2><small>{{ page.paginator.count }} total</small></header>
+      <form method="get" class="announcement-filter">
+        <label for="company-filter">Company</label>
+        <div><select class="form-select" name="company_id" id="company-filter">
+          <option value="">All companies</option>
+          {% for company in companies %}<option value="{{ company.pk }}" {% if selected_company.pk == company.pk %}selected{% endif %}>{{ company.name }}</option>{% endfor %}
+        </select><button class="personal-pill">Filter</button></div>
+      </form>
+      {% for a in page %}
+        {% if can_edit %}
+          <button type="button" class="announcement-row" data-id="{{ a.pk }}" data-title="{{ a.title }}" data-body="{{ a.body }}" data-priority="{{ a.priority }}"
+            data-company-id="{{ a.company_id|default:'' }}" data-is-active="{{ a.is_active|yesno:'1,0' }}" data-expires-at="{{ a.expires_at|date:'Y-m-d\TH:i' }}">
+        {% else %}<article class="announcement-row">{% endif %}
+          <strong>{{ a.title }}</strong><small>{{ a.company.name|default:"All companies" }} &middot; {{ a.created_at|date:"j M Y" }}</small>
+          <small>{{ a.get_priority_display }} &middot; {% if not a.is_active %}Inactive{% elif a.is_visible_now %}Published{% elif a.starts_at > current_time %}Scheduled{% else %}Expired{% endif %}</small>
+        {% if can_edit %}</button>{% else %}<p>{{ a.body|linebreaksbr }}</p></article>{% endif %}
+      {% empty %}<p>No notices for this company.</p>{% endfor %}
+      {% include 'partials/report_pagination.html' %}
+    </section>
+    {% if can_edit %}
+    <section class="personal-card">
+      <header><h2 id="formHeading">New Announcement</h2>
+        {% if request.user|has_feature:"archive_records:edit" %}<button type="button" id="deleteAnnouncementBtn" class="btn btn-sm btn-outline-danger d-none">Archive</button>{% endif %}
+      </header>
+          <p id="announcement-feedback" role="status" aria-live="polite"></p>
           <form id="announcementForm">
             {% csrf_token %}
             <input type="hidden" name="announcement_id" id="announcementId">
 
             <div class="row g-3">
               <div class="col-md-8">
-                <label class="form-label">Title</label>
+                <label class="form-label" for="title">Title</label>
                 <input type="text" class="form-control" name="title" id="title" required maxlength="200">
               </div>
               <div class="col-md-4">
-                <label class="form-label">Priority</label>
+                <label class="form-label" for="priority">Priority</label>
                 <select class="form-select" name="priority" id="priority">
                   {% for value, label in priority_choices %}
                   <option value="{{ value }}">{{ label }}</option>
@@ -96,21 +57,21 @@
               </div>
 
               <div class="col-12">
-                <label class="form-label">Message</label>
+                <label class="form-label" for="body">Message</label>
                 <textarea class="form-control" name="body" id="body" rows="4" required></textarea>
               </div>
 
               <div class="col-md-6">
-                <label class="form-label">Company</label>
+                <label class="form-label" for="companyId">Company</label>
                 <select class="form-select" name="company_id" id="companyId">
                   <option value="">All Companies</option>
                   {% for company in companies %}
-                  <option value="{{ company.id }}">{{ company.name }}</option>
+                  <option value="{{ company.id }}" {% if selected_company.pk == company.pk %}selected{% endif %}>{{ company.name }}</option>
                   {% endfor %}
                 </select>
               </div>
               <div class="col-md-6">
-                <label class="form-label">Expires At <span class="text-muted small">(optional)</span></label>
+                <label class="form-label" for="expiresAt">Expires At <span class="text-muted small">(optional)</span></label>
                 <input type="datetime-local" class="form-control" name="expires_at" id="expiresAt">
               </div>
 
@@ -119,33 +80,34 @@
                   <input class="form-check-input" type="checkbox" role="switch" id="isActive" name="is_active" checked>
                   <label class="form-check-label" for="isActive">Active</label>
                 </div>
-                <small class="text-muted">Urgent + Active announcements also appear as a dashboard banner.</small>
+                <small class="text-muted">Unread important and urgent notices appear on the dashboard while active.</small>
               </div>
             </div>
 
             <div class="d-flex justify-content-end gap-2 mt-4">
-              <button type="button" class="btn btn-outline-secondary" id="resetFormBtn">Clear</button>
-              <button type="submit" class="btn btn-primary" id="saveAnnouncementBtn">
+              <button type="button" class="personal-pill" id="resetFormBtn">Clear</button>
+              <button type="submit" class="personal-pill primary" id="saveAnnouncementBtn">
                 <i class="ri-save-line me-1"></i>Save Announcement
               </button>
             </div>
           </form>
-        </div>
-      </div>
-    </div>
-
+    </section>
+    {% endif %}
   </div>
 </div>
-
+{% if can_edit %}
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const CSRF = document.querySelector('[name=csrfmiddlewaretoken]')?.value;
 
+  const feedback = document.getElementById('announcement-feedback');
   function showSuccess(msg) {
-    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: msg, showConfirmButton: false, timer: 2500 });
+    feedback.className = 'text-success';
+    feedback.textContent = msg;
   }
   function showError(msg) {
-    Swal.fire({ toast: true, position: 'top-end', icon: 'error', title: msg, showConfirmButton: false, timer: 3500 });
+    feedback.className = 'text-danger';
+    feedback.textContent = msg;
   }
 
   const form = document.getElementById('announcementForm');
@@ -154,22 +116,24 @@ document.addEventListener('DOMContentLoaded', () => {
   const canArchive = {% if request.user|has_feature:"archive_records:edit" %}true{% else %}false{% endif %};
 
   function resetForm() {
+    feedback.textContent = '';
     form.reset();
     document.getElementById('announcementId').value = '';
     document.getElementById('isActive').checked = true;
     formHeading.textContent = 'New Announcement';
-    deleteBtn.classList.add('d-none');
+    deleteBtn?.classList.add('d-none');
     document.querySelectorAll('.announcement-row').forEach(r => r.classList.remove('active'));
   }
 
-  document.getElementById('newAnnouncementBtn').addEventListener('click', resetForm);
-  document.getElementById('resetFormBtn').addEventListener('click', resetForm);
+  document.getElementById('newAnnouncementBtn').addEventListener('click', () => { resetForm(); document.getElementById('title').focus(); });
+  document.getElementById('resetFormBtn').addEventListener('click', () => { resetForm(); document.getElementById('title').focus(); });
 
   document.querySelectorAll('.announcement-row').forEach(row => {
     row.addEventListener('click', (e) => {
       e.preventDefault();
       document.querySelectorAll('.announcement-row').forEach(r => r.classList.remove('active'));
       row.classList.add('active');
+      feedback.textContent = '';
 
       document.getElementById('announcementId').value = row.dataset.id;
       document.getElementById('title').value = row.dataset.title;
@@ -179,7 +143,8 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('isActive').checked = row.dataset.isActive === '1';
       document.getElementById('expiresAt').value = row.dataset.expiresAt || '';
       formHeading.textContent = 'Edit Announcement';
-      if (canArchive) deleteBtn.classList.remove('d-none');
+      if (canArchive) deleteBtn.classList.toggle('d-none', row.dataset.isActive !== '1');
+      document.getElementById('title').focus();
     });
   });
 
@@ -212,18 +177,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  deleteBtn.addEventListener('click', async () => {
+  deleteBtn?.addEventListener('click', async () => {
     const id = document.getElementById('announcementId').value;
     if (!id) return;
-    const result = await Swal.fire({
-      title: 'Archive this announcement?',
-      text: 'It will stop showing in the notification bell and dashboard banners, but stays here for reference. Re-activate it anytime by editing it and switching Active back on.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      confirmButtonText: 'Archive',
-    });
-    if (!result.isConfirmed) return;
+    if (!window.confirm('Archive this announcement? Employees will no longer see it in their feed.')) return;
 
     try {
       const res = await fetch(`/announcements/${id}/delete/`, { method: 'POST', headers: { 'X-CSRFToken': CSRF } });
@@ -242,4 +199,6 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 
+{% endif %}
+{% endwith %}
 {% endblock %}

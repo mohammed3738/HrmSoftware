@@ -332,6 +332,19 @@ class OnboardingListsTest(OnboardingTestBase):
         self.assertContains(resp, incomplete.employee_code)
         self.assertNotContains(resp, done.employee_code)
 
+    def test_company_queue_matches_directory_drilldown(self):
+        employee = self._employee(code="IN-SCOPE")
+        self._employee(code="FORMER", status="Left")
+        other = self._employee(code="OUTSIDE")
+        other_company = Company.objects.create(name="Other company", short_name="OTHER")
+        Employee.objects.filter(pk=other.pk).update(company=other_company)
+        response = self.hr.client.get(reverse("admin-dashboard"), {"company": self.company.pk})
+        directory = reverse("employee_list") + f"?onboarding=pending&company={self.company.pk}"
+        self.assertContains(response, directory.replace("&", "&amp;"))
+        self.assertEqual(response.context["pending_onboarding_total"], 1)
+        rows = self.hr.client.get(directory).context["employees"]
+        self.assertEqual([row["id"] for row in rows], [employee.pk])
+
     def test_dashboard_lists_pending_onboarding_until_complete(self):
         emp = self._employee(code="ONB-DASH", started=date.today() - timedelta(days=20))
         resp = self.hr.client.get(reverse("admin-dashboard"))

@@ -112,6 +112,21 @@ class AnnouncementScopingAndReadTrackingTest(TestCase):
         self.assertNotIn("Company B only", titles)
         self.assertNotIn("Inactive", titles)
 
+    def test_employee_feed_scopes_notices_and_tracks_read_state(self):
+        employee = self.make_employee(self.company_a, "ANNFEED")
+        self.client.force_login(employee.user, backend="django.contrib.auth.backends.ModelBackend")
+        feed = reverse("announcement-feed")
+        unread = feed + "?show=unread"
+        response = self.client.get(feed)
+        self.assertContains(response, "Just for A")
+        self.assertNotContains(response, "Just for B")
+        self.assertNotContains(response, "Should never show")
+        self.assertEqual(self.client.post(feed, {"announcement_id": self.company_b_announcement.pk}).status_code, 404)
+        self.assertRedirects(self.client.post(unread, {"announcement_id": self.company_a_announcement.pk}), unread)
+        self.assertNotContains(self.client.get(unread), "Just for A")
+        self.assertContains(self.client.get(feed), "Just for A")
+        self.assertEqual(self.client.get(reverse("announcements-api")).json()["unread_count"], 1)
+
     def test_hod_also_scoped_to_own_company(self):
         manager = self.make_employee(self.company_b, "ANNMGR1", group_name="HOD")
         client = Client()

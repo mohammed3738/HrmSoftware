@@ -1,23 +1,15 @@
-{% extends 'base2.html' %} {% block body %}
+{% extends 'base2.html' %} {% block title %}Biometric Sync{% endblock %}
+{% block body %}
 <div class="container-xxl flex-grow-1 container-p-y">
 
-  <div class="d-flex align-items-center justify-content-between mb-4">
+  <div class="atlas-page-heading">
     <div>
-      <h4 class="mb-1"><i class="ri-fingerprint-line me-2"></i>Biometric Sync</h4>
+      <h1>Biometric Sync</h1>
       <p class="text-muted mb-0">
         Punches from the eSSL machine, and the in/out times built from them.
       </p>
     </div>
   </div>
-
-  {% if messages %}
-    {% for message in messages %}
-      <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags }}{% endif %} alert-dismissible" role="alert">
-        {{ message }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-      </div>
-    {% endfor %}
-  {% endif %}
 
   {% if not token_configured %}
     <div class="alert alert-danger">
@@ -85,12 +77,12 @@
             {% csrf_token %}
             <div class="row g-2">
               <div class="col-6">
-                <label class="form-label">From</label>
-                <input type="date" name="from_date" class="form-control" value="{{ default_from }}" required>
+                <label for="filter_from_date" class="form-label">From</label>
+                <input id="filter_from_date" type="date" name="from_date" class="form-control" value="{{ default_from }}" required>
               </div>
               <div class="col-6">
-                <label class="form-label">To</label>
-                <input type="date" name="to_date" class="form-control" value="{{ default_to }}" required>
+                <label for="filter_to_date" class="form-label">To</label>
+                <input id="filter_to_date" type="date" name="to_date" class="form-control" value="{{ default_to }}" required>
               </div>
             </div>
             <button type="submit" class="btn btn-primary mt-3">

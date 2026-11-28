@@ -4,112 +4,47 @@
   here even though base2.html loads the same one.
 {% endcomment %}
 {% load custom_filters %}
+{% block title %}Workforce overview{% endblock %}
 {% block body %}
 
-<style>
-.kpi-card { border-left: 4px solid; transition: transform .15s; }
-.kpi-card:hover { transform: translateY(-2px); }
-.kpi-card.primary  { border-color: #696cff; }
-.kpi-card.success  { border-color: #71dd37; }
-.kpi-card.warning  { border-color: #ffab00; }
-.kpi-card.info     { border-color: #03c3ec; }
-.kpi-card.danger   { border-color: #ff3e1d; }
-.kpi-icon { width:52px; height:52px; display:flex; align-items:center; justify-content:center; border-radius:10px; font-size:24px; }
-.attn-bar { height: 8px; border-radius: 4px; }
-.dept-bar-wrap { background:#f0f0f0; border-radius:4px; height:8px; }
-.dept-bar { height:8px; border-radius:4px; background:#696cff; }
-.pending-badge { font-size:18px; font-weight:700; }
-.section-heading { font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#8592a3; margin-bottom:.75rem; }
-.table-sm td, .table-sm th { padding: .45rem .6rem; font-size:.85rem; }
-.action-btn { padding: 2px 8px; font-size:.78rem; }
-.avatar-sm { width:36px; height:36px; font-size:.8rem; }
-.pending-table-scroll { max-height: 320px; overflow-y: auto; }
-</style>
 
-<div class="container-xxl flex-grow-1 container-p-y">
 
-  {% include 'announcements/_banner.html' %}
-
-  <!-- ── Row 1: KPI Cards ───────────────────────────────────────────── -->
-  <div class="row g-4 mb-4">
-
-    <div class="col-6 col-md-3">
-      <div class="card kpi-card primary h-100">
-        <div class="card-body d-flex align-items-center gap-3">
-          <div class="kpi-icon bg-label-primary"><i class="ri-team-line text-primary"></i></div>
-          <div>
-            <div class="fs-4 fw-bold text-primary">{{ total_active }}</div>
-            <div class="text-muted small">Active Employees</div>
-          </div>
-        </div>
-      </div>
+<div class="container-xxl flex-grow-1 container-p-y atlas-dashboard dashboard-bento">
+  <h1 class="visually-hidden">Workforce overview</h1>
+  <header class="personal-heading"><div><time>{{ today|date:"l, j F Y" }}</time><h2>{{ user.first_name|default:user.username }}'s dashboard</h2></div>
+    <div class="atlas-actions">{% if can_filter_company %}<form method="get" class="dashboard-company-filter"><label class="visually-hidden" for="dashboard-company">Company</label><select id="dashboard-company" name="company" class="form-select form-select-sm"><option value="">All companies</option>{% for c in dashboard_companies %}<option value="{{ c.pk }}" {% if dashboard_company.pk == c.pk %}selected{% endif %}>{{ c.name }}</option>{% endfor %}</select><button class="personal-pill btn btn-sm">Apply</button></form>{% endif %}
+    <a class="personal-pill" href="{% url 'workforce-analytics' %}{% if dashboard_company %}?company={{ dashboard_company.pk }}{% endif %}">Workforce analytics</a>
+    {% if request.user|has_feature:"executive_dashboard:view" %}<a class="personal-pill" href="{% url 'executive-dashboard' %}">Executive summary</a>{% endif %}</div>
+  </header>
+  <div class="atlas-dashboard-actions">
+    <div>
+      <h2>Quick Actions</h2>
+      {% if can_filter_company %}<small>{{ dashboard_company.name|default:"All Companies" }}</small>{% endif %}
     </div>
-
-    <div class="col-6 col-md-3">
-      <div class="card kpi-card success h-100">
-        <div class="card-body d-flex align-items-center gap-3">
-          <div class="kpi-icon bg-label-success"><i class="ri-user-add-line text-success"></i></div>
-          <div>
-            <div class="fs-4 fw-bold text-success">{{ new_joiners_month }}</div>
-            <div class="text-muted small">New This Month</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-6 col-md-3">
-      <div class="card kpi-card warning h-100">
-        <div class="card-body d-flex align-items-center gap-3">
-          <div class="kpi-icon bg-label-warning"><i class="ri-time-line text-warning"></i></div>
-          <div>
-            <div class="fs-4 fw-bold text-warning">{{ total_pending }}</div>
-            <div class="text-muted small">Pending Approvals</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-6 col-md-3">
-      <div class="card kpi-card danger h-100">
-        <div class="card-body d-flex align-items-center gap-3">
-          <div class="kpi-icon bg-label-danger"><i class="ri-user-unfollow-line text-danger"></i></div>
-          <div>
-            <div class="fs-4 fw-bold text-danger">{{ total_left }}</div>
-            <div class="text-muted small">Employees Left</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- ── Quick Actions bar (always visible, below KPI cards) ──────── -->
-  <div class="card mb-4">
-    <div class="card-body py-2 d-flex align-items-center justify-content-between flex-wrap gap-2">
-      <div>
-        <span class="fw-semibold me-2">Quick Actions</span>
-        <small class="text-muted">{{ today|date:"l, d F Y" }} &nbsp;·&nbsp; {{ user_company.name|default:"All Companies" }}</small>
-      </div>
-      <div class="d-flex gap-2 flex-wrap">
+    <div class="atlas-actions">
+        {% if show_people_panels %}
+        <a href="{% url 'employee_list' %}" class="btn btn-outline-primary btn-sm"><i class="ri-contacts-line"></i> Employee directory</a>
+        <a href="#pending-onboarding" class="btn btn-outline-secondary btn-sm"><i class="ri-user-add-line"></i> Pending Onboarding</a>
+        {% endif %}
         {% if show_attendance_tools %}
         <a href="{% url 'download-empty-excel' %}" class="btn btn-outline-secondary btn-sm">
-          <i class="ti ti-download me-1"></i> Download Attendance Template
+          <i class="ri-download-2-line me-1"></i> Download Attendance Template
         </a>
         <button id="openUploadModal" class="btn btn-primary btn-sm">
-          <i class="ti ti-upload me-1"></i> Upload Attendance
+          <i class="ri-upload-2-line me-1"></i> Upload Attendance
         </button>
         <button id="openRecalcModal" class="btn btn-outline-warning btn-sm">
-          <i class="ti ti-refresh me-1"></i> Recalculate Attendance
+          <i class="ri-refresh-line me-1"></i> Recalculate Attendance
         </button>
         {% endif %}
         {% if show_people_panels %}
         <button onclick="downloadEmployees()" class="btn btn-outline-danger btn-sm">
-          <i class="ti ti-users me-1"></i> Download All Employees
+          <i class="ri-team-line me-1"></i> Download All Employees
         </button>
         {% endif %}
         {% if can_run_payroll %}
         <a href="{% url 'payroll-run-create' %}" class="btn btn-success btn-sm">
-          <i class="ti ti-cash me-1"></i> New Payroll Run
+          <i class="ri-money-rupee-circle-line me-1"></i> New Payroll Run
         </a>
         {% endif %}
         {% comment %}
@@ -120,49 +55,76 @@
         {% endcomment %}
         {% if request.user|has_feature:"field_duty:view" or request.user|has_reportees %}
         <a href="{% url 'field-duty-log' %}" class="btn btn-outline-info btn-sm">
-          <i class="ti ti-map-pin me-1"></i>
+          <i class="ri-map-pin-line me-1"></i>
           {% if request.user|has_feature:"field_duty:view" %}Field Duty Log{% else %}My Team's Field Duty{% endif %}
         </a>
         {% endif %}
         {% if request.user|has_employee_profile %}
         <a href="{% url 'field-duty' %}" class="btn btn-outline-primary btn-sm">
-          <i class="ti ti-walk me-1"></i> My Field Duty
+          <i class="ri-walk-line me-1"></i> My Field Duty
         </a>
         {% endif %}
-      </div>
     </div>
   </div>
 
+  <nav class="dashboard-jumps" aria-label="Dashboard sections">
+    {% if show_people_panels %}<a href="#pending-onboarding">Onboarding</a>{% endif %}
+    {% if show_attendance_panels %}<a href="#attendance-overview">Attendance</a><a href="#absent-today">Absences</a>{% endif %}
+    {% if show_payroll_panel %}<a href="#dashboard-payroll">Payroll</a>{% endif %}
+    {% if show_any_approvals %}<a href="#dashboard-approvals">Approvals</a>{% endif %}
+    <a href="#department-distribution">Departments</a>
+  </nav>
+  <dl class="atlas-workforce-metrics">
+    <div class="atlas-workforce-stat stat-people">
+      <dt><i aria-hidden="true" class="ri-team-line"></i>Active Employees</dt>
+      <dd>{{ total_active }}</dd>
+    </div>
+    <div class="atlas-workforce-stat stat-joiners">
+      <dt><i aria-hidden="true" class="ri-user-add-line"></i>New This Month</dt>
+      <dd>{{ new_joiners_month }}</dd>
+    </div>
+    <div class="atlas-workforce-stat stat-approvals">
+      <dt><i aria-hidden="true" class="ri-time-line"></i>Pending Approvals</dt>
+      <dd>{{ total_pending }}</dd>
+    </div>
+    <div class="atlas-workforce-stat stat-departures">
+      <dt><i aria-hidden="true" class="ri-user-unfollow-line"></i>Employees Left</dt>
+      <dd>{{ total_left }}</dd>
+    </div>
+  </dl>
+  {% include 'announcements/_banner.html' %}
+
   <!-- ── Pending onboarding ───────────────────────────────────────── -->
-  {% if show_people_panels and pending_onboarding or show_change_approvals and pending_change_requests %}
+  {% if show_people_panels or show_change_approvals and pending_change_requests %}
   <div class="row g-4 mb-4">
-    {% if show_people_panels and pending_onboarding %}
+    {% if show_people_panels %}
     <div class="col-12">
-      <div class="card">
-        <div class="card-header d-flex flex-wrap gap-2 justify-content-between align-items-center pb-1">
-          <h6 class="mb-0"><i class="ri-user-add-line me-1 text-warning"></i> Pending Onboarding
-            <span class="badge bg-label-warning ms-1">{{ pending_onboarding_total }}</span></h6>
+      <section class="personal-card onboarding-queue" id="pending-onboarding">
+        <header>
+          <h2><i class="ri-user-add-line me-1 text-warning"></i> Pending Onboarding
+            <span class="badge bg-label-warning ms-1">{{ pending_onboarding_total }}</span></h2>
           <div class="d-flex gap-3 align-items-center">
             {% if show_change_approvals and pending_change_requests %}
             <a href="{% url 'employee_change_requests' %}" class="small fw-semibold text-danger">
               <i class="ri-shield-check-line"></i> {{ pending_change_requests }} change{{ pending_change_requests|pluralize }} awaiting approval
             </a>
             {% endif %}
-            <a href="{% url 'employee_list' %}?onboarding=pending" class="small">{% if pending_onboarding_total > pending_onboarding|length %}View all {{ pending_onboarding_total }}{% else %}View all{% endif %}</a>
+            <a href="{% url 'employee_list' %}?onboarding=pending{% if dashboard_company %}&amp;company={{ dashboard_company.pk }}{% endif %}" class="small">{% if pending_onboarding_total > pending_onboarding|length %}View all {{ pending_onboarding_total }}{% else %}View all{% endif %}</a>
           </div>
-        </div>
+        </header>
         <div class="table-responsive pending-table-scroll">
           <table class="table table-sm table-hover table-stack mb-0">
             <thead class="table-light">
               <tr>
                 <th>Employee</th>
-                <th style="min-width:160px">Progress</th>
+                <th class="onboarding-progress-col">Progress</th>
                 <th>Still missing</th>
                 <th>Started</th>
-                <th></th>
+                <th><span class="visually-hidden">Action</span></th>
               </tr>
             </thead>
             <tbody>
+              {% with can_edit=request.user|has_feature:"employee_records:edit" %}
               {% for emp in pending_onboarding %}
               <tr>
                 <td data-label="Employee">
@@ -170,20 +132,26 @@
                   {{ emp.first_name }} {{ emp.last_name }}
                 </td>
                 <td data-label="Progress">{% include "employee/_onboarding_bar.html" with progress=emp.onboarding compact=True %}</td>
-                <td data-label="Missing" class="small text-muted text-wrap" style="max-width:320px">
-                  {{ emp.onboarding.missing|slice:":4"|join:", " }}{% if emp.onboarding.missing|length > 4 %} +{{ emp.onboarding.missing|length|add:"-4" }} more{% endif %}
+                <td data-label="Missing" class="onboarding-missing">
+                  {% if emp.onboarding.missing|length > 4 %}
+                    <details><summary>{{ emp.onboarding.missing|slice:":4"|join:", " }} <span>+{{ emp.onboarding.missing|length|add:"-4" }} more</span></summary>
+                      <ul>{% for field in emp.onboarding.missing|slice:"4:" %}<li>{{ field }}</li>{% endfor %}</ul>
+                    </details>
+                  {% else %}{{ emp.onboarding.missing|join:", " }}{% endif %}
                 </td>
                 <td data-label="Started" class="small text-nowrap">
                   {% if emp.onboarding_days < 60 %}{{ emp.onboarding_days }} day{{ emp.onboarding_days|pluralize }} ago{% else %}{{ emp.onboarding_started_at|date:"d M Y" }}{% endif %}
                   {% if emp.onboarding_locked %}<span class="badge bg-label-danger ms-1" title="Past the {{ onboarding_edit_days }}-day window: HR edits need approval">Needs approval</span>{% endif %}
                 </td>
-                <td data-label=""><a href="{% url 'employee_edit' emp.pk %}" class="btn btn-sm btn-outline-primary">Complete</a></td>
+                <td data-label="Action">{% if can_edit %}<a href="{% url 'employee_edit' emp.pk %}" class="btn btn-sm btn-outline-primary">Complete</a>{% else %}<a href="{% url 'employee_detail' emp.pk %}">View details</a>{% endif %}</td>
               </tr>
+              {% empty %}<tr><td colspan="5">No pending onboarding for this selection.</td></tr>
               {% endfor %}
+              {% endwith %}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
     {% elif show_change_approvals and pending_change_requests %}
     <div class="col-12">
@@ -200,30 +168,30 @@
   {% if show_payroll_panel %}
   <div class="row g-4 mb-4">
     <div class="col-lg-7">
-      <div class="card h-100">
-        <div class="card-header d-flex justify-content-between align-items-center pb-1">
-          <h6 class="mb-0"><i class="ri-money-rupee-circle-line me-1 text-success"></i> Payroll Runs</h6>
-          <a href="{% url 'payroll-run-list' %}" class="btn btn-sm btn-outline-success action-btn">View All</a>
-        </div>
+      <section id="dashboard-payroll" class="personal-card h-100">
+        <header>
+          <h2><i class="ri-money-rupee-circle-line me-1 text-success"></i> Payroll Runs</h2>
+          <a href="{% url 'payroll-run-list' %}{% if dashboard_company %}?company={{ dashboard_company.pk }}{% endif %}">View All</a>
+        </header>
         <div class="table-responsive">
-          <table class="table table-sm table-hover mb-0">
+          <table class="table table-sm table-hover table-stack mb-0">
             <thead class="table-light">
               <tr><th>Month</th><th>Company</th><th>Period</th><th>Status</th><th class="text-end">Action</th></tr>
             </thead>
             <tbody>
               {% for run in recent_payroll_runs %}
               <tr>
-                <td class="fw-medium">{{ run.month|date:"M Y" }}</td>
-                <td class="text-muted">{{ run.company.short_name|default:"—" }}</td>
-                <td class="text-muted small">{{ run.start_date|date:"d M" }} – {{ run.end_date|date:"d M" }}</td>
-                <td>
+                <td data-label="Month" class="fw-medium">{{ run.month|date:"M Y" }}</td>
+                <td data-label="Company" class="text-muted">{{ run.company.short_name|default:"—" }}</td>
+                <td data-label="Period" class="text-muted small">{{ run.start_date|date:"d M" }} – {{ run.end_date|date:"d M" }}</td>
+                <td data-label="Status">
                   {% if run.status == 'finalized' %}
                   <span class="badge bg-label-success">Finalized</span>
                   {% else %}
                   <span class="badge bg-label-warning">Draft</span>
                   {% endif %}
                 </td>
-                <td class="text-end">
+                <td data-label="Action" class="text-end">
                   <a href="{% url 'payroll-run-detail' run.id %}" class="btn btn-sm btn-info action-btn">Open</a>
                 </td>
               </tr>
@@ -233,45 +201,34 @@
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
 
     <div class="col-lg-5">
-      <div class="card h-100">
-        <div class="card-header pb-1">
-          <h6 class="mb-0"><i class="ri-checkbox-multiple-line me-1 text-primary"></i> Payroll Readiness</h6>
-        </div>
-        <div class="card-body">
-          <div class="row g-3 text-center mb-3">
-            <div class="col-6">
-              <div class="p-3 rounded-3 bg-label-warning">
-                <div class="pending-badge text-warning">{{ draft_run_count }}</div>
-                <div class="small text-muted mt-1">Draft Runs</div>
-              </div>
-            </div>
-            <div class="col-6">
-              <div class="p-3 rounded-3 bg-label-success">
-                <div class="pending-badge text-success">{{ finalized_run_count }}</div>
-                <div class="small text-muted mt-1">Finalized</div>
-              </div>
-            </div>
+      <section class="personal-card h-100">
+        <header>
+          <h2><i class="ri-checkbox-multiple-line me-1 text-primary"></i> Payroll Readiness</h2>
+        </header>
+        <div>
+          <div class="payroll-readiness-counts">
+            <a href="{% url 'payroll-run-list' %}?status=draft{% if dashboard_company %}&amp;company={{ dashboard_company.pk }}{% endif %}" class="bg-label-warning"><strong>{{ draft_run_count }}</strong>Draft Runs</a>
+            <a href="{% url 'payroll-run-list' %}?status=finalized{% if dashboard_company %}&amp;company={{ dashboard_company.pk }}{% endif %}" class="bg-label-success"><strong>{{ finalized_run_count }}</strong>Finalized</a>
           </div>
-
           {% if employees_without_salary %}
           <div class="alert alert-warning py-2 px-3 small mb-0">
             <i class="ri-error-warning-line me-1"></i>
             <strong>{{ employees_without_salary }}</strong> active employee{{ employees_without_salary|pluralize }}
-            {{ employees_without_salary|pluralize:"has,have" }} no salary structure and cannot be paid.
-            <a href="{% url 'create-salary' %}" class="d-block mt-1">Set one up</a>
+            {{ employees_without_salary|pluralize:"has,have" }} no active salary structure.
+            {% if can_create_salary %}<a href="{% url 'create-salary' %}?missing=1{% if dashboard_company %}&amp;company={{ dashboard_company.pk }}{% endif %}" class="d-block mt-1">Set up salary structure</a>{% endif %}
           </div>
-          {% else %}
+          {% elif total_active %}
           <div class="alert alert-success py-2 px-3 small mb-0">
-            <i class="ri-check-line me-1"></i>
-            Every active employee has a salary structure.
+            <i class="ri-check-line me-1"></i> Every active employee has a salary structure.
           </div>
+          {% else %}<p>No active employees in this selection.</p>
           {% endif %}
         </div>
-      </div>
+      </section>
     </div>
   </div>
   {% endif %}
@@ -282,62 +239,17 @@
     <!-- Today's Attendance -->
     {% if show_attendance_panels %}
     <div class="col-md-6 col-xl-5">
-      <div class="card h-100">
-        <div class="card-header pb-1">
-          <h6 class="mb-0"><i class="ri-calendar-check-line me-1 text-primary"></i> Today's Attendance</h6>
-          <small class="text-muted">{{ today|date:"d M Y" }}</small>
-        </div>
-        <div class="card-body">
-          {% with total=total_active %}
-
-          <!-- Attendance bars — widths set by JS to avoid CSS linter issues with template tags -->
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="small text-success fw-semibold"><i class="ri-checkbox-circle-line me-1"></i>Present</span>
-            <span class="small fw-bold">{{ present_today }}</span>
+      <section class="personal-card h-100" id="attendance-overview">
+        <header><h2>Today's Attendance</h2><small>{{ today|date:"j M Y" }}</small></header>
+        {% if attendance_headcount %}
+          {% for label, count, tone in attendance_breakdown %}
+          <div class="attendance-tally"><div><span>{{ label }}</span><strong>{{ count }}</strong></div>
+            <progress class="tally-{{ tone }}" max="{{ attendance_headcount }}" value="{{ count }}" aria-label="{{ label }} out of {{ attendance_headcount }} employees"></progress>
           </div>
-          <div class="dept-bar-wrap mb-3">
-            <div class="dept-bar attn-bar-js" data-val="{{ present_today }}" data-total="{{ total }}" data-color="#71dd37"></div>
-          </div>
-
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="small text-danger fw-semibold"><i class="ri-close-circle-line me-1"></i>Absent</span>
-            <span class="small fw-bold">{{ absent_today }}</span>
-          </div>
-          <div class="dept-bar-wrap mb-3">
-            <div class="dept-bar attn-bar-js" data-val="{{ absent_today }}" data-total="{{ total }}" data-color="#ff3e1d"></div>
-          </div>
-
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="small text-warning fw-semibold"><i class="ri-alarm-line me-1"></i>Late Present</span>
-            <span class="small fw-bold">{{ late_today }}</span>
-          </div>
-          <div class="dept-bar-wrap mb-3">
-            <div class="dept-bar attn-bar-js" data-val="{{ late_today }}" data-total="{{ total }}" data-color="#ffab00"></div>
-          </div>
-
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="small text-info fw-semibold"><i class="ri-calendar-event-line me-1"></i>On Leave</span>
-            <span class="small fw-bold">{{ on_leave_today }}</span>
-          </div>
-          <div class="dept-bar-wrap mb-3">
-            <div class="dept-bar attn-bar-js" data-val="{{ on_leave_today }}" data-total="{{ total }}" data-color="#03c3ec"></div>
-          </div>
-
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <span class="small text-secondary fw-semibold"><i class="ri-question-line me-1"></i>Not Marked</span>
-            <span class="small fw-bold">{{ not_marked }}</span>
-          </div>
-          <div class="dept-bar-wrap mb-2">
-            <div class="dept-bar attn-bar-js" data-val="{{ not_marked }}" data-total="{{ total }}" data-color="#8592a3"></div>
-          </div>
-
-          {% endwith %}
-
-          <div class="mt-3 pt-2 border-top">
-            <a href="{% url 'attendance' %}" class="btn btn-sm btn-outline-primary w-100">View Full Attendance</a>
-          </div>
-        </div>
-      </div>
+          {% endfor %}
+        {% else %}<p>No active employees have started in this selection.</p>{% endif %}
+        <footer><a href="{% url 'attendance' %}?date={{ today|date:'Y-m-d' }}{% if dashboard_company %}&amp;company_id={{ dashboard_company.pk }}{% endif %}">View Full Attendance</a></footer>
+      </section>
     </div>
     {% endif %}
 
@@ -348,36 +260,42 @@
         <!-- Pending Approvals (3 mini cards) -->
         {% if show_any_approvals %}
         <div class="col-12">
-          <div class="card">
+          <div class="card" id="dashboard-approvals">
             <div class="card-header pb-1">
               <h6 class="mb-0"><i class="ri-notification-3-line me-1 text-warning"></i> Pending Approvals</h6>
             </div>
             <div class="card-body">
               <div class="row g-3">
-                <div class="col-4 text-center">
-                  <a href="{% url 'leave_apply' %}" class="text-decoration-none">
+                {% if show_leave_approvals %}
+                <div class="col text-center">
+                  <a href="#leave-queue" class="text-decoration-none">
                     <div class="p-3 rounded-3 bg-label-warning">
                       <div class="pending-badge text-warning">{{ pending_leaves }}</div>
                       <div class="small text-muted mt-1">Leave Requests</div>
                     </div>
                   </a>
                 </div>
-                <div class="col-4 text-center">
-                  <a href="{% url 'comp_off_requests_list' %}" class="text-decoration-none">
+                {% endif %}
+                {% if show_compoff_approvals %}
+                <div class="col text-center">
+                  <a href="#compoff-queue" class="text-decoration-none">
                     <div class="p-3 rounded-3 bg-label-info">
                       <div class="pending-badge text-info">{{ pending_compoffs }}</div>
                       <div class="small text-muted mt-1">Comp-Off Requests</div>
                     </div>
                   </a>
                 </div>
-                <div class="col-4 text-center">
-                  <a href="{% url 'attendance_correction_requests_list' %}" class="text-decoration-none">
+                {% endif %}
+                {% if show_correction_approvals %}
+                <div class="col text-center">
+                  <a href="#correction-queue" class="text-decoration-none">
                     <div class="p-3 rounded-3 bg-label-danger">
                       <div class="pending-badge text-danger">{{ pending_corrections }}</div>
                       <div class="small text-muted mt-1">Corrections</div>
                     </div>
                   </a>
                 </div>
+                {% endif %}
               </div>
             </div>
           </div>
@@ -385,26 +303,24 @@
         {% endif %}
 
         <!-- Department Distribution -->
-        {% if dept_data %}
         <div class="col-12">
-          <div class="card">
-            <div class="card-header pb-1">
-              <h6 class="mb-0"><i class="ri-pie-chart-line me-1 text-info"></i> Department Distribution</h6>
-            </div>
-            <div class="card-body">
-              {% for d in dept_data %}
-              <div class="d-flex justify-content-between align-items-center mb-1">
-                <span class="small text-truncate" style="max-width:60%">{{ d.department }}</span>
-                <span class="small fw-bold">{{ d.count }}</span>
-              </div>
-              <div class="dept-bar-wrap mb-2">
-                <div class="dept-bar attn-bar-js" data-val="{{ d.count }}" data-total="{{ total_active }}" data-color="#696cff"></div>
-              </div>
-              {% endfor %}
-            </div>
-          </div>
+          <section class="personal-card" id="department-distribution">
+            <header><h2>Department Distribution</h2><small>{{ total_active }} active employee{{ total_active|pluralize }}</small></header>
+            {% for d in dept_data|slice:":8" %}
+              {% include "dashboard/_department_count.html" with label=d.department count=d.count %}
+            {% endfor %}
+            {% if dept_data|length > 8 %}
+              <details class="department-overflow"><summary>More departments ({{ dept_data|length|add:"-8" }})</summary>
+                {% for d in dept_data|slice:"8:" %}
+                  {% include "dashboard/_department_count.html" with label=d.department count=d.count %}
+                {% endfor %}
+              </details>
+            {% endif %}
+            {% if unassigned_department_count %}
+              {% include "dashboard/_department_count.html" with label="No department assigned" count=unassigned_department_count %}
+            {% elif not total_active %}<p>No active employees in this selection.</p>{% endif %}
+          </section>
         </div>
-        {% endif %}
 
       </div>
     </div>
@@ -415,13 +331,15 @@
   {% if show_attendance_panels %}
   <div class="row g-4 mb-4">
     <div class="col-12">
-      <div class="card">
-        <div class="card-header d-flex justify-content-between align-items-center pb-1">
-          <h6 class="mb-0"><i class="ri-user-unfollow-line me-1 text-danger"></i> Absent Today</h6>
-          <small class="text-muted">{{ today|date:"d M Y" }} &middot; {{ absent_employees_today|length }} employee{{ absent_employees_today|length|pluralize }}</small>
-        </div>
-        <div class="table-responsive" style="max-height:260px;">
-          <table class="table table-sm table-hover mb-0">
+      <section class="personal-card" id="absent-today">
+        <header><h2>Absent Today</h2><small>{{ today|date:"j M Y" }} &middot; {{ absent_employees_today|length }} employee{{ absent_employees_today|length|pluralize }}</small></header>
+        {% if absent_employees_today %}
+          <label class="absence-filter" hidden>Remarks
+            <select class="form-select form-select-sm"><option value="">All remarks</option><option>No punch</option><option>On leave</option></select>
+          </label>
+        {% endif %}
+        <div class="table-responsive dashboard-team-list">
+          <table class="table table-sm table-hover table-stack mb-0">
             <thead class="table-light">
               <tr>
                 <th>Employee Code</th>
@@ -433,20 +351,21 @@
             </thead>
             <tbody>
               {% for a in absent_employees_today %}
-              <tr>
-                <td class="fw-medium">{{ a.employee.employee_code }}</td>
-                <td>{{ a.employee.first_name }} {{ a.employee.last_name }}</td>
-                <td class="text-muted">{{ a.employee.branch.branch_name|default:"—" }}</td>
-                <td class="text-muted">{{ a.employee.department|default:"—" }}</td>
-                <td>{% if a.remark == "On leave" %}<span class="badge bg-label-info">On leave</span>{% else %}<span class="badge bg-label-danger">No punch</span>{% endif %}</td>
+              <tr data-remark="{{ a.remark }}">
+                <td data-label="Employee code" class="fw-medium">{{ a.employee.employee_code }}</td>
+                <td data-label="Name">{{ a.employee.first_name }} {{ a.employee.last_name }}</td>
+                <td data-label="Branch" class="text-muted">{{ a.employee.branch.branch_name|default:"—" }}</td>
+                <td data-label="Department" class="text-muted">{{ a.employee.department|default:"—" }}</td>
+                <td data-label="Remarks">{% if a.remark == "On leave" %}<span class="badge bg-label-info">On leave</span>{% else %}<span class="badge bg-label-danger">No punch</span>{% endif %}</td>
               </tr>
               {% empty %}
               <tr><td colspan="5" class="text-center text-muted py-3">Nobody is absent today</td></tr>
               {% endfor %}
+              <tr hidden data-empty-remarks><td colspan="5">No employees match this remark.</td></tr>
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   </div>
 
@@ -455,7 +374,8 @@
   <!-- ── Row 3: Leave Requests table ───────────────────────────────── -->
   {% if show_any_approvals %}
   <div class="row g-4 mb-4">
-    <div class="col-lg-6">
+    {% if show_leave_approvals %}
+    <div id="leave-queue" class="col-lg-6">
       <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center pb-1">
           <h6 class="mb-0"><i class="ri-calendar-event-line me-1 text-primary"></i> Pending Leave Requests</h6>
@@ -506,8 +426,10 @@
       </div>
     </div>
 
+    {% endif %}
+    {% if show_compoff_approvals %}
     <!-- Comp-Off Requests -->
-    <div class="col-lg-6">
+    <div id="compoff-queue" class="col-lg-6">
       <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center pb-1">
           <h6 class="mb-0"><i class="ri-time-line me-1 text-info"></i> Pending Comp-Off Requests</h6>
@@ -555,6 +477,7 @@
         </div>
       </div>
     </div>
+    {% endif %}
   </div>
 
   {% endif %}
@@ -564,7 +487,7 @@
 
     <!-- Attendance Corrections -->
     {% if show_correction_approvals %}
-    <div class="col-lg-6">
+    <div id="correction-queue" class="col-lg-6">
       <div class="card h-100">
         <div class="card-header d-flex justify-content-between align-items-center pb-1">
           <h6 class="mb-0"><i class="ri-edit-box-line me-1 text-danger"></i> Pending Corrections</h6>
@@ -658,23 +581,14 @@
       </div>
     </div>
 
-  </div>
-
     {% endif %}
-
-  <!-- ── Birthdays ─────────────────────────────────────────────────── -->
-  <div class="row g-4 mb-4">
-    <div class="col-lg-6">
-      {% include "employee/_birthdays_card.html" %}
-    </div>
   </div>
 
-  <!-- ── Row 5: Anniversaries + Upcoming Offboarding ───────────────── -->
-  {% if show_people_panels or show_offboarding_panel %}
-  <div class="row g-4 mb-4">
-
+  <div class="workforce-people-grid">
+    {% include "employee/_birthdays_card.html" %}
+    {% if show_people_panels %}
     <!-- Work Anniversaries -->
-    <div class="col-lg-6">
+    <div>
       <div class="card h-100">
         <div class="card-header pb-1">
           <h6 class="mb-0"><i class="ri-medal-line me-1 text-warning"></i> Work Anniversaries This Month</h6>
@@ -684,9 +598,7 @@
           <ul class="list-unstyled mb-0">
             {% for emp in anniversary_employees %}
             <li class="d-flex align-items-center gap-3 mb-3">
-              <div class="kpi-icon avatar-sm bg-label-warning flex-shrink-0">
-                <span class="fw-bold text-warning">{{ emp.first_name|first }}{{ emp.last_name|first }}</span>
-              </div>
+              {% include "employee/_dashboard_avatar.html" with person=emp only %}
               <div class="flex-grow-1">
                 <div class="fw-semibold">{{ emp.first_name }} {{ emp.last_name }}</div>
                 <div class="text-muted small">{{ emp.designation|default:"" }}{% if emp.department %} · {{ emp.department }}{% endif %}</div>
@@ -705,8 +617,10 @@
       </div>
     </div>
 
+    {% endif %}
+    {% if show_offboarding_panel %}
     <!-- Upcoming Offboarding -->
-    <div class="col-lg-6">
+    <div>
       <div class="card h-100">
         <div class="card-header pb-1">
           <h6 class="mb-0"><i class="ri-logout-box-line me-1 text-danger"></i> Upcoming Offboarding (30 days)</h6>
@@ -716,9 +630,7 @@
           <ul class="list-unstyled mb-0">
             {% for ob in upcoming_offboarding %}
             <li class="d-flex align-items-center gap-3 mb-3">
-              <div class="kpi-icon avatar-sm bg-label-danger flex-shrink-0">
-                <span class="fw-bold text-danger">{{ ob.employee.first_name|first }}{{ ob.employee.last_name|first }}</span>
-              </div>
+              {% include "employee/_dashboard_avatar.html" with person=ob.employee only %}
               <div class="flex-grow-1">
                 <div class="fw-semibold">{{ ob.employee.first_name }} {{ ob.employee.last_name }}</div>
                 <div class="text-muted small">{{ ob.employee.designation|default:"" }}</div>
@@ -736,9 +648,19 @@
       </div>
     </div>
 
+    {% endif %}
   </div>
-  {% endif %}
 
+  <div class="personal-grid">
+    {% if hr_summary %}<section class="personal-card"><header><h2>Workforce coverage</h2><a href="{% url 'workforce-analytics' %}">Explore</a></header>
+    <div class="personal-line">Companies with active employees<b>{{ hr_summary.company_count }}</b></div>
+    <div class="personal-line">Branches staffed<b>{{ hr_summary.branch_count }}</b></div>
+    <div class="personal-line">Departments staffed<b>{{ hr_summary.department_count }}</b></div></section>{% endif %}
+    {% if request.user|has_feature:"audit_log:view" %}<section class="personal-card"><header><h2>Recent activity</h2><a href="{% url 'audit-log' %}">Audit log</a></header>
+    {% for entry in dashboard_audit %}<div class="personal-line"><b>{{ entry.get_action_display }}</b><small>{{ entry.created_at|date:"j M H:i" }}</small></div>{% empty %}<p>No recent audit events in scope.</p>{% endfor %}</section>{% endif %}
+    {% if latest_sync %}<section class="personal-card"><header><h2>Biometric sync</h2><a href="{% url 'biometric-sync' %}">Details</a></header>
+    <strong>{{ latest_sync.get_status_display }}</strong><p>{{ latest_sync.started_at|date:"j M H:i" }} &middot; {{ latest_sync.punches_stored }} punches stored</p></section>{% endif %}
+  </div>
 </div><!-- /container -->
 
 
@@ -1351,16 +1273,23 @@ function rejectLeave(id) {
   }});
 }
 
-// ── Init progress bars ───────────────────────────────────────────────
-document.addEventListener("DOMContentLoaded", function () {
-  document.querySelectorAll(".attn-bar-js").forEach(function (el) {
-    var val   = parseFloat(el.dataset.val)   || 0;
-    var total = parseFloat(el.dataset.total) || 0;
-    var pct   = total > 0 ? Math.min(100, Math.round(val / total * 100)) : 0;
-    el.style.width = pct + "%";
-    if (el.dataset.color) el.style.background = el.dataset.color;
-  });
-});
 </script>
 
+<script>
+(() => {
+  const filter = document.querySelector("#absent-today .absence-filter");
+  if (!filter) return;
+  const rows = document.querySelectorAll("#absent-today tr[data-remark]");
+  const empty = document.querySelector("#absent-today [data-empty-remarks]");
+  filter.hidden = false;
+  filter.querySelector("select").addEventListener("change", ({target}) => {
+    let visible = 0;
+    for (const row of rows) {
+      row.hidden = Boolean(target.value && row.dataset.remark !== target.value);
+      if (!row.hidden) visible++;
+    }
+    empty.hidden = visible > 0;
+  });
+})();
+</script>
 {% endblock %}

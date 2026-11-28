@@ -6,11 +6,13 @@ company like the rest of that dashboard's KPIs.
 
 Run with: python manage.py test website.tests.test_admin_dashboard_absentees
 """
-from datetime import date, time
+from datetime import date, time, timedelta
+from unittest.mock import patch
 
 from django.contrib.auth.models import User, Group
 from django.test import TestCase, Client
 from django.urls import reverse
+from django.utils import timezone
 
 from website.models import Attendance, Branch, Company, Employee
 
@@ -28,10 +30,10 @@ class AdminDashboardAbsenteesTest(TestCase):
         self.client.login(username="ada_admin", password="pass12345")
 
         self.present_employee = self._make_employee("ADA1", "Present", "Person")
-        Attendance.objects.create(employee=self.present_employee, date=date.today(), status="Present", status_overridden=True)
+        Attendance.objects.create(employee=self.present_employee, date=timezone.localdate(), status="Present", status_overridden=True)
 
         self.absent_employee = self._make_employee("ADA2", "Absent", "Person")
-        Attendance.objects.create(employee=self.absent_employee, date=date.today(), status="Absent", status_overridden=True)
+        Attendance.objects.create(employee=self.absent_employee, date=timezone.localdate(), status="Absent", status_overridden=True)
 
     def _make_employee(self, code, first_name, last_name):
         return Employee.objects.create(
@@ -53,6 +55,27 @@ class AdminDashboardAbsenteesTest(TestCase):
         self.assertIn("ADA2", codes)
         self.assertNotIn("ADA1", codes)
 
+    def test_attendance_card_excludes_future_joiners_and_links_to_selected_register(self):
+        today = timezone.localdate()
+        future = self._make_employee("ADA-F", "Future", "Joiner")
+        Employee.objects.filter(pk=future.pk).update(date_of_joining=today + timedelta(days=1))
+        response = self.client.get(reverse("admin-dashboard"), {"company": self.company.pk})
+        self.assertEqual(response.context["attendance_headcount"], 2)
+        self.assertContains(response, reverse("attendance") + f"?date={today.isoformat()}&amp;company_id={self.company.pk}")
+
+    def test_late_and_unrecorded_absences_are_not_counted_twice(self):
+        late = self._make_employee("ADA4", "Late", "Arrival")
+        Attendance.objects.create(employee=late, date=timezone.localdate(), status="Late Present", status_overridden=True)
+        self._make_employee("ADA5", "Missing", "Punch")
+        working_day = date(2026, 11, 18)
+        Attendance.objects.all().update(date=working_day)
+        with patch("website.views.timezone.localdate", return_value=working_day):
+            response = self.client.get(reverse("admin-dashboard"))
+        self.assertEqual(response.context["present_today"], 1)
+        self.assertEqual(response.context["late_today"], 1)
+        self.assertEqual(response.context["absent_today"], 2)
+        self.assertEqual(response.context["not_marked"], 0)
+
     def test_absent_employee_name_and_code_available_for_display(self):
         resp = self.client.get(reverse("admin-dashboard"))
         row = resp.context["absent_employees_today"][0]
@@ -65,7 +88,7 @@ class AdminDashboardAbsenteesTest(TestCase):
         # "who actually didn't punch in today" list.
         punched_employee = self._make_employee("ADA3", "Punched", "ButAbsent")
         Attendance.objects.create(
-            employee=punched_employee, date=date.today(), status="Absent",
+            employee=punched_employee, date=timezone.localdate(), status="Absent",
             in_time=time(9, 30), status_overridden=True,
         )
         resp = self.client.get(reverse("admin-dashboard"))

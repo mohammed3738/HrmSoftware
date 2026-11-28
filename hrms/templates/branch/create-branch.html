@@ -1,113 +1,17 @@
-{% extends 'base2.html' %} {% block body %} {% load static %}
+{% extends 'base2.html' %} {% block title %}Branches{% endblock %} {% block body %} {% load static %}
 {% load custom_filters %}
-
-<script>
-  function downloadBranches() {
-    window.location.href = "{% url 'branch-export-excel' %}?show={{ show|default:'active' }}";
-  }
-</script>
-
-<!-- <!DOCTYPE html>
-<html lang="en">
-
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Employee Form</title>
-</head>
-
-<body>
-  <form method="post">
-    <h3>Branch Creations</h3>
-    {% csrf_token %}
-
-
-    <label for="branch">Branch:</label>
-    <input type="text" id="branch" name="branch_name" required /><br />
-
-
-
-    <button type="submit">Submit</button>
-  </form>
-</body>
-
-</html> -->
 
 <!-- Page Wrapper -->
 <div class="container-xxl flex-grow-1 container-p-y">
   <div class="content">
-    <!-- Breadcrumb -->
-    <div
-      class="d-md-flex d-block align-items-center justify-content-between page-breadcrumb mb-3"
-    >
-      <div class="my-auto mb-2">
-        <h2 class="mb-1">Branches</h2>
-        <nav>
-          <ol class="breadcrumb mb-0">
-            <li class="breadcrumb-item">
-              <a
-                href="https://smarthr.dreamstechnologies.com/html/template/index.html"
-                ><i class="ti ti-smart-home"></i
-              ></a>
-            </li>
-            <li class="breadcrumb-item">Application</li>
-            <li class="breadcrumb-item active" aria-current="page">
-              Branches List
-            </li>
-          </ol>
-        </nav>
+    <header class="atlas-page-heading">
+      <h1>Branches</h1>
+      <div class="atlas-actions">
+        <a class="btn btn-outline-secondary" id="downloadBranches" href="{% url 'branch-export-excel' %}?show={{ show|default:'active' }}">Export Excel</a>
+        <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#bulk_upload_branch">Import Excel</button>
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#add_branch">Add Branch</button>
       </div>
-      <div class="d-flex my-xl-auto right-content align-items-center flex-wrap">
-        <div class="me-2 mb-2">
-          <div class="dropdown">
-            <a
-              href="javascript:void(0);"
-              class="dropdown-toggle btn btn-white d-inline-flex align-items-center"
-              data-bs-toggle="dropdown"
-            >
-              <i class="ti ti-file-export me-1"></i>Export
-            </a>
-            <ul class="dropdown-menu dropdown-menu-end p-3">
-              <li>
-                <a href="javascript:void(0);" class="dropdown-item rounded-1"
-                  ><i class="ti ti-file-type-pdf me-1"></i>Export as PDF</a
-                >
-              </li>
-              <li>
-                <a href="javascript:void(0);" onclick="downloadBranches()" class="dropdown-item rounded-1"
-                  ><i class="ti ti-file-type-xls me-1"></i>Export as Excel
-                </a>
-              </li>
-            </ul>
-          </div>
-        </div>
-        <div class="me-2 mb-2">
-          <a
-            href="#"
-            data-bs-toggle="modal"
-            data-bs-target="#bulk_upload_branch"
-            class="btn btn-outline-primary d-flex align-items-center"
-            ><i class="ti ti-upload me-2"></i>Bulk Upload</a
-          >
-        </div>
-        <div class="mb-2">
-          <a
-            href="#"
-            data-bs-toggle="modal"
-            data-bs-target="#add_branch"
-            class="btn btn-primary d-flex align-items-center"
-            ><i class="ti ti-circle-plus me-2"></i>Add Branch</a
-          >
-        </div>
-        <div class="ms-2 head-icons">
-          <!-- <a href="javascript:void(0);" class="" data-bs-toggle="tooltip" data-bs-placement="top"
-            data-bs-original-title="Collapse" id="collapse-header">
-            <i class="ti ti-chevrons-up"></i>
-          </a> -->
-        </div>
-      </div>
-    </div>
-    <!-- /Breadcrumb -->
+    </header>
 
     {% comment %}
     <div class="row">
@@ -309,10 +213,8 @@
         </div>
       </div> {% endcomment %}
       <div class="card-body p-0">
-        <div class="d-flex gap-2 px-3 pt-3">
-          <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
-          <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Archived</a>
-          <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+        <div class="atlas-directory-tools">
+          {% include 'partials/directory_status.html' %}
         </div>
         <div class="custom-datatable-filter table-responsive">
           <table class="table datatable">
@@ -345,7 +247,7 @@
                 <td>{{company.status}}</td> -->
                 <td>
                   <div class="dropdown">
-                    <a class="text-muted" href="#" data-bs-toggle="dropdown">
+                    <a class="text-muted" href="#" aria-label="Actions for {{ branch.branch_name }}" data-bs-toggle="dropdown">
                       <i class="ti ti-dots-vertical"></i>
                     </a>
                     <div class="dropdown-menu dropdown-menu-end">
@@ -480,11 +382,25 @@
       </div>
 
       <div class="modal-body" id="editBranchBody">
-        <div class="text-center text-muted p-3">Loading...</div>
+        {% if edit_form %}
+          {% include "branch/_edit_branch_form.html" with form=edit_form branch=edit_form.instance %}
+        {% else %}
+          <div class="text-center text-muted p-3">Loading...</div>
+        {% endif %}
       </div>
     </div>
   </div>
 </div>
+{% if edit_form %}
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    history.replaceState(null, "", "{% url 'create-branch' %}" + location.search);
+    const dialog = document.getElementById("editBranchModal");
+    dialog.addEventListener("shown.bs.modal", () => dialog.querySelector('[aria-invalid="true"]')?.focus(), {once: true});
+    bootstrap.Modal.getOrCreateInstance(dialog).show();
+  });
+</script>
+{% endif %}
 <!-- /Edit Branch -->
 <!-- /Edit Branch -->
 
@@ -524,174 +440,7 @@
 </div>
 <!-- /Bulk Upload Branches -->
 
-<!-- Upgrade Information -->
-<div class="modal fade" id="upgrade_info">
-  <div class="modal-dialog modal-dialog-centered modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h4 class="modal-title">Upgrade Package</h4>
-        <button
-          type="button"
-          class="btn-close custom-btn-close"
-          data-bs-dismiss="modal"
-          aria-label="Close"
-        >
-          <i class="ti ti-x"></i>
-        </button>
-      </div>
-      <div class="p-3 mb-1">
-        <div class="rounded bg-light p-3">
-          <h5 class="mb-3">Current Plan Details</h5>
-          <div class="row align-items-center">
-            <div class="col-md-4">
-              <div class="mb-3">
-                <p class="fs-12 mb-0">Company Name</p>
-                <p class="text-gray-9">BrightWave Innovations</p>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="mb-3">
-                <p class="fs-12 mb-0">Plan Name</p>
-                <p class="text-gray-9">Advanced</p>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="mb-3">
-                <p class="fs-12 mb-0">Plan Type</p>
-                <p class="text-gray-9">Monthly</p>
-              </div>
-            </div>
-          </div>
-          <div class="row align-items-center">
-            <div class="col-md-4">
-              <div class="mb-3">
-                <p class="fs-12 mb-0">Price</p>
-                <p class="text-gray-9">200</p>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="mb-3">
-                <p class="fs-12 mb-0">Register Date</p>
-                <p class="text-gray-9">12 Sep 2024</p>
-              </div>
-            </div>
-            <div class="col-md-4">
-              <div class="mb-3">
-                <p class="fs-12 mb-0">Expiring On</p>
-                <p class="text-gray-9">11 Oct 2024</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
 
-      <form
-        action="https://smarthr.dreamstechnologies.com/html/template/companies.html"
-      >
-        <div class="modal-body pb-0">
-          <h5 class="mb-4">Change Plan</h5>
-          <div class="row">
-            <div class="col-md-6">
-              <div class="mb-3">
-                <label class="form-label"
-                  >Plan Name <span class="text-danger">*</span></label
-                >
-                <select class="select">
-                  <option>Select</option>
-                  <option>Advanced</option>
-                  <option>Basic</option>
-                  <option>Enterprise</option>
-                </select>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="mb-3">
-                <label class="form-label"
-                  >Plan Type <span class="text-danger">*</span></label
-                >
-                <select class="select">
-                  <option>Select</option>
-                  <option>Monthly</option>
-                  <option>Yearly</option>
-                </select>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="mb-3">
-                <label class="form-label"
-                  >Ammount<span class="text-danger">*</span></label
-                >
-                <input type="text" class="form-control" />
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="mb-3">
-                <label class="form-label"
-                  >Payment Date <span class="text-danger">*</span></label
-                >
-                <div class="input-icon-end position-relative">
-                  <input
-                    type="text"
-                    class="form-control datetimepicker"
-                    placeholder="dd/mm/yyyy"
-                  />
-                  <span class="input-icon-addon">
-                    <i class="ti ti-calendar text-gray-7"></i>
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="mb-3">
-                <label class="form-label"
-                  >Next Payment Date <span class="text-danger">*</span></label
-                >
-                <div class="input-icon-end position-relative">
-                  <input
-                    type="text"
-                    class="form-control datetimepicker"
-                    placeholder="dd/mm/yyyy"
-                  />
-                  <span class="input-icon-addon">
-                    <i class="ti ti-calendar text-gray-7"></i>
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="mb-3">
-                <label class="form-label"
-                  >Expiring On <span class="text-danger">*</span></label
-                >
-                <div class="input-icon-end position-relative">
-                  <input
-                    type="text"
-                    class="form-control datetimepicker"
-                    placeholder="dd/mm/yyyy"
-                  />
-                  <span class="input-icon-addon">
-                    <i class="ti ti-calendar text-gray-7"></i>
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button
-            type="button"
-            class="btn btn-light me-2"
-            data-bs-dismiss="modal"
-          >
-            Cancel
-          </button>
-          <button type="submit" class="btn btn-primary">Save Changes</button>
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
-<!-- /Upgrade Information -->
 
 <!-- Archive / Restore Forms -->
 <form id="deleteBranchForm" method="POST" style="display: none">
@@ -906,7 +655,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let table = $('.datatable').DataTable({
         pageLength: 10,
         responsive: true,
-        language: { emptyTable: "No data available" },
+        language: { emptyTable: "No branches in this view.", zeroRecords: "No matching branches.", searchPlaceholder: "Search branches" },
         dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
     });
  

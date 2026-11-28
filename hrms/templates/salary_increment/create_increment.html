@@ -1,73 +1,43 @@
 {% extends 'base2.html' %}
 {% load custom_filters %}
+{% block title %}Salary increments{% endblock %}
 {% block body %}
 
 <script>
   function exportIncrements() {
-    window.location.href = "{% url 'salary-increment-export-excel' %}?show={{ show|default:'active' }}";
+    const url = new URL("{% url 'salary-increment-export-excel' %}", location.origin);
+    url.searchParams.set("show", "{{ show|escapejs }}");
+    url.searchParams.set("status", "{{ active_tab|escapejs }}");
+    url.searchParams.set("q", document.getElementById("searchBox").value);
+    window.location.assign(url);
   }
 </script>
 
 <div class="container-xxl flex-grow-1 container-p-y">
 
-  <div class="card">
-    <div class="card-body">
-
-      <div class="d-flex justify-content-between mb-3">
-        <h5 class="card-header">Salary Increments</h5>
+  <header class="atlas-page-heading">
+        <h1>Salary Increments</h1>
 
         <button type="button" class="btn btn-primary"
                 data-bs-toggle="modal"
                 data-bs-target="#incrementModal"
                 onclick="resetFormForNew()">
-          ➕ New Increment
+          New Increment
         </button>
-      </div>
-
-      <!-- TABS -->
-      <ul class="nav nav-tabs mb-4">
-        <li class="nav-item">
-          <a class="nav-link {% if active_tab == 'all' %}active{% endif %}"
-             href="?status=all">All</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link {% if active_tab == 'pending' %}active{% endif %}"
-             href="?status=pending">Pending</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link {% if active_tab == 'applied' %}active{% endif %}"
-             href="?status=applied">Applied</a>
-        </li>
-      </ul>
-
-      <!-- SEARCH & FILTER ROW -->
-      <div class="row mb-3">
-        <div class="col-md-4">
-          <input type="text" id="searchBox" class="form-control" autocomplete="off"
-            placeholder="Search employee by name or code, date, reason…">
-        </div>
-
-        <div class="col-md-3 d-flex align-items-center">
-          <select id="statusFilter" class="form-select">
-            <option value="all">All</option>
-            <option value="pending">Pending</option>
-            <option value="applied">Applied</option>
-          </select>
-        </div>
-
-        <div class="col-md-3 d-flex align-items-center">
-          <button class="btn btn-secondary" onclick="exportIncrements()">
-            Export
-          </button>
+  </header>
+  <div class="card"><div class="card-body">
+      <div class="atlas-directory-tools">
+        <nav class="atlas-status-filter" aria-label="Processing status">
+          {% for value, label in processing_statuses %}
+          <a href="{% querystring status=value %}" {% if active_tab == value %}aria-current="page"{% endif %}>{{ label }}</a>
+          {% endfor %}
+        </nav>
+        <div class="atlas-actions">
+          <input type="search" aria-label="Search increments" id="searchBox" class="form-control" autocomplete="off" placeholder="Employee, date or reason">
+          <button type="button" class="btn btn-outline-secondary" onclick="exportIncrements()">Export Excel</button>
         </div>
       </div>
-
-      <div class="d-flex gap-2 mb-3">
-        <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
-        <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Archived</a>
-        <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
-      </div>
-
+      <div class="px-3 mb-3">{% include 'partials/directory_status.html' %}</div>
       <div class="table-responsive">
         <table class="datatable table">
 
@@ -86,7 +56,7 @@
           <tbody id="incrementRows">
           {% for inc in increments %}
           <tr class="increment-row"
-              data-search="{{ inc.employee.first_name|lower }} {{ inc.employee.middle_name|lower }} {{ inc.employee.last_name|lower }} {{ inc.employee.employee_code|lower }} {{ inc.effective_date }} {{ inc.change_set.reason|default:''|lower }}"
+              data-search="{{ inc.effective_date|date:'Y-m-d' }} {{ inc.employee.first_name|lower }} {% if inc.employee.middle_name %}{{ inc.employee.middle_name|lower }}{% endif %} {{ inc.employee.last_name|lower }} {{ inc.employee.employee_code|lower }} {{ inc.effective_date }} {{ inc.change_set.reason|default:''|lower }}"
               data-status="{% if inc.is_processed %}applied{% else %}pending{% endif %}">
               <td>{{ inc.employee.first_name }} {{ inc.employee.last_name }} ({{ inc.employee.employee_code }})</td>
               <td>{{ inc.effective_date }}</td>
@@ -106,22 +76,7 @@
               <td>
                   <!-- 3-Dot Dropdown -->
                   <div class="dropdown">
-  <span
-    data-bs-toggle="dropdown"
-    aria-expanded="false"
-    style="
-      cursor:pointer;
-      font-size:18px;
-      padding:4px 8px;
-      display:inline-block;
-      border-radius:6px;
-      line-height:1;
-    "
-    onmouseover="this.style.background='rgba(0,0,0,0.05)'"
-    onmouseout="this.style.background='transparent'"
-  >
-    &#8942;
-  </span>
+  <button type="button" class="btn btn-sm" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for {{ inc.employee.employee_code }}">&#8942;</button>
 
   <ul class="dropdown-menu dropdown-menu-end">
     <li>
@@ -1034,13 +989,24 @@ document.getElementById("employeeSelect").addEventListener("change", function ()
    DATATABLES INITIALIZATION
    ============================================ */
 document.addEventListener("DOMContentLoaded", function () {
-    let table = $('.datatable').DataTable({
-        pageLength: 10,
-        responsive: true,
-        dom: '<"row mb-3"<"col-sm-6 p-2"l><"col-sm-6 p-2 d-flex justify-content-end"f>>rt<"row mt-3 p-2"<"col-sm-6"i><"col-sm-6 p-2 d-flex justify-content-end"p>>',
+    const input = document.getElementById("searchBox");
+    const element = document.querySelector(".datatable");
+    let words = [];
+    $.fn.dataTable.ext.search.push(function (settings, data, index) {
+      if (settings.nTable !== element) return true;
+      const row = settings.aoData[index].nTr;
+      return words.every(word => row.dataset.search.toLowerCase().includes(word));
     });
- 
-    $('.dataTables_filter input').addClass('form-control');
+    const table = $(element).DataTable({
+      pageLength: 10,
+      responsive: true,
+      dom: 'lrtip',
+      language: { zeroRecords: "No increments match this search." }
+    });
+    input.addEventListener("input", function () {
+      words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      table.draw();
+    });
     $('.dataTables_length select').addClass('form-select');
 });
 </script>
@@ -1053,52 +1019,4 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 </script>
 
-<script>
-// The search box and the status dropdown above the table had no handlers at
-// all -- typing in them did nothing. They filter the rows that are on screen;
-// the list is paginated, so they narrow this page, not the whole history.
-document.addEventListener("DOMContentLoaded", function () {
-  const searchBox = document.getElementById("searchBox");
-  const statusFilter = document.getElementById("statusFilter");
-  const body = document.getElementById("incrementRows");
-  if (!searchBox || !statusFilter || !body) return;
-
-  const rows = Array.prototype.slice.call(
-    body.querySelectorAll("tr.increment-row"));
-
-  let emptyRow = null;
-
-  function apply() {
-    const words = searchBox.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const status = statusFilter.value;
-    let shown = 0;
-
-    rows.forEach(function (tr) {
-      const haystack = tr.dataset.search || "";
-      // Every word has to appear somewhere in the row, in any order, so
-      // "rao 101" and "101 rao" both work.
-      const matches = words.every(function (word) {
-        return haystack.indexOf(word) !== -1;
-      });
-      const statusOk = status === "all" || tr.dataset.status === status;
-      const visible = matches && statusOk;
-      tr.style.display = visible ? "" : "none";
-      if (visible) shown++;
-    });
-
-    if (!emptyRow) {
-      emptyRow = document.createElement("tr");
-      emptyRow.innerHTML =
-        '<td colspan="7" class="text-center text-muted py-3">' +
-        "No increments match this filter on this page.</td>";
-      body.appendChild(emptyRow);
-    }
-    emptyRow.style.display = rows.length && !shown ? "" : "none";
-  }
-
-  searchBox.addEventListener("input", apply);
-  statusFilter.addEventListener("change", apply);
-  apply();
-});
-</script>
 {% endblock %}

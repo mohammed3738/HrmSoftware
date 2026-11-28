@@ -1,25 +1,28 @@
 {% extends 'base2.html' %}
 {% load custom_filters %}
+{% block title %}Shift Roster{% endblock %}
 {% block body %}
 <div class="container-xxl flex-grow-1 container-p-y">
-  <div class="card shadow p-3 rounded-4">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 m-2">
-      <div>
-        <h4 class="fw-bold mb-1"><i class="ri-moon-clear-line me-2 text-primary"></i>Shift Roster</h4>
+  <header class="atlas-page-heading">
+    <div>
+        <h1>Shift Roster</h1>
         <p class="text-muted small mb-0">
           Plan and track who's on which shift — day, night, or rotational — for a given date range.
           This is a scheduling record only; attendance is still calculated from each employee's actual
           check-in/out time, not from what's assigned here.
         </p>
       </div>
+      {% if request.user|has_feature:"shift_roster:edit" %}
       <button type="button" class="btn btn-primary" onclick="openAddShiftModal()">
         <i class="ri-add-line me-1"></i> Assign Shift
       </button>
-    </div>
-
+      {% endif %}
+  </header>
+  <div class="card p-3">
     <form method="GET" class="row g-2 align-items-end mb-3 px-2">
+      <input type="hidden" name="show" value="{{ show|default:'active' }}">
       <div class="col-md-3">
-        <label class="form-label fw-semibold">Employee</label>
+        <label for="filterEmployeeSearch" class="form-label fw-semibold">Employee</label>
         <div class="position-relative">
           <input type="text" id="filterEmployeeSearch" name="employee" value="{{ employee_search }}"
                  class="form-control form-control-sm" placeholder="Name or code" autocomplete="off">
@@ -28,8 +31,8 @@
         </div>
       </div>
       <div class="col-md-3">
-        <label class="form-label fw-semibold">Shift Name</label>
-        <select name="shift_name" class="form-select form-select-sm">
+        <label for="filter_shift_name" class="form-label fw-semibold">Shift Name</label>
+        <select id="filter_shift_name" name="shift_name" class="form-select form-select-sm">
           <option value="" {% if not shift_name %}selected{% endif %}>All Shifts</option>
           {% for name in shift_names %}
           <option value="{{ name }}" {% if shift_name == name %}selected{% endif %}>{{ name }}</option>
@@ -37,12 +40,12 @@
         </select>
       </div>
       <div class="col-md-2">
-        <label class="form-label fw-semibold">From</label>
-        <input type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm">
+        <label for="filter_date_from" class="form-label fw-semibold">From</label>
+        <input id="filter_date_from" type="date" name="date_from" value="{{ date_from }}" class="form-control form-control-sm">
       </div>
       <div class="col-md-2">
-        <label class="form-label fw-semibold">To</label>
-        <input type="date" name="date_to" value="{{ date_to }}" class="form-control form-control-sm">
+        <label for="filter_date_to" class="form-label fw-semibold">To</label>
+        <input id="filter_date_to" type="date" name="date_to" value="{{ date_to }}" class="form-control form-control-sm">
       </div>
       <div class="col-md-2 d-flex gap-2">
         <button type="submit" class="btn btn-sm btn-primary"><i class="ri-filter-2-line me-1"></i>Filter</button>
@@ -50,15 +53,11 @@
       </div>
     </form>
     <div class="px-2 mb-3">
-      <a href="?date_from={{ week_start }}&date_to={{ week_end }}" class="btn btn-sm btn-outline-primary">
+      <a href="{% querystring date_from=week_start date_to=week_end %}" class="btn btn-sm btn-outline-primary">
         <i class="ri-calendar-check-line me-1"></i> This Week ({{ week_start }} to {{ week_end }})
       </a>
     </div>
-    <div class="d-flex gap-2 px-2 mb-3">
-      <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-outline-secondary{% endif %}">Active</a>
-      <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Archived</a>
-      <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
-    </div>
+    <div class="px-2 mb-3">{% include 'partials/directory_status.html' %}</div>
 
     {% if assignments %}
     <div class="table-responsive">
@@ -103,11 +102,11 @@
             <td class="small text-muted">{{ a.created_at|date:"d M Y, h:i A" }}</td>
             <td>
               {% if a.is_active %}
-              <button class="btn btn-sm btn-outline-secondary" onclick="openEditShiftModal({{ a.id }})">Edit</button>
-              {% if request.user|has_feature:"archive_records:edit" %}<button class="btn btn-sm btn-outline-danger" onclick="deleteShiftAssignment({{ a.id }})">Archive</button>{% endif %}
+              {% if request.user|has_feature:"shift_roster:edit" %}<button class="btn btn-sm btn-outline-secondary" onclick="openEditShiftModal({{ a.id }})">Edit</button>{% endif %}
+              {% if request.user|has_feature:"shift_roster:edit" and request.user|has_feature:"archive_records:edit" %}<button class="btn btn-sm btn-outline-danger" onclick="deleteShiftAssignment({{ a.id }})">Archive</button>{% endif %}
               {% else %}
               <span class="badge bg-label-secondary me-1">Archived</span>
-              {% if request.user|has_feature:"archive_records:edit" %}<button class="btn btn-sm btn-outline-success" onclick="restoreShiftAssignment({{ a.id }})">Restore</button>{% endif %}
+              {% if request.user|has_feature:"shift_roster:edit" and request.user|has_feature:"archive_records:edit" %}<button class="btn btn-sm btn-outline-success" onclick="restoreShiftAssignment({{ a.id }})">Restore</button>{% endif %}
               {% endif %}
             </td>
           </tr>
@@ -121,10 +120,10 @@
       <span class="text-muted small">Page {{ assignments.number }} of {{ assignments.paginator.num_pages }}</span>
       <div>
         {% if assignments.has_previous %}
-        <a href="?page={{ assignments.previous_page_number }}&employee={{ employee_search }}&shift_name={{ shift_name }}&date_from={{ date_from }}&date_to={{ date_to }}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
+        <a href="{% querystring page=assignments.previous_page_number %}" class="btn btn-sm btn-outline-primary me-1">Prev</a>
         {% endif %}
         {% if assignments.has_next %}
-        <a href="?page={{ assignments.next_page_number }}&employee={{ employee_search }}&shift_name={{ shift_name }}&date_from={{ date_from }}&date_to={{ date_to }}" class="btn btn-sm btn-outline-primary">Next</a>
+        <a href="{% querystring page=assignments.next_page_number %}" class="btn btn-sm btn-outline-primary">Next</a>
         {% endif %}
       </div>
     </div>

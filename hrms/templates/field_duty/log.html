@@ -1,4 +1,5 @@
 {% extends 'base2.html' %}
+{% block title %}Field duty log{% endblock %}
 {% block body %}
 {% comment %}
   The office-side Field Duty Log: everybody's duties for a date range.
@@ -12,11 +13,11 @@
 {% endcomment %}
 <div class="container-xxl flex-grow-1 container-p-y">
 
-  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+  <section class="atlas-overview"><header class="atlas-page-heading">
     <div>
-      <h4 class="mb-0 fw-bold">
+      <h1>
         {% if is_team_scope %}My Team's Field Duty{% else %}Field Duty Log{% endif %}
-      </h4>
+      </h1>
       <p class="mb-0 text-muted small">
         Meetings, site visits and deliveries, with the time, place and selfie
         captured at each end.
@@ -28,24 +29,18 @@
         {% endif %}
       </p>
     </div>
-    <div class="d-flex gap-3 text-center">
-      <div>
-        <div class="fw-bold fs-5">{{ counts.total }}</div>
-        <div class="text-muted small">Shown</div>
-      </div>
-      <div>
-        <div class="fw-bold fs-5 text-info">{{ counts.open }}</div>
-        <div class="text-muted small">In progress</div>
-      </div>
-      <div>
-        <div class="fw-bold fs-5 text-warning">{{ counts.pending }}</div>
-        <div class="text-muted small">Pending report</div>
-      </div>
-    </div>
-  </div>
+  </header>
+    <dl class="atlas-metrics">
+      <div><dt>Matching duties</dt><dd>{{ counts.total }}</dd></div>
+      <div><dt>In progress</dt><dd>{{ counts.open }}</dd></div>
+      <div><dt>Pending report</dt><dd>{{ counts.pending }}</dd></div>
+    </dl>
+  </section>
 
-  <div class="card shadow-sm rounded-4 mb-4">
+  <div class="atlas-duty-layout">
+  <aside class="card atlas-duty-filters">
     <div class="card-body">
+      <h2 class="atlas-section-title">Filter visits</h2>
       <form method="GET" class="row g-2 align-items-end">
         <div class="col-6 col-md-2">
           <label class="form-label fw-semibold small" for="filter-month">Month</label>
@@ -107,9 +102,9 @@
         </div>
       </form>
     </div>
-  </div>
+  </aside>
 
-  <div class="card shadow-sm rounded-4">
+  <div class="card atlas-duty-results">
     <div class="table-responsive">
       <table class="table table-hover align-middle mb-0">
         <thead>
@@ -201,18 +196,15 @@
           {% empty %}
             <tr>
               <td colspan="9" class="text-center text-muted py-4">
-                No field duty in {{ month_start|date:"F Y" }}.
+                No field duty matches these filters for {{ month_start|date:"F Y" }}.
               </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    {% if counts.total == 500 %}
-      <div class="card-footer text-muted small">
-        Showing the first 500 for {{ month_start|date:"F Y" }}. Filter by employee to see the rest.
-      </div>
-    {% endif %}
+    {% include "partials/report_pagination.html" %}
+  </div>
   </div>
 </div>
 

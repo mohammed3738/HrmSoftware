@@ -1,0 +1,23 @@
+:root {
+  --atlas-canvas: #f5f5f7;
+  --atlas-panel: #fff;
+  --atlas-text: #202124;
+  --atlas-muted: #555e6b;
+  --atlas-line: #dcdfe5;
+  --atlas-accent: #095db7;
+  --atlas-highlight: #eaf2ff;
+  --atlas-shadow: 0 12px 36px rgba(24, 39, 64, .13);
+  --atlas-radius: 1rem;
+  --atlas-font: -apple-system, BlinkMacSystemFont, Inter, "Segoe UI", sans-serif;
+}
+.dark-style {
+  --atlas-canvas: #171b23;
+  --atlas-panel: #212732;
+  --atlas-text: #edf1f7;
+  --atlas-muted: #bdc7d6;
+  --atlas-line: #424c5d;
+  --atlas-accent: #9bc6ff;
+  --atlas-highlight: #283d58;
+}
+:root { --atlas-success: #307752; --atlas-warning: #966011; --atlas-danger: #ae3b43; }
+.dark-style { --atlas-success: #79cc9a; --atlas-warning: #e7b565; --atlas-danger: #f19ba1; }

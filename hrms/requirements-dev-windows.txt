@@ -73,3 +73,5 @@ requests
 # you want it; the server never does, because it has no route to that
 # SQL Server.
 # pyodbc
+
+holidays==0.109

@@ -1,19 +1,25 @@
-{% extends 'base2.html' %} {% block body %}
+{% extends 'base2.html' %} {% block title %}Comp-Off Requests{% endblock %}
+{% block body %}
 <div class="container-xxl flex-grow-1 container-p-y">
-  <div class="card shadow p-3 rounded-4">
-    <div class="d-flex justify-content-between align-items-center">
-      <h4 class="m-6 fw-bold">{% if can_see_all_requests %}Comp Off's Requests List{% else %}My Comp-Off Requests{% endif %}</h4>
+  <header class="personal-heading">
+    <h1>{% if can_see_all_requests %}Comp-Off Requests{% else %}My Comp-Off Requests{% endif %}</h1>
+      <div class="atlas-actions"><a class="personal-pill" href="{% url 'attendance_correction_requests_list' %}">Attendance corrections</a>
       {% if can_import_compoff %}
       <button type="button" class="btn btn-sm btn-outline-primary mb-2" data-bs-toggle="modal" data-bs-target="#importCompoffModal">
         <i class="ri-upload-2-line me-1"></i> Import from Excel
       </button>
       {% endif %}
-    </div>
-
+      </div>
+  </header>
+  <div class="leave-balances">
+    <section class="personal-card"><small>Approved comp-off days</small><strong class="personal-number">{{ approved_total|floatformat:"-1" }}</strong></section>
+    <section class="personal-card"><small>Pending comp-off days</small><strong class="personal-number">{{ pending_total|floatformat:"-1" }}</strong></section>
+  </div>
+  <div class="personal-card">
     <form method="GET" class="row g-2 align-items-end mb-3">
       <div class="col-md-3">
-          <label class="form-label fw-semibold">Year</label>
-          <select name="year" class="form-select form-select-sm">
+          <label for="filter_year" class="form-label fw-semibold">Year</label>
+          <select id="filter_year" name="year" class="form-select form-select-sm">
               <option value="" {% if not selected_year %}selected{% endif %}>All Years</option>
               {% for year in years %}
               <option value="{{ year.year }}" {% if selected_year == year.year|stringformat:"s" %}selected{% endif %}>
@@ -24,16 +30,8 @@
       </div>
 
       <div class="col-md-3">
-          <label class="form-label fw-semibold">Month</label>
-          {% comment %} <select name="month" class="form-select form-select-sm">
-              <option value="" {% if not selected_month %}selected{% endif %}>All Months</option>
-              {% for month in months %}
-              <option value="{{ month.month }}" {% if selected_month == month.month|stringformat:"s" %}selected{% endif %}>
-                  {{ month|date:"F" }}
-              </option>
-              {% endfor %}
-          </select> {% endcomment %}
-          <select name="month" class="form-select form-select-sm">
+          <label for="filter_month" class="form-label fw-semibold">Month</label>
+          <select id="filter_month" name="month" class="form-select form-select-sm">
               <option value="" {% if not selected_month %}selected{% endif %}>All Months</option>
               {% for m in months %}
               <option value="{{ m.month }}" {% if selected_month == m.month|stringformat:"s" %}selected{% endif %}>
@@ -47,9 +45,7 @@
           <button type="submit" class="btn btn-sm btn-primary mt-auto">
               <i class="ri-filter-2-line me-1"></i> Filter
           </button>
-          {% comment %} <a href="{% url 'employee_attendance_detail' employee.id %}" class="btn btn-sm btn-outline-secondary mt-auto">
-              <i class="ri-refresh-line me-1"></i> Reset
-          </a> {% endcomment %}
+          <a class="btn btn-sm btn-outline-secondary" href="{% url 'comp_off_requests_list' %}">Reset</a>
       </div>
     </form>
 
@@ -65,7 +61,7 @@
             <th>Employee Code</th>
             <th>Employee Name</th>
             <th>Month</th>
-            <th>Comp Off's</th>
+            <th>Approved days</th>
             <th>Action</th>
             {% comment %} <th>Reason</th>
             <th>Rejection Reason</th> {% endcomment %}
@@ -84,29 +80,8 @@
               {% if comp_off.pending %}<span class="badge bg-label-warning ms-1">+{{ comp_off.pending|floatformat:"-1" }} pending</span>{% endif %}
             </td>
             <td data-label="">
-                  <div class="dropdown">
-                    <a class="text-muted" href="#" data-bs-toggle="dropdown">
-                      <i class="ti ti-dots-vertical"></i>
-                    </a>
-                    <div class="dropdown-menu dropdown-menu-end">
-                      <a
-                        class="dropdown-item view-compoff-btn"
-                        href="#"
-                        data-emp-id="{{ comp_off.emp_id }}"
-                        data-year="{{ comp_off.year }}"
-                        data-month="{{ comp_off.month_number }}"
-                      >
-                        <i class="ti ti-eye me-2"></i> View
-                      </a>
-                      <a
-                        class="dropdown-item edit-attendance-btn"
-                        href="#"
-                        data-id="{{ branch.id }}"
-                      >
-                        <i class="ti ti-edit me-2"></i> Edit
-                      </a>
-                    </div>
-                  </div>
+              <button type="button" class="btn btn-sm btn-outline-primary view-compoff-btn"
+                  data-emp-id="{{ comp_off.emp_id }}" data-year="{{ comp_off.year }}" data-month="{{ comp_off.month_number }}">View requests</button>
                 </td>
             {% comment %} <td>{{ attendance.reason|default:"-" }}</td>
             <td>
@@ -123,7 +98,7 @@
     </div>
     {% else %}
     <div class="alert alert-warning text-center mt-4">
-      No Comp Off's found for <b>{{ selected_date }}</b>.
+      No comp-off requests match this selection.
     </div>
     {% endif %}
   </div>

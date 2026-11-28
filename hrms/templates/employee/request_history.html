@@ -1,0 +1,52 @@
+{% extends "base2.html" %}
+{% load custom_filters %}
+{% block title %}Request history{% endblock %}
+{% block body %}
+<div class="container-xxl container-p-y atlas-personal">
+  <header class="personal-heading"><div><a href="{% dashboard_home request.user %}">Dashboard</a><h1>Request history</h1></div></header>
+  <section class="personal-card">
+    <nav class="request-filters" aria-label="Request type">
+      {% for key, name in types %}<a href="{% url 'employee-request-history' key %}{% querystring page=None %}" {% if kind == key %}aria-current="page"{% endif %}>{{ name }}</a>{% endfor %}
+    </nav>
+    <form method="get" action="{% url 'employee-request-history' kind %}" class="d-flex flex-wrap gap-3 align-items-end my-3">
+      <label>Whose requests<select name="scope" class="form-select"><option value="self">My requests</option>{% if has_reports or scope == "team" %}<option value="team" {% if scope == "team" %}selected{% endif %}>My direct reports</option>{% endif %}</select></label>
+      <label>Request month<input type="month" name="month" value="{{ month }}" class="form-control"></label>
+      <label>Status<select name="status" class="form-select"><option value="">All statuses</option>
+        <option value="pending" {% if status == "pending" %}selected{% endif %}>Pending</option>
+        <option value="approved" {% if status == "approved" %}selected{% endif %}>Approved</option>
+        <option value="rejected" {% if status == "rejected" %}selected{% endif %}>Rejected</option></select></label>
+      <button class="btn btn-primary">Apply filters</button>
+      <a class="personal-pill" href="{% url 'employee-request-history' kind %}?scope={{ scope }}">Clear filters</a>
+    </form>
+    <header><h2>{{ label }}</h2>{% if focused %}<a href="{% url 'employee-request-history' kind %}{% querystring page=None %}">View history</a>{% endif %}</header>
+    {% for record in page %}
+      <details class="request-record" {% if focused %}open{% endif %}><summary>
+        <strong>{% if scope == "team" %}{% if kind == "correction" %}{{ record.attendance.employee.first_name }} {{ record.attendance.employee.last_name }}{% else %}{{ record.employee.first_name }} {{ record.employee.last_name }}{% endif %} &middot; {% endif %}{% if kind == 'leave' %}{{ record.start_date|date:"j M Y" }}
+          {% elif kind == 'correction' %}{{ record.attendance.date|date:"j M Y" }}
+          {% elif kind == 'comp-off' %}{{ record.from_date|date:"j M Y"|default:"Date unavailable" }}
+          {% else %}{{ record.requested_at|date:"j M Y" }}{% endif %}</strong>
+        <span class="badge bg-label-{% if record.status|lower == 'approved' %}success{% elif record.status|lower == 'rejected' %}danger{% else %}secondary{% endif %}">{{ record.status|title }}</span>
+      </summary>
+      {% if kind == 'correction' %}
+        <dl class="request-times"><div><dt>Original first / last punch</dt><dd>{{ record.old_in_time|time:"H:i"|default:"—" }} / {{ record.old_out_time|time:"H:i"|default:"—" }}</dd></div>
+        <div><dt>Requested first / last punch</dt><dd>{{ record.new_in_time|time:"H:i"|default:"—" }} / {{ record.new_out_time|time:"H:i"|default:"—" }}</dd></div></dl>
+      {% elif kind == 'leave' %}<p>Through {{ record.end_date|date:"j M Y" }} &middot; {{ record.total_days }} day{{ record.total_days|pluralize }}</p>
+      {% elif kind == 'comp-off' %}<p>{% if record.to_date %}Through {{ record.to_date|date:"j M Y" }} &middot; {% endif %}{{ record.count|floatformat:"-2" }} day{{ record.count|pluralize }}</p>
+      {% elif scope == "self" %}
+        {% for field, change in record.field_changes.items %}<p><b>{{ change.label|default:field }}</b> &middot; {{ change.old|default_if_none:"—" }} &rarr; {{ change.new|default_if_none:"—" }}</p>{% endfor %}
+        {% if record.photo or record.clear_photo %}<p>Profile photo change</p>{% endif %}
+        {% for file in record.files.all %}<p>{{ file.get_kind_display }} update</p>{% endfor %}
+        {% for doc in record.documents_to_delete %}<p>Remove document &middot; {{ doc.label }}</p>{% endfor %}
+        {% if record.previous_employment %}<p>Previous employment update</p>{% endif %}
+
+      {% endif %}
+      {% if record.decided_at %}<p>Reviewed {{ record.decided_at|date:"j M Y" }}{% if record.decided_by %} &middot; {{ record.decided_by.get_full_name|default:record.decided_by.username }}{% endif %}</p>{% endif %}
+      {% for decision in record.decisions %}<p>{{ decision.get_action_display }} &middot; {{ decision.created_at|date:"j M Y, H:i" }}{% if decision.actor %} &middot; {{ decision.actor.get_full_name|default:decision.actor.username }}{% endif %}</p>{% endfor %}
+      {% if record.reason %}<p><b>Reason</b> &middot; {{ record.reason|linebreaksbr }}</p>{% endif %}
+      {% if record.rejection_reason or record.decision_note %}<p><b>Review note</b> &middot; {% firstof record.rejection_reason record.decision_note %}</p>{% endif %}
+      </details>
+    {% empty %}<p>No matching requests.</p>{% endfor %}
+    {% include 'partials/report_pagination.html' %}
+  </section>
+</div>
+{% endblock %}

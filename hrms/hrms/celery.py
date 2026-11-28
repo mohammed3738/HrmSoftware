@@ -68,6 +68,14 @@ app.conf.beat_schedule = {
         'schedule': crontab(hour=0, minute=5),
     },
 
+    # A punched-in employee shows Present while the day runs; once it is
+    # over, this sets the real status from hours worked. Hourly, so night
+    # shifts settle when their out-punch window closes in the morning.
+    'finalize-finished-days': {
+        'task': 'website.tasks.finalize_finished_days_task',
+        'schedule': crontab(minute=20),
+    },
+
     'archive-past-shift-assignments': {
         'task': 'website.tasks.archive_past_shift_assignments_task',
         'schedule': crontab(hour=1, minute=30),

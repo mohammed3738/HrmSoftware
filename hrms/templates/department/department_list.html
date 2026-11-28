@@ -9,7 +9,7 @@
       <h1>Departments</h1>
       <p class="atlas-page-note">Employees inherit their department’s reporting person and manager unless assigned individually.</p>
     </div>
-    {% if request.user|has_feature:"department_management:edit" %}
+    {% if request.user|has_feature:"department_management:create" %}
     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#departmentModal" onclick="openDepartmentModal()">Add Department</button>
     {% endif %}
   </header>
@@ -156,7 +156,7 @@
   })();
 </script>
 
-{% if request.user|has_feature:"department_management:edit" %}
+{% if request.user|has_feature:"department_management:create" %}
 <div class="modal fade" id="departmentModal" tabindex="-1">
   <div class="modal-dialog">
     <form method="post" id="departmentForm">

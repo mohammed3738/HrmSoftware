@@ -11,6 +11,15 @@
       <h1>Advance #{{ advance.id }}</h1><p>{{ advance.employee.first_name }} {{ advance.employee.last_name }} · {{ advance.employee.employee_code }}</p>
     </div>
     <div class="atlas-actions">
+      {% if can_approve_advance %}
+      <form method="post" action="{% url 'advance-decide' advance.id %}" class="d-flex gap-2">
+        {% csrf_token %}
+        <button name="decision" value="approve" class="btn btn-success"><i class="ti ti-check me-1"></i> Approve</button>
+        <button name="decision" value="reject" class="btn btn-outline-danger"
+                onclick="return confirm('Reject this advance? It will never be deducted from salary.');">
+          <i class="ti ti-x me-1"></i> Reject</button>
+      </form>
+      {% endif %}
       {% if can_manage_advances and advance.status != 'completed' %}
       <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#payModal">
         <i class="ti ti-cash me-1"></i> Make Payment

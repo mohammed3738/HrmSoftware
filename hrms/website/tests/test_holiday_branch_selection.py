@@ -26,6 +26,13 @@ DAY = next_weekday(date.today() + timedelta(days=10))
 
 class HolidayBranchSelectionTest(TestCase):
     def setUp(self):
+        # Holidays in the future get no attendance rows until their date
+        # arrives (Holiday.backfill_attendance), so these tests run as if
+        # the holiday were today.
+        from unittest import mock
+        patcher = mock.patch("django.utils.timezone.localdate", return_value=DAY)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.company = Company.objects.create(name="Br Co", short_name="BRC", address="A")
         PayrollSettings.objects.create(company=self.company, branch_specific_holidays=True)
         self.mumbai = Branch.objects.create(branch_name="Mumbai")

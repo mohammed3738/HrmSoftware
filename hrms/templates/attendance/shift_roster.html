@@ -177,7 +177,7 @@
             </div>
             {% if roster_max_date %}
             <div class="col-12">
-              <div class="form-text">Dates must fall within the current payroll period: {{ roster_min_date }} to {{ roster_max_date }}.</div>
+              <div class="form-text">Dates must fall between {{ roster_min_date }} and {{ roster_max_date }} (the current payroll period plus the first week of the next one).</div>
             </div>
             {% endif %}
             <div class="col-md-6">
@@ -269,7 +269,7 @@
             </div>
             {% if roster_max_date %}
             <div class="col-12">
-              <div class="form-text">Dates must fall within the current payroll period: {{ roster_min_date }} to {{ roster_max_date }}.</div>
+              <div class="form-text">Dates must fall between {{ roster_min_date }} and {{ roster_max_date }} (the current payroll period plus the first week of the next one).</div>
             </div>
             {% endif %}
             <div class="col-md-6">
@@ -329,7 +329,7 @@
 
 <script>
 function getCSRFToken() {
-  return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
+  return document.cookie.split('; ').find(r => r.startsWith('hrms_csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
 }
 
 // ── Employee pickers ────────────────────────────────────────────────────

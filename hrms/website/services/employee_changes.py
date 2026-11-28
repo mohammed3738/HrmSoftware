@@ -32,6 +32,34 @@ def can_approve_changes(user):
     return user.is_superuser or user.is_staff or has_feature_permission(user, "employee_change_approval", "approve")
 
 
+def can_approve_self_changes(user):
+    """Holders of "Employees' Own Profile Changes -> Approve" (HR by
+    default) decide the changes employees send from My Details. Their own
+    edits to other employees still go to a full approver."""
+    from ..utils.permissions import has_feature_permission
+    return (can_approve_changes(user)
+            or has_feature_permission(user, "employee_self_change_approval", "approve"))
+
+
+def is_self_request(cr):
+    """Sent by the employee about their own profile (My Details)."""
+    return cr.requested_by_id is not None and cr.requested_by_id == cr.employee.user_id
+
+
+def can_decide_change_request(user, cr):
+    if can_approve_changes(user):
+        return True
+    # Nobody on the self-service route approves their own profile changes.
+    return (is_self_request(cr) and cr.requested_by_id != user.id
+            and can_approve_self_changes(user))
+
+
+def decidable_self_requests(user, qs):
+    """`qs` narrowed to what a self-change-only approver may decide."""
+    from django.db.models import F
+    return qs.filter(requested_by_id=F("employee__user_id")).exclude(requested_by_id=user.id)
+
+
 def edit_needs_approval(user, employee):
     """Whether `user`'s edits to an existing `employee` must go for approval."""
     if can_approve_changes(user):
@@ -88,7 +116,9 @@ def build_change_request(original, form, formset, attachment_formset, request):
 
     `original` must be a fresh copy of the employee from the database:
     form.is_valid() has already copied the submitted values onto the
-    form's own instance. Returns None when nothing actually changed."""
+    form's own instance. Returns None when nothing actually changed.
+    The two formsets are optional: an employee editing their own details
+    (EmployeeSelfEditForm) submits personal fields only."""
     cr = EmployeeChangeRequest(employee=original, requested_by=request.user)
     files = []
 
@@ -102,10 +132,16 @@ def build_change_request(original, form, formset, attachment_formset, request):
             continue
         if isinstance(new, str) and isinstance(old, str) and _same_text(new, old):
             continue
+        if name == "week_off_days":  # stored "5,6"; approvers read "Saturday, Sunday"
+            from website.models import describe_week_off_days
+            old_shown = describe_week_off_days(old) or "Company default"
+            new_shown = describe_week_off_days(new) or "Company default"
+        else:
+            old_shown, new_shown = _display(old), _display(new)
         cr.field_changes[name] = {
             "label": str(form.fields[name].label or name.replace("_", " ").title()),
-            "old": _display(old),
-            "new": _display(new),
+            "old": old_shown,
+            "new": new_shown,
             "raw": _raw(new),
         }
     if "photo" in form.changed_data:
@@ -117,7 +153,7 @@ def build_change_request(original, form, formset, attachment_formset, request):
 
     # Previous employment rows, and documents uploaded against them
     prev = {"create": [], "update": [], "delete": []}
-    for f in formset.forms:
+    for f in (formset.forms if formset is not None else []):
         idx = f.prefix.split("-")[-1]
         cd = getattr(f, "cleaned_data", None) or {}
         pk = f.instance.pk
@@ -156,7 +192,7 @@ def build_change_request(original, form, formset, attachment_formset, request):
         cr.previous_employment = prev
 
     # KYC documents
-    for af in attachment_formset.forms:
+    for af in (attachment_formset.forms if attachment_formset is not None else []):
         cd = getattr(af, "cleaned_data", None) or {}
         pk = af.instance.pk
         if pk and cd.get("DELETE"):

@@ -34,6 +34,12 @@
   {% else %}
   <a href="{% querystring onboarding='pending' %}" class="btn btn-sm btn-outline-warning">Pending onboarding</a>
   {% endif %}
+  <select id="shiftFilter" class="form-select form-select-sm" style="width:auto;min-width:150px" aria-label="Filter by shift"
+          title="Today's shift: the Shift Roster for today, otherwise the employee's shift timings (night if they cross midnight)">
+    <option value="">All shifts</option>
+    <option value="day">Morning shift</option>
+    <option value="night">Night shift</option>
+  </select>
   <label for="branchFilter" class="form-label mb-0">Branch</label>
   <select id="branchFilter" class="form-select form-select-sm"  aria-label="Filter by branch">
     <option value="">All branches</option>
@@ -585,13 +591,54 @@
                         <span class="input-group-text">to</span>
                         {{ form.shift_end_time|add_class:"form-control" }}
                       </div>
+                      <div class="form-text" id="shiftSummary" aria-live="polite"></div>
+                      <script>
+                      (function () {
+                        var start = document.getElementById("{{ form.shift_start_time.id_for_label }}");
+                        var end = document.getElementById("{{ form.shift_end_time.id_for_label }}");
+                        var out = document.getElementById("shiftSummary");
+                        if (!start || !end || !out) return;
+                        function fmt(v) {
+                          var m = /^(\d{1,2}):(\d{2})/.exec(v || "");
+                          if (!m) return "";
+                          var h = +m[1], mm = m[2], ap = h < 12 ? "AM" : "PM";
+                          h = h % 12 || 12;
+                          return h + (mm === "00" ? "" : ":" + mm) + " " + ap;
+                        }
+                        function update() {
+                          var a = fmt(start.value), b = fmt(end.value);
+                          if (!a || !b) { out.textContent = ""; return; }
+                          var overnight = end.value < start.value;
+                          out.innerHTML = "";
+                          var strong = document.createElement("strong");
+                          strong.textContent = a + " to " + b;
+                          out.appendChild(strong);
+                          if (overnight) out.appendChild(document.createTextNode(" (ends next day)"));
+                        }
+                        ["input", "change"].forEach(function (ev) {
+                          start.addEventListener(ev, update);
+                          end.addEventListener(ev, update);
+                        });
+                        var modal = document.getElementById("employeeModal");
+                        if (modal) modal.addEventListener("shown.bs.modal", update);
+                        update();
+                      })();
+                      </script>
                     </div>
                   </div>
                   <div class="col-md-4">
                     <div class="mb-3">
-                      <label class="form-label">Weekly Off Day</label>
-                      {{ form.week_off_day|add_class:"form-select" }}
-                      <div class="form-text">Leave as default to use the company's usual weekly off (e.g. Sunday). Set this only to override it — for example Saturday for a night-shift employee.</div>
+                      <label class="form-label">Weekly Off Days</label>
+                      <div class="week-off-days d-flex flex-wrap gap-1">
+                        {% for opt in form.week_off_days %}
+                          <input type="checkbox" class="btn-check" name="{{ opt.data.name }}" value="{{ opt.data.value }}"
+                                 id="{{ opt.id_for_label }}"{% if opt.data.selected %} checked{% endif %} autocomplete="off">
+                          <label class="btn btn-sm btn-outline-primary" for="{{ opt.id_for_label }}"
+                                 title="{{ opt.choice_label }}">{{ opt.choice_label|slice:":3" }}</label>
+                        {% endfor %}
+                      </div>
+                      {% if form.week_off_days.errors %}<div class="text-danger small mt-1">{{ form.week_off_days.errors|join:" " }}</div>{% endif %}
+                      <div class="form-text">Tick one or more days, e.g. Sat + Sun, or Fri + Sat. Leave all unticked to use the company's usual weekly off.</div>
                     </div>
                   </div>
                   <div class="col-md-4">
@@ -1605,6 +1652,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const branchSelect = document.getElementById("branchFilter");
     const params = new URLSearchParams(window.location.search);
     if (branchSelect && params.get("branch")) branchSelect.value = params.get("branch");
+    const shiftSelect = document.getElementById("shiftFilter");
+    if (shiftSelect && params.get("shift")) shiftSelect.value = params.get("shift");
     const grid = document.getElementById("peopleGrid");
     const chips = document.getElementById("peopleDepartments");
     const search = document.getElementById("peopleSearch");
@@ -1614,6 +1663,7 @@ document.addEventListener("DOMContentLoaded", function () {
     let page = 1;
     let table;
     function matches(row) {
+      if (shiftSelect && shiftSelect.value && row.shift !== shiftSelect.value) return false;
       const branch = branchSelect.value;
       if (branch && (branch === "none" ? row.branch_id : String(row.branch_id) !== branch)) return false;
       if (department && row.department !== department) return false;
@@ -1662,6 +1712,7 @@ document.addEventListener("DOMContentLoaded", function () {
       chips.append(button);
     }
     search.addEventListener("input", refilter);
+    shiftSelect.addEventListener("change", () => { page = 1; paintCards(); });
     branchSelect.addEventListener("change", () => { page = 1; paintCards(); });
     mode.addEventListener("click", () => {
       const showTable = document.getElementById("peopleTable").hidden;
@@ -1685,7 +1736,8 @@ document.addEventListener("DOMContentLoaded", function () {
           { data: "code", render: (v, type, r) => type === "display" ? `<a href="${urlFor(DETAIL_URL, r.id)}">${esc(v)}</a>` : v },
           { data: "company", render: (v, type) => type === "display" && COMPANY_URL ? `<a href="${COMPANY_URL}">${esc(v)}</a>` : esc(v) },
           { data: "first", className: "text-nowrap", render: (v, type, r) => type === "display"
-              ? (r.photo ? `<img src="${esc(r.photo)}" alt="" class="rounded-circle me-2" style="width:28px;height:28px;object-fit:cover;">` : "") + esc(v) : v },
+              ? (r.photo ? `<img src="${esc(r.photo)}" alt="" class="rounded-circle me-2" style="width:28px;height:28px;object-fit:cover;">` : "") + esc(v)
+                + (r.shift === "night" ? ` <i class="ri-moon-line text-primary" title="Night shift today"></i>` : "") : v },
           { data: "last", render: (v, type) => type === "display" ? esc(v) : v },
           { data: "gender", render: (v, type) => type === "display" ? esc(v) : v },
           { data: "status", render: (v, type) => type === "display"
@@ -1720,6 +1772,20 @@ document.addEventListener("DOMContentLoaded", function () {
         table.draw();
       });
       if (branchSelect.value) branchSelect.dispatchEvent(new Event("change"));
+    }
+    if (shiftSelect) {
+      shiftSelect.addEventListener("change", function () {
+        const p = new URLSearchParams(window.location.search);
+        if (shiftSelect.value) p.set("shift", shiftSelect.value); else p.delete("shift");
+        history.replaceState(null, "", window.location.pathname + (p.toString() ? "?" + p : ""));
+        document.querySelectorAll('a[href^="?show="]').forEach(function (a) {
+          const q = new URLSearchParams(a.getAttribute("href").slice(1));
+          if (shiftSelect.value) q.set("shift", shiftSelect.value); else q.delete("shift");
+          a.setAttribute("href", "?" + q);
+        });
+        table.draw();
+      });
+      if (shiftSelect.value) shiftSelect.dispatchEvent(new Event("change"));
     }
 });
 </script>

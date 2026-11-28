@@ -14,7 +14,7 @@
       <p>{% if employee.designation %}{{ employee.designation }}{% endif %}{% if employee.department %} · {{ employee.department }}{% endif %}{% if employee.company %} · {{ employee.company }}{% endif %}</p>
       <span class="text-muted small">{{ employee.employee_code }}{% if employee.date_of_joining %} · Joined {{ employee.date_of_joining|date:"j M Y" }}{% endif %}</span>
     </div>
-    <div class="atlas-actions">{% if employee.status == "Active" or employee.pk == request.user.employee_profile.pk %}<a class="personal-pill" href="{% url 'org-chart' %}?employee={{ employee.pk }}">View org chart</a>{% endif %}
+    <div class="atlas-actions">{% if employee.user_id == request.user.id %}<a href="{% url 'my_details_edit' %}" class="personal-pill">Edit my details</a>{% endif %}{% if employee.status == "Active" or employee.pk == request.user.employee_profile.pk %}<a class="personal-pill" href="{% url 'org-chart' %}?employee={{ employee.pk }}">View org chart</a>{% endif %}
     {% if request.user|has_feature:"employee_records:edit" %}
     <a class="btn btn-outline-primary" href="{% url 'employee_edit' employee.id %}">Edit employee</a>
     {% endif %}
@@ -23,7 +23,7 @@
 
   <nav class="profile-sections" aria-label="Profile sections">
     <a href="#profile-overview">Overview</a><a href="#profile-personal">Personal details</a>
-    <a href="#profile-documents">Documents &amp; history</a><a href="#profile-pay">Salary</a>
+    <a href="#profile-documents">Documents &amp; history</a>{% if request.user|can_see_pay %}<a href="#profile-pay">Salary</a>{% endif %}
   </nav>
   <div class="profile-grid" id="profile-overview">
     <section class="personal-card"><header><h2>Employment</h2><small>{{ employee.status }}</small></header>
@@ -31,7 +31,7 @@
         <div><dt>Branch</dt><dd>{{ employee.branch|default:"—" }}</dd></div>
         <div><dt>Location</dt><dd>{{ employee.location|default:"—" }}</dd></div>
         <div><dt>Date of confirmation</dt><dd>{{ employee.date_of_confirmation|date:"j M Y"|default:"—" }}</dd></div>
-        <div><dt>Weekly off</dt><dd>{% if employee.week_off_day is not None %}{{ employee.get_week_off_day_display }}{% else %}Company default{% endif %}</dd></div>
+        <div><dt>Weekly off</dt><dd>{{ employee.get_week_off_days_display|default:"Company default" }}</dd></div>
         <div><dt>Shift</dt><dd>{% if employee.is_night_shift %}Night shift (crosses midnight){% else %}Day shift{% endif %}{% if employee.shift_start_time or employee.shift_end_time %} · {{ employee.shift_start_time|time:"H:i"|default:"—" }} – {{ employee.shift_end_time|time:"H:i"|default:"—" }}{% endif %}</dd></div>
         {% if employee.biometric_device_user_id %}<div><dt>Device ID</dt><dd>{{ employee.biometric_device_user_id }}</dd></div>{% endif %}
       </dl>
@@ -352,7 +352,7 @@
         {% endif %}
       </div>
   </section>
-  <section id="profile-pay" class="profile-pay"><h2>Salary</h2>
+  {% if request.user|can_see_pay %}<section id="profile-pay" class="profile-pay"><h2>Salary Summary</h2>
   {% if salary %}<div class="row g-3">
   <!-- LEFT : SALARY SUMMARY -->
   <div class="col-md-4">
@@ -525,7 +525,7 @@
 
 
 {% else %}<p class="personal-card">No active salary structure recorded.</p>{% endif %}
-  </section>
+  </section>{% endif %}
 </div>
 <!--/ Content -->
 {% endblock %}

@@ -20,6 +20,7 @@ urlpatterns = [
     path("org-chart/", views_org.org_chart, name="org-chart"),
     path('employees/', views.employee_list, name='employee_list'),
     path('my-profile/', views.my_profile, name='my_profile'),
+    path('my-profile/edit/', views.my_details_edit, name='my_details_edit'),
     path('my-attendance/', views.my_attendance, name='my_attendance'),
     path('my-dashboard/wish/<int:recipient_id>/<str:occasion>/', views.send_celebration_wish, name='send-celebration-wish'),
     path('my-dashboard/requests/<slug:kind>/', views.employee_request_history, name='employee-request-history'),
@@ -220,6 +221,7 @@ urlpatterns = [
     path('advances/<int:pk>/edit/', views.advance_edit, name='advance-edit'),
     path('advances/<int:pk>/delete/', views.advance_delete, name='advance-delete'),
     path('advances/<int:pk>/pay/', views.pay_advance, name='advances-pay'),
+    path('advances/<int:pk>/decide/', views.advance_decide, name='advance-decide'),
     path('advances/<int:pk>/skip/', views.skip_advance_month, name='advances-skip'),
     path("advances/<int:pk>/revert-skip/", views.revert_skip_view, name="revert-skip"),
 

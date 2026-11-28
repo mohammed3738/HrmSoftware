@@ -57,8 +57,11 @@ GOLDEN_TABLE = {
     ("employee_records", "edit"): STAFF,
     ("employee_delete", "edit"): NOT_HR,
     ("employee_change_approval", "approve"): NOT_HR,
+    ("employee_change_approval", "view"): STAFF,
+    ("employee_self_change_approval", "approve"): STAFF,
     ("department_management", "view"): STAFF,
     ("department_management", "edit"): STAFF,
+    ("department_management", "create"): STAFF,
     ("offboarding", "view"): STAFF,
     ("offboarding", "create"): STAFF,
     ("offboarding", "edit"): NOT_HR,
@@ -66,9 +69,12 @@ GOLDEN_TABLE = {
     # Organization setup -- only Super Admin may change companies.
     ("company_management", "view"): STAFF,
     ("company_management", "edit"): {"Super Admin"},
+    ("company_management", "create"): {"Super Admin"},
     ("branch_management", "view"): STAFF,
     ("branch_management", "edit"): STAFF,
+    ("branch_management", "create"): STAFF,
     ("holiday_calendar", "edit"): STAFF,
+    ("holiday_calendar", "create"): STAFF,
 
     # Attendance & scheduling -- HR uploads and reads, doesn't correct.
     ("attendance_data", "edit"): STAFF,
@@ -78,6 +84,7 @@ GOLDEN_TABLE = {
     ("attendance_register", "edit"): NOT_HR,
     ("shift_roster", "view"): STAFF,
     ("shift_roster", "edit"): STAFF,
+    ("shift_roster", "create"): STAFF,
     ("attendance_corrections", "view"): NOT_HR,
     ("attendance_corrections", "approve"): NOT_HR,
     ("attendance_corrections", "create"): NOT_HR,
@@ -104,22 +111,29 @@ GOLDEN_TABLE = {
     ("salary_history", "view"): NOT_HR,
     ("payroll", "view"): NOT_HR,
     ("payroll", "edit"): {"Super Admin", "Payroll Officer"},
+    ("payroll", "create"): {"Super Admin", "Payroll Officer"},
+    ("payroll", "approve"): {"Super Admin", "Payroll Officer"},
     # Advances are payroll's, not HR's. HR still reads their OWN advance --
     # that's self-service scoping on advance_list, not a grant.
     ("advances", "view"): NOT_HR,
     ("advances", "edit"): NOT_HR,
+    ("advances", "create"): NOT_HR,
+    ("advances", "approve"): NOT_HR,
 
     # Administration
     ("company_settings", "view"): NOT_HR,
     ("company_settings", "edit"): NOT_HR,
     ("company_settings_broadcast", "edit"): NOT_HR,
     ("user_accounts", "edit"): NOT_HR,
+    ("user_accounts", "create"): NOT_HR,
     ("admin_dashboard", "view"): STAFF,
     ("announcements", "view"): STAFF,
     ("announcements", "edit"): STAFF,
+    ("announcements", "create"): STAFF,
     ("audit_log", "view"): STAFF,
     # Archiving / restoring anything is never HR's.
     ("archive_records", "edit"): NOT_HR,
+    ("archive_records", "view"): STAFF,
 }
 
 ALL_GROUPS = ("Super Admin", "Admin", "Payroll Officer", "HR", "HOD", "Employee")

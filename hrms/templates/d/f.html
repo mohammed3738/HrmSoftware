@@ -214,7 +214,9 @@
             <a href="{% url 'payroll-run-list' %}?status=draft{% if dashboard_company %}&amp;company={{ dashboard_company.pk }}{% endif %}" class="bg-label-warning"><strong>{{ draft_run_count }}</strong>Draft Runs</a>
             <a href="{% url 'payroll-run-list' %}?status=finalized{% if dashboard_company %}&amp;company={{ dashboard_company.pk }}{% endif %}" class="bg-label-success"><strong>{{ finalized_run_count }}</strong>Finalized</a>
           </div>
-          {% if employees_without_salary %}
+
+          {% if not request.user|can_see_pay %}{# TEMPORARY: salary structure is Admin / Super Admin only #}
+          {% elif employees_without_salary %}
           <div class="alert alert-warning py-2 px-3 small mb-0">
             <i class="ri-error-warning-line me-1"></i>
             <strong>{{ employees_without_salary }}</strong> active employee{{ employees_without_salary|pluralize }}
@@ -327,8 +329,7 @@
 
   </div>
 
-  <!-- ── Row 2.5: Absent Today ────────────────────────────────────── -->
-  {% if show_attendance_panels %}
+  <!-- ── Row 2.5: Absent Today (everyone, every company) ──────────── -->
   <div class="row g-4 mb-4">
     <div class="col-12">
       <section class="personal-card" id="absent-today">
@@ -344,6 +345,7 @@
               <tr>
                 <th>Employee Code</th>
                 <th>Name</th>
+                <th>Company</th>
                 <th>Branch</th>
                 <th>Department</th>
                 <th>Remarks</th>
@@ -354,14 +356,15 @@
               <tr data-remark="{{ a.remark }}">
                 <td data-label="Employee code" class="fw-medium">{{ a.employee.employee_code }}</td>
                 <td data-label="Name">{{ a.employee.first_name }} {{ a.employee.last_name }}</td>
+                <td data-label="Company">{% with co=a.employee.company %}{% if co %}{{ co.short_name|default:co.name }}{% else %}—{% endif %}{% endwith %}</td>
                 <td data-label="Branch" class="text-muted">{{ a.employee.branch.branch_name|default:"—" }}</td>
                 <td data-label="Department" class="text-muted">{{ a.employee.department|default:"—" }}</td>
                 <td data-label="Remarks">{% if a.remark == "On leave" %}<span class="badge bg-label-info">On leave</span>{% else %}<span class="badge bg-label-danger">No punch</span>{% endif %}</td>
               </tr>
               {% empty %}
-              <tr><td colspan="5" class="text-center text-muted py-3">Nobody is absent today</td></tr>
+              <tr><td colspan="6" class="text-center text-muted py-3">Nobody is absent today</td></tr>
               {% endfor %}
-              <tr hidden data-empty-remarks><td colspan="5">No employees match this remark.</td></tr>
+              <tr hidden data-empty-remarks><td colspan="6">No employees match this remark.</td></tr>
             </tbody>
           </table>
         </div>
@@ -369,6 +372,74 @@
     </div>
   </div>
 
+
+  <!-- ── Leave requests, read-only (HR) ──────────────────────────────── -->
+  {% if show_leave_overview %}
+  <div class="row g-4 mb-4">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 pb-1">
+          <h6 class="mb-0"><i class="ri-calendar-event-line me-1 text-primary"></i> Leave Requests
+            <small class="text-muted fw-normal ms-1">view only</small></h6>
+          <div class="btn-group btn-group-sm" role="group" aria-label="Filter leave requests">
+            <button type="button" class="btn btn-outline-primary active" data-leave-filter="Pending">Pending</button>
+            <button type="button" class="btn btn-outline-primary" data-leave-filter="Approved">Approved</button>
+            <button type="button" class="btn btn-outline-primary" data-leave-filter="Rejected">Rejected</button>
+            <button type="button" class="btn btn-outline-primary" data-leave-filter="">All</button>
+          </div>
+        </div>
+        <div class="table-responsive pending-table-scroll">
+          <table class="table table-sm table-hover mb-0" id="leaveOverviewTable">
+            <thead class="table-light">
+              <tr><th>Employee</th><th>Dates</th><th>Days</th><th>Reason</th><th>Applied</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+              {% for l in leave_overview %}
+              <tr data-status="{{ l.status }}">
+                <td class="fw-medium">{{ l.employee.first_name }} {{ l.employee.last_name }}</td>
+                <td class="text-muted text-nowrap">{{ l.start_date|date:"d M" }} – {{ l.end_date|date:"d M Y" }}</td>
+                <td>{{ l.total_days }}</td>
+                <td class="text-muted" title="{{ l.reason }}">{{ l.reason|truncatechars:40 }}</td>
+                <td class="text-muted text-nowrap">{{ l.applied_on|date:"d M" }}</td>
+                <td>
+                  {% if l.status == "Approved" %}<span class="badge bg-label-success">Approved</span>
+                  {% elif l.status == "Rejected" %}<span class="badge bg-label-danger">Rejected</span>
+                  {% else %}<span class="badge bg-label-warning">Pending</span>{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              <tr class="leave-overview-empty"{% if leave_overview %} style="display:none"{% endif %}>
+                <td colspan="6" class="text-center text-muted py-3">No leave requests</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+  (function () {
+    var table = document.getElementById('leaveOverviewTable');
+    if (!table) return;
+    function apply(status) {
+      var shown = 0;
+      table.querySelectorAll('tbody tr[data-status]').forEach(function (tr) {
+        var show = !status || tr.dataset.status === status;
+        tr.style.display = show ? '' : 'none';
+        if (show) shown++;
+      });
+      table.querySelector('.leave-overview-empty').style.display = shown ? 'none' : '';
+    }
+    document.querySelectorAll('[data-leave-filter]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        document.querySelectorAll('[data-leave-filter]').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        apply(btn.dataset.leaveFilter);
+      });
+    });
+    apply('Pending');
+  })();
+  </script>
   {% endif %}
 
   <!-- ── Row 3: Leave Requests table ───────────────────────────────── -->
@@ -1034,7 +1105,7 @@ function downloadEmployees() {
 
 // ── CSRF helper ──────────────────────────────────────────────────────
 function getCSRFToken() {
-  return document.cookie.split('; ').find(r => r.startsWith('csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
+  return document.cookie.split('; ').find(r => r.startsWith('hrms_csrftoken='))?.split('=')[1] || '{{ csrf_token }}';
 }
 
 // ── Bulk approve (Leave / Comp-Off / Attendance Correction) ───────────

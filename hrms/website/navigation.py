@@ -4,6 +4,7 @@ from django.http import Http404
 from django.shortcuts import render
 from django.urls import reverse
 
+from .pay_visibility import can_see_pay, PAY_URL_NAMES
 from .templatetags.custom_filters import dashboard_home, has_feature, has_reportees, in_group, is_employee_role
 
 
@@ -15,6 +16,7 @@ def navigation(request):
     employee = getattr(user, "employee_profile", None)
     team = has_reportees(user)
     home = dashboard_home(user)
+    see_pay = can_see_pay(user)
     grants = {}
 
     def can(permission):
@@ -23,7 +25,7 @@ def navigation(request):
         return grants[permission]
 
     def page(label, route, allowed=True, *, args=(), query="", children=()):
-        if allowed:
+        if allowed and (see_pay or route not in PAY_URL_NAMES):
             return dict(label=label, route=route, url=reverse(route, args=args) + query, children=children)
 
     def section(key, label, *pages):
@@ -47,7 +49,7 @@ def navigation(request):
             page("Team dashboard", "team-analytics", team),
             page("My Approvals", "my-approvals", team),
             page("Pending Onboarding", "employee_list", directory, query="?onboarding=pending"),
-            page("Profile change requests", "employee_change_requests", directory, children=("employee_change_request_detail",)),
+            page("Profile change requests", "employee_change_requests", can("employee_change_approval:view") or can("employee_change_approval:approve"), children=("employee_change_request_detail",)),
             page("Employee Offboarding", "offboarding-list", can("offboarding:view"))),
         section("attendance", "Attendance",
             page("My Attendance", "employee_attendance_detail", employee, args=[employee.pk] if employee else []),
@@ -75,7 +77,7 @@ def navigation(request):
             page("Salary History", "salary_history", can("salary_structure:view"), children=("salary_history_detail", "salary_compare"))),
         section("administration", "Administration",
             page("Companies", "create-company", can("company_management:view")),
-            page("Branches", "create-branch", can("branch_management:edit")),
+            page("Branches", "create-branch", can("branch_management:create")),
             page("Departments", "department-list", can("department_management:view")),
             page("Manage announcements", "announcements-hub", can("announcements:view")),
             page("Company settings", "company-settings-hub", can("company_settings:view") and not is_employee_role(user), children=("settings-page",)),
@@ -86,8 +88,8 @@ def navigation(request):
     sections = [group for group in sections if group["pages"]]
     actions = {
         "employee_list": page("Add employee", "employee_create", can("employee_records:create")),
-        "payroll-run-list": page("New payroll run", "payroll-run-create", can("payroll:edit")),
-        "advances-list": page("New advance", "create-advance", can("advances:edit")),
+        "payroll-run-list": page("New payroll run", "payroll-run-create", can("payroll:create")),
+        "advances-list": page("New advance", "create-advance", can("advances:create")),
     }
     for group in sections:
         for entry in group["pages"]:

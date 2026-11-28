@@ -433,8 +433,9 @@ class BulkApprovalTest(OnboardingTestBase):
         self.ra.refresh_from_db()
         self.assertEqual(self.ra.status, "rejected")
 
-    def test_hr_cannot_bulk_decide(self):
-        resp = self.hr.client.post(reverse("employee_change_requests_bulk"), {"decision": "approve", "ids": [self.ra.pk]})
-        self.assertEqual(resp.status_code, 403)
+    def test_hr_cannot_bulk_decide_staff_edits(self):
+        # HR may bulk-decide employees' own My Details changes, but not
+        # edits someone else made to an employee -- those are left pending.
+        self.hr.client.post(reverse("employee_change_requests_bulk"), {"decision": "approve", "ids": [self.ra.pk]})
         self.ra.refresh_from_db()
         self.assertEqual(self.ra.status, "pending")

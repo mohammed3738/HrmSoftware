@@ -116,3 +116,19 @@ def dashboard_home(user):
 def hrms_navigation(context):
     from website.navigation import navigation
     return navigation(context["request"])
+
+@register.filter
+def can_see_pay(user):
+    """TEMPORARY: salary structure, salary slips and advances are for Admin /
+    Super Admin only while PAY_ADMIN_ONLY is on -- website/pay_visibility.py."""
+    from website.pay_visibility import can_see_pay as _can_see_pay
+    return _can_see_pay(user)
+
+
+@register.filter
+def can_see_archived(user):
+    """{% if request.user|can_see_archived %}: Archive Records -> View or Edit."""
+    if not getattr(user, "is_authenticated", False):
+        return False
+    from website.views import can_see_archived as _check
+    return _check(user)

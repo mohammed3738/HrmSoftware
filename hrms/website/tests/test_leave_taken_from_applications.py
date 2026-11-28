@@ -143,7 +143,7 @@ class LeaveTakenFromApplicationsTest(TestCase):
 
     def test_the_employees_own_weekly_off_is_respected(self):
         """A night-shift employee whose week off is Saturday, not Sunday."""
-        self.employee.week_off_day = 5          # Saturday
+        self.employee.week_off_days = "5"       # Saturday
         self.employee.save()
         self.leave(date(2026, 6, 5), date(2026, 6, 8))      # Fri, Sat(off), Sun, Mon
         self.assertEqual(self.leave_taken(), Decimal("3"))

@@ -435,6 +435,16 @@ def mark_day_start_task():
 
 
 @shared_task
+def finalize_finished_days_task():
+    """Hourly: days that are over get their real status from hours worked
+    (during the day, a punched-in employee shows Present). See
+    services/biometric_sync.finalize_finished_days."""
+    from .services import biometric_sync
+
+    return {"employees_updated": biometric_sync.finalize_finished_days()}
+
+
+@shared_task
 def archive_past_shift_assignments_task():
     """Nightly tidy-up of the Shift Roster: rotations whose dates have gone
     by leave the active list, so "who is on nights this week" stays readable

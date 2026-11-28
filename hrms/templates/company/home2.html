@@ -1,5 +1,5 @@
 {% extends 'base2.html' %} {% block title %}Companies{% endblock %} {% block body %} {% load static custom_filters %}
-{% with can_edit_companies=request.user|has_feature:"company_management:edit" %}
+{% with can_edit_companies=request.user|has_feature:"company_management:edit" can_add_companies=request.user|has_feature:"company_management:create" %}
 
 <!-- Page Wrapper -->
 <div class="container-xxl flex-grow-1 container-p-y">
@@ -8,7 +8,7 @@
       <h1>Companies</h1>
       <div class="atlas-actions">
         <a class="btn btn-outline-secondary" id="downloadCompanies" href="{% url 'company-export-excel' %}?show={{ show|default:'active' }}">Export Excel</a>
-        {% if can_edit_companies %}
+        {% if can_add_companies %}
         <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#bulk_upload_company">Import Excel</button>
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#add_company">Add Company</button>
         {% endif %}
@@ -311,7 +311,7 @@
 <!-- /Page Wrapper -->
 
 <!-- Add Company -->
-{% if can_edit_companies %}
+{% if can_add_companies %}
 <div class="modal fade" id="add_company" tabindex="-1" aria-labelledby="newCompanyTitle">
   <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
     <form method="post" action="{% url 'create-company' %}" enctype="multipart/form-data" class="modal-content">

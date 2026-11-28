@@ -74,7 +74,7 @@ class AbsentTodayTest(TestCase):
         self.assertEqual(panel["team_absent_today"], 2)
         self.assertEqual({r["employee"].employee_code: r["status"] for r in panel["team_today"]},
                          {"MARKED": "No punch", "NOROW": "No punch", "LEAVE": "On leave"})
-        self.assertEqual(len(panel["absent_employees_today"]), 3)
+        self.assertEqual(len(panel["team_absences_today"]), 3)
 
     def test_weekend_lists_nobody(self):
         self.assertEqual(self._codes(SUNDAY), {})

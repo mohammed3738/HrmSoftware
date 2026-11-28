@@ -236,8 +236,36 @@ class ShiftRosterDateWindowTest(TestCase):
         data = resp.json()
         self.assertEqual(data["created"], [])
         self.assertEqual(len(data["failed"]), 1)
-        self.assertIn("current payroll period", data["failed"][0]["error"])
+        self.assertIn("first week of the next payroll period", data["failed"][0]["error"])
         self.assertEqual(ShiftAssignment.objects.count(), 0)
+
+    def _period_end(self):
+        from website.views import _current_payroll_period
+        return _current_payroll_period(self.company)[1]
+
+    def test_first_week_of_next_period_can_be_planned(self):
+        end = self._period_end() + timedelta(days=7)
+        resp = self.client.post(reverse("add_shift_assignment"), {
+            "employee_ids": [self.employee.id], "shift_name": "Day Shift",
+            "start_date": (self._period_end() + timedelta(days=1)).isoformat(),
+            "end_date": end.isoformat(),
+        })
+        self.assertEqual(len(resp.json()["created"]), 1)
+
+    def test_beyond_the_first_week_of_next_period_is_rejected(self):
+        resp = self.client.post(reverse("add_shift_assignment"), {
+            "employee_ids": [self.employee.id], "shift_name": "Day Shift",
+            "start_date": date.today().isoformat(),
+            "end_date": (self._period_end() + timedelta(days=8)).isoformat(),
+        })
+        self.assertEqual(resp.json()["created"], [])
+
+    def test_date_pickers_allow_the_extra_week(self):
+        self.employee.user = self.user
+        self.employee.force_password_change = False
+        self.employee.save()
+        resp = self.client.get(reverse("shift_roster_list"))
+        self.assertEqual(resp.context["roster_max_date"], (self._period_end() + timedelta(days=7)).isoformat())
 
     def test_dates_within_current_period_succeed(self):
         resp = self.client.post(reverse("add_shift_assignment"), {

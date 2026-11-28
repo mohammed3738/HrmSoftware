@@ -68,6 +68,71 @@ class FastSelect(forms.Select):
         return mark_safe("".join(parts))
 
 
+# What an employee may change about themselves from My Details. Everything
+# else (name, date of birth, IDs, job fields) stays with HR. Bank details
+# are here because people change banks; like every field on this form they
+# only take effect once an approver accepts them.
+SELF_EDIT_FIELDS = (
+    "personal_email", "personal_mobile", "present_address", "permanent_address",
+    "blood_group", "date_of_marriage",
+    "emergency_contact_name1", "emergency_contact_relation1", "emergency_contact_mobile1",
+    "emergency_contact_name2", "emergency_contact_relation2", "emergency_contact_mobile2",
+    "name_as_per_bank", "salary_account_number", "ifsc_code",
+    "photo",
+)
+
+
+class EmployeeSelfEditForm(forms.ModelForm):
+    """An employee editing their own personal details. Saving it never
+    changes the record: the view turns it into an EmployeeChangeRequest
+    that an approver accepts or rejects."""
+
+    class Meta:
+        model = Employee
+        fields = SELF_EDIT_FIELDS
+        widgets = {
+            "photo": forms.ClearableFileInput(attrs={"accept": "image/jpeg,image/png,image/webp"}),
+            "date_of_marriage": forms.DateInput(attrs={"type": "date"}, format="%Y-%m-%d"),
+            "present_address": forms.Textarea(attrs={"rows": 2}),
+            "permanent_address": forms.Textarea(attrs={"rows": 2}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            css = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            field.widget.attrs.setdefault("class", css)
+
+    def clean_photo(self):
+        return EmployeeForm.clean_photo(self)
+
+    def clean_salary_account_number(self):
+        value = (self.cleaned_data.get("salary_account_number") or "").replace(" ", "")
+        if value and not (value.isdigit() and 9 <= len(value) <= 18):
+            raise forms.ValidationError("Enter the account number as 9 to 18 digits, no letters or symbols.")
+        return value
+
+    def clean_ifsc_code(self):
+        import re
+        value = (self.cleaned_data.get("ifsc_code") or "").strip().upper()
+        if value and not re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", value):
+            raise forms.ValidationError("Enter a valid IFSC code, e.g. SBIN0001234 (11 characters, 5th is zero).")
+        return value
+
+    PHOTO_MAX_BYTES = 2 * 1024 * 1024
+    PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}
+
+
+class _WeekOffDaysField(forms.MultipleChoiceField):
+    """Day checkboxes that also accept the stored "5,6" form, and treat a
+    blank entry as "nothing ticked" instead of an invalid choice."""
+
+    def to_python(self, value):
+        if isinstance(value, str):
+            value = value.split(",")
+        return [str(v).strip() for v in (value or []) if str(v).strip()]
+
+
 class EmployeeForm(forms.ModelForm):
     class Meta:
         model = Employee
@@ -78,7 +143,7 @@ class EmployeeForm(forms.ModelForm):
             'date_of_marriage', 'employee_code', 'designation', 'department',
             'use_department_defaults', 'reporting_person', 'manager',
             'date_of_joining', 'date_of_confirmation', 'location', 'shift_start_time', 'shift_end_time',
-            'week_off_day', 'is_night_shift', 'biometric_device_user_id',
+            'week_off_days', 'is_night_shift', 'biometric_device_user_id',
             'pan_no', 'aadhar_no', 'voter_id', 'passport', 'uan_no', 'pf_no', 'esic_no',
             'name_as_per_bank', 'salary_account_number', 'ifsc_code',
             'emergency_contact_name1', 'emergency_contact_relation1', 'emergency_contact_mobile1',
@@ -99,6 +164,21 @@ class EmployeeForm(forms.ModelForm):
         
     PHOTO_MAX_BYTES = 2 * 1024 * 1024
     PHOTO_FORMATS = {"JPEG", "PNG", "WEBP"}
+
+    # Stored on the model as "5,6"; picked here as one checkbox per day, so
+    # someone can be off Saturday + Sunday, or Friday + Saturday.
+    week_off_days = _WeekOffDaysField(
+        choices=[(str(n), name) for n, name in Employee.WEEKDAY_CHOICES],
+        required=False,
+        label="Weekly Off Days",
+        widget=forms.CheckboxSelectMultiple,
+    )
+
+    def clean_week_off_days(self):
+        days = sorted({int(d) for d in self.cleaned_data.get("week_off_days") or []})
+        if len(days) == 7:
+            raise forms.ValidationError("At least one day of the week must be a working day.")
+        return ",".join(str(d) for d in days)
 
     def clean_photo(self):
         # ImageField already rejects files Pillow can't open as an image;
@@ -160,6 +240,13 @@ class EmployeeForm(forms.ModelForm):
         self.fields['use_department_defaults'].widget = forms.CheckboxInput(
             attrs={'class': 'form-check-input'}
         )
+
+        # The checkboxes need a list of the stored days, not the "5,6" text.
+        self.fields['week_off_days'].widget.attrs['class'] = 'form-check-input'
+        # Also when bound: "changed" is worked out against this initial value.
+        stored = self.initial.get('week_off_days', self.instance.week_off_days)
+        if isinstance(stored, str):
+            self.initial['week_off_days'] = [d.strip() for d in stored.split(',') if d.strip()]
 
     def clean(self):
         cleaned = super().clean()

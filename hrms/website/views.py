@@ -48,6 +48,7 @@ from .services.pending_approvals import pending_approvals_for_payroll, pending_a
 from .services.employee_changes import (
     ChangeRequestError, build_change_request, apply_change_request, reject_change_request,
     can_approve_changes, edit_needs_approval, pending_request_for,
+    can_approve_self_changes, can_decide_change_request, decidable_self_requests,
 )
 from .utils.payroll_lock import (
     get_locking_run,
@@ -163,6 +164,23 @@ def report_unexpected(request, exc, doing, *, as_json=False, status=500):
         return JsonResponse({"success": False, "error": text}, status=status)
     messages.error(request, text)
     return None
+
+
+def can_see_archived(user):
+    """Archive Records -> View (or Edit, which archives and restores):
+    whether the "Archived" / "All" tabs on list pages show anything."""
+    return (user.is_superuser or user.is_staff
+            or has_feature_permission(user, "archive_records", "view")
+            or has_feature_permission(user, "archive_records", "edit"))
+
+
+def _archive_show(request):
+    """The list's ?show= filter, kept to "active" for anyone who may not
+    see archived records."""
+    show = request.GET.get("show", "active")
+    if show != "active" and not can_see_archived(request.user):
+        return "active"
+    return show
 
 
 def _can_assign_roles(user):
@@ -1190,12 +1208,25 @@ def _current_payroll_period(company):
     return get_payroll_period_for_date(payroll_settings, now().date())
 
 
+# How far into the next payroll period a roster may already be planned.
+ROSTER_ADVANCE_DAYS = 7
+
+
+def _roster_last_date(company):
+    """The last date a shift may be rostered for: the end of the current
+    payroll period plus the first week of the next one, so next month's
+    first week can be planned in advance. None without a payroll cycle."""
+    _, period_to = _current_payroll_period(company)
+    return period_to + timedelta(days=ROSTER_ADVANCE_DAYS) if period_to else None
+
+
 def _validate_shift_dates_within_current_period(company, start_date_str, end_date_str):
     """Shift assignments may only be scheduled from today through the end of
-    the current payroll period — not in the past, and not beyond the period
-    that's currently running. Returns an error message, or None if OK (or if
-    the company has no payroll cycle configured, in which case it doesn't block)."""
-    period_from, period_to = _current_payroll_period(company)
+    the current payroll period plus the first week of the next one -- not in
+    the past, and not further ahead than that. Returns an error message, or
+    None if OK (or if the company has no payroll cycle configured, in which
+    case it doesn't block)."""
+    period_to = _roster_last_date(company)
     if not period_to:
         return None
 
@@ -1209,7 +1240,8 @@ def _validate_shift_dates_within_current_period(company, start_date_str, end_dat
     if start < today:
         return f"Start date cannot be before today ({today.strftime('%d %b %Y')})."
     if end > period_to:
-        return f"End date cannot be after the current payroll period ends ({period_to.strftime('%d %b %Y')})."
+        return (f"End date cannot be after {period_to.strftime('%d %b %Y')}: rosters can be planned "
+                f"up to the first week of the next payroll period only.")
     return None
 
 
@@ -1225,7 +1257,7 @@ def shift_roster_list(request):
     if company_filter:
         base_qs = base_qs.filter(employee__company=company_filter)
 
-    show = request.GET.get("show", "active")
+    show = _archive_show(request)
     if show == "active":
         base_qs = base_qs.filter(is_active=True)
     elif show == "archived":
@@ -1264,7 +1296,7 @@ def shift_roster_list(request):
     # current payroll period. Based on the logged-in user's own company when
     # scoped; for global-access users this is just a UI hint — the actual
     # enforcement in add/edit happens per employee's own company.
-    _, period_to = _current_payroll_period(company_filter or get_user_company(request.user))
+    period_to = _roster_last_date(company_filter or get_user_company(request.user))
 
     return render(request, "attendance/shift_roster.html", {
         "assignments": assignments,
@@ -1297,7 +1329,7 @@ def _parse_week_off_day(raw):
 
 
 @login_required
-@feature_required("shift_roster", action="edit")
+@feature_required("shift_roster", action="create")
 @require_http_methods(["POST"])
 def add_shift_assignment(request):
     """Assign one shift (name + date range) to one or more employees at
@@ -2855,10 +2887,18 @@ def comp_off_requests(request, pk):
     return render(request, "attendance/comp_off_request_table.html", context)
 
 @login_required(login_url="login")
-@feature_required("admin_dashboard", action="view")
 def admin_dashboard(request):
     today = timezone.localdate()
+    # This is the site's home page ("/"), so employees land here whenever
+    # they type the address or use a bookmark. Send anyone who may not see
+    # it to their own dashboard instead of a bare "403 Forbidden" page.
     user = request.user
+    if not (user.is_superuser or user.is_staff):
+        from website.utils.permissions import has_feature_permission
+        if not has_feature_permission(user, "admin_dashboard", "view"):
+            if hasattr(user, "employee_profile"):
+                return redirect("employee-dashboard")
+            raise PermissionDenied
     user_company = get_user_company(user)
     company_filter = get_company_filter(user)
 
@@ -2895,7 +2935,7 @@ def admin_dashboard(request):
     from collections import Counter
     attendance_today = _dashboard_attendance(active_qs, today)
     totals = Counter(row.category for row in attendance_today)
-    absent_employees_today = [row for row in attendance_today if row.remark]
+    absent_employees_today = _absent_today(Employee.objects.all(), today)
     attendance_colors = (
         ("Present", "success"), ("Absent", "danger"), ("Late Present", "warning"),
         ("On Leave", "accent"), ("Checked in", "success"), ("Field duty", "accent"),
@@ -2967,7 +3007,10 @@ def admin_dashboard(request):
     pending_onboarding.sort(key=lambda e: urgent.index(e.pk))
     pending_change_requests = EmployeeChangeRequest.objects.filter(
         status=EmployeeChangeRequest.STATUS_PENDING, employee__in=base_qs,
-    ).count()
+    )
+    if not can_approve_changes(user):
+        pending_change_requests = decidable_self_requests(user, pending_change_requests)
+    pending_change_requests = pending_change_requests.count()
 
     return render(request, 'd/f.html', {
         'birthdays': birthdays,
@@ -3039,7 +3082,8 @@ def _dashboard_panels_for(user, active_qs, company_filter):
         'show_compoff_approvals': allowed("comp_off", "approve"),
         'show_correction_approvals': allowed("attendance_corrections", "approve"),
         'show_offboarding_panel': allowed("offboarding", "view"),
-        'show_change_approvals': allowed("employee_change_approval", "approve"),
+        'show_change_approvals': (allowed("employee_change_approval", "approve")
+                                  or allowed("employee_self_change_approval", "approve")),
         'show_payroll_panel': can_view_payroll,
         'can_create_salary': allowed('salary_structure', 'create'),
         'can_run_payroll': allowed("payroll", "edit"),
@@ -3068,6 +3112,17 @@ def _dashboard_panels_for(user, active_qs, company_filter):
             "branch_count": active_qs.exclude(branch_id=None).values("branch_id").distinct().count(),
             "department_count": active_qs.exclude(department__isnull=True).exclude(department="").values("department").distinct().count(),
         }
+    # Leave requests for someone who may see leave but not decide it (HR):
+    # every recent request with its status -- pending, approved, rejected --
+    # read-only, no approve/reject controls.
+    panels['show_leave_overview'] = (
+        allowed("leave_management", "view") and not panels['show_leave_approvals']
+    )
+    if panels['show_leave_overview']:
+        panels['leave_overview'] = list(
+            LeaveApplication.objects.select_related('employee')
+            .filter(employee__in=active_qs).order_by('-applied_on', '-id')[:60]
+        )
 
     if not can_view_payroll:
         return panels
@@ -3591,9 +3646,23 @@ def _employee_list_with_onboarding(request, show):
         employees = employees.filter(company_id=int(company_id))
     progress = bulk_onboarding_progress(employees)
 
+    values = list(employees.values(
+        "id", "employee_code", "first_name", "last_name", "gender", "status", "photo",
+        "company__short_name", "company__name", "branch_id", "branch__branch_name",
+        "shift_start_time", "shift_end_time", "department", "designation", "location",
+    ))
+    # Today's shift: today's Shift Roster entry when there is one (night if
+    # ticked night, its timings cross midnight, or its name says night),
+    # otherwise the employee's own shift timings (night if they cross
+    # midnight, e.g. 23:00-06:00). The profile's Night shift tick is not
+    # used -- the timings decide.
+    from types import SimpleNamespace
+    from .services.biometric_sync import NightShiftResolver
+    today = timezone.localdate()
+    resolver = NightShiftResolver([e["id"] for e in values], today, today)
+
     rows = []
-    for e in employees.values("id", "employee_code", "first_name", "last_name", "gender", "status", "photo",
-                              "company__short_name", "company__name", "branch_id", "branch__branch_name", "department", "designation", "location"):
+    for e in values:
         p = progress[e["id"]]
         if request.GET.get("onboarding") == "pending" and p["complete"]:
             continue
@@ -3610,6 +3679,10 @@ def _employee_list_with_onboarding(request, show):
             "department": e["department"] or "",
             "designation": e["designation"] or "",
             "location": e["location"] or "",
+            "shift": "night" if resolver.is_night(SimpleNamespace(
+                id=e["id"], is_night_shift=False,
+                shift_start_time=e["shift_start_time"], shift_end_time=e["shift_end_time"],
+            ), today) else "day",
             "status": e["status"] or "",
             "percent": p["percent"],
             "complete": p["complete"],
@@ -3617,11 +3690,21 @@ def _employee_list_with_onboarding(request, show):
         })
     return rows
 
+def _can_see_change_requests(user):
+    """The Employee Changes queue: Employee Changes -> View, or -> Approve
+    (an approver obviously has to see what they approve)."""
+    return (user.is_superuser or user.is_staff
+            or has_feature_permission(user, "employee_change_approval", "view")
+            or has_feature_permission(user, "employee_change_approval", "approve")
+            or can_approve_self_changes(user))
+
+
 @login_required
-@feature_required("employee_records", action="view")
 def employee_change_requests(request):
     """Employee edits waiting for (or already given) a decision. Everyone
     with employee access can follow them; approvers also decide them."""
+    if not _can_see_change_requests(request.user):
+        raise PermissionDenied
     status = request.GET.get("status", EmployeeChangeRequest.STATUS_PENDING)
     requests_qs = EmployeeChangeRequest.objects.select_related(
         "employee", "requested_by", "decided_by",
@@ -3631,25 +3714,28 @@ def employee_change_requests(request):
     query = request.GET.get("q", "").strip()
     requests_qs = apply_employee_search(requests_qs, query)
     page = Paginator(requests_qs.order_by("-requested_at", "-pk"), 50).get_page(request.GET.get("page"))
+    change_requests = list(page.object_list)
+    for cr in change_requests:
+        cr.can_decide = can_decide_change_request(request.user, cr)
     return render(request, "employee/change_requests.html", {
-        "change_requests": page.object_list,
+        "change_requests": change_requests,
         "page": page,
         "query": query,
         "onboarding_edit_days": ONBOARDING_EDIT_DAYS,
         "status": status,
         "status_choices": EmployeeChangeRequest.STATUS_CHOICES,
-        "can_approve_changes": can_approve_changes(request.user),
+        # Bulk bar: shown when at least one listed request is theirs to decide.
+        "can_approve_changes": any(cr.can_decide for cr in change_requests),
     })
 
 
 @login_required
-@feature_required("employee_records", action="view")
 @require_http_methods(["POST"])
 def employee_change_requests_bulk(request):
     """Approve or reject several pending change requests at once. Each is
     decided on its own (one failing doesn't undo the others), oldest first
     so later requests for the same employee apply on top of earlier ones."""
-    if not can_approve_changes(request.user):
+    if not can_approve_self_changes(request.user):
         raise PermissionDenied
     decision = request.POST.get("decision")
     if decision not in ("approve", "reject"):
@@ -3664,6 +3750,8 @@ def employee_change_requests_bulk(request):
     done, failed = 0, []
     pending = (EmployeeChangeRequest.objects.filter(pk__in=ids, status=EmployeeChangeRequest.STATUS_PENDING)
                .select_related("employee").order_by("requested_at"))
+    if not can_approve_changes(request.user):
+        pending = decidable_self_requests(request.user, pending)
     for cr in pending:
         try:
             if decision == "approve":
@@ -3687,12 +3775,13 @@ def employee_change_requests_bulk(request):
 
 
 @login_required
-@feature_required("employee_records", action="view")
 def employee_change_request_detail(request, pk):
+    if not _can_see_change_requests(request.user):
+        raise PermissionDenied
     cr = get_object_or_404(
         EmployeeChangeRequest.objects.select_related("employee", "requested_by", "decided_by"), pk=pk,
     )
-    can_approve = can_approve_changes(request.user)
+    can_approve = can_decide_change_request(request.user, cr)
 
     if request.method == "POST":
         if not can_approve:
@@ -3883,7 +3972,7 @@ def create_or_edit_employee(request, employee_id=None):
         _employee_form_errors(form, formset, attachment_formset) if request.method == "POST" else []
     )
 
-    show = request.GET.get("show", "active")
+    show = _archive_show(request)
     employees_list = _employee_list_with_onboarding(request, show)
 
     # Progress for the edited employee comes from the database copy: on an
@@ -3936,7 +4025,7 @@ from django.contrib.auth.models import Group
 @login_required
 @feature_required("employee_records", action="view")
 def employee_list(request):
-    show = request.GET.get("show", "active")
+    show = _archive_show(request)
 
     return render(request, "employee/create_employee2.html", {
         "form": EmployeeForm(),
@@ -4040,7 +4129,10 @@ def employee_detail(request, pk):
     previous_employments_attachment = PreviousEmploymentAttachment.objects.filter(previous_employment__employee=employee)
     # attachments = employee.attachments.all().order_by('-uploaded_at')
     attachments = EmployeeAttachment.objects.filter(employee=employee).order_by('-uploaded_at')
-    salary = SalaryMaster.objects.filter(employee=employee, is_active=True).first()
+    from website.pay_visibility import can_see_pay
+    # TEMPORARY: salary for Admin / Super Admin only while PAY_ADMIN_ONLY is on.
+    salary = (SalaryMaster.objects.filter(employee=employee, is_active=True).first()
+              if can_see_pay(request.user) else None)
     # safe related user (if Employee has a user FK/OneToOne)
     user = getattr(employee, "user", None)
 
@@ -4063,11 +4155,12 @@ def employee_detail(request, pk):
 
     employee_history = AuditLog.objects.filter(employee=employee).select_related("actor")[:50]
 
+    pending_change = pending_request_for(employee)
     context = {
         'employee': employee,
         'onboarding': onboarding_progress(employee),
-        'pending_change': pending_request_for(employee),
-        'can_approve_changes': can_approve_changes(request.user),
+        'pending_change': pending_change,
+        'can_approve_changes': pending_change is not None and can_decide_change_request(request.user, pending_change),
         'previous_employments': previous_employments,
         'attachments': attachments,
         'previous_employments_attachment': previous_employments_attachment,
@@ -4098,6 +4191,50 @@ def my_profile(request):
         return redirect('admin-dashboard')
 
     return redirect('employee_detail', pk=request.user.employee_profile.pk)
+
+
+@login_required
+def my_details_edit(request):
+    """An employee changes their own personal details (EmployeeSelfEditForm:
+    contact, addresses, emergency contacts, photo). Nothing is saved to the
+    record: it becomes an EmployeeChangeRequest that an approver accepts or
+    rejects on the Employee Changes page, like HR's edits after onboarding."""
+    employee = getattr(request.user, "employee_profile", None)
+    if employee is None:
+        messages.error(request, "Your account isn't linked to an employee profile.")
+        return redirect("admin-dashboard")
+
+    pending = pending_request_for(employee)
+    if request.method == "POST":
+        if pending:
+            messages.error(request, "You already have changes waiting for review. "
+                                    "Wait until they are approved or rejected before sending more.")
+            return redirect("my_details_edit")
+        form = EmployeeSelfEditForm(request.POST, request.FILES, instance=employee)
+        if form.is_valid():
+            try:
+                change = build_change_request(
+                    Employee.objects.get(pk=employee.pk), form, None, None, request,
+                )
+            except ChangeRequestError as exc:
+                messages.error(request, str(exc))
+                return redirect("my_details_edit")
+            if change:
+                messages.success(request, "Your changes were sent for review. "
+                                          "They will show on your profile once approved.")
+            else:
+                messages.info(request, "Nothing was changed, so nothing was sent for review.")
+            return redirect("my_details_edit")
+    else:
+        form = EmployeeSelfEditForm(instance=employee)
+
+    return render(request, "employee/my_details_edit.html", {
+        "form": form,
+        "employee": employee,
+        "pending": pending,
+        "recent_requests": employee.change_requests.filter(requested_by=request.user)
+                                                   .select_related("decided_by").order_by("-requested_at")[:5],
+    })
 
 
 @login_required
@@ -4218,11 +4355,6 @@ def workforce_analytics(request):
 def team_analytics(request):
     from .dashboard_reports import dashboard_report
     return dashboard_report(request, "team")
-
-
-def _latest_employee_leave_balance(employee):
-    return (LeaveBalance.objects.filter(employee=employee)
-            .order_by(F("period_to_date").desc(nulls_last=True), "-pk").first())
 
 
 def _upcoming_employee_holidays(employee, today):
@@ -4364,6 +4496,9 @@ def employee_dashboard(request):
 
     today_attendance = Attendance.objects.filter(employee=employee, date=today).first()
 
+    # Everyone absent today across every company in the group, like birthdays.
+    absent_employees_today = _absent_today(Employee.objects.all(), today)
+
     period_from, period_to = _current_payroll_period(employee.company)
     if not period_from:
         period_from = today.replace(day=1)
@@ -4377,10 +4512,22 @@ def employee_dashboard(request):
         absent=Count("pk", filter=Q(status="Absent")),
     )
 
-    leave_balance = _latest_employee_leave_balance(employee)
+    # Same rule as the Leave Balance report: never a period that hasn't
+    # started, and an employee sees a period's balance only once payroll has
+    # been run for it.
+    _runs = _payroll_run_ranges(employee.company)
+    leave_balance = next(
+        (lb for lb in LeaveBalance.objects.filter(employee=employee, period_from_date__lte=today)
+         .order_by("-period_to_date")
+         if _period_has_payroll_run(_runs, lb.period_from_date, lb.period_to_date)),
+        None,
+    )
+
 
     upcoming_holidays = _upcoming_employee_holidays(employee, today)
 
+    from website.pay_visibility import can_see_pay
+    show_pay = can_see_pay(request.user)
     recent_payslips = (
         PayrollRecord.objects.filter(employee=employee, payroll__status=PayrollRun.STATUS_FINALIZED)
         .select_related("payroll")
@@ -4486,7 +4633,7 @@ def employee_dashboard(request):
         "dashboard_notices": notices[:5],
         "team_leave_today": team_leave,
         "profile_progress": onboarding_progress(employee),
-        "advance_balance": employee.advances.aggregate(balance=Sum("outstanding_amount"))["balance"] or 0,
+        "advance_balance": (employee.advances.aggregate(balance=Sum("outstanding_amount"))["balance"] or 0) if show_pay else 0,
         "approved_upcoming": leave_apps.filter(status="Approved", start_date__gt=today).order_by("start_date")[:3],
         "birthdays": birthdays,
         "celebrations": celebrations,
@@ -4504,7 +4651,9 @@ def employee_dashboard(request):
         "days_absent": attendance_counts["absent"],
         "leave_balance": leave_balance,
         "upcoming_holidays": upcoming_holidays,
-        "recent_payslips": recent_payslips,
+        # TEMPORARY: payslips for Admin / Super Admin only while PAY_ADMIN_ONLY is on.
+        "recent_payslips": recent_payslips if show_pay else [],
+        "absent_employees_today": absent_employees_today,
         "today": today,
         **_team_panel_for(employee, today),
     })
@@ -4523,7 +4672,7 @@ def _team_panel_for(approver, today):
     ).exclude(pk=approver.pk).filter(status="Active")
 
     if not reportees.exists():
-        return {"has_team": False, "absent_employees_today": []}
+        return {"has_team": False, "team_absences_today": []}
 
     pending_leave = (
         LeaveApplication.objects.select_related("employee")
@@ -4551,7 +4700,7 @@ def _team_panel_for(approver, today):
         "team_pending_total": pending_leave.count() + pending_compoff.count() + pending_corrections.count(),
         "team_today": team_today,
         "team_absent_today": sum(row.category == "Absent" for row in absent_today),
-        "absent_employees_today": absent_today,
+        "team_absences_today": absent_today,
         # The queues themselves, so approving happens on the dashboard
         # rather than only behind a link to My Approvals. Same names the
         # shared approvals/_pending_queues.html partial reads.
@@ -4815,7 +4964,7 @@ def offboarding_list(request):
         form = OffboardingForm()
         formset = AssetHandoverFormSet(instance=Offboarding())
 
-    show = request.GET.get('show', 'active')
+    show = _archive_show(request)
     offboardings = Offboarding.objects.all().select_related('employee')
     if show == 'active':
         offboardings = offboardings.filter(is_active=True)
@@ -4837,7 +4986,7 @@ def offboarding_list(request):
 def offboarding_export_excel(request):
     """Export the Employees Offboarding listing -- its Export button only
     called window.print(), so there was no actual Excel export."""
-    show = request.GET.get('show', 'active')
+    show = _archive_show(request)
     offboardings = Offboarding.objects.all().select_related('employee')
     if show == 'active':
         offboardings = offboardings.filter(is_active=True)
@@ -5005,7 +5154,7 @@ def offboarding_delete(request, pk):
 #     return render(request, 'branch/create-branch.html', context)
 
 @login_required
-@feature_required("branch_management", action="edit")
+@feature_required("branch_management", action="create")
 def create_branchs(request):
     form = BranchForm(request.POST if request.method == "POST" else None, auto_id="new_%s")
     if request.method == "POST" and form.is_valid():
@@ -5017,7 +5166,7 @@ def create_branchs(request):
 
 
 def _render_branch_directory(request, form, edit_form=None):
-    show = request.GET.get("show", "active")
+    show = _archive_show(request)
     branches = Branch.objects.all()
     if show == "active":
         branches = branches.filter(is_active=True)
@@ -5034,7 +5183,7 @@ def _render_branch_directory(request, form, edit_form=None):
 def branch_export_excel(request):
     """Export the Branches listing -- its Export as PDF/Excel dropdown links
     were both href="javascript:void(0);" placeholders that did nothing."""
-    show = request.GET.get("show", "active")
+    show = _archive_show(request)
     branches = Branch.objects.all()
     if show == "active":
         branches = branches.filter(is_active=True)
@@ -5107,7 +5256,7 @@ def department_list(request):
     """Departments and who signs off for each: a reporting person for
     day-to-day approvals and a manager above them (often the same person).
     Employees inherit both unless individually overridden."""
-    show = request.GET.get("show", "active")
+    show = _archive_show(request)
     departments = Department.objects.select_related("reporting_person", "manager")
     if show == "active":
         departments = departments.filter(is_active=True)
@@ -5145,7 +5294,10 @@ def department_list(request):
 
 
 @login_required
-@feature_required("department_management", action="edit")
+@create_or_edit_required(
+    "department_management",
+    lambda request, department_id=None, **kw: "edit" if department_id else "create",
+)
 @require_http_methods(["POST"])
 def save_department(request, department_id=None):
     """Create or update a department. One endpoint for both so the add form
@@ -5224,7 +5376,7 @@ def department_defaults_api(request):
 
 
 @login_required
-@feature_required("branch_management", action="edit")
+@feature_required("branch_management", action="create")
 def download_branch_upload_template(request):
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -5237,7 +5389,7 @@ def download_branch_upload_template(request):
 
 
 @login_required
-@feature_required("branch_management", action="edit")
+@feature_required("branch_management", action="create")
 @require_http_methods(["POST"])
 def upload_branch_excel(request):
     """Bulk-create Branches from an uploaded Excel file. Synchronous (not
@@ -5357,8 +5509,7 @@ def create_company(request):
     creating one needs :edit, which only Super Admin holds."""
     form = CompanyForm(auto_id="new_company_%s")
     if request.method == "POST":
-        if not (request.user.is_superuser or request.user.is_staff
-                or has_feature_permission(request.user, "company_management", "edit")):
+        if not has_feature_permission(request.user, "company_management", "create")                 and not (request.user.is_superuser or request.user.is_staff):
             raise PermissionDenied
         form = CompanyForm(request.POST, request.FILES, auto_id="new_company_%s")
         if form.is_valid():
@@ -5370,7 +5521,7 @@ def create_company(request):
 
 
 def _render_company_directory(request, form, edit_form=None):
-    show = request.GET.get("show", "active")
+    show = _archive_show(request)
     companies = Company.objects.all()
     if show == "active":
         companies = companies.filter(status="active")
@@ -5387,7 +5538,7 @@ def _render_company_directory(request, form, edit_form=None):
 def company_export_excel(request):
     """Export the Companies listing -- its Export as PDF/Excel dropdown links
     were both href="javascript:void(0);" placeholders that did nothing."""
-    show = request.GET.get("show", "active")
+    show = _archive_show(request)
     companies = Company.objects.all()
     if show == "active":
         companies = companies.filter(status="active")
@@ -5419,7 +5570,7 @@ def company_export_excel(request):
 
 
 @login_required
-@feature_required("company_management", action="edit")
+@feature_required("company_management", action="create")
 def download_company_upload_template(request):
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -5435,7 +5586,7 @@ def download_company_upload_template(request):
 
 
 @login_required
-@feature_required("company_management", action="edit")
+@feature_required("company_management", action="create")
 @require_http_methods(["POST"])
 def upload_company_excel(request):
     """Bulk-create Companies from an uploaded Excel file. Synchronous (not
@@ -5919,6 +6070,37 @@ def get_all_payroll_periods_from_attendance(company, payroll_settings):
     except Exception:
         pass
     return periods
+
+
+def _payroll_run_ranges(company):
+    """(start_date, end_date) of every payroll run, draft or finalized, for
+    the company."""
+    return list(PayrollRun.objects.filter(company=company).values_list("start_date", "end_date"))
+
+
+def _period_has_payroll_run(run_ranges, from_date, to_date):
+    return any(start <= to_date and end >= from_date for start, end in run_ranges)
+
+
+def leave_periods_visible_to(user, company, periods):
+    """Which payroll periods' leave balances the user may see.
+
+    - Nobody sees a period that hasn't started yet. Those only appear when
+      some attendance carries a future date (a wrong date in an upload or on
+      the biometric device), and a "current" period months ahead of today
+      confuses everyone.
+    - Employees (anyone without company-wide access) see a period only once
+      payroll has been run for it: until then its balance is still moving.
+      Admin/HR keep seeing the current period, since they review and
+      override LWP on this page before running payroll.
+    """
+    from django.utils.timezone import localdate
+    today = localdate()
+    periods = [p for p in periods if p["from_date"] <= today]
+    if user.is_superuser or user.is_staff or user_has_global_access(user):
+        return periods
+    runs = _payroll_run_ranges(company)
+    return [p for p in periods if _period_has_payroll_run(runs, p["from_date"], p["to_date"])]
 
 
 def get_merged_payroll_periods_for_active_companies():
@@ -6476,7 +6658,7 @@ def leave_balance_view(request):
             # Skip companies not on the dominant cycle (includes calendar-month defaults)
             if dominant_cycle and ps_cycle != dominant_cycle:
                 continue
-            for _p in get_all_payroll_periods_from_attendance(_company, _ps):
+            for _p in leave_periods_visible_to(user, _company, get_all_payroll_periods_from_attendance(_company, _ps)):
                 key = str(_p['to_date'])
                 if key not in period_map:
                     period_map[key] = {
@@ -6599,7 +6781,11 @@ def leave_balance_view(request):
         context.update({'leave_balances': [], 'error': 'Payroll settings not configured.', 'available_periods': [], 'available_months': [], 'period_month_str': ''})
         return render(request, 'leave_balance/leave_balance_report.html', context)
 
-    available_periods = get_all_payroll_periods_from_attendance(user_company, payroll_settings)
+    available_periods = leave_periods_visible_to(
+        user, user_company, get_all_payroll_periods_from_attendance(user_company, payroll_settings)
+    )
+    if not available_periods and not is_global:
+        context['info'] = "Your leave balance will appear here once payroll has been run for the current period."
 
     selected_period_str = request.GET.get('period')
     selected_period = None
@@ -7566,9 +7752,23 @@ def leave_apply_view(request):
                     f"({locking_run.start_date:%d %b %Y}–{locking_run.end_date:%d %b %Y}).",
                 )
             else:
+                # Only working days are leave: weekly offs and holidays in the
+                # range don't count, and a range that is nothing but those
+                # isn't a leave at all.
+                working_days = leave_obj.total_days()
+                if working_days == 0:
+                    messages.error(
+                        request,
+                        f"{leave_obj.start_date:%d %b %Y}–{leave_obj.end_date:%d %b %Y} has no working days "
+                        f"(only weekly offs or holidays), so there is nothing to apply leave for.",
+                    )
+                    return redirect("leave_apply")
                 leave_obj.save()
-                messages.success(request,"Leave Applied Successfully!")
+                skipped = leave_obj.calendar_days() - working_days
+                note = f" ({skipped} weekly off / holiday day(s) in the range not counted)" if skipped else ""
+                messages.success(request, f"Leave applied for {working_days} working day(s){note}.")
                 return redirect("leave_apply")
+        messages.error(request,"Please fix the errors.")
     else:
         form = _leave_form()
 
@@ -7585,6 +7785,11 @@ def leave_apply_view(request):
                 employee=own_employee,
             ).order_by(F("period_to_date").desc(nulls_last=True), "-pk")
         )
+        visible = leave_periods_visible_to(request.user, own_employee.company, [
+            {"from_date": b.period_from_date, "to_date": b.period_to_date, "balance": b}
+            for b in balance_periods if b.period_from_date and b.period_to_date
+        ])
+        balance_periods = [p["balance"] for p in visible]
         holidays = _upcoming_employee_holidays(own_employee, today)
 
     return render(request,"leave_balance/leave_apply.html",{
@@ -8594,7 +8799,7 @@ def create_salary_increment(request):
             logging.getLogger(__name__).exception("Create failed")
             messages.error(request, "Failed to create increment.")
 
-    show = request.GET.get("show", "active")
+    show = _archive_show(request)
     status = request.GET.get("status", "all")
     increments = _increment_queryset(show, status)
 
@@ -8624,7 +8829,7 @@ def salary_increment_export_excel(request):
     anywhere, so clicking it did nothing. Respects the same ?show= filter
     (active/archived/all) as the page itself, so exporting matches whatever
     tab is currently open."""
-    show = request.GET.get("show", "active")
+    show = _archive_show(request)
     increments = _increment_queryset(show, request.GET.get("status"))
     words = request.GET.get("q", "").casefold().split()
 
@@ -9572,10 +9777,13 @@ def save_role_permissions(request):
         for feature in Feature.objects.filter(is_active=True):
             rfp, _ = RoleFeaturePermission.objects.get_or_create(role=group, feature=feature)
             before = snapshot(rfp, ("can_view", "can_create", "can_edit", "can_approve"))
-            rfp.can_view = feature.has_view and request.POST.get(f"can_view_{feature.id}") == "on"
-            rfp.can_create = feature.has_create and request.POST.get(f"can_create_{feature.id}") == "on"
-            rfp.can_edit = feature.has_edit and request.POST.get(f"can_edit_{feature.id}") == "on"
-            rfp.can_approve = feature.has_approve and request.POST.get(f"can_approve_{feature.id}") == "on"
+            # Every box on the matrix can be ticked -- the Super Admin decides.
+            # See utils.permissions._load_feature_permissions for what a tick
+            # on an action without its own function does.
+            rfp.can_view = request.POST.get(f"can_view_{feature.id}") == "on"
+            rfp.can_create = request.POST.get(f"can_create_{feature.id}") == "on"
+            rfp.can_edit = request.POST.get(f"can_edit_{feature.id}") == "on"
+            rfp.can_approve = request.POST.get(f"can_approve_{feature.id}") == "on"
             rfp.updated_by = request.user
             rfp.save()
             feature_changes = diff(before, rfp, ("can_view", "can_create", "can_edit", "can_approve"))
@@ -9674,7 +9882,10 @@ def announcements_hub(request):
 
 
 @login_required
-@feature_required("announcements", action="edit")
+@create_or_edit_required(
+    "announcements",
+    lambda request, **kw: "edit" if request.POST.get("announcement_id") else "create",
+)
 @require_http_methods(["POST"])
 def save_announcement(request):
     announcement_id = request.POST.get("announcement_id")
@@ -9966,7 +10177,7 @@ def advance_list(request):
     if not can_see_all:
         qs = qs.filter(employee=own_employee)
 
-    if status_filter in ('active', 'completed'):
+    if status_filter in ('active', 'completed', 'awaiting_approval', 'rejected'):
         qs = qs.filter(status=status_filter)
 
     if search:
@@ -9997,11 +10208,15 @@ def advance_list(request):
             or has_feature_permission(request.user, "advances", "edit")
         ),
         'can_manage_advance_records': _can_manage_advance_records(request.user),
+        'can_create_advances': (
+            request.user.is_superuser or request.user.is_staff
+            or has_feature_permission(request.user, "advances", "create")
+        ),
     })
 
 
 @login_required
-@feature_required("advances", action="edit")
+@feature_required("advances", action="create")
 def advance_create(request):
     """Admin/HR creates an advance."""
     # if not request.user.is_staff:
@@ -10017,7 +10232,13 @@ def advance_create(request):
             months = data['default_months']
             start_date = data.get('start_date') or None
             adv = create_advance(employee, amount, months, start_date=start_date)
-            messages.success(request, f"Advance created for {employee} - ₹{amount}")
+            if _can_approve_advances(request.user):
+                messages.success(request, f"Advance created for {employee} - ₹{amount}")
+            else:
+                adv.status = AdvanceMaster.STATUS_AWAITING_APPROVAL
+                adv.save(update_fields=["status"])
+                messages.success(request, f"Advance for {employee} - ₹{amount} sent for approval. "
+                                          "Nothing is deducted from salary until it is approved.")
             return redirect('advances-list')
     else:
         form = AdvanceCreateForm(initial={'start_date': date.today().replace(day=1)})
@@ -10180,11 +10401,45 @@ def advance_detail(request, pk):
         # not pay or skip an instalment -- those endpoints need
         # advances:edit and would only 403 them.
         'can_manage_advances': (
-            request.user.is_superuser or request.user.is_staff
-            or has_feature_permission(request.user, "advances", "edit")
+            (request.user.is_superuser or request.user.is_staff
+             or has_feature_permission(request.user, "advances", "edit"))
+            and adv.status == AdvanceMaster.STATUS_ACTIVE
         ),
         'can_manage_advance_records': _can_manage_advance_records(request.user),
+        'can_approve_advance': (
+            _can_approve_advances(request.user)
+            and adv.status == AdvanceMaster.STATUS_AWAITING_APPROVAL
+        ),
     })
+
+
+def _can_approve_advances(user):
+    return user.is_superuser or user.is_staff or has_feature_permission(user, "advances", "approve")
+
+
+@login_required
+@feature_required("advances", action="approve")
+@require_POST
+def advance_decide(request, pk):
+    """Approve or reject an advance awaiting approval. Approved, it starts
+    deducting from salary on its schedule; rejected, it never does."""
+    adv = get_object_or_404(AdvanceMaster, pk=pk)
+    if adv.status != AdvanceMaster.STATUS_AWAITING_APPROVAL:
+        messages.error(request, "This advance has already been decided.")
+        return redirect('advance-detail', pk=adv.pk)
+    decision = request.POST.get("decision")
+    if decision == "approve":
+        adv.status = AdvanceMaster.STATUS_ACTIVE
+        messages.success(request, f"Advance for {adv.employee} approved.")
+    elif decision == "reject":
+        adv.status = AdvanceMaster.STATUS_REJECTED
+        messages.info(request, f"Advance for {adv.employee} rejected.")
+    else:
+        messages.error(request, "Choose approve or reject.")
+        return redirect('advance-detail', pk=adv.pk)
+    adv.save(update_fields=["status"])
+    return redirect('advance-detail', pk=adv.pk)
+
 
 @login_required
 @feature_required("advances", action="edit")
@@ -10193,6 +10448,8 @@ def advance_detail(request, pk):
 def pay_advance(request, pk):
     """AJAX / form POST to apply payment."""
     adv = get_object_or_404(AdvanceMaster, pk=pk)
+    if adv.status != AdvanceMaster.STATUS_ACTIVE:
+        return JsonResponse({'success': False, 'error': f"This advance is {adv.get_status_display().lower()}, so no instalment can be paid or skipped."}, status=400)
     # authorization check
     # if not request.user.is_staff:
     #     try:
@@ -10237,6 +10494,8 @@ def pay_advance(request, pk):
 def skip_advance_month(request, pk):
     """Mark a schedule month as skipped (AJAX). Expects due_month in POST (YYYY-MM-DD)."""
     adv = get_object_or_404(AdvanceMaster, pk=pk)
+    if adv.status != AdvanceMaster.STATUS_ACTIVE:
+        return JsonResponse({'success': False, 'error': f"This advance is {adv.get_status_display().lower()}, so no instalment can be paid or skipped."}, status=400)
     # if not request.user.is_staff:
     #     try:
     #         if request.user.employee != adv.employee:
@@ -10279,6 +10538,8 @@ def skip_advance_month(request, pk):
 @require_POST
 def revert_skip_view(request, pk):
     adv = get_object_or_404(AdvanceMaster, pk=pk)
+    if adv.status != AdvanceMaster.STATUS_ACTIVE:
+        return JsonResponse({'success': False, 'error': f"This advance is {adv.get_status_display().lower()}, so no instalment can be paid or skipped."}, status=400)
     due_month = request.POST.get("due_month")
 
     try:
@@ -10331,6 +10592,10 @@ def payroll_run_list(request):
         "status_filter": status_filter or "",
         "draft_count": totals.get(PayrollRun.STATUS_DRAFT, 0),
         "finalized_count": totals.get(PayrollRun.STATUS_FINALIZED, 0),
+        "can_create_payroll_run": (
+            request.user.is_superuser or request.user.is_staff
+            or has_feature_permission(request.user, "payroll", "create")
+        ),
         # Admin can read a payroll run but not create, recalculate or
         # finalize one, so the pages have to render read-only rather than
         # offering controls that 403.
@@ -10364,7 +10629,7 @@ def _compute_payroll_dates(ps, year, m):
 
 
 @login_required
-@feature_required("payroll", action="edit")
+@feature_required("payroll", action="create")
 def payroll_run_create(request):
     companies = Company.objects.filter(status="active").order_by("name")
     if request.method == "POST":
@@ -10491,6 +10756,11 @@ def payroll_run_detail(request, run_id):
     return render(request, "payroll/run_detail.html", {
         "run": run, "records": records, "settings": settings,
         "pending_approvals": pending,
+        # Finalizing (locking the month) is its own right: Payroll -> Approve.
+        "can_finalize_payroll": (
+            request.user.is_superuser or request.user.is_staff
+            or has_feature_permission(request.user, "payroll", "approve")
+        ),
         # Admin can read a payroll run but not create, recalculate or
         # finalize one, so the pages have to render read-only rather than
         # offering controls that 403.
@@ -10631,7 +10901,7 @@ def payroll_run_recalculate(request, run_id):
 
 
 @login_required
-@feature_required("payroll", action="edit")
+@feature_required("payroll", action="approve")
 @require_POST
 def payroll_run_finalize(request, run_id):
     run = get_object_or_404(PayrollRun, id=run_id)
@@ -11171,7 +11441,7 @@ def logout_view(request):
 from django.contrib.auth.models import User, Group
 
 @login_required
-@feature_required("user_accounts", action="edit")
+@feature_required("user_accounts", action="create")
 def create_user_view(request):
     if request.method == "POST":
         employee_id = request.POST.get("employee_id")
@@ -11421,7 +11691,7 @@ def holiday_calendar_dashboard(request):
     # stats cards below always stay active-only regardless of this toggle
     # -- an archived (cancelled) holiday/scenario has no business appearing
     # on the live calendar or in headline counts.
-    show = request.GET.get('show', 'active')
+    show = _archive_show(request)
 
     # ----------------------------------------------------
     # 4️⃣ Holidays for calendar (month-based)
@@ -11653,7 +11923,7 @@ def _recalculate_attendance_on(day):
 
 
 @login_required
-@feature_required("holiday_calendar", action="edit")
+@feature_required("holiday_calendar", action="create")
 @require_http_methods(["GET", "POST"])
 def add_holiday(request):
     """
@@ -12069,7 +12339,7 @@ def api_earned_leaves(request):
 
 
 @login_required
-@feature_required("holiday_calendar", action="edit")
+@feature_required("holiday_calendar", action="create")
 @require_http_methods(["GET", "POST"])
 def add_half_day_scenario(request):
     if request.method == 'POST':
@@ -12376,7 +12646,7 @@ def api_earned_leaves_json(request):
 # ============================================================================
 
 @login_required
-@feature_required("holiday_calendar", action="edit")
+@feature_required("holiday_calendar", action="create")
 @require_POST
 def create_holiday_type(request):
     name = request.POST.get("name", "").strip()

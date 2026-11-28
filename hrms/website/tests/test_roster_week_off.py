@@ -3,7 +3,7 @@ The weekly off can now be set on a shift roster entry, and it is the
 roster's answer that counts for those dates.
 
 Why it belongs on the roster: a rotating crew's off day moves with the
-shift. Employee.week_off_day is a standing tick -- one day, for ever --
+shift. Employee.week_off_days is a standing tick -- fixed days, for ever --
 which cannot say "Wednesday while you are on nights this fortnight, Sunday
 when you rotate back". The shift roster already wins over the employee for
 night duty (NightShiftResolver), and weekly off now follows the same rule:
@@ -16,7 +16,7 @@ The part that matters most is that all three readers agree. A weekly off is
 a credited free day, so if the attendance register treats Wednesday as an
 off day while payroll still counts it as a working day the employee was not
 present for, the same Wednesday is credited on one screen and docked as
-leave on the payslip. models.week_off_weekday() /
+leave on the payslip. models.week_off_weekdays() /
 week_off_dates_in_range() are the single resolver all of them use, and the
 tests below check the register, the payroll day-count and the leave count
 on the same roster.
@@ -39,7 +39,7 @@ from website.models import (
     PayrollSettings,
     ShiftAssignment,
     attendance_rule_cache,
-    week_off_weekday,
+    week_off_weekdays,
 )
 from website.services import get_attendance_summary
 
@@ -87,40 +87,40 @@ class RosterWeekOffResolutionTest(TestCase):
     def test_the_roster_decides_for_the_dates_it_covers(self):
         self._roster(off_day=2)  # Wednesday
         with attendance_rule_cache():
-            self.assertEqual(week_off_weekday(self.employee, WEEK_WED), 2)
+            self.assertEqual(week_off_weekdays(self.employee, WEEK_WED), {2})
 
     def test_the_roster_beats_the_employees_own_day(self):
-        self.employee.week_off_day = 6  # Sunday, standing
-        self.employee.save(update_fields=["week_off_day"])
+        self.employee.week_off_days = "6"  # Sunday, standing
+        self.employee.save(update_fields=["week_off_days"])
         self._roster(off_day=2)
         with attendance_rule_cache():
-            self.assertEqual(week_off_weekday(self.employee, WEEK_WED), 2)
+            self.assertEqual(week_off_weekdays(self.employee, WEEK_WED), {2})
 
     def test_outside_the_roster_the_employees_own_day_applies_again(self):
-        self.employee.week_off_day = 6
-        self.employee.save(update_fields=["week_off_day"])
+        self.employee.week_off_days = "6"
+        self.employee.save(update_fields=["week_off_days"])
         self._roster(off_day=2)
         after = WEEK_SUN + timedelta(days=3)
         with attendance_rule_cache():
-            self.assertEqual(week_off_weekday(self.employee, after), 6)
+            self.assertEqual(week_off_weekdays(self.employee, after), {6})
 
     def test_a_roster_entry_with_no_weekly_off_set_does_not_override(self):
-        self.employee.week_off_day = 6
-        self.employee.save(update_fields=["week_off_day"])
+        self.employee.week_off_days = "6"
+        self.employee.save(update_fields=["week_off_days"])
         self._roster(off_day=None)
         with attendance_rule_cache():
-            self.assertEqual(week_off_weekday(self.employee, WEEK_WED), 6)
+            self.assertEqual(week_off_weekdays(self.employee, WEEK_WED), {6})
 
     def test_with_nothing_set_the_company_rule_is_left_to_decide(self):
         with attendance_rule_cache():
-            self.assertIsNone(week_off_weekday(self.employee, WEEK_WED))
+            self.assertIsNone(week_off_weekdays(self.employee, WEEK_WED))
 
     def test_a_manually_archived_entry_is_ignored(self):
         """is_active=False is this app's soft delete -- somebody decided the
         entry was wrong, so it must stop counting."""
         self._roster(off_day=2, is_active=False)
         with attendance_rule_cache():
-            self.assertIsNone(week_off_weekday(self.employee, WEEK_WED))
+            self.assertIsNone(week_off_weekdays(self.employee, WEEK_WED))
 
     def test_an_auto_archived_entry_still_counts(self):
         """The nightly tidy-up archives entries whose dates have gone by.
@@ -129,7 +129,7 @@ class RosterWeekOffResolutionTest(TestCase):
         night-shift resolver follows."""
         self._roster(off_day=2, is_active=False, auto_archived=True)
         with attendance_rule_cache():
-            self.assertEqual(week_off_weekday(self.employee, WEEK_WED), 2)
+            self.assertEqual(week_off_weekdays(self.employee, WEEK_WED), {2})
 
 
 class RosterWeekOffAttendanceTest(TestCase):

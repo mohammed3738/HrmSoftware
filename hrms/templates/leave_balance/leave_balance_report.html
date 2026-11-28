@@ -482,6 +482,19 @@
     </div>
     {% endif %}
 
+    {% if info %}
+    <div class="lb-alert lb-alert-warning">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M12 8v4l2.5 2.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+      </svg>
+      <div class="lb-alert-text">
+        <h3>Not available yet</h3>
+        <p>{{ info }}</p>
+      </div>
+    </div>
+    {% endif %}
+
     {% if error %}
     <div class="lb-alert lb-alert-error">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -839,12 +852,12 @@
       loading.classList.add('active');
 
       const formData = new FormData();
-      formData.append('csrfmiddlewaretoken', getCookie('csrftoken'));
+      formData.append('csrfmiddlewaretoken', CSRF_TOKEN);
       if (CURRENT_COMPANY_ID) formData.append('company_id', CURRENT_COMPANY_ID);
 
       fetch('{% url "recalculate_leave_balances" %}', {
         method: 'POST',
-        headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        headers: { 'X-CSRFToken': CSRF_TOKEN },
         body: formData
       })
       .then(r => r.json())

@@ -13,6 +13,7 @@ from django.utils import timezone
 
 from .models import (AdvanceMaster, Attendance, AttendanceCorrectionRequest, Company, Employee, FieldDuty,
                      LeaveApplication, LeaveBalance, Offboarding, PayrollRecord, PayrollRun)
+from .pay_visibility import can_see_pay
 from .utils.permissions import has_feature_permission
 
 
@@ -142,7 +143,7 @@ def dashboard_report(request, audience):
         ]))
         totals = pay.aggregate(gross=Sum("gross_processed"), deductions=Sum("total_deductions"), net=Sum("net_salary"))
         sections.append(("Finalized payroll · INR", [(label, totals[key] or 0) for label,key in (("Processed gross","gross"),("Deductions","deductions"),("Net payable","net"))] if totals["net"] is not None else []))
-        if allowed("advances"):
+        if allowed("advances") and can_see_pay(request.user):
             outstanding = AdvanceMaster.objects.filter(employee__in=people, status="active").aggregate(amount=Sum("outstanding_amount"))
             metrics.append(("Advances outstanding today · INR", outstanding["amount"] or 0))
         if totals["gross"] is not None:

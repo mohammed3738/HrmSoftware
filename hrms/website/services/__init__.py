@@ -287,6 +287,7 @@ def get_advance_for_employee_month(employee, start_date, end_date):
     same one on a recalculation. Oldest due month first, then by id."""
     emi = AdvanceSchedule.objects.filter(
         advance__employee=employee,
+        advance__status=AdvanceMaster.STATUS_ACTIVE,   # not awaiting approval / rejected
         due_month__range=[start_date, end_date],
         status=AdvanceSchedule.STATUS_PENDING
     ).order_by("due_month", "pk").first()
@@ -299,7 +300,9 @@ def get_advance_for_employee_month(employee, start_date, end_date):
 def create_payroll_run(company, month_start, month_end, create_records=True):
     run = PayrollRun.objects.create(
         company=company,
-        month=month_start.replace(day=1),
+        # The payroll month is the month the cycle ENDS in: 27 Mar - 26 Apr
+        # is April's payroll, the month picked on the Create form.
+        month=month_end.replace(day=1),
         start_date=month_start,
         end_date=month_end
     )

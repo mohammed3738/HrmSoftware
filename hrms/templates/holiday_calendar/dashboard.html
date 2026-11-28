@@ -993,8 +993,8 @@
                 </div>
                 <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
                     <a href="?show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-secondary{% endif %}">Active</a>
-                    <a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-secondary{% endif %}">Archived</a>
-                    <a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+                    {% if request.user|can_see_archived %}<a href="?show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-secondary{% endif %}">Archived</a>{% endif %}
+                    {% if request.user|can_see_archived %}<a href="?show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-secondary{% endif %}">All</a>{% endif %}
                 </div>
                 <table>
                     <thead>
@@ -1138,8 +1138,8 @@
                 </div>
                 <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
                     <a href="?tab=holiday-types&show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-secondary{% endif %}">Active</a>
-                    <a href="?tab=holiday-types&show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-secondary{% endif %}">Archived</a>
-                    <a href="?tab=holiday-types&show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+                    {% if request.user|can_see_archived %}<a href="?tab=holiday-types&show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-secondary{% endif %}">Archived</a>{% endif %}
+                    {% if request.user|can_see_archived %}<a href="?tab=holiday-types&show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-secondary{% endif %}">All</a>{% endif %}
                 </div>
                 <table>
                     <thead>
@@ -1288,8 +1288,8 @@
                 </div>
                 <div style="display:flex; gap:0.5rem; margin-bottom:1rem;">
                     <a href="?tab=halfday&show=active" class="btn btn-sm {% if show == 'active' or not show %}btn-primary{% else %}btn-secondary{% endif %}">Active</a>
-                    <a href="?tab=halfday&show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-secondary{% endif %}">Archived</a>
-                    <a href="?tab=halfday&show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-secondary{% endif %}">All</a>
+                    {% if request.user|can_see_archived %}<a href="?tab=halfday&show=archived" class="btn btn-sm {% if show == 'archived' %}btn-primary{% else %}btn-secondary{% endif %}">Archived</a>{% endif %}
+                    {% if request.user|can_see_archived %}<a href="?tab=halfday&show=all" class="btn btn-sm {% if show == 'all' %}btn-primary{% else %}btn-secondary{% endif %}">All</a>{% endif %}
                 </div>
                 <table>
                     <thead>

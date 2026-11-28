@@ -224,13 +224,25 @@ class Employee(models.Model):
         (0, 'Monday'), (1, 'Tuesday'), (2, 'Wednesday'), (3, 'Thursday'),
         (4, 'Friday'), (5, 'Saturday'), (6, 'Sunday'),
     ]
-    week_off_day = models.IntegerField(
-        null=True, blank=True, choices=WEEKDAY_CHOICES,
-        verbose_name="Weekly Off Day",
-        help_text="Overrides the company's default weekly off (e.g. Saturday for "
-                   "night-shift staff instead of the usual Sunday). Leave blank to "
+    # Comma-separated weekday numbers (Monday 0 ... Sunday 6), e.g. "5,6"
+    # for Saturday + Sunday or "4,5" for Friday + Saturday. Blank = follow
+    # the company's weekend rule. Read it through week_off_weekdays.
+    week_off_days = models.CharField(
+        max_length=20, blank=True, default="",
+        verbose_name="Weekly Off Days",
+        help_text="Overrides the company's default weekly off -- one or more days "
+                   "(e.g. Saturday and Sunday, or Friday and Saturday). Leave blank to "
                    "use the company default.",
     )
+
+    @property
+    def week_off_weekdays(self):
+        """This employee's own weekly off days as a frozenset of weekday
+        numbers, or None to follow the company rule."""
+        return parse_week_off_days(self.week_off_days)
+
+    def get_week_off_days_display(self):
+        return describe_week_off_days(self.week_off_days)
 
     # ── Biometric (eSSL / eTimeTrackLite) attendance sync ─────────────
     # The punch device identifies people by its own user id, which is only
@@ -582,8 +594,40 @@ class LeaveApplication(models.Model):
     rejection_reason = models.TextField(blank=True, default="")
     applied_on = models.DateTimeField(auto_now_add=True)
 
-    def total_days(self):
+    def calendar_days(self):
         return (self.end_date - self.start_date).days + 1
+
+    def working_dates(self):
+        """The dates this leave actually takes the employee off work: the
+        range minus their weekly offs (their own days, a roster entry, or
+        the company rule -- week_off_dates_in_range) and the holidays that
+        apply to them. The same days the leave balance counts."""
+        if not self.start_date or not self.end_date or self.end_date < self.start_date:
+            return []
+        employee = self.employee
+        ps = PayrollSettings.objects.filter(company=employee.company).first() if employee.company_id else None
+        sunday_only = getattr(ps, "weekend_days", "sat_sun") == "sun"
+        off = week_off_dates_in_range(employee, self.start_date, self.end_date, sunday_only)
+        branch_specific = getattr(ps, "branch_specific_holidays", True) if ps else True
+        holidays = {
+            h.holiday_date
+            for h in Holiday.objects.filter(
+                holiday_date__range=(self.start_date, self.end_date), is_active=True,
+            ).select_related("holiday_calendar__branch").prefetch_related("branches")
+            if (not branch_specific or h.is_applicable_to_branch(employee.branch))
+            and h.is_applicable_to_employee(employee)
+        }
+        out, day = [], self.start_date
+        while day <= self.end_date:
+            if day not in off and day not in holidays:
+                out.append(day)
+            day += timedelta(days=1)
+        return out
+
+    def total_days(self):
+        """Working days only: weekly offs and holidays inside the range are
+        not leave (a Friday-to-Monday leave over a weekend is 2 days)."""
+        return len(self.working_dates())
 
     def __str__(self):
         return f"{self.employee} - {self.leave_type} ({self.start_date} to {self.end_date})"
@@ -1070,9 +1114,18 @@ class SalaryHistory(models.Model):
 
 
 class AdvanceMaster(models.Model):
+    STATUS_AWAITING_APPROVAL = 'awaiting_approval'
     STATUS_ACTIVE = 'active'
     STATUS_COMPLETED = 'completed'
-    STATUS_CHOICES = [(STATUS_ACTIVE, 'Active'), (STATUS_COMPLETED, 'Completed')]
+    STATUS_REJECTED = 'rejected'
+    # An advance created by someone without Advances -> Approve waits as
+    # "awaiting approval" and is not deducted from salary until approved.
+    STATUS_CHOICES = [
+        (STATUS_AWAITING_APPROVAL, 'Awaiting approval'),
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_COMPLETED, 'Completed'),
+        (STATUS_REJECTED, 'Rejected'),
+    ]
 
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='advances')
     advance_amount = models.PositiveIntegerField()  # store in rupees (int)
@@ -1408,7 +1461,16 @@ class Holiday(models.Model):
         record on this date — e.g. because nobody expected to need to
         upload punch data for a holiday, so the day's file was never
         uploaded. Existing rows (real punches, corrections, etc.) are never
-        touched or overwritten. Returns the number of rows created."""
+        touched or overwritten. Returns the number of rows created.
+
+        Holidays in the future get nothing yet: a row dated next month makes
+        that month look like it has started (the leave balance report showed
+        "27 Dec - 26 Jan" in November because New Year's Day had been added
+        in advance). The daily backfill_holiday_attendance_task creates the
+        rows once the date arrives."""
+        from django.utils.timezone import localdate
+        if self.holiday_date > localdate():
+            return 0
         from django.apps import apps
         Employee = apps.get_model('website', 'Employee')
         Attendance = apps.get_model('website', 'Attendance')
@@ -1719,15 +1781,35 @@ def prime_roster_week_offs(employee_ids, day):
         store.setdefault(("roster-week-off", emp_id, day), found.get(emp_id))
 
 
-def week_off_weekday(employee, day, payroll_settings=None):
-    """Which weekday is this employee's weekly off on `day`, as a
-    Python weekday number (Monday 0 ... Sunday 6), or None to mean "no
-    single day -- use the company's weekend rule".
+WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+
+
+def parse_week_off_days(value):
+    """"5,6" -> frozenset({5, 6}); blank or unreadable -> None (follow the
+    company's weekend rule)."""
+    days = set()
+    for part in str(value or "").split(","):
+        part = part.strip()
+        if part.isdigit() and 0 <= int(part) <= 6:
+            days.add(int(part))
+    return frozenset(days) or None
+
+
+def describe_week_off_days(value):
+    """"5,6" -> "Saturday, Sunday"; blank -> ""."""
+    days = parse_week_off_days(value)
+    return ", ".join(WEEKDAY_NAMES[d] for d in sorted(days)) if days else ""
+
+
+def week_off_weekdays(employee, day, payroll_settings=None):
+    """Which weekdays are this employee's weekly off on `day`, as a
+    frozenset of Python weekday numbers (Monday 0 ... Sunday 6), or None to
+    mean "nothing specific -- use the company's weekend rule".
 
     Resolved most specific first:
 
-        1. the shift roster entry covering this date
-        2. the employee's own Weekly Off Day
+        1. the shift roster entry covering this date (one day)
+        2. the employee's own Weekly Off Days (one or more)
         3. neither, so the company's weekend setting applies
 
     One function so attendance, payroll day-counting and leave all agree.
@@ -1737,9 +1819,9 @@ def week_off_weekday(employee, day, payroll_settings=None):
     """
     rostered = rostered_week_off_day(employee, day)
     if rostered is not None:
-        return rostered
-    if employee is not None and employee.week_off_day is not None:
-        return employee.week_off_day
+        return frozenset({rostered})
+    if employee is not None:
+        return employee.week_off_weekdays
     return None
 
 
@@ -1752,7 +1834,7 @@ def week_off_dates_in_range(employee, from_date, to_date, sunday_only):
     roster entries once and answers the whole period from memory, which is
     what payroll and leave-day counting need.
 
-    Same precedence as week_off_weekday(): roster entry, then the
+    Same precedence as week_off_weekdays(): roster entry, then the
     employee's own day, then the company rule.
     """
     assignments = list(
@@ -1769,10 +1851,10 @@ def week_off_dates_in_range(employee, from_date, to_date, sunday_only):
     def rostered(day):
         for start, end, off_day in assignments:
             if start <= day <= end:
-                return off_day
+                return frozenset({off_day})
         return None
 
-    own = employee.week_off_day
+    own = employee.week_off_weekdays
     days = set()
     day = from_date
     while day <= to_date:
@@ -1780,7 +1862,7 @@ def week_off_dates_in_range(employee, from_date, to_date, sunday_only):
         if specific is None:
             specific = own
         if specific is not None:
-            if day.weekday() == specific:
+            if day.weekday() in specific:
                 days.add(day)
         elif (day.weekday() == 6) if sunday_only else (day.weekday() >= 5):
             days.add(day)
@@ -1791,10 +1873,36 @@ def week_off_dates_in_range(employee, from_date, to_date, sunday_only):
 def is_week_off(employee, day, sunday_only):
     """Is `day` this employee's weekly off? `sunday_only` is the company's
     setting, used only when nothing more specific applies."""
-    specific = week_off_weekday(employee, day)
+    specific = week_off_weekdays(employee, day)
     if specific is not None:
-        return day.weekday() == specific
+        return day.weekday() in specific
     return (day.weekday() == 6) if sunday_only else (day.weekday() >= 5)
+
+
+def attendance_day_in_progress(day, in_time, out_time):
+    """True while an employee who has punched in is still within their
+    working day, so their status is provisionally Present:
+
+    - any punch-in dated today;
+    - a night shift: punched in yesterday at or after
+      BIOMETRIC_NIGHT_IN_FROM, no out-punch yet, and it is still before
+      BIOMETRIC_NIGHT_OUT_UNTIL this morning (when that out-punch is due).
+
+    00:00 in and out is how attendance files mark "no punch", so it never
+    counts as a punch-in.
+    """
+    midnight = datetime.time(0, 0, 0)
+    if not in_time or (in_time == midnight and out_time in (None, midnight)):
+        return False
+    from django.utils import timezone
+    now_local = timezone.localtime()
+    today = now_local.date()
+    if day == today:
+        return True
+    if day == today - datetime.timedelta(days=1) and out_time is None:
+        from website.services.biometric_sync import night_in_from, night_out_until
+        return in_time >= night_in_from() and now_local.time() < night_out_until()
+    return False
 
 
 class Attendance(models.Model):
@@ -2022,10 +2130,10 @@ class Attendance(models.Model):
                 ps = None
 
             # Roster first, then the employee's own day, then the company
-            # rule -- see week_off_weekday().
-            specific_off = week_off_weekday(self.employee, self.date)
+            # rule -- see week_off_weekdays().
+            specific_off = week_off_weekdays(self.employee, self.date)
             if specific_off is not None:
-                is_weekend = (self.date.weekday() == specific_off)
+                is_weekend = (self.date.weekday() in specific_off)
             else:
                 if ps is not None:
                     sunday_only = ps.weekend_days == 'sun'
@@ -2083,6 +2191,19 @@ class Attendance(models.Model):
             # moment attendance is recalculated, without needing a data
             # migration.
             midnight = datetime.time(0, 0, 0)
+
+            # The working day isn't over yet and the employee has punched
+            # in: show Present. The out-time so far is just the latest punch
+            # (or nothing), so judging hours now would call everyone Absent
+            # or Half Day until they leave. finalize_finished_days() (hourly,
+            # services/biometric_sync.py) recalculates the row from the real
+            # hours once the day is over.
+            if attendance_day_in_progress(self.date, self.in_time, self.out_time):
+                self.status = "Present"
+                self.count = Decimal("1.00")
+                self.late = 0
+                return
+
             if not self.in_time or not self.out_time or (self.in_time == midnight and self.out_time == midnight):
                 self.status = "Absent"
                 self.count = Decimal("0.00")

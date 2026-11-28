@@ -67,9 +67,9 @@
     <a href="#attendance-today">My attendance</a>
     {% if has_team %}<a href="#team-roster">My team</a><a href="#team-absences">Team absences</a>{% endif %}
     <a href="#department-today">My department</a>
-    <a href="#company-absent-today">Company absences</a>
+    <a href="#company-absent-today">All company absences</a>
     <a href="#dashboard-announcements">Announcements</a>
-    <a href="#recent-payslips">Payslips</a>
+    {% if request.user|can_see_pay %}<a href="#recent-payslips">Payslips</a>{% endif %}
   </nav>
   <div class="personal-grid">
     <section class="personal-card" id="attendance-today">
@@ -118,7 +118,7 @@
   </div>
   {% if has_team %}
   <div class="team-bento">
-    <!-- My Team — only for someone people actually report to -->
+    <!-- My Team â€” only for someone people actually report to -->
     <div class="team-roster" id="team-roster">
       <section class="personal-card">
         <header><h2>My Team</h2><a href="{% url 'team-analytics' %}">Team analytics</a></header>
@@ -154,7 +154,7 @@
     <div class="team-absences">
       <section class="personal-card" id="team-absences">
         <header><h2>Team absences today</h2>
-          <small>{{ today|date:"d M Y" }} &middot; {{ absent_employees_today|length }} employee{{ absent_employees_today|length|pluralize }}</small>
+          <small>{{ today|date:"d M Y" }} &middot; {{ team_absences_today|length }} employee{{ team_absences_today|length|pluralize }}</small>
         </header>
         <div class="table-responsive dashboard-team-list">
           <table class="table table-sm table-hover mb-0">
@@ -162,22 +162,24 @@
               <tr>
                 <th>Employee Code</th>
                 <th>Name</th>
+                <th>Company</th>
                 <th>Branch</th>
                 <th>Department</th>
                 <th>Remarks</th>
               </tr>
             </thead>
             <tbody>
-              {% for a in absent_employees_today %}
+              {% for a in team_absences_today %}
               <tr>
                 <td class="fw-medium">{{ a.employee.employee_code }}</td>
                 <td>{{ a.employee.first_name }} {{ a.employee.last_name }}</td>
-                <td class="text-muted">{{ a.employee.branch.branch_name|default:"—" }}</td>
-                <td class="text-muted">{{ a.employee.department|default:"—" }}</td>
+                <td class="text-muted">{% with co=a.employee.company %}{% if co %}{{ co.short_name|default:co.name }}{% else %}â€”{% endif %}{% endwith %}</td>
+                <td class="text-muted">{{ a.employee.branch.branch_name|default:"â€”" }}</td>
+                <td class="text-muted">{{ a.employee.department|default:"â€”" }}</td>
                 <td>{% if a.remark == "On leave" %}<span class="badge bg-label-info">On leave</span>{% else %}<span class="badge bg-label-danger">No punch</span>{% endif %}</td>
               </tr>
               {% empty %}
-              <tr><td colspan="5" class="text-center text-muted py-3">Nobody is absent today</td></tr>
+              <tr><td colspan="6" class="text-center text-muted py-3">Nobody is absent today</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -202,11 +204,14 @@
       </div>
     </section>
     <section class="personal-card" id="company-absent-today">
-      <header><h2>Company absences today</h2><small>{{ company_absent|length }} without punch-in</small></header>
-      <div class="dashboard-team-list overflow-auto">
-      {% for person in company_absent %}<div class="personal-line"><b>{{ person.first_name }} {{ person.last_name }}</b><small>{{ person.department|default:"Department unassigned" }}</small></div>
-      {% empty %}<p>{% if employee.company_id %}No employees absent without a punch-in today.{% else %}Company unassigned.{% endif %}</p>{% endfor %}
-      </div>
+      <header><h2>Absent Today · All companies</h2><small>{{ absent_employees_today|length }} without punch-in</small></header>
+      <div class="dashboard-team-list table-responsive"><table class="table table-sm mb-0">
+        <thead><tr><th>Employee</th><th>Company</th><th>Department</th><th>Remarks</th></tr></thead>
+        <tbody>{% for row in absent_employees_today %}<tr><td>{{ row.employee.first_name }} {{ row.employee.last_name }}</td>
+          <td>{% with co=row.employee.company %}{% if co %}{{ co.short_name|default:co.name }}{% else %}—{% endif %}{% endwith %}</td>
+          <td>{{ row.employee.department|default:"—" }}</td><td>{{ row.remark }}</td></tr>
+        {% empty %}<tr><td colspan="4">Nobody is absent today.</td></tr>{% endfor %}</tbody>
+      </table></div>
     </section>
   </div>
   <div class="personal-news">
@@ -256,9 +261,9 @@
     <section class="personal-card"><header><h2>My profile</h2><a href="{% url 'my_profile' %}">My details</a></header>
       <strong class="personal-number">{{ profile_progress.percent }}%</strong><progress max="100" value="{{ profile_progress.percent }}" aria-label="Profile completion"></progress>
       <p>{{ employee.designation }} &middot; {{ employee.employee_code }}</p></section>
-    <section class="personal-card"><header><h2>My pay</h2><a href="{% url 'salary-slips' %}">Statements</a></header>
+    {% if request.user|can_see_pay %}<section class="personal-card"><header><h2>My pay</h2><a href="{% url 'salary-slips' %}">Statements</a></header>
       {% with r=recent_payslips.0 %}{% if r %}<strong class="personal-number">&#8377;{{ r.net_salary|floatformat:"-2" }}</strong>{% if r.net_salary > 0 %}<p>{% if r.payment_date %}Paid on {{ r.payment_date|date:"j F Y" }}{% else %}Payment date awaiting confirmation{% endif %}</p>{% endif %}<a href="{% url 'salary-slip' r.pk %}?format=pdf">{{ r.payroll.month|date:"F Y" }} &middot; Download slip</a>{% else %}<p>No finalized salary slip yet.</p>{% endif %}{% endwith %}
-      <footer><a href="{% url 'advances-list' %}">Outstanding advances &middot; &#8377;{{ advance_balance }}</a></footer></section>
+      <footer><a href="{% url 'advances-list' %}">Outstanding advances &middot; &#8377;{{ advance_balance }}</a></footer></section>{% endif %}
     <section class="personal-card"><header><h2>Upcoming leave</h2><a href="{% url 'employee-request-history' 'leave' %}">History</a></header>{% for app in approved_upcoming %}<div class="personal-line"><a href="{% url 'employee-request-record' 'leave' app.pk %}">{{ app.start_date|date:"j M" }} &ndash; {{ app.end_date|date:"j M" }}</a> <span>Approved</span></div>{% empty %}<p>No upcoming approved leave.</p>{% endfor %}</section>
   </div>
   <div class="dashboard-period-grid">
@@ -279,14 +284,14 @@
           <div><b>{{ holiday.name }}</b><small>{{ holiday.holiday_date|date:"l, Y" }} &middot; {{ holiday.holiday_type.name }}</small></div></div>
       {% empty %}<p>No upcoming holidays.</p>{% endfor %}
     </section>
-    <section class="personal-card" id="recent-payslips">
-      <header><h2>Recent payslips</h2><a href="{% url 'salary-slips' %}">View all</a></header>
+    {% if request.user|can_see_pay %}<section class="personal-card" id="recent-payslips">
+      <header><h2>Recent Payslips</h2><a href="{% url 'salary-slips' %}">View all</a></header>
       {% for record in recent_payslips %}
         <div class="personal-line"><div><a href="{% url 'salary-slip' record.pk %}">{{ record.payroll.month|date:"F Y" }}</a>
           <small>{% if record.payment_date %}Paid {{ record.payment_date|date:"j M Y" }}{% elif record.net_salary > 0 %}Payment date awaiting confirmation{% endif %}</small></div>
           <b aria-label="Net salary">&#8377;{{ record.net_salary|floatformat:"-2" }}</b></div>
       {% empty %}<p>No finalized payslips yet.</p>{% endfor %}
-    </section>
+    </section>{% endif %}
   </div>
 </div>
 {% endblock %}

@@ -59,9 +59,9 @@
             {% for cr in change_requests %}
             <tr>
               {% if bulk and status == "pending" %}
-              <td data-label="Select"><input type="checkbox" class="form-check-input request-box" name="ids" value="{{ cr.pk }}"
+              <td data-label="Select">{% if cr.can_decide %}<input type="checkbox" class="form-check-input request-box" name="ids" value="{{ cr.pk }}"
                      aria-label="Select change request for {{ cr.employee.first_name }} {{ cr.employee.last_name }}"
-                     form="bulkDecisionForm"></td>
+                     form="bulkDecisionForm">{% endif %}</td>
               {% endif %}
               <td data-label="Employee">
                 <a href="{% url 'employee_detail' cr.employee.pk %}">{{ cr.employee.employee_code }}</a>
@@ -81,8 +81,8 @@
                 {% else %}<span class="badge bg-label-danger">Rejected</span>{% endif %}
               </td>
               <td data-label="">
-                <a href="{% url 'employee_change_request_detail' cr.pk %}" class="btn btn-sm {% if cr.status == 'pending' and can_approve_changes %}btn-primary{% else %}btn-outline-secondary{% endif %}">
-                  {% if cr.status == "pending" and can_approve_changes %}Review{% else %}View{% endif %}
+                <a href="{% url 'employee_change_request_detail' cr.pk %}" class="btn btn-sm {% if cr.status == 'pending' and cr.can_decide %}btn-primary{% else %}btn-outline-secondary{% endif %}">
+                  {% if cr.status == "pending" and cr.can_decide %}Review{% else %}View{% endif %}
                 </a>
               </td>
             </tr>

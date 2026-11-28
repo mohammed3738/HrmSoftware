@@ -165,7 +165,7 @@
                         <li class="list-group-item text-muted small text-center py-4">No announcements yet.</li>
                       </ul>
                     </li>
-                    {% if request.user|has_feature:"announcements:edit" %}
+                    {% if request.user|has_feature:"announcements:create" %}
                     <li class="border-top">
                       <div class="d-grid p-4">
                         <a class="btn btn-primary btn-sm d-flex" href="{% url 'announcements-hub' %}">

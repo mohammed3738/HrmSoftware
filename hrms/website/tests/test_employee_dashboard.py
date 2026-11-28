@@ -196,7 +196,11 @@ class EmployeeDashboardTest(TestCase):
             employee=self.employee, period_from_date=date(2026, 1, 1), period_to_date=date(2026, 1, 31),
             final_leave_balance=12,
         )
-        LeaveBalance.objects.create(employee=self.employee, final_leave_balance=99)
+        # Hidden from the employee until payroll has been run for the period.
+        resp = self.client.get(reverse("employee-dashboard"))
+        self.assertIsNone(resp.context["leave_balance"])
+        PayrollRun.objects.create(company=self.employee.company, month=date(2026, 1, 1),
+                                  start_date=date(2026, 1, 1), end_date=date(2026, 1, 31))
         resp = self.client.get(reverse("employee-dashboard"))
         self.assertEqual(resp.context["leave_balance"].final_leave_balance, 12)
 
@@ -239,7 +243,7 @@ class EmployeeDashboardTest(TestCase):
         resp = self.client.get(reverse("my_profile"))
         self.assertRedirects(resp, reverse("employee_detail", args=[self.employee.pk]))
 
-    def test_absent_employees_today_lists_only_direct_reports(self):
+    def test_absent_employees_today_lists_absentees_of_every_company(self):
         other_company = Company.objects.create(
             short_name="OTH", name="Other Co", phone="1", email="oth@test.com", address="Addr",
         )
@@ -257,7 +261,7 @@ class EmployeeDashboardTest(TestCase):
         )
         Attendance.objects.create(employee=absent_colleague, date=date.today(), status="Absent", status_overridden=True)
 
-        # An absentee in a different company must never leak into this list.
+        # Absentees of every company in the group are listed, not only this one.
         other_branch = Branch.objects.create(branch_name="Other Branch")
         other_company_employee = Employee.objects.create(
             company=other_company, branch=other_branch,
@@ -275,10 +279,11 @@ class EmployeeDashboardTest(TestCase):
 
         resp = self.client.get(reverse("employee-dashboard"))
         codes = [a.employee.employee_code for a in resp.context["absent_employees_today"]]
-        self.assertNotIn("EDT002", codes)
+        self.assertIn("EDT002", codes)
+        self.assertNotIn(absent_colleague.pk, [a.employee.pk for a in resp.context["team_absences_today"]])
         absent_colleague.manager = self.employee
         absent_colleague.save(update_fields=["manager"])
         resp = self.client.get(reverse("employee-dashboard"))
         codes = [a.employee.employee_code for a in resp.context["absent_employees_today"]]
         self.assertIn("EDT002", codes)
-        self.assertNotIn("OTH001", codes)
+        self.assertIn("OTH001", codes)
